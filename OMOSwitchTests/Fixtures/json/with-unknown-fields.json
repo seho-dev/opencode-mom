@@ -1,0 +1,33 @@
+{
+  "knownField": "value",
+  "unknownField": "should be preserved",
+  "nestedUnknown": {
+    "deep": "value",
+    "anotherUnknown": true
+  },
+  "provider": {
+    "cliproxyapi": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "CLIProxyAPI",
+      "options": {
+        "baseURL": "http://localhost:8317/v1",
+        "apiKey": "PLACEHOLDER"
+      },
+      "models": {
+        "minimax-m2.7": {
+          "name": "minimax-m2.7",
+          "attachment": true,
+          "limit": {
+            "context": 200000,
+            "output": 64000
+          }
+        }
+      }
+    }
+  },
+  "_customMarker": "保留的未知字段",
+  "someExtraData": {
+    "key": "value",
+    "numbers": [1, 2, 3]
+  }
+}

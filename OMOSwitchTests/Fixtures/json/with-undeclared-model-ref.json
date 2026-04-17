@@ -1,0 +1,18 @@
+{
+  "agents": {
+    "oracle": { "model": "cliproxyapi/gpt-5.4" },
+    "librarian": { "model": "cliproxyapi/minimax-m2.7" }
+  },
+  "categories": {
+    "visual-engineering": { "model": "cliproxyapi/gemini-3.1-pro" },
+    "deep": { "model": "cliproxyapi/minimax-m2.7" }
+  },
+  "provider": {
+    "cliproxyapi": {
+      "models": {
+        "minimax-m2.7": { "name": "minimax-m2.7" },
+        "NOTE": "gpt-5.4 is referenced but not declared in provider.models"
+      }
+    }
+  }
+}

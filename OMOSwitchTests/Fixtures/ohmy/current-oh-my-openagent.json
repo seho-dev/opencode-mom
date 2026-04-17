@@ -1,0 +1,64 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
+  "agents": {
+    "hephaestus": {
+      "model": "cliproxyapi/minimax-m2.7"
+    },
+    "oracle": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "librarian": {
+      "model": "cliproxyapi/minimax-m2.7"
+    },
+    "explore": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "multimodal-looker": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "prometheus": {
+      "model": "cliproxyapi/gpt-5.4-xhigh"
+    },
+    "metis": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "momus": {
+      "model": "cliproxyapi/minimax-m2.7"
+    },
+    "atlas": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "sisyphus-junior": {
+      "model": "cliproxyapi/minimax-m2.7"
+    },
+    "sisyphus": {
+      "model": "cliproxyapi/gpt-5.4"
+    }
+  },
+  "categories": {
+    "visual-engineering": {
+      "model": "cliproxyapi/gemini-3.1-pro"
+    },
+    "ultrabrain": {
+      "model": "cliproxyapi/gpt-5.4-xhigh"
+    },
+    "deep": {
+      "model": "cliproxyapi/minimax-m2.7"
+    },
+    "artistry": {
+      "model": "cliproxyapi/minimax-m2.7"
+    },
+    "quick": {
+      "model": "cliproxyapi/minimax-m2.7"
+    },
+    "unspecified-low": {
+      "model": "cliproxyapi/minimax-m2.7"
+    },
+    "unspecified-high": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "writing": {
+      "model": "cliproxyapi/gemini-3.1-pro"
+    }
+  }
+}

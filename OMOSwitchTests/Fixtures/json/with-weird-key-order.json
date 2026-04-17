@@ -1,0 +1,18 @@
+{
+  "zebra": "should stay last alphabetically in top-level keys",
+  "agent": {
+    "mode": "subagent",
+    "model": "cliproxyapi/minimax-m2.7",
+    "prompt": "{file:./prompts/test.md}"
+  },
+  "aardvark": "should be first alphabetically",
+  "provider": {
+    "cliproxyapi": {
+      "models": {
+        "betaModel": { "name": "beta" },
+        "alphaModel": { "name": "alpha" }
+      }
+    }
+  },
+  "middle": "between aardvark and zebra"
+}

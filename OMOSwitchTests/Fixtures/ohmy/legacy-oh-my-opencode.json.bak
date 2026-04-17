@@ -1,0 +1,31 @@
+{
+  "agents": {
+    "sisyphus": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "sisyphus-junior": {
+      "model": "cliproxyapi/minimax-m2.7"
+    },
+    "metis": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "prometheus": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "oracle": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "explore": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "librarian": {
+      "model": "cliproxyapi/minimax-m2.7"
+    },
+    "multimodal-looker": {
+      "model": "cliproxyapi/gpt-5.4"
+    }
+  },
+  "categories": {
+    "visual-engineering": { "model": "cliproxyapi/gemini-3.1-pro-preview" }
+  }
+}

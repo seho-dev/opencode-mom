@@ -1,0 +1,21 @@
+{
+  // This is a JSONC-style file with comments
+  "provider": {
+    "cliproxyapi": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "CLIProxyAPI",
+      "options": {
+        "baseURL": "http://localhost:8317/v1",
+        "apiKey": "PLACEHOLDER" // trailing comment
+      }
+    }
+  },
+  "agents": {
+    "test": { "model": "cliproxyapi/minimax-m2.7" }
+  },
+  /* Multi-line
+     comment here */
+  "categories": {
+    "test": { "model": "cliproxyapi/gpt-5.4" }
+  }
+}

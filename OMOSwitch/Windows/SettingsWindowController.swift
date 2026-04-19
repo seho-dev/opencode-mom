@@ -1,19 +1,6 @@
 import AppKit
 import SwiftUI
 
-private struct SettingsPlaceholderView: View {
-  var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Settings")
-        .font(.title2)
-      Text("Placeholder")
-        .foregroundStyle(.secondary)
-    }
-    .frame(minWidth: 420, minHeight: 260, alignment: .topLeading)
-    .padding(24)
-  }
-}
-
 @MainActor
 final class SettingsWindowController: NSWindowController {
   let appStore: AppStore
@@ -24,22 +11,11 @@ final class SettingsWindowController: NSWindowController {
 
   init(appStore: AppStore) {
     self.appStore = appStore
-    let hostingController = NSHostingController(rootView: SettingsPlaceholderView())
-    let window = NSWindow(contentViewController: hostingController)
-    window.title = "Settings"
-    window.setContentSize(NSSize(width: 420, height: 260))
-    window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-    window.isReleasedWhenClosed = false
-    super.init(window: window)
-    shouldCascadeWindows = true
-  }
-
-  init<Content: View>(rootView: Content, appStore: AppStore = AppStore.livePreview) {
-    self.appStore = appStore
+    let rootView = SettingsView(appStore: appStore)
     let hostingController = NSHostingController(rootView: rootView)
     let window = NSWindow(contentViewController: hostingController)
     window.title = "Settings"
-    window.setContentSize(NSSize(width: 420, height: 260))
+    window.setContentSize(NSSize(width: 700, height: 500))
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
     window.isReleasedWhenClosed = false
     super.init(window: window)

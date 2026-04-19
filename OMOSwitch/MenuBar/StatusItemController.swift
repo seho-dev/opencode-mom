@@ -28,6 +28,7 @@ final class CocoaStatusItemAdapter: StatusItemType {
   }
 }
 
+@MainActor
 struct CocoaStatusBarProvider: StatusBarProviding {
   func makeStatusItem(length: CGFloat) -> StatusItemType {
     CocoaStatusItemAdapter(statusItem: NSStatusBar.system.statusItem(withLength: length))
@@ -58,6 +59,7 @@ final class StatusItemController: NSObject {
     self.popoverController = popoverController
     self.settingsWindowControllerProvider = settingsWindowControllerProvider
     super.init()
+    popoverController.onOpenSettings = { [weak self] in self?.openSettings() }
     configureStatusItem()
   }
 
@@ -106,7 +108,7 @@ final class StatusItemController: NSObject {
 
   @objc
   private func reload() {
-    popoverController.reloadPlaceholderContent()
+    popoverController.reloadContent()
   }
 
   @objc

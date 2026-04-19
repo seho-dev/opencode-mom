@@ -1,23 +1,11 @@
 import AppKit
 import SwiftUI
 
-private struct QuickSwitchPlaceholderView: View {
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text("Quick Switch")
-        .font(.headline)
-      Text("Placeholder")
-        .foregroundStyle(.secondary)
-    }
-    .frame(width: 240, height: 120, alignment: .topLeading)
-    .padding(16)
-  }
-}
-
 @MainActor
 final class QuickSwitchPopoverController {
   let popover: NSPopover
   let appStore: AppStore
+  var onOpenSettings: (() -> Void)?
 
   convenience init() {
     self.init(appStore: .livePreview)
@@ -41,16 +29,25 @@ final class QuickSwitchPopoverController {
       return
     }
 
+    appStore.reload()
     popover.show(relativeTo: positioningRect, of: positioningView, preferredEdge: preferredEdge)
   }
 
-  func reloadPlaceholderContent() {
-    popover.contentViewController = NSHostingController(rootView: QuickSwitchPlaceholderView())
+  func reloadContent() {
+    let view = QuickSwitchView(appStore: appStore, onOpenSettings: openSettingsAction)
+    popover.contentViewController = NSHostingController(rootView: view)
+  }
+
+  private var openSettingsAction: (() -> Void) {
+    { [weak self] in
+      self?.onOpenSettings?()
+    }
   }
 
   private func configurePopover() {
     popover.behavior = .transient
-    popover.contentSize = NSSize(width: 240, height: 120)
-    popover.contentViewController = NSHostingController(rootView: QuickSwitchPlaceholderView())
+    popover.contentSize = NSSize(width: 320, height: 480)
+    let view = QuickSwitchView(appStore: appStore, onOpenSettings: openSettingsAction)
+    popover.contentViewController = NSHostingController(rootView: view)
   }
 }

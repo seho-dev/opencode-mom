@@ -3,6 +3,11 @@ import SwiftUI
 struct SettingsView: View {
   @ObservedObject var appStore: AppStore
   @State private var selectedGroupID: UUID?
+  @State private var draftGroup: ModelGroup?
+  @State private var baselineGroup: ModelGroup?
+  @State private var validationMessage: String?
+  @State private var persistenceMessage: String?
+  @State private var showingDeleteConfirmation = false
 
   var body: some View {
     NavigationSplitView {
@@ -12,17 +17,20 @@ struct SettingsView: View {
     }
     .frame(minWidth: 700, minHeight: 500)
     .onAppear { appStore.reload() }
+    .onChange(of: selectedGroupID) { newValue in
+      loadDraft(for: newValue)
+    }
   }
 
   // MARK: - Sidebar
 
   private var sidebar: some View {
-    List(appStore.groups, selection: $selectedGroupID) { group in
+    List(displayGroups, selection: $selectedGroupID) { group in
       HStack {
         Circle()
           .fill(group.isEnabled ? Color.green : Color.gray.opacity(0.4))
           .frame(width: 8, height: 8)
-        Text(group.name)
+        Text(group.name.isEmpty ? "Untitled Group" : group.name)
           .lineLimit(1)
         Spacer()
         if group.id == appStore.currentGroupID {
@@ -39,7 +47,7 @@ struct SettingsView: View {
     }
     .listStyle(.sidebar)
     .overlay {
-      if appStore.groups.isEmpty {
+      if displayGroups.isEmpty {
         Text("No groups yet.\nCreate one to get started.")
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
@@ -51,7 +59,7 @@ struct SettingsView: View {
 
   private var detail: some View {
     Group {
-      if let group = appStore.groups.first(where: { $0.id == selectedGroupID }) {
+      if let group = selectedGroup {
         groupDetail(group)
       } else {
         emptyDetail
@@ -76,29 +84,34 @@ struct SettingsView: View {
       toolbar(group: group)
       Divider()
       ScrollView {
-        VStack(alignment: .leading, spacing: 16) {
-          // Name
-          LabeledContent("Name") {
-            Text(group.name)
+        VStack(alignment: .leading, spacing: 20) {
+          if let validationMessage {
+            Text(validationMessage)
+              .foregroundStyle(.red)
           }
-          // Description
-          LabeledContent("Description") {
-            Text(group.description ?? "—")
-              .foregroundStyle(group.description == nil ? .secondary : .primary)
+
+          if let persistenceMessage {
+            Text(persistenceMessage)
+              .foregroundStyle(.red)
           }
-          // Enabled
-          LabeledContent("Enabled") {
-            Text(group.isEnabled ? "Yes" : "No")
-              .foregroundStyle(group.isEnabled ? .green : .red)
+
+          formSection(title: "Group Metadata") {
+            TextField("Name", text: draftName)
+              .textFieldStyle(.roundedBorder)
+
+            TextField("Description", text: draftDescription, axis: .vertical)
+              .textFieldStyle(.roundedBorder)
+              .lineLimit(2...4)
+
+            Toggle("Enabled", isOn: draftIsEnabled)
           }
-          // Updated
+
           LabeledContent("Last Updated") {
             Text(group.updatedAt, style: .date)
           }
 
           Divider()
 
-          // Category Mappings
           sectionHeader("Category Mappings", count: group.categoryMappings.count)
           if group.categoryMappings.isEmpty {
             Text("No mappings")
@@ -118,7 +131,6 @@ struct SettingsView: View {
 
           Divider()
 
-          // Agent Overrides
           sectionHeader("Agent Overrides", count: group.agentOverrides.count)
           if group.agentOverrides.isEmpty {
             Text("No overrides")
@@ -141,6 +153,14 @@ struct SettingsView: View {
     }
   }
 
+  private func formSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text(title)
+        .font(.headline)
+      content()
+    }
+  }
+
   private func sectionHeader(_ title: String, count: Int) -> some View {
     HStack {
       Text(title)
@@ -157,10 +177,16 @@ struct SettingsView: View {
     HStack(spacing: 8) {
       Button {
         let newGroup = ModelGroup(
-          name: "New Group",
-          categoryMappings: []
+          name: "",
+          description: nil,
+          categoryMappings: [],
+          agentOverrides: [],
+          isEnabled: true
         )
-        try? appStore.saveGroup(newGroup)
+        baselineGroup = nil
+        draftGroup = newGroup
+        validationMessage = validationError(for: newGroup)
+        persistenceMessage = nil
         selectedGroupID = newGroup.id
       } label: {
         Label("New Group", systemImage: "plus")
@@ -169,19 +195,22 @@ struct SettingsView: View {
       Spacer()
 
       Button("Save") {
-        // Placeholder — Task 8 implements full save
+        saveDraft()
       }
-      .disabled(true)
+      .disabled(!canSave)
+
+      Button("Cancel") {
+        cancelEditing()
+      }
+      .disabled(draftGroup == nil)
 
       Button("Delete") {
-        if let id = selectedGroupID {
-          try? appStore.deleteGroup(id: id)
-          selectedGroupID = nil
-        }
+        showingDeleteConfirmation = true
       }
+      .disabled(selectedGroupID == nil)
       .foregroundStyle(.red)
 
-      if group.id != appStore.currentGroupID {
+      if appStore.groups.contains(where: { $0.id == group.id }) && group.id != appStore.currentGroupID {
         Button("Switch To This Group") {
           Task { await appStore.switchTo(groupID: group.id) }
         }
@@ -190,5 +219,174 @@ struct SettingsView: View {
     .padding(.horizontal, 20)
     .padding(.vertical, 10)
     .background(.bar)
+    .confirmationDialog(
+      "Delete this group?",
+      isPresented: $showingDeleteConfirmation,
+      titleVisibility: .visible
+    ) {
+      Button("Delete", role: .destructive) {
+        deleteSelectedGroup()
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("This action cannot be undone.")
+    }
+  }
+
+  private var displayGroups: [ModelGroup] {
+    guard let draftGroup, baselineGroup == nil else {
+      return appStore.groups
+    }
+
+    let existingDraftIDs = Set(appStore.groups.map(\.id))
+    guard existingDraftIDs.contains(draftGroup.id) == false else {
+      return appStore.groups
+    }
+
+    return appStore.groups + [draftGroup]
+  }
+
+  private var selectedGroup: ModelGroup? {
+    if let draftGroup, draftGroup.id == selectedGroupID {
+      return draftGroup
+    }
+
+    return appStore.groups.first(where: { $0.id == selectedGroupID })
+  }
+
+  private var draftName: Binding<String> {
+    Binding(
+      get: { draftGroup?.name ?? "" },
+      set: { newValue in
+        updateDraft { draft in
+          draft.name = newValue
+        }
+      }
+    )
+  }
+
+  private var draftDescription: Binding<String> {
+    Binding(
+      get: { draftGroup?.description ?? "" },
+      set: { newValue in
+        updateDraft { draft in
+          let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+          draft.description = trimmed.isEmpty ? nil : newValue
+        }
+      }
+    )
+  }
+
+  private var draftIsEnabled: Binding<Bool> {
+    Binding(
+      get: { draftGroup?.isEnabled ?? false },
+      set: { newValue in
+        updateDraft { draft in
+          draft.isEnabled = newValue
+        }
+      }
+    )
+  }
+
+  private var canSave: Bool {
+    draftGroup != nil && validationMessage == nil
+  }
+
+  private func loadDraft(for id: UUID?) {
+    persistenceMessage = nil
+
+    guard let id, let group = appStore.groups.first(where: { $0.id == id }) else {
+      if baselineGroup != nil || draftGroup?.id != id {
+        baselineGroup = nil
+        draftGroup = nil
+        validationMessage = nil
+      }
+      return
+    }
+
+    baselineGroup = group
+    draftGroup = group
+    validationMessage = validationError(for: group)
+  }
+
+  private func updateDraft(_ mutate: (inout ModelGroup) -> Void) {
+    guard var draftGroup else { return }
+    mutate(&draftGroup)
+    self.draftGroup = draftGroup
+    validationMessage = validationError(for: draftGroup)
+    persistenceMessage = nil
+  }
+
+  private func validationError(for group: ModelGroup) -> String? {
+    let trimmedName = group.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmedName.isEmpty {
+      return "Name is required."
+    }
+
+    let duplicateExists = appStore.groups.contains { existing in
+      let existingTrimmedName = existing.name.trimmingCharacters(in: .whitespacesAndNewlines)
+      return existing.id != group.id
+        && existingTrimmedName.localizedCaseInsensitiveCompare(trimmedName) == .orderedSame
+    }
+
+    if duplicateExists {
+      return "Name must be unique."
+    }
+
+    return nil
+  }
+
+  private func saveDraft() {
+    guard var draftGroup else { return }
+
+    if let validationMessage = validationError(for: draftGroup) {
+      self.validationMessage = validationMessage
+      return
+    }
+
+    draftGroup.name = draftGroup.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedDescription = draftGroup.description?.trimmingCharacters(in: .whitespacesAndNewlines)
+    draftGroup.description = trimmedDescription?.isEmpty == true ? nil : trimmedDescription
+    draftGroup.updatedAt = Date()
+
+    do {
+      try appStore.saveGroup(draftGroup)
+      baselineGroup = draftGroup
+      self.draftGroup = draftGroup
+      selectedGroupID = draftGroup.id
+      validationMessage = nil
+      persistenceMessage = nil
+    } catch {
+      persistenceMessage = error.localizedDescription
+    }
+  }
+
+  private func cancelEditing() {
+    persistenceMessage = nil
+
+    if let baselineGroup {
+      draftGroup = baselineGroup
+      validationMessage = validationError(for: baselineGroup)
+      return
+    }
+
+    draftGroup = nil
+    validationMessage = nil
+    selectedGroupID = nil
+  }
+
+  private func deleteSelectedGroup() {
+    guard let id = selectedGroupID else { return }
+
+    do {
+      try appStore.deleteGroup(id: id)
+      baselineGroup = nil
+      draftGroup = nil
+      validationMessage = nil
+      persistenceMessage = nil
+      selectedGroupID = nil
+    } catch {
+      persistenceMessage = error.localizedDescription
+    }
   }
 }

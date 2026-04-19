@@ -119,4 +119,83 @@ final class OhMyOpenAgentProjectionServiceTests: XCTestCase {
 
         XCTAssertTrue(result.warnings.isEmpty)
     }
+
+    // MARK: - Skips entries with empty modelRef
+
+    func testSkipsAgentOverridesWithEmptyModelRef() {
+        let existingDoc = OhMyOpenAgentDocument(rawDictionary: [
+            "$schema": "https://example.com/schema.json",
+            "agents": [:] as [String: Any],
+            "categories": [:] as [String: Any],
+        ])
+
+        let group = ModelGroup(
+            name: "PartialGroup",
+            categoryMappings: [],
+            agentOverrides: [
+                ModelGroupAgentOverride(agentName: "oracle", modelRef: "gpt-5"),
+                ModelGroupAgentOverride(agentName: "hephaestus", modelRef: ""),
+                ModelGroupAgentOverride(agentName: "librarian", modelRef: "  "),
+            ]
+        )
+
+        let result = OhMyOpenAgentProjectionService.project(group: group, onto: existingDoc)
+
+        let oracleEntry = result.document.agents["oracle"] as? [String: Any]
+        XCTAssertNotNil(oracleEntry)
+        XCTAssertEqual(oracleEntry?["model"] as? String, "gpt-5")
+        XCTAssertNil(result.document.agents["hephaestus"])
+        XCTAssertNil(result.document.agents["librarian"])
+    }
+
+    func testSkipsCategoryMappingsWithEmptyModelRef() {
+        let existingDoc = OhMyOpenAgentDocument(rawDictionary: [
+            "$schema": "https://example.com/schema.json",
+            "agents": [:] as [String: Any],
+            "categories": [:] as [String: Any],
+        ])
+
+        let group = ModelGroup(
+            name: "PartialGroup",
+            categoryMappings: [
+                ModelGroupCategoryMapping(categoryName: "ultrabrain", modelRef: "gpt-5"),
+                ModelGroupCategoryMapping(categoryName: "quick", modelRef: ""),
+                ModelGroupCategoryMapping(categoryName: "deep", modelRef: "  "),
+            ],
+            agentOverrides: []
+        )
+
+        let result = OhMyOpenAgentProjectionService.project(group: group, onto: existingDoc)
+
+        let ultrabrainEntry = result.document.categories["ultrabrain"] as? [String: Any]
+        XCTAssertNotNil(ultrabrainEntry)
+        XCTAssertEqual(ultrabrainEntry?["model"] as? String, "gpt-5")
+        XCTAssertNil(result.document.categories["quick"])
+        XCTAssertNil(result.document.categories["deep"])
+    }
+
+    func testEmptyModelRefDoesNotBreakNonEmptyEntries() {
+        let existingDoc = OhMyOpenAgentDocument(rawDictionary: [
+            "$schema": "https://example.com/schema.json",
+            "agents": [:] as [String: Any],
+            "categories": [:] as [String: Any],
+        ])
+
+        let group = ModelGroup(
+            name: "MixedGroup",
+            categoryMappings: [
+                ModelGroupCategoryMapping(categoryName: "ultrabrain", modelRef: "claude-4"),
+                ModelGroupCategoryMapping(categoryName: "quick", modelRef: ""),
+            ],
+            agentOverrides: [
+                ModelGroupAgentOverride(agentName: "oracle", modelRef: "gpt-5"),
+                ModelGroupAgentOverride(agentName: "hephaestus", modelRef: ""),
+            ]
+        )
+
+        let result = OhMyOpenAgentProjectionService.project(group: group, onto: existingDoc)
+
+        XCTAssertEqual(result.document.agents.count, 1)
+        XCTAssertEqual(result.document.categories.count, 1)
+    }
 }

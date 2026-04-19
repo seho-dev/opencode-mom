@@ -9,27 +9,43 @@ struct AgentMappingEditor: View {
     let id = UUID()
     var agentName: String
     var modelRef: String
+    var isKnownKey: Bool
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       ForEach(Array($draftRows.enumerated()), id: \.element.id) { index, $row in
         HStack(spacing: 8) {
-          TextField("Agent Name", text: $row.agentName)
-            .textFieldStyle(.roundedBorder)
-            .frame(minWidth: 120)
+          if row.isKnownKey {
+            Text(row.agentName)
+              .frame(minWidth: 120, alignment: .leading)
+              .padding(.horizontal, 6)
+              .padding(.vertical, 4)
+              .background(Color(nsColor: .controlBackgroundColor))
+              .clipShape(RoundedRectangle(cornerRadius: 4))
+          } else {
+            TextField("Agent Name", text: $row.agentName)
+              .textFieldStyle(.roundedBorder)
+              .frame(minWidth: 120)
+          }
           TextField("Model Ref", text: $row.modelRef)
             .textFieldStyle(.roundedBorder)
             .frame(minWidth: 120)
-          Button {
-            draftRows.remove(at: index)
-            warnings.removeValue(forKey: index)
-            rebuildWarnings()
-          } label: {
-            Image(systemName: "trash")
-              .foregroundStyle(.red)
+            .placeholder(when: row.modelRef.isEmpty) {
+              Text("Optional").foregroundStyle(.tertiary)
+            }
+          if !row.isKnownKey {
+            Button {
+              draftRows.remove(at: index)
+              warnings.removeValue(forKey: index)
+              rebuildWarnings()
+              syncToSource()
+            } label: {
+              Image(systemName: "trash")
+                .foregroundStyle(.red)
+            }
+            .buttonStyle(.plain)
           }
-          .buttonStyle(.plain)
         }
 
         if let warning = warnings[index] {
@@ -40,41 +56,61 @@ struct AgentMappingEditor: View {
       }
 
       Button {
-        draftRows.append(DraftRow(agentName: "", modelRef: ""))
+        draftRows.append(DraftRow(agentName: "", modelRef: "", isKnownKey: false))
       } label: {
-        Label("Add Agent", systemImage: "plus")
+        Label("Add Custom Agent", systemImage: "plus")
       }
     }
     .onAppear { syncFromSource() }
     .onChange(of: overrides, perform: { _ in syncFromSource() })
-    .onChange(of: draftRows, perform: { _ in rebuildWarnings() })
+    .onChange(of: draftRows, perform: { _ in
+      rebuildWarnings()
+      syncToSource()
+    })
   }
 
   // MARK: - Sync
 
   private func syncFromSource() {
-    draftRows = overrides.map {
-      DraftRow(agentName: $0.agentName, modelRef: $0.modelRef)
+    let existingOverrides = Dictionary(uniqueKeysWithValues: overrides.map { ($0.agentName, $0.modelRef) })
+    let knownSet = Set(KnownKeys.agentNames)
+
+    var rows: [DraftRow] = []
+
+    // Known keys first
+    for name in KnownKeys.agentNames {
+      let ref = existingOverrides[name] ?? ""
+      rows.append(DraftRow(agentName: name, modelRef: ref, isKnownKey: true))
     }
+
+    // Custom keys not in known list
+    for override in overrides {
+      if !knownSet.contains(override.agentName) {
+        rows.append(DraftRow(agentName: override.agentName, modelRef: override.modelRef, isKnownKey: false))
+      }
+    }
+
+    draftRows = rows
     warnings.removeAll()
+  }
+
+  private func syncToSource() {
+    let cleaned = draftRows.compactMap { row -> ModelGroupAgentOverride? in
+      let name = row.agentName.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !name.isEmpty else { return nil }
+      return ModelGroupAgentOverride(
+        agentName: name,
+        modelRef: row.modelRef.trimmingCharacters(in: .whitespacesAndNewlines)
+      )
+    }
+    overrides = cleaned
   }
 
   /// Call this to push draft back to the binding. Returns true if valid.
   func commitToSource() -> Bool {
     rebuildWarnings()
     guard warnings.isEmpty else { return false }
-
-    let cleaned = draftRows.filter { row in
-      let name = row.agentName.trimmingCharacters(in: .whitespacesAndNewlines)
-      let ref = row.modelRef.trimmingCharacters(in: .whitespacesAndNewlines)
-      return !name.isEmpty && !ref.isEmpty
-    }.map {
-      ModelGroupAgentOverride(
-        agentName: $0.agentName.trimmingCharacters(in: .whitespacesAndNewlines),
-        modelRef: $0.modelRef.trimmingCharacters(in: .whitespacesAndNewlines)
-      )
-    }
-    overrides = cleaned
+    syncToSource()
     return true
   }
 
@@ -84,18 +120,14 @@ struct AgentMappingEditor: View {
     warnings.removeAll()
     for i in draftRows.indices {
       let name = draftRows[i].agentName.trimmingCharacters(in: .whitespacesAndNewlines)
-      let ref = draftRows[i].modelRef.trimmingCharacters(in: .whitespacesAndNewlines)
 
-      // Blank row → silently ignored
-      if name.isEmpty && ref.isEmpty { continue }
+      // Known keys skip name validation
+      if draftRows[i].isKnownKey { continue }
 
-      // Half-filled
-      if name.isEmpty || ref.isEmpty {
-        warnings[i] = "Both fields are required."
-        continue
-      }
+      // Blank custom row → silently ignored
+      if name.isEmpty { continue }
 
-      // Duplicate key (case-insensitive)
+      // Duplicate key among custom rows (case-insensitive)
       let hasDup = draftRows.enumerated().contains { j, other in
         j != i
         && !other.agentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -104,6 +136,17 @@ struct AgentMappingEditor: View {
       if hasDup {
         warnings[i] = "Duplicate agent name \"\(name)\"."
       }
+    }
+  }
+}
+
+// MARK: - TextField placeholder extension
+
+extension View {
+  func placeholder<Content: View>(when shouldShow: Bool, alignment: Alignment = .leading, @ViewBuilder placeholder: () -> Content) -> some View {
+    ZStack(alignment: alignment) {
+      placeholder().opacity(shouldShow ? 1 : 0)
+      self
     }
   }
 }

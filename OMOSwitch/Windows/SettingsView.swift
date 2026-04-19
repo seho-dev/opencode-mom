@@ -133,12 +133,12 @@ struct SettingsView: View {
 
           Divider()
 
-          sectionHeader("Category Mappings", count: draftCategoryMappings.count)
+          sectionHeader("Category Mappings", filled: draftCategoryMappings.filter { !$0.modelRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count, total: KnownKeys.categoryNames.count + draftCategoryMappings.filter { !KnownKeys.categoryNames.contains($0.categoryName) }.count)
           CategoryMappingEditor(mappings: $draftCategoryMappings)
 
           Divider()
 
-          sectionHeader("Agent Overrides", count: draftAgentOverrides.count)
+          sectionHeader("Agent Overrides", filled: draftAgentOverrides.filter { !$0.modelRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count, total: KnownKeys.agentNames.count + draftAgentOverrides.filter { !KnownKeys.agentNames.contains($0.agentName) }.count)
           AgentMappingEditor(overrides: $draftAgentOverrides)
         }
         .padding(20)
@@ -154,11 +154,11 @@ struct SettingsView: View {
     }
   }
 
-  private func sectionHeader(_ title: String, count: Int) -> some View {
+  private func sectionHeader(_ title: String, filled: Int, total: Int) -> some View {
     HStack {
       Text(title)
         .font(.headline)
-      Text("(\(count))")
+      Text("(\(filled)/\(total))")
         .foregroundStyle(.secondary)
         .font(.subheadline)
     }

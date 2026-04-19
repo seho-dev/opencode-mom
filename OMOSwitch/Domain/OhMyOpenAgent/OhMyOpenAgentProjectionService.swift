@@ -7,12 +7,16 @@ public struct OhMyOpenAgentProjectionService: Sendable {
 
         var agents: [String: Any] = [:]
         for override in group.agentOverrides {
-            agents[override.agentName] = ["model": override.modelRef]
+            let ref = override.modelRef.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !ref.isEmpty else { continue }
+            agents[override.agentName] = ["model": ref]
         }
 
         var categories: [String: Any] = [:]
         for mapping in group.categoryMappings {
-            categories[mapping.categoryName] = ["model": mapping.modelRef]
+            let ref = mapping.modelRef.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !ref.isEmpty else { continue }
+            categories[mapping.categoryName] = ["model": ref]
         }
 
         base["agents"] = agents

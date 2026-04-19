@@ -8,6 +8,8 @@ struct SettingsView: View {
   @State private var validationMessage: String?
   @State private var persistenceMessage: String?
   @State private var showingDeleteConfirmation = false
+  @State private var draftCategoryMappings: [ModelGroupCategoryMapping] = []
+  @State private var draftAgentOverrides: [ModelGroupAgentOverride] = []
 
   var body: some View {
     NavigationSplitView {
@@ -86,6 +88,8 @@ struct SettingsView: View {
         )
         baselineGroup = nil
         draftGroup = newGroup
+        draftCategoryMappings = []
+        draftAgentOverrides = []
         validationMessage = validationError(for: newGroup)
         persistenceMessage = nil
         selectedGroupID = newGroup.id
@@ -129,41 +133,13 @@ struct SettingsView: View {
 
           Divider()
 
-          sectionHeader("Category Mappings", count: group.categoryMappings.count)
-          if group.categoryMappings.isEmpty {
-            Text("No mappings")
-              .foregroundStyle(.secondary)
-          } else {
-            ForEach(group.categoryMappings, id: \.categoryName) { mapping in
-              HStack {
-                Text(mapping.categoryName)
-                  .fontWeight(.medium)
-                Spacer()
-                Text(mapping.modelRef)
-                  .foregroundStyle(.secondary)
-              }
-              .padding(.vertical, 2)
-            }
-          }
+          sectionHeader("Category Mappings", count: draftCategoryMappings.count)
+          CategoryMappingEditor(mappings: $draftCategoryMappings)
 
           Divider()
 
-          sectionHeader("Agent Overrides", count: group.agentOverrides.count)
-          if group.agentOverrides.isEmpty {
-            Text("No overrides")
-              .foregroundStyle(.secondary)
-          } else {
-            ForEach(group.agentOverrides, id: \.agentName) { override in
-              HStack {
-                Text(override.agentName)
-                  .fontWeight(.medium)
-                Spacer()
-                Text(override.modelRef)
-                  .foregroundStyle(.secondary)
-              }
-              .padding(.vertical, 2)
-            }
-          }
+          sectionHeader("Agent Overrides", count: draftAgentOverrides.count)
+          AgentMappingEditor(overrides: $draftAgentOverrides)
         }
         .padding(20)
       }
@@ -202,6 +178,8 @@ struct SettingsView: View {
         )
         baselineGroup = nil
         draftGroup = newGroup
+        draftCategoryMappings = []
+        draftAgentOverrides = []
         validationMessage = validationError(for: newGroup)
         persistenceMessage = nil
         selectedGroupID = newGroup.id
@@ -316,6 +294,8 @@ struct SettingsView: View {
       if baselineGroup != nil || draftGroup?.id != id {
         baselineGroup = nil
         draftGroup = nil
+        draftCategoryMappings = []
+        draftAgentOverrides = []
         validationMessage = nil
       }
       return
@@ -323,6 +303,8 @@ struct SettingsView: View {
 
     baselineGroup = group
     draftGroup = group
+    draftCategoryMappings = group.categoryMappings
+    draftAgentOverrides = group.agentOverrides
     validationMessage = validationError(for: group)
   }
 
@@ -364,6 +346,8 @@ struct SettingsView: View {
     draftGroup.name = draftGroup.name.trimmingCharacters(in: .whitespacesAndNewlines)
     let trimmedDescription = draftGroup.description?.trimmingCharacters(in: .whitespacesAndNewlines)
     draftGroup.description = trimmedDescription?.isEmpty == true ? nil : trimmedDescription
+    draftGroup.categoryMappings = draftCategoryMappings
+    draftGroup.agentOverrides = draftAgentOverrides
     draftGroup.updatedAt = Date()
 
     do {
@@ -383,11 +367,15 @@ struct SettingsView: View {
 
     if let baselineGroup {
       draftGroup = baselineGroup
+      draftCategoryMappings = baselineGroup.categoryMappings
+      draftAgentOverrides = baselineGroup.agentOverrides
       validationMessage = validationError(for: baselineGroup)
       return
     }
 
     draftGroup = nil
+    draftCategoryMappings = []
+    draftAgentOverrides = []
     validationMessage = nil
     selectedGroupID = nil
   }
@@ -399,6 +387,8 @@ struct SettingsView: View {
       try appStore.deleteGroup(id: id)
       baselineGroup = nil
       draftGroup = nil
+      draftCategoryMappings = []
+      draftAgentOverrides = []
       validationMessage = nil
       persistenceMessage = nil
       selectedGroupID = nil

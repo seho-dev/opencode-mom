@@ -36,15 +36,17 @@ struct CocoaStatusBarProvider: StatusBarProviding {
 }
 
 @MainActor
-final class StatusItemController: NSObject {
+final class StatusItemController: NSObject, NSMenuDelegate {
   let statusItem: StatusItemType
   let popoverController: QuickSwitchPopoverController
+  let appStore: AppStore
   private let settingsWindowControllerProvider: () -> SettingsWindowController
   private(set) lazy var statusMenu: NSMenu = makeStatusMenu()
 
   override init() {
     self.statusItem = CocoaStatusBarProvider().makeStatusItem(length: NSStatusItem.variableLength)
-    self.popoverController = QuickSwitchPopoverController()
+    self.appStore = .livePreview
+    self.popoverController = QuickSwitchPopoverController(appStore: appStore)
     self.settingsWindowControllerProvider = { SettingsWindowController() }
     super.init()
     configureStatusItem()
@@ -52,9 +54,11 @@ final class StatusItemController: NSObject {
 
   init(
     statusBarProvider: StatusBarProviding,
+    appStore: AppStore,
     popoverController: QuickSwitchPopoverController,
     settingsWindowControllerProvider: @escaping () -> SettingsWindowController
   ) {
+    self.appStore = appStore
     self.statusItem = statusBarProvider.makeStatusItem(length: NSStatusItem.variableLength)
     self.popoverController = popoverController
     self.settingsWindowControllerProvider = settingsWindowControllerProvider
@@ -72,18 +76,40 @@ final class StatusItemController: NSObject {
   }
 
   private func configureStatusItem() {
+    appStore.reload()
     statusItem.button?.title = "OMO"
     statusItem.menu = statusMenu
+    refreshMenuState()
   }
 
   private func makeStatusMenu() -> NSMenu {
     let menu = NSMenu()
-    menu.addItem(NSMenuItem(title: "Current Group", action: #selector(toggleQuickSwitchPopover), keyEquivalent: ""))
+    menu.delegate = self
+
+    let currentGroupItem = NSMenuItem(title: currentGroupMenuTitle(), action: nil, keyEquivalent: "")
+    currentGroupItem.isEnabled = false
+    menu.addItem(currentGroupItem)
     menu.addItem(NSMenuItem(title: "Open Settings", action: #selector(openSettings), keyEquivalent: ","))
     menu.addItem(NSMenuItem(title: "Reload", action: #selector(reload), keyEquivalent: "r"))
     menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
-    menu.items.forEach { $0.target = self }
+    menu.items.forEach {
+      if $0.action != nil {
+        $0.target = self
+      }
+    }
     return menu
+  }
+
+  func menuWillOpen(_ menu: NSMenu) {
+    refreshMenuState()
+  }
+
+  private func refreshMenuState() {
+    statusMenu.items.first?.title = currentGroupMenuTitle()
+  }
+
+  private func currentGroupMenuTitle() -> String {
+    "Current Group: \(appStore.currentGroupName ?? "None")"
   }
 
   @objc
@@ -108,6 +134,8 @@ final class StatusItemController: NSObject {
 
   @objc
   private func reload() {
+    appStore.reload()
+    refreshMenuState()
     popoverController.reloadContent()
   }
 

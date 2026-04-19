@@ -79,6 +79,7 @@ final class DependencyContainer {
   func makeStatusItemController() -> StatusItemController {
     StatusItemController(
       statusBarProvider: statusBarProvider,
+      appStore: appStore,
       popoverController: popoverControllerFactory(),
       settingsWindowControllerProvider: settingsWindowControllerFactory,
     )

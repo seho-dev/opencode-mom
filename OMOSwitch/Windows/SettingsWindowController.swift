@@ -16,7 +16,14 @@ private struct SettingsPlaceholderView: View {
 
 @MainActor
 final class SettingsWindowController: NSWindowController {
-  init() {
+  let appStore: AppStore
+
+  convenience init() {
+    self.init(appStore: .livePreview)
+  }
+
+  init(appStore: AppStore) {
+    self.appStore = appStore
     let hostingController = NSHostingController(rootView: SettingsPlaceholderView())
     let window = NSWindow(contentViewController: hostingController)
     window.title = "Settings"
@@ -27,7 +34,8 @@ final class SettingsWindowController: NSWindowController {
     shouldCascadeWindows = true
   }
 
-  init<Content: View>(rootView: Content) {
+  init<Content: View>(rootView: Content, appStore: AppStore = AppStore.livePreview) {
+    self.appStore = appStore
     let hostingController = NSHostingController(rootView: rootView)
     let window = NSWindow(contentViewController: hostingController)
     window.title = "Settings"

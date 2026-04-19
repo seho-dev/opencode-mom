@@ -17,13 +17,20 @@ private struct QuickSwitchPlaceholderView: View {
 @MainActor
 final class QuickSwitchPopoverController {
   let popover: NSPopover
+  let appStore: AppStore
 
-  init() {
+  convenience init() {
+    self.init(appStore: .livePreview)
+  }
+
+  init(appStore: AppStore) {
+    self.appStore = appStore
     self.popover = NSPopover()
     configurePopover()
   }
 
-  init(popover: NSPopover) {
+  init(popover: NSPopover, appStore: AppStore = AppStore.livePreview) {
+    self.appStore = appStore
     self.popover = popover
     configurePopover()
   }

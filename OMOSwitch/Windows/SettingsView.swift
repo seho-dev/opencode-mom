@@ -69,13 +69,30 @@ struct SettingsView: View {
   }
 
   private var emptyDetail: some View {
-    VStack(spacing: 8) {
+    VStack(spacing: 12) {
       Image(systemName: "sidebar.left")
         .font(.system(size: 36))
         .foregroundStyle(.secondary)
       Text("Select a group")
         .font(.title3)
         .foregroundStyle(.secondary)
+      Button {
+        let newGroup = ModelGroup(
+          name: "",
+          description: nil,
+          categoryMappings: [],
+          agentOverrides: [],
+          isEnabled: true
+        )
+        baselineGroup = nil
+        draftGroup = newGroup
+        validationMessage = validationError(for: newGroup)
+        persistenceMessage = nil
+        selectedGroupID = newGroup.id
+      } label: {
+        Label("New Group", systemImage: "plus")
+      }
+      .buttonStyle(.borderedProminent)
     }
   }
 

@@ -59,7 +59,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "CLIProxyAPI",
       "options": {
-        "baseURL": "http://localhost:8317/v1",
+        "baseURL": "https://example.invalid/v1",
         "apiKey": "SANITIZED_API_KEY_PLACEHOLDER"
       },
       "models": {

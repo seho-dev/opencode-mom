@@ -4,9 +4,11 @@ struct AgentMappingEditor: View {
   @Binding var overrides: [ModelGroupAgentOverride]
   @State private var draftRows: [DraftRow] = []
   @State private var warnings: [Int: String] = [:]
+  @State private var isSyncingFromSource = false
+  @State private var isSyncingToSource = false
 
   struct DraftRow: Identifiable, Equatable {
-    let id = UUID()
+    let id: String
     var agentName: String
     var modelRef: String
     var isKnownKey: Bool
@@ -56,14 +58,21 @@ struct AgentMappingEditor: View {
       }
 
       Button {
-        draftRows.append(DraftRow(agentName: "", modelRef: "", isKnownKey: false))
+        draftRows.append(DraftRow(id: UUID().uuidString, agentName: "", modelRef: "", isKnownKey: false))
       } label: {
         Label("Add Custom Agent", systemImage: "plus")
       }
     }
     .onAppear { syncFromSource() }
-    .onChange(of: overrides, perform: { _ in syncFromSource() })
+    .onChange(of: overrides, perform: { _ in
+      guard !isSyncingToSource else {
+        isSyncingToSource = false
+        return
+      }
+      syncFromSource()
+    })
     .onChange(of: draftRows, perform: { _ in
+      guard !isSyncingFromSource else { return }
       rebuildWarnings()
       syncToSource()
     })
@@ -72,21 +81,34 @@ struct AgentMappingEditor: View {
   // MARK: - Sync
 
   private func syncFromSource() {
+    isSyncingFromSource = true
+    defer { isSyncingFromSource = false }
+
     let existingOverrides = Dictionary(uniqueKeysWithValues: overrides.map { ($0.agentName, $0.modelRef) })
     let knownSet = Set(KnownKeys.agentNames)
+    var existingCustomIDs = draftRows
+      .filter { !$0.isKnownKey }
+      .map(\.id)
 
     var rows: [DraftRow] = []
 
     // Known keys first
     for name in KnownKeys.agentNames {
       let ref = existingOverrides[name] ?? ""
-      rows.append(DraftRow(agentName: name, modelRef: ref, isKnownKey: true))
+      rows.append(DraftRow(id: "known:\(name)", agentName: name, modelRef: ref, isKnownKey: true))
     }
 
     // Custom keys not in known list
     for override in overrides {
       if !knownSet.contains(override.agentName) {
-        rows.append(DraftRow(agentName: override.agentName, modelRef: override.modelRef, isKnownKey: false))
+        rows.append(
+          DraftRow(
+            id: existingCustomIDs.isEmpty ? UUID().uuidString : existingCustomIDs.removeFirst(),
+            agentName: override.agentName,
+            modelRef: override.modelRef,
+            isKnownKey: false
+          )
+        )
       }
     }
 
@@ -103,6 +125,7 @@ struct AgentMappingEditor: View {
         modelRef: row.modelRef.trimmingCharacters(in: .whitespacesAndNewlines)
       )
     }
+    isSyncingToSource = true
     overrides = cleaned
   }
 

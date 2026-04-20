@@ -4,9 +4,11 @@ struct CategoryMappingEditor: View {
   @Binding var mappings: [ModelGroupCategoryMapping]
   @State private var draftRows: [DraftRow] = []
   @State private var warnings: [Int: String] = [:]
+  @State private var isSyncingFromSource = false
+  @State private var isSyncingToSource = false
 
   struct DraftRow: Identifiable, Equatable {
-    let id = UUID()
+    let id: String
     var categoryName: String
     var modelRef: String
     var isKnownKey: Bool
@@ -56,14 +58,21 @@ struct CategoryMappingEditor: View {
       }
 
       Button {
-        draftRows.append(DraftRow(categoryName: "", modelRef: "", isKnownKey: false))
+        draftRows.append(DraftRow(id: UUID().uuidString, categoryName: "", modelRef: "", isKnownKey: false))
       } label: {
         Label("Add Custom Category", systemImage: "plus")
       }
     }
     .onAppear { syncFromSource() }
-    .onChange(of: mappings, perform: { _ in syncFromSource() })
+    .onChange(of: mappings, perform: { _ in
+      guard !isSyncingToSource else {
+        isSyncingToSource = false
+        return
+      }
+      syncFromSource()
+    })
     .onChange(of: draftRows, perform: { _ in
+      guard !isSyncingFromSource else { return }
       rebuildWarnings()
       syncToSource()
     })
@@ -72,19 +81,32 @@ struct CategoryMappingEditor: View {
   // MARK: - Sync
 
   private func syncFromSource() {
+    isSyncingFromSource = true
+    defer { isSyncingFromSource = false }
+
     let existingMappings = Dictionary(uniqueKeysWithValues: mappings.map { ($0.categoryName, $0.modelRef) })
     let knownSet = Set(KnownKeys.categoryNames)
+    var existingCustomIDs = draftRows
+      .filter { !$0.isKnownKey }
+      .map(\.id)
 
     var rows: [DraftRow] = []
 
     for name in KnownKeys.categoryNames {
       let ref = existingMappings[name] ?? ""
-      rows.append(DraftRow(categoryName: name, modelRef: ref, isKnownKey: true))
+      rows.append(DraftRow(id: "known:\(name)", categoryName: name, modelRef: ref, isKnownKey: true))
     }
 
     for mapping in mappings {
       if !knownSet.contains(mapping.categoryName) {
-        rows.append(DraftRow(categoryName: mapping.categoryName, modelRef: mapping.modelRef, isKnownKey: false))
+        rows.append(
+          DraftRow(
+            id: existingCustomIDs.isEmpty ? UUID().uuidString : existingCustomIDs.removeFirst(),
+            categoryName: mapping.categoryName,
+            modelRef: mapping.modelRef,
+            isKnownKey: false
+          )
+        )
       }
     }
 
@@ -101,6 +123,7 @@ struct CategoryMappingEditor: View {
         modelRef: row.modelRef.trimmingCharacters(in: .whitespacesAndNewlines)
       )
     }
+    isSyncingToSource = true
     mappings = cleaned
   }
 

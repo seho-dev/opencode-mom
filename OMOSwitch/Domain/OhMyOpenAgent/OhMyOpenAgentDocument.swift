@@ -51,10 +51,14 @@ public struct OhMyOpenAgentDocument: @unchecked Sendable {
     public func serialize() -> Data? {
         guard JSONSerialization.isValidJSONObject(rawDictionary) else { return nil }
         do {
-            return try JSONSerialization.data(
+            let data = try JSONSerialization.data(
                 withJSONObject: rawDictionary,
                 options: [.prettyPrinted, .sortedKeys]
             )
+            guard let jsonString = String(data: data, encoding: .utf8) else {
+                return data
+            }
+            return jsonString.replacingOccurrences(of: "\\/", with: "/").data(using: .utf8)
         } catch {
             return nil
         }

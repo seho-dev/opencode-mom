@@ -114,6 +114,26 @@ final class OhMyOpenAgentDocumentTests: XCTestCase {
         FixtureAssertions.assertValidJSON(data)
     }
 
+    func testSerializeDoesNotEscapeForwardSlashesInModelRefs() throws {
+        let doc = OhMyOpenAgentDocument(rawDictionary: [
+            "agents": [
+                "oracle": ["model": "provider/model/ref"]
+            ],
+            "categories": [
+                "quick": ["model": "vendor/fast-model"]
+            ]
+        ])
+
+        let data = try XCTUnwrap(doc.serialize())
+        let jsonString = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertTrue(jsonString.contains("provider/model/ref"))
+        XCTAssertTrue(jsonString.contains("vendor/fast-model"))
+        XCTAssertFalse(jsonString.contains("provider\\/model\\/ref"))
+        XCTAssertFalse(jsonString.contains("vendor\\/fast-model"))
+        FixtureAssertions.assertValidJSON(data)
+    }
+
     // MARK: - Round-trip equivalence
 
     func testRoundTripParseSerializeParseProducesEquivalentDocument() throws {

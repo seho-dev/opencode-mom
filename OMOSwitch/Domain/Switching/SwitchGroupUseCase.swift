@@ -19,32 +19,60 @@ public struct SwitchGroupUseCase: @unchecked Sendable {
     }
 
     public func switchTo(groupID: UUID) async -> SwitchResult {
+        let loadContextResult = loadContext(for: groupID)
+        if let failure = loadContextResult.failure {
+            return failure
+        }
+        guard let group = loadContextResult.group, let currentState = loadContextResult.currentState else {
+            return .failure("Failed to load switch context")
+        }
+        if currentState.selectedGroupID == groupID {
+            return .noOp
+        }
+        return persistProjection(group: group, currentState: currentState)
+    }
+
+    public func saveActiveGroupProjection(groupID: UUID) async -> SwitchResult {
+        let loadContextResult = loadContext(for: groupID)
+        if let failure = loadContextResult.failure {
+            return failure
+        }
+        guard let group = loadContextResult.group, let currentState = loadContextResult.currentState else {
+            return .failure("Failed to load switch context")
+        }
+        guard currentState.selectedGroupID == groupID else {
+            return .noOp
+        }
+        return persistProjection(group: group, currentState: currentState)
+    }
+
+    private func loadContext(for groupID: UUID) -> (group: ModelGroup?, currentState: AppSelectionState?, failure: SwitchResult?) {
         let groups: [ModelGroup]
         do {
             groups = try modelGroupRepository.load()
         } catch {
-            return .failure("Failed to load groups: \(error.localizedDescription)")
+            return (nil, nil, .failure("Failed to load groups: \(error.localizedDescription)"))
         }
 
         guard let group = groups.first(where: { $0.id == groupID }) else {
-            return .failure("Group not found")
+            return (nil, nil, .failure("Group not found"))
         }
 
         guard group.isEnabled else {
-            return .failure("Group is disabled")
+            return (nil, nil, .failure("Group is disabled"))
         }
 
         let currentState: AppSelectionState
         do {
             currentState = try appStateRepository.load()
         } catch {
-            return .failure("Failed to load app state: \(error.localizedDescription)")
+            return (nil, nil, .failure("Failed to load app state: \(error.localizedDescription)"))
         }
 
-        if currentState.selectedGroupID == groupID {
-            return .noOp
-        }
+        return (group, currentState, nil)
+    }
 
+    private func persistProjection(group: ModelGroup, currentState: AppSelectionState) -> SwitchResult {
         let loadResult = ohMyConfigRepository.load()
         let existingDoc: OhMyOpenAgentDocument
         switch loadResult {
@@ -92,7 +120,7 @@ public struct SwitchGroupUseCase: @unchecked Sendable {
         }
 
         var newState = currentState
-        newState.selectedGroupID = groupID
+        newState.selectedGroupID = group.id
         newState.selectedGroupName = group.name
         newState.lastSuccessfulWrite = LastSuccessfulWriteMetadata(
             target: "oh-my-openagent",

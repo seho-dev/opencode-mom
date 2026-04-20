@@ -56,19 +56,27 @@ final class AppStore: NSObject, ObservableObject {
     }
   }
 
-  func switchTo(groupID: UUID) async {
+  @discardableResult
+  func switchTo(groupID: UUID) async -> SwitchResult {
     isLoading = true
     let result = await switchUseCase.switchTo(groupID: groupID)
     isLoading = false
 
+    reload()
+
     switch result {
-    case .success, .noOp:
+    case .success(let projectionResult):
       lastSwitchError = nil
+      lastSwitchWarning = projectionResult.warnings.isEmpty ? nil : projectionResult.warnings.joined(separator: "; ")
+    case .noOp:
+      lastSwitchError = nil
+      lastSwitchWarning = "Already using this group."
     case .failure(let message):
       lastSwitchError = message
+      lastSwitchWarning = nil
     }
 
-    reload()
+    return result
   }
 
   func deleteGroup(id: UUID) throws {
@@ -85,7 +93,7 @@ final class AppStore: NSObject, ObservableObject {
     reload()
   }
 
-  func saveGroup(_ group: ModelGroup) throws {
+  func saveGroup(_ group: ModelGroup) async throws {
     var currentGroups = try modelGroupRepository.load()
     if let index = currentGroups.firstIndex(where: { $0.id == group.id }) {
       currentGroups[index] = group
@@ -94,6 +102,23 @@ final class AppStore: NSObject, ObservableObject {
     }
 
     try modelGroupRepository.save(currentGroups)
+
+    if currentGroupID == group.id {
+      let result = await switchUseCase.saveActiveGroupProjection(groupID: group.id)
+      switch result {
+      case .success(let projectionResult):
+        lastSwitchError = nil
+        lastSwitchWarning = projectionResult.warnings.isEmpty ? nil : projectionResult.warnings.joined(separator: "; ")
+      case .noOp:
+        lastSwitchError = nil
+        lastSwitchWarning = nil
+      case .failure(let message):
+        lastSwitchError = message
+        lastSwitchWarning = nil
+        throw NSError(domain: "AppStore.saveGroup", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+      }
+    }
+
     reload()
   }
 }

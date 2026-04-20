@@ -1,12 +1,30 @@
 import SwiftUI
 
 struct SettingsView: View {
+  private enum PersistenceMessageTone {
+    case success
+    case warning
+    case error
+
+    var color: Color {
+      switch self {
+      case .success:
+        .green
+      case .warning:
+        .orange
+      case .error:
+        .red
+      }
+    }
+  }
+
   @ObservedObject var appStore: AppStore
   @State private var selectedGroupID: UUID?
   @State private var draftGroup: ModelGroup?
   @State private var baselineGroup: ModelGroup?
   @State private var validationMessage: String?
   @State private var persistenceMessage: String?
+  @State private var persistenceMessageTone: PersistenceMessageTone = .error
   @State private var showingDeleteConfirmation = false
   @State private var draftCategoryMappings: [ModelGroupCategoryMapping] = []
   @State private var draftAgentOverrides: [ModelGroupAgentOverride] = []
@@ -113,7 +131,7 @@ struct SettingsView: View {
 
           if let persistenceMessage {
             Text(persistenceMessage)
-              .foregroundStyle(.red)
+              .foregroundStyle(persistenceMessageTone.color)
           }
 
           formSection(title: "Group Metadata") {
@@ -190,7 +208,7 @@ struct SettingsView: View {
       Spacer()
 
       Button("Save") {
-        saveDraft()
+        Task { await saveDraft() }
       }
       .disabled(!canSave)
 
@@ -205,9 +223,9 @@ struct SettingsView: View {
       .disabled(selectedGroupID == nil)
       .foregroundStyle(.red)
 
-      if appStore.groups.contains(where: { $0.id == group.id }) && group.id != appStore.currentGroupID {
+      if group.id != appStore.currentGroupID {
         Button("Switch To This Group") {
-          Task { await appStore.switchTo(groupID: group.id) }
+          Task { await switchToDraftGroup() }
         }
       }
     }
@@ -316,6 +334,11 @@ struct SettingsView: View {
     persistenceMessage = nil
   }
 
+  private func setPersistenceMessage(_ message: String?, tone: PersistenceMessageTone = .error) {
+    persistenceMessage = message
+    persistenceMessageTone = tone
+  }
+
   private func validationError(for group: ModelGroup) -> String? {
     let trimmedName = group.name.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmedName.isEmpty {
@@ -335,12 +358,14 @@ struct SettingsView: View {
     return nil
   }
 
-  private func saveDraft() {
-    guard var draftGroup else { return }
+  @discardableResult
+  private func persistDraft(showSuccessMessage: Bool) async -> ModelGroup? {
+    guard var draftGroup else { return nil }
 
     if let validationMessage = validationError(for: draftGroup) {
       self.validationMessage = validationMessage
-      return
+      setPersistenceMessage("Fix validation errors before saving.")
+      return nil
     }
 
     draftGroup.name = draftGroup.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -351,15 +376,60 @@ struct SettingsView: View {
     draftGroup.updatedAt = Date()
 
     do {
-      try appStore.saveGroup(draftGroup)
+      try await appStore.saveGroup(draftGroup)
       baselineGroup = draftGroup
       self.draftGroup = draftGroup
       selectedGroupID = draftGroup.id
       validationMessage = nil
-      persistenceMessage = nil
+      if showSuccessMessage {
+        setPersistenceMessage("Saved \(draftGroup.name).", tone: .success)
+      } else {
+        persistenceMessage = nil
+      }
+      return draftGroup
     } catch {
-      persistenceMessage = error.localizedDescription
+      setPersistenceMessage(error.localizedDescription)
+      return nil
     }
+  }
+
+  private func saveDraft() async {
+    _ = await persistDraft(showSuccessMessage: true)
+  }
+
+  private func switchFeedbackMessage(for result: SwitchResult, groupName: String) -> (message: String, tone: PersistenceMessageTone) {
+    switch result {
+    case .success(let projectionResult):
+      if projectionResult.warnings.isEmpty {
+        return ("Switched to \(groupName).", .success)
+      }
+      return ("Switched to \(groupName) with warnings: \(projectionResult.warnings.joined(separator: "; "))", .warning)
+    case .noOp:
+      return ("\(groupName) is already active.", .warning)
+    case .failure(let message):
+      return (message, .error)
+    }
+  }
+
+  private func switchToDraftGroup() async {
+    guard let draftGroup else { return }
+
+    if let validationMessage = validationError(for: draftGroup) {
+      self.validationMessage = validationMessage
+      setPersistenceMessage("Fix validation errors before switching.")
+      return
+    }
+
+    guard let savedGroup = await persistDraft(showSuccessMessage: false) else {
+      if validationMessage == nil {
+        setPersistenceMessage("Save failed. Group was not switched.")
+      }
+      return
+    }
+
+    let result = await appStore.switchTo(groupID: savedGroup.id)
+    let feedback = switchFeedbackMessage(for: result, groupName: savedGroup.name)
+    setPersistenceMessage(feedback.message, tone: feedback.tone)
   }
 
   private func cancelEditing() {
@@ -393,7 +463,7 @@ struct SettingsView: View {
       persistenceMessage = nil
       selectedGroupID = nil
     } catch {
-      persistenceMessage = error.localizedDescription
+      setPersistenceMessage(error.localizedDescription)
     }
   }
 }

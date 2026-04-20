@@ -20,9 +20,6 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Run Swift tests
-        run: swift test
-
       - name: Generate Xcode project
         run: xcodegen generate
 

@@ -4,7 +4,7 @@ enum OMOSwitchApp {
   @MainActor
   private static var retainedDelegate: AppDelegate?
 
-  nonisolated
+  @MainActor
   static func bootstrap(application: NSApplication) {
     let delegate = AppDelegate()
     retainedDelegate = delegate

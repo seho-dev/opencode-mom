@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build DMG and publish release
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Run Swift tests
+        run: swift test
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build Release app
+        run: |
+          xcodebuild \
+            -project omo-switch.xcodeproj \
+            -scheme OMOSwitch \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+
+      - name: Package DMG
+        run: |
+          set -euo pipefail
+
+          APP_PATH="build/Build/Products/Release/omo-switch.app"
+          DMG_ROOT="build/dmg-root"
+          DMG_NAME="omo-switch-${GITHUB_REF_NAME}-macos.dmg"
+
+          test -d "$APP_PATH"
+          rm -rf "$DMG_ROOT"
+          mkdir -p "$DMG_ROOT"
+          cp -R "$APP_PATH" "$DMG_ROOT/"
+          ln -s /Applications "$DMG_ROOT/Applications"
+
+          hdiutil create \
+            -volname "omo-switch" \
+            -srcfolder "$DMG_ROOT" \
+            -ov \
+            -format UDZO \
+            "$DMG_NAME"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: omo-switch-${{ github.ref_name }}-macos.dmg
+          generate_release_notes: true

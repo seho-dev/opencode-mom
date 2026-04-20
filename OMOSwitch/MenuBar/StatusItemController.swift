@@ -106,6 +106,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
   private func refreshMenuState() {
     statusMenu.items.first?.title = currentGroupMenuTitle()
+    rebuildGroupMenuItems()
+  }
+
+  private func rebuildGroupMenuItems() {
+    while statusMenu.items.count > 4 {
+      statusMenu.removeItem(at: 1)
+    }
+
+    let enabledGroups = appStore.groups.filter(\.isEnabled)
+    for group in enabledGroups.reversed() {
+      let menuItem = NSMenuItem(title: group.name, action: #selector(switchToGroup(_:)), keyEquivalent: "")
+      menuItem.target = self
+      menuItem.representedObject = group.id
+      menuItem.state = group.id == appStore.currentGroupID ? .on : .off
+      statusMenu.insertItem(menuItem, at: 1)
+    }
   }
 
   private func currentGroupMenuTitle() -> String {
@@ -127,9 +143,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
   @objc
   func openSettings() {
+    NSApplication.shared.activate(ignoringOtherApps: true)
     let controller = settingsWindowControllerProvider()
     controller.showWindow(nil)
-    NSApplication.shared.activate(ignoringOtherApps: true)
   }
 
   @objc
@@ -137,6 +153,20 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     appStore.reload()
     refreshMenuState()
     popoverController.reloadContent()
+  }
+
+  @objc
+  private func switchToGroup(_ sender: NSMenuItem) {
+    guard let groupID = sender.representedObject as? UUID else {
+      return
+    }
+
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await appStore.switchTo(groupID: groupID)
+      refreshMenuState()
+      popoverController.reloadContent()
+    }
   }
 
   @objc

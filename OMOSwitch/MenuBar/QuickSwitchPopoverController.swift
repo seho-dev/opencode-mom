@@ -17,8 +17,8 @@ final class QuickSwitchPopoverController {
     configurePopover()
   }
 
-  init(popover: NSPopover, appStore: AppStore = AppStore.livePreview) {
-    self.appStore = appStore
+  init(popover: NSPopover, appStore: AppStore? = nil) {
+    self.appStore = appStore ?? .livePreview
     self.popover = popover
     configurePopover()
   }

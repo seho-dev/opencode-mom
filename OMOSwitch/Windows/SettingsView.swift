@@ -1,6 +1,15 @@
 import SwiftUI
 
 struct SettingsView: View {
+  struct SelectionSyncState: Equatable {
+    let selectedGroupID: UUID?
+    let activeGroupID: UUID?
+    let baselineGroup: ModelGroup?
+    let draftGroup: ModelGroup?
+    let draftCategoryMappings: [ModelGroupCategoryMapping]
+    let draftAgentOverrides: [ModelGroupAgentOverride]
+  }
+
   private enum PersistenceMessageTone {
     case success
     case warning
@@ -36,9 +45,12 @@ struct SettingsView: View {
       detail
     }
     .frame(minWidth: 700, minHeight: 500)
-    .onAppear { appStore.reload() }
-    .onChange(of: selectedGroupID) { newValue in
-      loadDraft(for: newValue)
+    .onAppear {
+      appStore.reload()
+      syncSelectionFromActiveGroupIfSafe()
+    }
+    .onChange(of: appStore.currentGroupID) { _ in
+      syncSelectionFromActiveGroupIfSafe()
     }
   }
 
@@ -65,6 +77,9 @@ struct SettingsView: View {
       }
       .tag(group.id)
     }
+    .onChange(of: selectedGroupID) { newValue in
+      loadDraft(for: newValue)
+    }
     .listStyle(.sidebar)
     .overlay {
       if displayGroups.isEmpty {
@@ -81,6 +96,7 @@ struct SettingsView: View {
     Group {
       if let group = selectedGroup {
         groupDetail(group)
+          .id(group.id)
       } else {
         emptyDetail
       }
@@ -303,6 +319,43 @@ struct SettingsView: View {
 
   private var canSave: Bool {
     draftGroup != nil && validationMessage == nil
+  }
+
+  private var selectionSyncState: SelectionSyncState {
+    SelectionSyncState(
+      selectedGroupID: selectedGroupID,
+      activeGroupID: appStore.currentGroupID,
+      baselineGroup: baselineGroup,
+      draftGroup: draftGroup,
+      draftCategoryMappings: draftCategoryMappings,
+      draftAgentOverrides: draftAgentOverrides,
+    )
+  }
+
+  private var hasUnsavedLocalDraft: Bool {
+    SettingsView.shouldPreserveSelectedGroupID(for: selectionSyncState)
+  }
+
+  private func syncSelectionFromActiveGroupIfSafe() {
+    guard hasUnsavedLocalDraft == false else { return }
+    guard selectedGroupID != appStore.currentGroupID else { return }
+    selectedGroupID = appStore.currentGroupID
+  }
+
+  static func shouldPreserveSelectedGroupID(for state: SelectionSyncState) -> Bool {
+    if state.baselineGroup == nil {
+      return state.draftGroup != nil
+    }
+
+    guard let baselineGroup = state.baselineGroup, let draftGroup = state.draftGroup else {
+      return false
+    }
+
+    return draftGroup.name != baselineGroup.name
+      || draftGroup.description != baselineGroup.description
+      || draftGroup.isEnabled != baselineGroup.isEnabled
+      || state.draftCategoryMappings != baselineGroup.categoryMappings
+      || state.draftAgentOverrides != baselineGroup.agentOverrides
   }
 
   private func loadDraft(for id: UUID?) {

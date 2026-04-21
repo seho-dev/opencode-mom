@@ -116,6 +116,7 @@ final class AppShellCompositionTests: XCTestCase {
 
     XCTAssertTrue(first === sharedSettingsWindowController)
     XCTAssertTrue(first === second)
+    XCTAssertEqual(first.window?.isReleasedWhenClosed, false)
   }
 
   private func makeStore() -> AppStore {

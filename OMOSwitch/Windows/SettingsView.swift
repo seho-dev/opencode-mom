@@ -1,5 +1,73 @@
 import SwiftUI
 
+struct GlobalSettingsView: View {
+  @ObservedObject var appStore: AppStore
+  @State private var persistenceMessage: String?
+  @State private var persistenceMessageColor: Color = .secondary
+  @State private var isUpdatingLaunchAtLogin = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 12) {
+        Toggle("Launch at login", isOn: launchAtLoginToggle)
+          .disabled(isUpdatingLaunchAtLogin)
+
+        Text("Applies to omo-switch globally, not any individual group.")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+
+        if let launchAtLoginStatusMessage = appStore.launchAtLoginStatusMessage {
+          Text(launchAtLoginStatusMessage)
+            .font(.subheadline)
+            .foregroundStyle(.orange)
+        }
+
+        if let persistenceMessage {
+          Text(persistenceMessage)
+            .font(.subheadline)
+            .foregroundStyle(persistenceMessageColor)
+        }
+      }
+
+      Spacer()
+    }
+    .padding(20)
+    .frame(minWidth: 420, minHeight: 180)
+    .onAppear {
+      appStore.reload()
+    }
+  }
+
+  private var launchAtLoginToggle: Binding<Bool> {
+    Binding(
+      get: { appStore.launchAtLoginEnabled },
+      set: { newValue in
+        Task { await updateLaunchAtLogin(newValue) }
+      }
+    )
+  }
+
+  private func updateLaunchAtLogin(_ isEnabled: Bool) async {
+    guard isUpdatingLaunchAtLogin == false else { return }
+    isUpdatingLaunchAtLogin = true
+    defer { isUpdatingLaunchAtLogin = false }
+
+    do {
+      try appStore.setLaunchAtLoginEnabled(isEnabled)
+      if let launchAtLoginStatusMessage = appStore.launchAtLoginStatusMessage {
+        persistenceMessage = launchAtLoginStatusMessage
+        persistenceMessageColor = .orange
+      } else {
+        persistenceMessage = isEnabled ? "Launch at login enabled." : "Launch at login disabled."
+        persistenceMessageColor = .green
+      }
+    } catch {
+      persistenceMessage = error.localizedDescription
+      persistenceMessageColor = .red
+    }
+  }
+}
+
 struct SettingsView: View {
   struct SelectionSyncState: Equatable {
     let selectedGroupID: UUID?
@@ -8,6 +76,12 @@ struct SettingsView: View {
     let draftGroup: ModelGroup?
     let draftCategoryMappings: [ModelGroupCategoryMapping]
     let draftAgentOverrides: [ModelGroupAgentOverride]
+    let draftOpenCodeAgentOverrides: [ModelGroupAgentOverride]
+  }
+
+  struct OpenCodeAgentOverrideSectionCounts: Equatable {
+    let filled: Int
+    let total: Int
   }
 
   private enum PersistenceMessageTone {
@@ -27,6 +101,14 @@ struct SettingsView: View {
     }
   }
 
+  private static let lastUpdatedFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = .current
+    formatter.dateFormat = "yyyy-MM-dd HH:mm"
+    return formatter
+  }()
+
   @ObservedObject var appStore: AppStore
   @State private var selectedGroupID: UUID?
   @State private var draftGroup: ModelGroup?
@@ -37,6 +119,7 @@ struct SettingsView: View {
   @State private var showingDeleteConfirmation = false
   @State private var draftCategoryMappings: [ModelGroupCategoryMapping] = []
   @State private var draftAgentOverrides: [ModelGroupAgentOverride] = []
+  @State private var draftOpenCodeAgentOverrides: [ModelGroupAgentOverride] = []
 
   var body: some View {
     NavigationSplitView {
@@ -118,12 +201,14 @@ struct SettingsView: View {
           description: nil,
           categoryMappings: [],
           agentOverrides: [],
+          openCodeAgentOverrides: [],
           isEnabled: true
         )
         baselineGroup = nil
         draftGroup = newGroup
         draftCategoryMappings = []
         draftAgentOverrides = []
+        draftOpenCodeAgentOverrides = []
         validationMessage = validationError(for: newGroup)
         persistenceMessage = nil
         selectedGroupID = newGroup.id
@@ -162,7 +247,7 @@ struct SettingsView: View {
           }
 
           LabeledContent("Last Updated") {
-            Text(group.updatedAt, style: .date)
+            Text(Self.lastUpdatedFormatter.string(from: group.updatedAt))
           }
 
           Divider()
@@ -174,6 +259,19 @@ struct SettingsView: View {
 
           sectionHeader("Agent Overrides", filled: draftAgentOverrides.filter { !$0.modelRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count, total: KnownKeys.agentNames.count + draftAgentOverrides.filter { !KnownKeys.agentNames.contains($0.agentName) }.count)
           AgentMappingEditor(overrides: $draftAgentOverrides)
+
+          Divider()
+
+          let openCodeCounts = SettingsView.openCodeAgentOverrideSectionCounts(
+            overrides: draftOpenCodeAgentOverrides,
+            discoveredAgentNames: appStore.discoveredOpenCodeAgentNames
+          )
+          sectionHeader("OpenCode Agent Overrides", filled: openCodeCounts.filled, total: openCodeCounts.total)
+          OpenCodeAgentMappingEditor(
+            overrides: $draftOpenCodeAgentOverrides,
+            discoveredAgentNames: appStore.discoveredOpenCodeAgentNames,
+            discoveryError: appStore.openCodeAgentDiscoveryError
+          )
         }
         .padding(20)
       }
@@ -208,12 +306,14 @@ struct SettingsView: View {
           description: nil,
           categoryMappings: [],
           agentOverrides: [],
+          openCodeAgentOverrides: [],
           isEnabled: true
         )
         baselineGroup = nil
         draftGroup = newGroup
         draftCategoryMappings = []
         draftAgentOverrides = []
+        draftOpenCodeAgentOverrides = []
         validationMessage = validationError(for: newGroup)
         persistenceMessage = nil
         selectedGroupID = newGroup.id
@@ -321,6 +421,45 @@ struct SettingsView: View {
     draftGroup != nil && validationMessage == nil
   }
 
+  static func openCodeAgentOverrideSectionCounts(
+    overrides: [ModelGroupAgentOverride],
+    discoveredAgentNames: [String]
+  ) -> OpenCodeAgentOverrideSectionCounts {
+    let discoveredAgentNameSet = Set(discoveredAgentNames)
+    let filled = overrides.filter { override in
+      discoveredAgentNameSet.contains(override.agentName)
+        && override.modelRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }.count
+
+    return OpenCodeAgentOverrideSectionCounts(filled: filled, total: discoveredAgentNames.count)
+  }
+
+  static func retainedOpenCodeAgentOverrides(
+    from group: ModelGroup,
+    discoveredAgentNames _: [String],
+    discoveryError _: String?
+  ) -> [ModelGroupAgentOverride] {
+    return group.openCodeAgentOverrides
+  }
+
+  static func persistedDraftGroup(
+    draftGroup: ModelGroup,
+    draftCategoryMappings: [ModelGroupCategoryMapping],
+    draftAgentOverrides: [ModelGroupAgentOverride],
+    draftOpenCodeAgentOverrides: [ModelGroupAgentOverride],
+    updatedAt: Date
+  ) -> ModelGroup {
+    var persistedGroup = draftGroup
+    persistedGroup.name = persistedGroup.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedDescription = persistedGroup.description?.trimmingCharacters(in: .whitespacesAndNewlines)
+    persistedGroup.description = trimmedDescription?.isEmpty == true ? nil : trimmedDescription
+    persistedGroup.categoryMappings = draftCategoryMappings
+    persistedGroup.agentOverrides = draftAgentOverrides
+    persistedGroup.openCodeAgentOverrides = draftOpenCodeAgentOverrides
+    persistedGroup.updatedAt = updatedAt
+    return persistedGroup
+  }
+
   private var selectionSyncState: SelectionSyncState {
     SelectionSyncState(
       selectedGroupID: selectedGroupID,
@@ -329,6 +468,7 @@ struct SettingsView: View {
       draftGroup: draftGroup,
       draftCategoryMappings: draftCategoryMappings,
       draftAgentOverrides: draftAgentOverrides,
+      draftOpenCodeAgentOverrides: draftOpenCodeAgentOverrides,
     )
   }
 
@@ -356,6 +496,7 @@ struct SettingsView: View {
       || draftGroup.isEnabled != baselineGroup.isEnabled
       || state.draftCategoryMappings != baselineGroup.categoryMappings
       || state.draftAgentOverrides != baselineGroup.agentOverrides
+      || state.draftOpenCodeAgentOverrides != baselineGroup.openCodeAgentOverrides
   }
 
   private func loadDraft(for id: UUID?) {
@@ -367,6 +508,7 @@ struct SettingsView: View {
         draftGroup = nil
         draftCategoryMappings = []
         draftAgentOverrides = []
+        draftOpenCodeAgentOverrides = []
         validationMessage = nil
       }
       return
@@ -376,6 +518,11 @@ struct SettingsView: View {
     draftGroup = group
     draftCategoryMappings = group.categoryMappings
     draftAgentOverrides = group.agentOverrides
+    draftOpenCodeAgentOverrides = SettingsView.retainedOpenCodeAgentOverrides(
+      from: group,
+      discoveredAgentNames: appStore.discoveredOpenCodeAgentNames,
+      discoveryError: appStore.openCodeAgentDiscoveryError
+    )
     validationMessage = validationError(for: group)
   }
 
@@ -421,12 +568,13 @@ struct SettingsView: View {
       return nil
     }
 
-    draftGroup.name = draftGroup.name.trimmingCharacters(in: .whitespacesAndNewlines)
-    let trimmedDescription = draftGroup.description?.trimmingCharacters(in: .whitespacesAndNewlines)
-    draftGroup.description = trimmedDescription?.isEmpty == true ? nil : trimmedDescription
-    draftGroup.categoryMappings = draftCategoryMappings
-    draftGroup.agentOverrides = draftAgentOverrides
-    draftGroup.updatedAt = Date()
+    draftGroup = SettingsView.persistedDraftGroup(
+      draftGroup: draftGroup,
+      draftCategoryMappings: draftCategoryMappings,
+      draftAgentOverrides: draftAgentOverrides,
+      draftOpenCodeAgentOverrides: draftOpenCodeAgentOverrides,
+      updatedAt: Date()
+    )
 
     do {
       try await appStore.saveGroup(draftGroup)
@@ -492,6 +640,11 @@ struct SettingsView: View {
       draftGroup = baselineGroup
       draftCategoryMappings = baselineGroup.categoryMappings
       draftAgentOverrides = baselineGroup.agentOverrides
+      draftOpenCodeAgentOverrides = SettingsView.retainedOpenCodeAgentOverrides(
+        from: baselineGroup,
+        discoveredAgentNames: appStore.discoveredOpenCodeAgentNames,
+        discoveryError: appStore.openCodeAgentDiscoveryError
+      )
       validationMessage = validationError(for: baselineGroup)
       return
     }
@@ -499,6 +652,7 @@ struct SettingsView: View {
     draftGroup = nil
     draftCategoryMappings = []
     draftAgentOverrides = []
+    draftOpenCodeAgentOverrides = []
     validationMessage = nil
     selectedGroupID = nil
   }
@@ -512,6 +666,7 @@ struct SettingsView: View {
       draftGroup = nil
       draftCategoryMappings = []
       draftAgentOverrides = []
+      draftOpenCodeAgentOverrides = []
       validationMessage = nil
       persistenceMessage = nil
       selectedGroupID = nil

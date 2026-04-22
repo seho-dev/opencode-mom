@@ -14,6 +14,7 @@ final class SettingsViewSelectionSyncTests: XCTestCase {
       draftGroup: nil,
       draftCategoryMappings: [],
       draftAgentOverrides: [],
+      draftOpenCodeAgentOverrides: [],
     )
 
     XCTAssertFalse(SettingsView.shouldPreserveSelectedGroupID(for: state))
@@ -29,6 +30,7 @@ final class SettingsViewSelectionSyncTests: XCTestCase {
       draftGroup: group,
       draftCategoryMappings: group.categoryMappings,
       draftAgentOverrides: group.agentOverrides,
+      draftOpenCodeAgentOverrides: group.openCodeAgentOverrides,
     )
 
     XCTAssertFalse(SettingsView.shouldPreserveSelectedGroupID(for: state))
@@ -46,6 +48,7 @@ final class SettingsViewSelectionSyncTests: XCTestCase {
       draftGroup: dirtyDraft,
       draftCategoryMappings: group.categoryMappings,
       draftAgentOverrides: group.agentOverrides,
+      draftOpenCodeAgentOverrides: group.openCodeAgentOverrides,
     )
 
     XCTAssertTrue(SettingsView.shouldPreserveSelectedGroupID(for: state))
@@ -62,6 +65,7 @@ final class SettingsViewSelectionSyncTests: XCTestCase {
       draftGroup: group,
       draftCategoryMappings: dirtyMappings,
       draftAgentOverrides: group.agentOverrides,
+      draftOpenCodeAgentOverrides: group.openCodeAgentOverrides,
     )
 
     XCTAssertTrue(SettingsView.shouldPreserveSelectedGroupID(for: state))
@@ -78,6 +82,24 @@ final class SettingsViewSelectionSyncTests: XCTestCase {
       draftGroup: group,
       draftCategoryMappings: group.categoryMappings,
       draftAgentOverrides: dirtyOverrides,
+      draftOpenCodeAgentOverrides: group.openCodeAgentOverrides,
+    )
+
+    XCTAssertTrue(SettingsView.shouldPreserveSelectedGroupID(for: state))
+  }
+
+  func testPreservesSelectionWhenOpenCodeAgentOverridesAreDirty() {
+    let group = makeGroup(id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!, name: "Primary")
+    let dirtyOpenCodeOverrides = [ModelGroupAgentOverride(agentName: "oracle", modelRef: "openai/o3")]
+
+    let state = SettingsView.SelectionSyncState(
+      selectedGroupID: group.id,
+      activeGroupID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+      baselineGroup: group,
+      draftGroup: group,
+      draftCategoryMappings: group.categoryMappings,
+      draftAgentOverrides: group.agentOverrides,
+      draftOpenCodeAgentOverrides: dirtyOpenCodeOverrides,
     )
 
     XCTAssertTrue(SettingsView.shouldPreserveSelectedGroupID(for: state))
@@ -93,6 +115,7 @@ final class SettingsViewSelectionSyncTests: XCTestCase {
       draftGroup: draftGroup,
       draftCategoryMappings: draftGroup.categoryMappings,
       draftAgentOverrides: draftGroup.agentOverrides,
+      draftOpenCodeAgentOverrides: draftGroup.openCodeAgentOverrides,
     )
 
     XCTAssertTrue(SettingsView.shouldPreserveSelectedGroupID(for: state))
@@ -107,6 +130,9 @@ final class SettingsViewSelectionSyncTests: XCTestCase {
       ],
       agentOverrides: [
         ModelGroupAgentOverride(agentName: "general", modelRef: "cliproxyapi/gpt-5.4")
+      ],
+      openCodeAgentOverrides: [
+        ModelGroupAgentOverride(agentName: "oracle", modelRef: "cliproxyapi/gpt-5.4-mini")
       ],
       updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
     )

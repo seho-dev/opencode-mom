@@ -1,20 +1,23 @@
 # omo-switch
 
-omo-switch is a lightweight macOS menu bar app for switching Oh My OpenAgent model groups. It lets you maintain named groups of category mappings and agent overrides, then write the selected group into your `oh-my-openagent.json` configuration.
+omo-switch is a lightweight macOS menu bar app for switching Oh My OpenAgent model groups. It lets you maintain named groups of category mappings, Oh My OpenAgent agent overrides, and optional OpenCode agent model overrides, then sync the selected group into the matching config files.
 
 ## Features
 
 - Menu bar app with no Dock icon.
 - Create and edit named model groups.
 - Switch active groups directly from the menu bar.
-- Save changes to the active group and automatically sync them to `oh-my-openagent.json`.
+- Save changes to the active group and automatically sync them to the relevant target config files.
 - Preserve existing unknown fields in the Oh My OpenAgent config where possible.
+- Conditionally sync `~/.config/opencode/opencode.json` when the selected or active group contains OpenCode overrides with non-empty model values.
+- Patch only `agent.<name>.model` on the OpenCode side, while keeping other agent fields and unrelated top-level config untouched.
 - Writes model references without escaping forward slashes, for example `openai/gpt-5.4`.
 
 ## Requirements
 
 - macOS 13.0 or later.
 - Oh My OpenAgent config location: `~/.config/opencode/oh-my-openagent.json`.
+- Optional OpenCode config location: `~/.config/opencode/opencode.json`.
 
 ## Download
 
@@ -53,25 +56,42 @@ You can also right-click `omo-switch.app` and choose **Open** for the first laun
 6. Click **Save**.
 7. Use the menu bar group list to switch active groups directly.
 
-When you save the currently active group, omo-switch immediately rewrites `oh-my-openagent.json` with the latest values. When you switch to another group, omo-switch also writes that group to `oh-my-openagent.json`.
+When you switch to another group, omo-switch rewrites `~/.config/opencode/oh-my-openagent.json` for that group.
+
+When you save the currently active group, omo-switch immediately reapplies that active group's projection to the same target config.
+
+If the selected or active group contains OpenCode overrides with effective model values, omo-switch also syncs `~/.config/opencode/opencode.json` in the same operation.
+
+If the group has no effective OpenCode overrides, omo-switch skips `opencode.json` entirely. A missing OpenCode config is only a blocker when the group actually needs OpenCode sync.
+
+On the OpenCode side, omo-switch only patches `agent.<name>.model`. It does not rewrite other fields inside the agent object, and it does not touch unrelated top-level keys such as `$schema`, `plugin`, or `provider`.
 
 ## Configuration files
 
-omo-switch stores its own group data separately from the target Oh My OpenAgent config.
+omo-switch stores its own group data separately from the target app configs.
 
 | File | Purpose |
 | --- | --- |
 | `~/.config/omo-switch/groups.json` | omo-switch group definitions |
 | `~/.config/omo-switch/state.json` | currently selected group and write metadata |
-| `~/.config/opencode/oh-my-openagent.json` | target Oh My OpenAgent config rewritten on switch/save |
+| `~/.config/opencode/oh-my-openagent.json` | target Oh My OpenAgent config rewritten on switch and when saving the active group |
+| `~/.config/opencode/opencode.json` | conditional OpenCode sync target, patched only when the group includes effective OpenCode agent model overrides |
 
-Before rewriting `oh-my-openagent.json`, omo-switch creates backups under the omo-switch config directory.
+Before rewriting target configs, omo-switch creates backups under the omo-switch config directory.
 
 ## Development
 
 Run the test suite:
 
 ```bash
+swift test
+```
+
+Run the task-specific verification commands:
+
+```bash
+swift test --filter EndToEndSwitchingTests
+swift test --filter AppStoreTests
 swift test
 ```
 

@@ -56,8 +56,152 @@ final class EndToEndSwitchingTests: XCTestCase {
         let state = try makeAppStateRepository(harness).load()
         XCTAssertEqual(state.selectedGroupID, group.id)
         XCTAssertEqual(state.selectedGroupName, "Shipping")
-        XCTAssertEqual(state.lastSuccessfulWrite?.target, "oh-my-openagent")
+        XCTAssertEqual(state.lastSuccessfulWrite?.target, "switch-group")
         XCTAssertNotNil(state.lastSuccessfulWrite?.wroteAt)
+    }
+
+    func testSwitchWithOpenCodeOverridesRewritesBothTargets() async throws {
+        let harness = TemporaryHomeHarness()
+        try harness.setupOmoSwitchConfig()
+        try harness.setupOpencodeConfig()
+
+        let group = makeGroup(
+            id: UUID(uuidString: "99999999-9999-9999-9999-999999999999")!,
+            name: "Dual Target",
+            categoryMappings: [
+                ModelGroupCategoryMapping(categoryName: "quick", modelRef: "cliproxyapi/minimax-m2.7"),
+                ModelGroupCategoryMapping(categoryName: "unspecified-high", modelRef: "cliproxyapi/gpt-5.4-xhigh"),
+            ],
+            agentOverrides: [
+                ModelGroupAgentOverride(agentName: "oracle", modelRef: "cliproxyapi/gpt-5.4-xhigh")
+            ],
+            openCodeAgentOverrides: [
+                ModelGroupAgentOverride(agentName: "creative-ui-coder", modelRef: "cliproxyapi/gpt-5.4"),
+                ModelGroupAgentOverride(agentName: "Jenny", modelRef: "cliproxyapi/gpt-5.4-xhigh"),
+            ]
+        )
+        try makeModelGroupRepository(harness).save([group])
+        try harness.installFixture(named: "current-oh-my-openagent.json", subdirectory: "ohmy", to: "oh-my-openagent.json")
+        try harness.installFixture(named: "current-opencode.json", subdirectory: "opencode", to: "opencode.json")
+
+        let useCase = makeSwitchUseCase(harness)
+        let result = await useCase.switchTo(groupID: group.id)
+
+        guard case .success = result else {
+            XCTFail("Expected success, got \(result)")
+            return
+        }
+
+        let ohMyRepository = makeOhMyConfigRepository(harness)
+        let openCodeRepository = makeOpenCodeConfigRepository(harness)
+
+        guard case .success(let ohMyDocument) = ohMyRepository.load() else {
+            XCTFail("Expected written oh-my-openagent config to load")
+            return
+        }
+        guard case .success(let openCodeDocument) = openCodeRepository.load() else {
+            XCTFail("Expected written opencode config to load")
+            return
+        }
+
+        XCTAssertEqual((ohMyDocument.agents["oracle"] as? [String: Any])?["model"] as? String, "cliproxyapi/gpt-5.4-xhigh")
+        XCTAssertEqual((ohMyDocument.categories["unspecified-high"] as? [String: Any])?["model"] as? String, "cliproxyapi/gpt-5.4-xhigh")
+        XCTAssertEqual((openCodeDocument.agents["creative-ui-coder"] as? [String: Any])?["model"] as? String, "cliproxyapi/gpt-5.4")
+        XCTAssertEqual((openCodeDocument.agents["Jenny"] as? [String: Any])?["model"] as? String, "cliproxyapi/gpt-5.4-xhigh")
+
+        let state = try makeAppStateRepository(harness).load()
+        XCTAssertEqual(state.selectedGroupID, group.id)
+        XCTAssertEqual(state.selectedGroupName, "Dual Target")
+        XCTAssertEqual(state.lastSuccessfulWrite?.target, "switch-group")
+        XCTAssertTrue(state.lastSuccessfulWrite?.backupPath?.contains("opencode:") == true)
+        XCTAssertTrue(state.lastSuccessfulWrite?.backupPath?.contains("oh-my-openagent:") == true)
+    }
+
+    func testSwitchWithOpenCodeOverridesOnlyChangesAgentModelFields() async throws {
+        let harness = TemporaryHomeHarness()
+        try harness.setupOmoSwitchConfig()
+        try harness.setupOpencodeConfig()
+
+        let group = makeGroup(
+            id: UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")!,
+            name: "Selective OpenCode",
+            categoryMappings: [
+                ModelGroupCategoryMapping(categoryName: "quick", modelRef: "cliproxyapi/minimax-m2.7")
+            ],
+            openCodeAgentOverrides: [
+                ModelGroupAgentOverride(agentName: "creative-ui-coder", modelRef: "cliproxyapi/gpt-5.4-xhigh")
+            ]
+        )
+        try makeModelGroupRepository(harness).save([group])
+        try harness.installFixture(named: "current-oh-my-openagent.json", subdirectory: "ohmy", to: "oh-my-openagent.json")
+        try harness.installFixture(named: "current-opencode.json", subdirectory: "opencode", to: "opencode.json")
+
+        let beforeDocument = try XCTUnwrap(loadJSONObject(from: harness.opencodeConfigURL.appendingPathComponent("opencode.json")))
+        let beforeAgents = try XCTUnwrap(beforeDocument["agent"] as? [String: Any])
+        let beforeCreative = try XCTUnwrap(beforeAgents["creative-ui-coder"] as? [String: Any])
+        let beforeKaren = try XCTUnwrap(beforeAgents["karen"] as? [String: Any])
+        let beforePlugin = try XCTUnwrap(beforeDocument["plugin"] as? [AnyHashable])
+
+        let result = await makeSwitchUseCase(harness).switchTo(groupID: group.id)
+
+        guard case .success = result else {
+            XCTFail("Expected success, got \(result)")
+            return
+        }
+
+        let afterDocument = try XCTUnwrap(loadJSONObject(from: harness.opencodeConfigURL.appendingPathComponent("opencode.json")))
+        let afterAgents = try XCTUnwrap(afterDocument["agent"] as? [String: Any])
+        let afterCreative = try XCTUnwrap(afterAgents["creative-ui-coder"] as? [String: Any])
+        let afterKaren = try XCTUnwrap(afterAgents["karen"] as? [String: Any])
+        let afterPlugin = try XCTUnwrap(afterDocument["plugin"] as? [AnyHashable])
+
+        XCTAssertEqual(afterCreative["model"] as? String, "cliproxyapi/gpt-5.4-xhigh")
+        XCTAssertEqual(afterCreative["mode"] as? String, beforeCreative["mode"] as? String)
+        XCTAssertEqual(afterCreative["description"] as? String, beforeCreative["description"] as? String)
+        XCTAssertEqual(afterCreative["prompt"] as? String, beforeCreative["prompt"] as? String)
+        XCTAssertEqual(afterKaren as NSDictionary, beforeKaren as NSDictionary)
+        XCTAssertEqual(afterPlugin, beforePlugin)
+        XCTAssertEqual(afterDocument["$schema"] as? String, beforeDocument["$schema"] as? String)
+        XCTAssertEqual((afterDocument["provider"] as? NSDictionary), (beforeDocument["provider"] as? NSDictionary))
+    }
+
+    func testSwitchWithoutEffectiveOpenCodeOverridesSkipsMissingOpenCodeConfig() async throws {
+        let harness = TemporaryHomeHarness()
+        try harness.setupOmoSwitchConfig()
+        try harness.setupOpencodeConfig()
+
+        let group = makeGroup(
+            id: UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!,
+            name: "Skip OpenCode",
+            categoryMappings: [
+                ModelGroupCategoryMapping(categoryName: "quick", modelRef: "cliproxyapi/gpt-5.4")
+            ],
+            openCodeAgentOverrides: [
+                ModelGroupAgentOverride(agentName: "creative-ui-coder", modelRef: "   ")
+            ]
+        )
+        try makeModelGroupRepository(harness).save([group])
+        try harness.installFixture(named: "current-oh-my-openagent.json", subdirectory: "ohmy", to: "oh-my-openagent.json")
+
+        let opencodeURL = harness.opencodeConfigURL.appendingPathComponent("opencode.json")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: opencodeURL.path))
+
+        let result = await makeSwitchUseCase(harness).switchTo(groupID: group.id)
+
+        guard case .success = result else {
+            XCTFail("Expected success, got \(result)")
+            return
+        }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: opencodeURL.path))
+
+        let ohMyLoadResult = makeOhMyConfigRepository(harness).load()
+        guard case .success(let document) = ohMyLoadResult else {
+            XCTFail("Expected written oh-my-openagent config")
+            return
+        }
+
+        XCTAssertEqual((document.categories["quick"] as? [String: Any])?["model"] as? String, "cliproxyapi/gpt-5.4")
     }
 
     func testSwitchCreatesAndCleansUpBackups() async throws {
@@ -150,6 +294,41 @@ final class EndToEndSwitchingTests: XCTestCase {
         XCTAssertEqual(diskData, malformedContent)
     }
 
+    func testMalformedOpenCodeConfigLeavesBothTargetsUnchanged() async throws {
+        let harness = TemporaryHomeHarness()
+        try harness.setupOmoSwitchConfig()
+        try harness.setupOpencodeConfig()
+
+        let group = makeGroup(
+            id: UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")!,
+            name: "Broken OpenCode",
+            categoryMappings: [
+                ModelGroupCategoryMapping(categoryName: "quick", modelRef: "cliproxyapi/gpt-5.4")
+            ],
+            openCodeAgentOverrides: [
+                ModelGroupAgentOverride(agentName: "creative-ui-coder", modelRef: "cliproxyapi/gpt-5.4-xhigh")
+            ]
+        )
+        try makeModelGroupRepository(harness).save([group])
+        try harness.installFixture(named: "current-oh-my-openagent.json", subdirectory: "ohmy", to: "oh-my-openagent.json")
+
+        let malformedURL = harness.opencodeConfigURL.appendingPathComponent("opencode.json")
+        let malformedContent = Data("{ invalid json".utf8)
+        try malformedContent.write(to: malformedURL, options: [.atomic])
+
+        let originalOhMyData = try Data(contentsOf: makeOhMyConfigRepository(harness).ohMyOpenAgentConfigURL)
+
+        let result = await makeSwitchUseCase(harness).switchTo(groupID: group.id)
+
+        guard case .failure = result else {
+            XCTFail("Expected failure, got \(result)")
+            return
+        }
+
+        XCTAssertEqual(try Data(contentsOf: malformedURL), malformedContent)
+        XCTAssertEqual(try Data(contentsOf: makeOhMyConfigRepository(harness).ohMyOpenAgentConfigURL), originalOhMyData)
+    }
+
     private func makeAppStore(_ harness: TemporaryHomeHarness) -> AppStore {
         let modelGroupRepository = makeModelGroupRepository(harness)
         let appStateRepository = makeAppStateRepository(harness)
@@ -157,7 +336,9 @@ final class EndToEndSwitchingTests: XCTestCase {
         return AppStore(
             modelGroupRepository: modelGroupRepository,
             appStateRepository: appStateRepository,
-            switchUseCase: switchUseCase
+            openCodeConfigRepository: makeOpenCodeConfigRepository(harness),
+            switchUseCase: switchUseCase,
+            loginItemService: StubLoginItemService()
         )
     }
 
@@ -166,6 +347,7 @@ final class EndToEndSwitchingTests: XCTestCase {
             modelGroupRepository: makeModelGroupRepository(harness),
             appStateRepository: makeAppStateRepository(harness),
             backupRepository: makeBackupRepository(harness, now: now),
+            openCodeConfigRepository: makeOpenCodeConfigRepository(harness),
             ohMyConfigRepository: makeOhMyConfigRepository(harness)
         )
     }
@@ -187,11 +369,17 @@ final class EndToEndSwitchingTests: XCTestCase {
         return OhMyOpenAgentConfigRepository(fileManager: .default, configRootURL: configRootURL)
     }
 
+    private func makeOpenCodeConfigRepository(_ harness: TemporaryHomeHarness) -> OpenCodeConfigRepository {
+        let configRootURL = harness.homeURL.appendingPathComponent(".config", isDirectory: true)
+        return OpenCodeConfigRepository(fileManager: .default, configRootURL: configRootURL)
+    }
+
     private func makeGroup(
         id: UUID,
         name: String,
         categoryMappings: [ModelGroupCategoryMapping],
         agentOverrides: [ModelGroupAgentOverride] = [],
+        openCodeAgentOverrides: [ModelGroupAgentOverride] = [],
         isEnabled: Bool = true
     ) -> ModelGroup {
         ModelGroup(
@@ -199,8 +387,20 @@ final class EndToEndSwitchingTests: XCTestCase {
             name: name,
             categoryMappings: categoryMappings,
             agentOverrides: agentOverrides,
+            openCodeAgentOverrides: openCodeAgentOverrides,
             isEnabled: isEnabled,
             updatedAt: Date(timeIntervalSince1970: 1_700_000_000)
         )
     }
+
+    private func loadJSONObject(from url: URL) throws -> [String: Any]? {
+        let data = try Data(contentsOf: url)
+        return try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+}
+
+@MainActor
+private struct StubLoginItemService: LoginItemService {
+    func currentStatus() throws -> LoginItemStatus { .disabled }
+    func setEnabled(_ isEnabled: Bool) throws {}
 }

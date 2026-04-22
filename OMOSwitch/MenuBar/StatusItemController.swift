@@ -40,14 +40,17 @@ final class StatusItemController: NSObject, NSMenuDelegate {
   let statusItem: StatusItemType
   let popoverController: QuickSwitchPopoverController
   let appStore: AppStore
-  private let settingsWindowControllerProvider: () -> SettingsWindowController
+  private let globalSettingsWindowControllerProvider: () -> SettingsWindowController
+  private let groupSettingsWindowControllerProvider: () -> SettingsWindowController
   private(set) lazy var statusMenu: NSMenu = makeStatusMenu()
 
   override init() {
+    let appStore = AppStore.livePreview
     self.statusItem = CocoaStatusBarProvider().makeStatusItem(length: NSStatusItem.variableLength)
-    self.appStore = .livePreview
+    self.appStore = appStore
     self.popoverController = QuickSwitchPopoverController(appStore: appStore)
-    self.settingsWindowControllerProvider = { SettingsWindowController() }
+    self.globalSettingsWindowControllerProvider = { SettingsWindowController(appStore: appStore, kind: .global) }
+    self.groupSettingsWindowControllerProvider = { SettingsWindowController(appStore: appStore, kind: .group) }
     super.init()
     configureStatusItem()
   }
@@ -56,14 +59,17 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     statusBarProvider: StatusBarProviding,
     appStore: AppStore,
     popoverController: QuickSwitchPopoverController,
-    settingsWindowControllerProvider: @escaping () -> SettingsWindowController
+    globalSettingsWindowControllerProvider: @escaping () -> SettingsWindowController,
+    groupSettingsWindowControllerProvider: @escaping () -> SettingsWindowController
   ) {
     self.appStore = appStore
     self.statusItem = statusBarProvider.makeStatusItem(length: NSStatusItem.variableLength)
     self.popoverController = popoverController
-    self.settingsWindowControllerProvider = settingsWindowControllerProvider
+    self.globalSettingsWindowControllerProvider = globalSettingsWindowControllerProvider
+    self.groupSettingsWindowControllerProvider = groupSettingsWindowControllerProvider
     super.init()
-    popoverController.onOpenSettings = { [weak self] in self?.openSettings() }
+    popoverController.onOpenGlobalSettings = { [weak self] in self?.openGlobalSettings() }
+    popoverController.onOpenGroupSettings = { [weak self] in self?.openGroupSettings() }
     configureStatusItem()
   }
 
@@ -71,8 +77,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     statusMenu.items.map(\.title)
   }
 
-  func resolveSettingsWindowController() -> SettingsWindowController {
-    settingsWindowControllerProvider()
+  func resolveGlobalSettingsWindowController() -> SettingsWindowController {
+    globalSettingsWindowControllerProvider()
+  }
+
+  func resolveGroupSettingsWindowController() -> SettingsWindowController {
+    groupSettingsWindowControllerProvider()
   }
 
   private func configureStatusItem() {
@@ -89,7 +99,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     let currentGroupItem = NSMenuItem(title: currentGroupMenuTitle(), action: nil, keyEquivalent: "")
     currentGroupItem.isEnabled = false
     menu.addItem(currentGroupItem)
-    menu.addItem(NSMenuItem(title: "Open Settings", action: #selector(openSettings), keyEquivalent: ","))
+    menu.addItem(NSMenuItem(title: "Global Settings", action: #selector(openGlobalSettings), keyEquivalent: ","))
+    menu.addItem(NSMenuItem(title: "Group Settings", action: #selector(openGroupSettings), keyEquivalent: ""))
     menu.addItem(NSMenuItem(title: "Reload", action: #selector(reload), keyEquivalent: "r"))
     menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
     menu.items.forEach {
@@ -110,7 +121,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
   }
 
   private func rebuildGroupMenuItems() {
-    while statusMenu.items.count > 4 {
+    while statusMenu.items.count > 5 {
       statusMenu.removeItem(at: 1)
     }
 
@@ -142,9 +153,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
   }
 
   @objc
-  func openSettings() {
+  func openGlobalSettings() {
     NSApplication.shared.activate(ignoringOtherApps: true)
-    let controller = settingsWindowControllerProvider()
+    let controller = globalSettingsWindowControllerProvider()
+    controller.showWindow(nil)
+  }
+
+  @objc
+  func openGroupSettings() {
+    NSApplication.shared.activate(ignoringOtherApps: true)
+    let controller = groupSettingsWindowControllerProvider()
     controller.showWindow(nil)
   }
 

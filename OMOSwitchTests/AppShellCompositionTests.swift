@@ -25,7 +25,8 @@ final class AppShellCompositionTests: XCTestCase {
     let container = DependencyContainer(
       statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
       popoverControllerFactory: { QuickSwitchPopoverController(popover: NSPopover()) },
-      settingsWindowController: SettingsWindowController(),
+      globalSettingsWindowController: SettingsWindowController(appStore: .livePreview, kind: .global),
+      groupSettingsWindowController: SettingsWindowController(appStore: .livePreview, kind: .group),
       configRootURL: rootURL,
     )
     try! container.modelGroupRepository.save([currentGroup])
@@ -36,7 +37,7 @@ final class AppShellCompositionTests: XCTestCase {
 
     XCTAssertNotNil(appDelegate.statusItemController)
     XCTAssertEqual(fakeStatusItem.button?.title, "OMO")
-    XCTAssertEqual(appDelegate.statusItemController?.currentMenuTitles(), ["Current Group: Primary", "Primary", "Open Settings", "Reload", "Quit"])
+    XCTAssertEqual(appDelegate.statusItemController?.currentMenuTitles(), ["Current Group: Primary", "Primary", "Global Settings", "Group Settings", "Reload", "Quit"])
   }
 
   func testStatusMenuShowsOnlyEnabledGroupsAndChecksCurrentGroup() {
@@ -72,18 +73,22 @@ final class AppShellCompositionTests: XCTestCase {
       modelGroupRepository: modelGroupRepository,
       appStateRepository: appStateRepository,
       backupRepository: BackupRepository(configRootURL: rootURL),
+      openCodeConfigRepository: OpenCodeConfigRepository(configRootURL: rootURL),
       ohMyConfigRepository: OhMyOpenAgentConfigRepository(configRootURL: rootURL),
     )
     let appStore = AppStore(
       modelGroupRepository: modelGroupRepository,
       appStateRepository: appStateRepository,
+      openCodeConfigRepository: OpenCodeConfigRepository(configRootURL: rootURL),
       switchUseCase: switchUseCase,
+      loginItemService: StubLoginItemService(),
     )
     let controller = StatusItemController(
       statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
       appStore: appStore,
       popoverController: QuickSwitchPopoverController(popover: NSPopover()),
-      settingsWindowControllerProvider: { SettingsWindowController(appStore: appStore) }
+      globalSettingsWindowControllerProvider: { SettingsWindowController(appStore: appStore, kind: .global) },
+      groupSettingsWindowControllerProvider: { SettingsWindowController(appStore: appStore, kind: .group) }
     )
 
     try! modelGroupRepository.save([currentGroup, enabledGroup, disabledGroup])
@@ -91,7 +96,7 @@ final class AppShellCompositionTests: XCTestCase {
     appStore.reload()
     controller.menuWillOpen(controller.statusMenu)
 
-    XCTAssertEqual(controller.currentMenuTitles(), ["Current Group: Current", "Current", "Enabled", "Open Settings", "Reload", "Quit"])
+    XCTAssertEqual(controller.currentMenuTitles(), ["Current Group: Current", "Current", "Enabled", "Global Settings", "Group Settings", "Reload", "Quit"])
     XCTAssertFalse(controller.statusMenu.items.contains(where: { $0.title == "Disabled" }))
     XCTAssertEqual(controller.statusMenu.items[1].state, .on)
     XCTAssertEqual(controller.statusMenu.items[1].representedObject as? UUID, currentGroup.id)
@@ -99,24 +104,34 @@ final class AppShellCompositionTests: XCTestCase {
     XCTAssertEqual(controller.statusMenu.items[2].representedObject as? UUID, enabledGroup.id)
   }
 
-  func testDependencyContainerReusesSingleSettingsWindowController() {
+  func testDependencyContainerReusesSingleSettingsWindowControllers() {
     let fakeStatusItem = FakeStatusItem()
-    let sharedSettingsWindowController = SettingsWindowController(appStore: makeStore())
+    let store = makeStore()
+    let sharedGlobalSettingsWindowController = SettingsWindowController(appStore: store, kind: .global)
+    let sharedGroupSettingsWindowController = SettingsWindowController(appStore: store, kind: .group)
     let container = DependencyContainer(
       statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
       popoverControllerFactory: { QuickSwitchPopoverController(popover: NSPopover()) },
-      settingsWindowController: sharedSettingsWindowController,
+      globalSettingsWindowController: sharedGlobalSettingsWindowController,
+      groupSettingsWindowController: sharedGroupSettingsWindowController,
     )
     let appDelegate = AppDelegate(container: container)
 
     appDelegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
 
-    let first = container.sharedSettingsWindowController()
-    let second = appDelegate.statusItemController?.resolveSettingsWindowController()
+    let firstGlobal = container.sharedGlobalSettingsWindowController()
+    let secondGlobal = appDelegate.statusItemController?.resolveGlobalSettingsWindowController()
+    let firstGroup = container.sharedGroupSettingsWindowController()
+    let secondGroup = appDelegate.statusItemController?.resolveGroupSettingsWindowController()
 
-    XCTAssertTrue(first === sharedSettingsWindowController)
-    XCTAssertTrue(first === second)
-    XCTAssertEqual(first.window?.isReleasedWhenClosed, false)
+    XCTAssertTrue(firstGlobal === sharedGlobalSettingsWindowController)
+    XCTAssertTrue(firstGlobal === secondGlobal)
+    XCTAssertTrue(firstGroup === sharedGroupSettingsWindowController)
+    XCTAssertTrue(firstGroup === secondGroup)
+    XCTAssertEqual(firstGlobal.window?.title, "")
+    XCTAssertEqual(firstGroup.window?.title, "Group Settings")
+    XCTAssertEqual(firstGlobal.window?.isReleasedWhenClosed, false)
+    XCTAssertEqual(firstGroup.window?.isReleasedWhenClosed, false)
   }
 
   private func makeStore() -> AppStore {
@@ -128,14 +143,23 @@ final class AppShellCompositionTests: XCTestCase {
       modelGroupRepository: modelGroupRepository,
       appStateRepository: appStateRepository,
       backupRepository: BackupRepository(configRootURL: rootURL),
+      openCodeConfigRepository: OpenCodeConfigRepository(configRootURL: rootURL),
       ohMyConfigRepository: OhMyOpenAgentConfigRepository(configRootURL: rootURL),
     )
     return AppStore(
       modelGroupRepository: modelGroupRepository,
       appStateRepository: appStateRepository,
+      openCodeConfigRepository: OpenCodeConfigRepository(configRootURL: rootURL),
       switchUseCase: switchUseCase,
+      loginItemService: StubLoginItemService(),
     )
   }
+}
+
+@MainActor
+private struct StubLoginItemService: LoginItemService {
+  func currentStatus() throws -> LoginItemStatus { .disabled }
+  func setEnabled(_ isEnabled: Bool) throws {}
 }
 
 @MainActor

@@ -3,19 +3,50 @@ import SwiftUI
 
 @MainActor
 final class SettingsWindowController: NSWindowController {
-  let appStore: AppStore
+  enum Kind {
+    case global
+    case group
 
-  convenience init() {
-    self.init(appStore: .livePreview)
+    var title: String {
+      switch self {
+      case .global:
+        ""
+      case .group:
+        "Group Settings"
+      }
+    }
+
+    var defaultSize: NSSize {
+      switch self {
+      case .global:
+        NSSize(width: 420, height: 220)
+      case .group:
+        NSSize(width: 700, height: 500)
+      }
+    }
   }
 
-  init(appStore: AppStore) {
+  let appStore: AppStore
+  let kind: Kind
+
+  convenience init() {
+    self.init(appStore: .livePreview, kind: .group)
+  }
+
+  init(appStore: AppStore, kind: Kind = .group) {
     self.appStore = appStore
-    let rootView = SettingsView(appStore: appStore)
+    self.kind = kind
+    let rootView: AnyView
+    switch kind {
+    case .global:
+      rootView = AnyView(GlobalSettingsView(appStore: appStore))
+    case .group:
+      rootView = AnyView(SettingsView(appStore: appStore))
+    }
     let hostingController = NSHostingController(rootView: rootView)
     let window = NSWindow(contentViewController: hostingController)
-    window.title = "Settings"
-    window.setContentSize(NSSize(width: 700, height: 500))
+    window.title = kind.title
+    window.setContentSize(kind.defaultSize)
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
     window.isReleasedWhenClosed = false
     super.init(window: window)

@@ -5,7 +5,8 @@ import SwiftUI
 final class QuickSwitchPopoverController {
   let popover: NSPopover
   let appStore: AppStore
-  var onOpenSettings: (() -> Void)?
+  var onOpenGlobalSettings: (() -> Void)?
+  var onOpenGroupSettings: (() -> Void)?
 
   convenience init() {
     self.init(appStore: .livePreview)
@@ -34,20 +35,34 @@ final class QuickSwitchPopoverController {
   }
 
   func reloadContent() {
-    let view = QuickSwitchView(appStore: appStore, onOpenSettings: openSettingsAction)
+    let view = QuickSwitchView(
+      appStore: appStore,
+      onOpenGlobalSettings: openGlobalSettingsAction,
+      onOpenGroupSettings: openGroupSettingsAction
+    )
     popover.contentViewController = NSHostingController(rootView: view)
   }
 
-  private var openSettingsAction: (() -> Void) {
+  private var openGlobalSettingsAction: (() -> Void) {
     { [weak self] in
-      self?.onOpenSettings?()
+      self?.onOpenGlobalSettings?()
+    }
+  }
+
+  private var openGroupSettingsAction: (() -> Void) {
+    { [weak self] in
+      self?.onOpenGroupSettings?()
     }
   }
 
   private func configurePopover() {
     popover.behavior = .transient
     popover.contentSize = NSSize(width: 320, height: 480)
-    let view = QuickSwitchView(appStore: appStore, onOpenSettings: openSettingsAction)
+    let view = QuickSwitchView(
+      appStore: appStore,
+      onOpenGlobalSettings: openGlobalSettingsAction,
+      onOpenGroupSettings: openGroupSettingsAction
+    )
     popover.contentViewController = NSHostingController(rootView: view)
   }
 }

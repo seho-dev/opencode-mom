@@ -72,6 +72,96 @@ final class SettingsViewOpenCodeDraftStateTests: XCTestCase {
     XCTAssertEqual(persisted.openCodeAgentOverrides, expectedOpenCodeOverrides)
   }
 
+  func testCurrentGroupModelMatchCountsUseTrimmedExactMatchesAcrossCurrentDraftOnly() {
+    let counts = SettingsView.currentGroupModelMatchCounts(
+      searchValue: "  openai/gpt-5.4  ",
+      draftCategoryMappings: [
+        ModelGroupCategoryMapping(categoryName: "quick", modelRef: "openai/gpt-5.4"),
+        ModelGroupCategoryMapping(categoryName: "slow", modelRef: "openai/gpt-5.4-mini"),
+      ],
+      draftAgentOverrides: [
+        ModelGroupAgentOverride(agentName: "general", modelRef: " openai/gpt-5.4 "),
+        ModelGroupAgentOverride(agentName: "oracle", modelRef: "openai/o3"),
+      ],
+      draftOpenCodeAgentOverrides: [
+        ModelGroupAgentOverride(agentName: "alpha", modelRef: "openai/gpt-5.4"),
+        ModelGroupAgentOverride(agentName: "beta", modelRef: "openai/gpt-5.4-mini"),
+      ]
+    )
+
+    XCTAssertEqual(counts.categoryMappings, 1)
+    XCTAssertEqual(counts.agentOverrides, 1)
+    XCTAssertEqual(counts.openCodeAgentOverrides, 1)
+    XCTAssertEqual(counts.total, 3)
+  }
+
+  func testCurrentGroupModelBatchReplaceUpdatesOnlyTrimmedExactMatches() {
+    let result = SettingsView.replacingCurrentGroupModelMatches(
+      searchValue: " openai/gpt-5.4 ",
+      replaceValue: " cliproxyapi/gpt-5.5 ",
+      draftCategoryMappings: [
+        ModelGroupCategoryMapping(categoryName: "quick", modelRef: "openai/gpt-5.4"),
+        ModelGroupCategoryMapping(categoryName: "slow", modelRef: "openai/gpt-5.4-mini"),
+      ],
+      draftAgentOverrides: [
+        ModelGroupAgentOverride(agentName: "general", modelRef: " openai/gpt-5.4 "),
+        ModelGroupAgentOverride(agentName: "oracle", modelRef: "openai/o3"),
+      ],
+      draftOpenCodeAgentOverrides: [
+        ModelGroupAgentOverride(agentName: "alpha", modelRef: "openai/gpt-5.4"),
+        ModelGroupAgentOverride(agentName: "beta", modelRef: "openai/gpt-5.4-mini"),
+      ]
+    )
+
+    XCTAssertEqual(result.matchCounts.total, 3)
+    XCTAssertEqual(
+      result.categoryMappings,
+      [
+        ModelGroupCategoryMapping(categoryName: "quick", modelRef: "cliproxyapi/gpt-5.5"),
+        ModelGroupCategoryMapping(categoryName: "slow", modelRef: "openai/gpt-5.4-mini"),
+      ]
+    )
+    XCTAssertEqual(
+      result.agentOverrides,
+      [
+        ModelGroupAgentOverride(agentName: "general", modelRef: "cliproxyapi/gpt-5.5"),
+        ModelGroupAgentOverride(agentName: "oracle", modelRef: "openai/o3"),
+      ]
+    )
+    XCTAssertEqual(
+      result.openCodeAgentOverrides,
+      [
+        ModelGroupAgentOverride(agentName: "alpha", modelRef: "cliproxyapi/gpt-5.5"),
+        ModelGroupAgentOverride(agentName: "beta", modelRef: "openai/gpt-5.4-mini"),
+      ]
+    )
+  }
+
+  func testCurrentGroupModelBatchReplaceDoesNothingForBlankSearchValue() {
+    let categoryMappings = [
+      ModelGroupCategoryMapping(categoryName: "quick", modelRef: "openai/gpt-5.4")
+    ]
+    let agentOverrides = [
+      ModelGroupAgentOverride(agentName: "general", modelRef: "openai/gpt-5.4")
+    ]
+    let openCodeAgentOverrides = [
+      ModelGroupAgentOverride(agentName: "alpha", modelRef: "openai/gpt-5.4")
+    ]
+
+    let result = SettingsView.replacingCurrentGroupModelMatches(
+      searchValue: "   ",
+      replaceValue: "cliproxyapi/gpt-5.5",
+      draftCategoryMappings: categoryMappings,
+      draftAgentOverrides: agentOverrides,
+      draftOpenCodeAgentOverrides: openCodeAgentOverrides
+    )
+
+    XCTAssertEqual(result.matchCounts.total, 0)
+    XCTAssertEqual(result.categoryMappings, categoryMappings)
+    XCTAssertEqual(result.agentOverrides, agentOverrides)
+    XCTAssertEqual(result.openCodeAgentOverrides, openCodeAgentOverrides)
+  }
+
   private func makeGroup(openCodeAgentOverrides: [ModelGroupAgentOverride]) -> ModelGroup {
     ModelGroup(
       id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,

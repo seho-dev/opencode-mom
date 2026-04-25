@@ -84,6 +84,23 @@ struct SettingsView: View {
     let total: Int
   }
 
+  struct CurrentGroupModelMatchCounts: Equatable {
+    let categoryMappings: Int
+    let agentOverrides: Int
+    let openCodeAgentOverrides: Int
+
+    var total: Int {
+      categoryMappings + agentOverrides + openCodeAgentOverrides
+    }
+  }
+
+  struct CurrentGroupModelReplaceResult: Equatable {
+    let categoryMappings: [ModelGroupCategoryMapping]
+    let agentOverrides: [ModelGroupAgentOverride]
+    let openCodeAgentOverrides: [ModelGroupAgentOverride]
+    let matchCounts: CurrentGroupModelMatchCounts
+  }
+
   private enum PersistenceMessageTone {
     case success
     case warning
@@ -120,6 +137,8 @@ struct SettingsView: View {
   @State private var draftCategoryMappings: [ModelGroupCategoryMapping] = []
   @State private var draftAgentOverrides: [ModelGroupAgentOverride] = []
   @State private var draftOpenCodeAgentOverrides: [ModelGroupAgentOverride] = []
+  @State private var currentGroupModelSearchValue = ""
+  @State private var currentGroupModelReplaceValue = ""
 
   var body: some View {
     NavigationSplitView {
@@ -252,6 +271,10 @@ struct SettingsView: View {
 
           Divider()
 
+          currentGroupModelSearchReplaceSection
+
+          Divider()
+
           sectionHeader("Category Mappings", filled: draftCategoryMappings.filter { !$0.modelRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count, total: KnownKeys.categoryNames.count + draftCategoryMappings.filter { !KnownKeys.categoryNames.contains($0.categoryName) }.count)
           CategoryMappingEditor(mappings: $draftCategoryMappings)
 
@@ -294,6 +317,70 @@ struct SettingsView: View {
         .foregroundStyle(.secondary)
         .font(.subheadline)
     }
+  }
+
+  private var currentGroupModelSearchReplaceSection: some View {
+    let matchCounts = SettingsView.currentGroupModelMatchCounts(
+      searchValue: currentGroupModelSearchValue,
+      draftCategoryMappings: draftCategoryMappings,
+      draftAgentOverrides: draftAgentOverrides,
+      draftOpenCodeAgentOverrides: draftOpenCodeAgentOverrides
+    )
+
+    return formSection(title: "Current Group Model Batch Replace") {
+      Text("Searches only the currently edited draft group across category mappings, agent overrides, and OpenCode agent overrides.")
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+
+      HStack(alignment: .top, spacing: 12) {
+        TextField("Search model", text: $currentGroupModelSearchValue)
+          .textFieldStyle(.roundedBorder)
+
+        TextField("Replace with", text: $currentGroupModelReplaceValue)
+          .textFieldStyle(.roundedBorder)
+      }
+
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        Text(currentGroupModelMatchSummary(for: matchCounts))
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+
+        Button("Replace All Exact Matches") {
+          replaceAllCurrentGroupModelMatches()
+        }
+        .disabled(matchCounts.total == 0)
+      }
+    }
+  }
+
+  private func replaceAllCurrentGroupModelMatches() {
+    let result = SettingsView.replacingCurrentGroupModelMatches(
+      searchValue: currentGroupModelSearchValue,
+      replaceValue: currentGroupModelReplaceValue,
+      draftCategoryMappings: draftCategoryMappings,
+      draftAgentOverrides: draftAgentOverrides,
+      draftOpenCodeAgentOverrides: draftOpenCodeAgentOverrides
+    )
+
+    guard result.matchCounts.total > 0 else { return }
+
+    draftCategoryMappings = result.categoryMappings
+    draftAgentOverrides = result.agentOverrides
+    draftOpenCodeAgentOverrides = result.openCodeAgentOverrides
+    setPersistenceMessage(
+      "Replaced \(result.matchCounts.total) exact model match\(result.matchCounts.total == 1 ? "" : "es") in the current draft group.",
+      tone: .success
+    )
+  }
+
+  private func currentGroupModelMatchSummary(for counts: CurrentGroupModelMatchCounts) -> String {
+    let trimmedSearchValue = SettingsView.trimmedModelSearchReplaceValue(currentGroupModelSearchValue)
+
+    guard trimmedSearchValue.isEmpty == false else {
+      return "Enter a model to count exact matches in this draft group."
+    }
+
+    return "\(counts.total) match\(counts.total == 1 ? "" : "es") total · Categories \(counts.categoryMappings) · Agents \(counts.agentOverrides) · OpenCode \(counts.openCodeAgentOverrides)"
   }
 
   // MARK: - Toolbar
@@ -440,6 +527,77 @@ struct SettingsView: View {
     discoveryError _: String?
   ) -> [ModelGroupAgentOverride] {
     return group.openCodeAgentOverrides
+  }
+
+  static func trimmedModelSearchReplaceValue(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  static func currentGroupModelMatchCounts(
+    searchValue: String,
+    draftCategoryMappings: [ModelGroupCategoryMapping],
+    draftAgentOverrides: [ModelGroupAgentOverride],
+    draftOpenCodeAgentOverrides: [ModelGroupAgentOverride]
+  ) -> CurrentGroupModelMatchCounts {
+    let trimmedSearchValue = trimmedModelSearchReplaceValue(searchValue)
+
+    guard trimmedSearchValue.isEmpty == false else {
+      return CurrentGroupModelMatchCounts(categoryMappings: 0, agentOverrides: 0, openCodeAgentOverrides: 0)
+    }
+
+    return CurrentGroupModelMatchCounts(
+      categoryMappings: draftCategoryMappings.filter { trimmedModelSearchReplaceValue($0.modelRef) == trimmedSearchValue }.count,
+      agentOverrides: draftAgentOverrides.filter { trimmedModelSearchReplaceValue($0.modelRef) == trimmedSearchValue }.count,
+      openCodeAgentOverrides: draftOpenCodeAgentOverrides.filter { trimmedModelSearchReplaceValue($0.modelRef) == trimmedSearchValue }.count
+    )
+  }
+
+  static func replacingCurrentGroupModelMatches(
+    searchValue: String,
+    replaceValue: String,
+    draftCategoryMappings: [ModelGroupCategoryMapping],
+    draftAgentOverrides: [ModelGroupAgentOverride],
+    draftOpenCodeAgentOverrides: [ModelGroupAgentOverride]
+  ) -> CurrentGroupModelReplaceResult {
+    let trimmedSearchValue = trimmedModelSearchReplaceValue(searchValue)
+    let trimmedReplaceValue = trimmedModelSearchReplaceValue(replaceValue)
+    let matchCounts = currentGroupModelMatchCounts(
+      searchValue: trimmedSearchValue,
+      draftCategoryMappings: draftCategoryMappings,
+      draftAgentOverrides: draftAgentOverrides,
+      draftOpenCodeAgentOverrides: draftOpenCodeAgentOverrides
+    )
+
+    guard trimmedSearchValue.isEmpty == false else {
+      return CurrentGroupModelReplaceResult(
+        categoryMappings: draftCategoryMappings,
+        agentOverrides: draftAgentOverrides,
+        openCodeAgentOverrides: draftOpenCodeAgentOverrides,
+        matchCounts: matchCounts
+      )
+    }
+
+    let updatedCategoryMappings = draftCategoryMappings.map { mapping in
+      guard trimmedModelSearchReplaceValue(mapping.modelRef) == trimmedSearchValue else { return mapping }
+      return ModelGroupCategoryMapping(categoryName: mapping.categoryName, modelRef: trimmedReplaceValue)
+    }
+
+    let updatedAgentOverrides = draftAgentOverrides.map { override in
+      guard trimmedModelSearchReplaceValue(override.modelRef) == trimmedSearchValue else { return override }
+      return ModelGroupAgentOverride(agentName: override.agentName, modelRef: trimmedReplaceValue)
+    }
+
+    let updatedOpenCodeAgentOverrides = draftOpenCodeAgentOverrides.map { override in
+      guard trimmedModelSearchReplaceValue(override.modelRef) == trimmedSearchValue else { return override }
+      return ModelGroupAgentOverride(agentName: override.agentName, modelRef: trimmedReplaceValue)
+    }
+
+    return CurrentGroupModelReplaceResult(
+      categoryMappings: updatedCategoryMappings,
+      agentOverrides: updatedAgentOverrides,
+      openCodeAgentOverrides: updatedOpenCodeAgentOverrides,
+      matchCounts: matchCounts
+    )
   }
 
   static func persistedDraftGroup(

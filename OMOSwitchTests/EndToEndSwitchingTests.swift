@@ -117,6 +117,78 @@ final class EndToEndSwitchingTests: XCTestCase {
         XCTAssertTrue(state.lastSuccessfulWrite?.backupPath?.contains("oh-my-openagent:") == true)
     }
 
+    func testSwitchPreservesSiblingFieldsInOhMyOpenAgentEntries() async throws {
+        let harness = TemporaryHomeHarness()
+        try harness.setupOmoSwitchConfig()
+        try harness.setupOpencodeConfig()
+
+        let group = makeGroup(
+            id: UUID(uuidString: "12121212-3434-5656-7878-909090909090")!,
+            name: "Preserve Siblings",
+            categoryMappings: [
+                ModelGroupCategoryMapping(categoryName: "quick", modelRef: "cliproxyapi/minimax-m2.7")
+            ],
+            agentOverrides: [
+                ModelGroupAgentOverride(agentName: "librarian", modelRef: "cliproxyapi/gpt-5.4")
+            ]
+        )
+        try makeModelGroupRepository(harness).save([group])
+
+        let customOhMyDocument: [String: Any] = [
+            "$schema": "https://example.com/schema.json",
+            "customTopLevel": ["keep": true],
+            "agents": [
+                "librarian": [
+                    "model": "cliproxyapi/legacy-model",
+                    "variant": "medium",
+                    "temperature": 0.2
+                ],
+                "oracle": [
+                    "model": "cliproxyapi/legacy-model",
+                    "variant": "xhigh"
+                ]
+            ],
+            "categories": [
+                "quick": [
+                    "model": "cliproxyapi/legacy-model",
+                    "variant": "balanced"
+                ],
+                "deep": [
+                    "model": "cliproxyapi/legacy-model",
+                    "variant": "slow"
+                ]
+            ]
+        ]
+        let ohMyData = try XCTUnwrap(JSONSerialization.data(withJSONObject: customOhMyDocument, options: [.prettyPrinted, .sortedKeys]))
+        try ohMyData.write(to: makeOhMyConfigRepository(harness).ohMyOpenAgentConfigURL, options: [.atomic])
+
+        let result = await makeSwitchUseCase(harness).switchTo(groupID: group.id)
+
+        guard case .success = result else {
+            XCTFail("Expected success, got \(result)")
+            return
+        }
+
+        guard case .success(let document) = makeOhMyConfigRepository(harness).load() else {
+            XCTFail("Expected written oh-my-openagent config to load")
+            return
+        }
+
+        let librarian = try XCTUnwrap(document.agents["librarian"] as? [String: Any])
+        XCTAssertEqual(librarian["model"] as? String, "cliproxyapi/gpt-5.4")
+        XCTAssertEqual(librarian["variant"] as? String, "medium")
+        XCTAssertEqual(librarian["temperature"] as? Double, 0.2)
+        XCTAssertNil(document.agents["oracle"])
+
+        let quick = try XCTUnwrap(document.categories["quick"] as? [String: Any])
+        XCTAssertEqual(quick["model"] as? String, "cliproxyapi/minimax-m2.7")
+        XCTAssertEqual(quick["variant"] as? String, "balanced")
+        XCTAssertNil(document.categories["deep"])
+
+        let customTopLevel = try XCTUnwrap(document.rawDictionary["customTopLevel"] as? [String: Any])
+        XCTAssertEqual(customTopLevel["keep"] as? Bool, true)
+    }
+
     func testSwitchWithOpenCodeOverridesOnlyChangesAgentModelFields() async throws {
         let harness = TemporaryHomeHarness()
         try harness.setupOmoSwitchConfig()

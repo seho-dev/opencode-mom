@@ -410,7 +410,8 @@ final class EndToEndSwitchingTests: XCTestCase {
             appStateRepository: appStateRepository,
             openCodeConfigRepository: makeOpenCodeConfigRepository(harness),
             switchUseCase: switchUseCase,
-            loginItemService: StubLoginItemService()
+            loginItemService: StubLoginItemService(),
+            updateChecker: StubUpdateChecker()
         )
     }
 

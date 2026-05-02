@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 @MainActor
 final class AppStore: NSObject, ObservableObject {
@@ -12,12 +13,18 @@ final class AppStore: NSObject, ObservableObject {
   @Published var lastSwitchError: String? = nil
   @Published var lastSwitchWarning: String? = nil
   @Published var isLoading: Bool = false
+  @Published var updateInfo: UpdateInfo? = nil
+  @Published var isCheckingForUpdates: Bool = false
+  @Published var updateError: String? = nil
+  @Published var isDownloadingUpdate: Bool = false
+  @Published var downloadProgress: Double? = nil
 
   let modelGroupRepository: ModelGroupRepository
   let appStateRepository: AppStateRepository
   let openCodeConfigRepository: OpenCodeConfigRepository
   let switchUseCase: SwitchGroupUseCase
   let loginItemService: any LoginItemService
+  let updateChecker: any UpdateChecker
 
   static var livePreview: AppStore {
     let modelGroupRepository = ModelGroupRepository()
@@ -35,6 +42,7 @@ final class AppStore: NSObject, ObservableObject {
       openCodeConfigRepository: OpenCodeConfigRepository(),
       switchUseCase: switchUseCase,
       loginItemService: SMAppServiceLoginItemService(),
+      updateChecker: GitHubUpdateChecker()
     )
   }
 
@@ -43,13 +51,15 @@ final class AppStore: NSObject, ObservableObject {
     appStateRepository: AppStateRepository,
     openCodeConfigRepository: OpenCodeConfigRepository,
     switchUseCase: SwitchGroupUseCase,
-    loginItemService: any LoginItemService
+    loginItemService: any LoginItemService,
+    updateChecker: any UpdateChecker
   ) {
     self.modelGroupRepository = modelGroupRepository
     self.appStateRepository = appStateRepository
     self.openCodeConfigRepository = openCodeConfigRepository
     self.switchUseCase = switchUseCase
     self.loginItemService = loginItemService
+    self.updateChecker = updateChecker
     super.init()
   }
 
@@ -188,6 +198,80 @@ final class AppStore: NSObject, ObservableObject {
     }
 
     reload()
+  }
+
+  func copyGroup(id: UUID) throws -> ModelGroup {
+    guard let sourceGroup = groups.first(where: { $0.id == id }) else {
+      throw NSError(domain: "AppStore.copyGroup", code: 1, userInfo: [NSLocalizedDescriptionKey: "Group not found."])
+    }
+
+    let copiedGroup = ModelGroup(
+      id: UUID(),
+      name: "\(sourceGroup.name) Copy",
+      description: sourceGroup.description,
+      categoryMappings: sourceGroup.categoryMappings,
+      agentOverrides: sourceGroup.agentOverrides,
+      openCodeAgentOverrides: sourceGroup.openCodeAgentOverrides,
+      isEnabled: sourceGroup.isEnabled,
+      updatedAt: Date()
+    )
+
+    var currentGroups = try modelGroupRepository.load()
+    currentGroups.append(copiedGroup)
+    try modelGroupRepository.save(currentGroups)
+    reload()
+
+    return copiedGroup
+  }
+
+  func checkForUpdates() async {
+    isCheckingForUpdates = true
+    updateError = nil
+
+    do {
+      updateInfo = try await updateChecker.checkForUpdates()
+    } catch {
+      updateError = error.localizedDescription
+    }
+
+    isCheckingForUpdates = false
+  }
+
+  func downloadUpdate() async {
+    guard let updateInfo = updateInfo else { return }
+
+    isDownloadingUpdate = true
+    updateError = nil
+
+    do {
+      let downloadedURL = try await updateChecker.downloadUpdate(updateInfo)
+      try updateChecker.installUpdate(at: downloadedURL)
+
+      DispatchQueue.main.async {
+        let alert = NSAlert()
+        alert.messageText = "Update Ready"
+        alert.informativeText = "omo-switch has been updated to version \(updateInfo.latestVersion). The app will now restart."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Restart")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+          self.restartApp()
+        }
+      }
+    } catch {
+      updateError = error.localizedDescription
+    }
+
+    isDownloadingUpdate = false
+  }
+
+  private func restartApp() {
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    task.arguments = ["-n", Bundle.main.bundlePath]
+    try? task.run()
+
+    NSApplication.shared.terminate(nil)
   }
 
   func saveGroup(_ group: ModelGroup) async throws {

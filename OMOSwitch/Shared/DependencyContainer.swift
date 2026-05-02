@@ -32,12 +32,14 @@ final class DependencyContainer {
       ohMyConfigRepository: ohMyConfigRepository,
     )
     let loginItemService = SMAppServiceLoginItemService()
+    let updateChecker = GitHubUpdateChecker()
     let appStore = AppStore(
       modelGroupRepository: modelGroupRepository,
       appStateRepository: appStateRepository,
       openCodeConfigRepository: openCodeConfigRepository,
       switchUseCase: switchUseCase,
       loginItemService: loginItemService,
+      updateChecker: updateChecker
     )
     let sharedGlobalSettingsWindowController = SettingsWindowController(appStore: appStore, kind: .global)
     let sharedGroupSettingsWindowController = SettingsWindowController(appStore: appStore, kind: .group)
@@ -61,6 +63,7 @@ final class DependencyContainer {
     globalSettingsWindowController: SettingsWindowController,
     groupSettingsWindowController: SettingsWindowController,
     loginItemService: (any LoginItemService)? = nil,
+    updateChecker: (any UpdateChecker)? = nil,
     configRootURL: URL? = nil
   ) {
     let modelGroupRepository = ModelGroupRepository(configRootURL: configRootURL)
@@ -76,12 +79,14 @@ final class DependencyContainer {
       ohMyConfigRepository: ohMyConfigRepository,
     )
     let resolvedLoginItemService = loginItemService ?? SMAppServiceLoginItemService()
+    let resolvedUpdateChecker = updateChecker ?? GitHubUpdateChecker()
     let appStore = AppStore(
       modelGroupRepository: modelGroupRepository,
       appStateRepository: appStateRepository,
       openCodeConfigRepository: openCodeConfigRepository,
       switchUseCase: switchUseCase,
       loginItemService: resolvedLoginItemService,
+      updateChecker: resolvedUpdateChecker
     )
     let sharedGlobalSettingsWindowController = globalSettingsWindowController
     let sharedGroupSettingsWindowController = groupSettingsWindowController

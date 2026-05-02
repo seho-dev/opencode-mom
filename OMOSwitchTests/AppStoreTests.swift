@@ -320,7 +320,8 @@ final class AppStoreTests: XCTestCase {
   private func makeStore(
     configRootURL: URL,
     openCodeConfigRootURL: URL? = nil,
-    loginItemService: any LoginItemService = StubLoginItemService(currentStatus: .disabled)
+    loginItemService: any LoginItemService = StubLoginItemService(currentStatus: .disabled),
+    updateChecker: any UpdateChecker = StubUpdateChecker()
   ) -> AppStore {
     let modelGroupRepository = ModelGroupRepository(configRootURL: configRootURL)
     let appStateRepository = AppStateRepository(configRootURL: configRootURL)
@@ -338,6 +339,7 @@ final class AppStoreTests: XCTestCase {
       openCodeConfigRepository: openCodeConfigRepository,
       switchUseCase: switchUseCase,
       loginItemService: loginItemService,
+      updateChecker: updateChecker
     )
   }
 
@@ -381,5 +383,35 @@ private final class StubLoginItemService: LoginItemService {
     }
 
     currentStatusValue = statusAfterSetEnabled[isEnabled] ?? (isEnabled ? .enabled : .disabled)
+  }
+}
+
+final class StubUpdateChecker: UpdateChecker, @unchecked Sendable {
+  let checkForUpdatesResult: Result<UpdateInfo, Error>
+  let downloadUpdateResult: Result<URL, Error>
+  let installUpdateError: Error?
+
+  init(
+    checkForUpdatesResult: Result<UpdateInfo, Error> = .failure(NSError(domain: "Stub", code: 0)),
+    downloadUpdateResult: Result<URL, Error> = .failure(NSError(domain: "Stub", code: 0)),
+    installUpdateError: Error? = nil
+  ) {
+    self.checkForUpdatesResult = checkForUpdatesResult
+    self.downloadUpdateResult = downloadUpdateResult
+    self.installUpdateError = installUpdateError
+  }
+
+  func checkForUpdates() async throws -> UpdateInfo {
+    try checkForUpdatesResult.get()
+  }
+
+  func downloadUpdate(_ updateInfo: UpdateInfo) async throws -> URL {
+    try downloadUpdateResult.get()
+  }
+
+  func installUpdate(at url: URL) throws {
+    if let installUpdateError {
+      throw installUpdateError
+    }
   }
 }

@@ -29,10 +29,74 @@ struct GlobalSettingsView: View {
         }
       }
 
+      Divider()
+
+      VStack(alignment: .leading, spacing: 12) {
+        Text("Updates")
+          .font(.headline)
+
+        HStack {
+          Button("Check for Updates") {
+            Task { await appStore.checkForUpdates() }
+          }
+          .disabled(appStore.isCheckingForUpdates)
+
+          if appStore.isCheckingForUpdates {
+            ProgressView()
+              .scaleEffect(0.8)
+          }
+        }
+
+        if let updateInfo = appStore.updateInfo {
+          VStack(alignment: .leading, spacing: 8) {
+            if updateInfo.hasUpdate {
+              Text("New version available: \(updateInfo.latestVersion)")
+                .foregroundStyle(.green)
+
+              Text("Current version: \(updateInfo.currentVersion)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+              if let releaseNotes = updateInfo.releaseNotes {
+                DisclosureGroup("Release Notes") {
+                  Text(releaseNotes)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+              }
+
+              HStack {
+                Button("Download Update") {
+                  Task { await appStore.downloadUpdate() }
+                }
+                .disabled(appStore.isDownloadingUpdate)
+
+                if appStore.isDownloadingUpdate {
+                  ProgressView()
+                    .scaleEffect(0.8)
+                }
+
+                Link("View on GitHub", destination: updateInfo.releaseURL)
+                  .font(.subheadline)
+              }
+            } else {
+              Text("You're running the latest version (\(updateInfo.currentVersion)).")
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+
+        if let updateError = appStore.updateError {
+          Text(updateError)
+            .font(.subheadline)
+            .foregroundStyle(.red)
+        }
+      }
+
       Spacer()
     }
     .padding(20)
-    .frame(minWidth: 420, minHeight: 180)
+    .frame(minWidth: 420, minHeight: 300)
     .onAppear {
       appStore.reload()
     }
@@ -176,6 +240,15 @@ struct SettingsView: View {
             .background(Color.accentColor.opacity(0.15))
             .clipShape(Capsule())
         }
+        Button {
+          copyGroup(group)
+        } label: {
+          Image(systemName: "doc.on.doc")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Copy this group")
       }
       .tag(group.id)
     }
@@ -828,6 +901,16 @@ struct SettingsView: View {
       validationMessage = nil
       persistenceMessage = nil
       selectedGroupID = nil
+    } catch {
+      setPersistenceMessage(error.localizedDescription)
+    }
+  }
+
+  private func copyGroup(_ group: ModelGroup) {
+    do {
+      let copiedGroup = try appStore.copyGroup(id: group.id)
+      selectedGroupID = copiedGroup.id
+      setPersistenceMessage("Copied \(group.name).", tone: .success)
     } catch {
       setPersistenceMessage(error.localizedDescription)
     }

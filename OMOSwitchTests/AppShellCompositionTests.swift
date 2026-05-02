@@ -82,6 +82,7 @@ final class AppShellCompositionTests: XCTestCase {
       openCodeConfigRepository: OpenCodeConfigRepository(configRootURL: rootURL),
       switchUseCase: switchUseCase,
       loginItemService: StubLoginItemService(),
+      updateChecker: StubUpdateChecker()
     )
     let controller = StatusItemController(
       statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
@@ -152,6 +153,7 @@ final class AppShellCompositionTests: XCTestCase {
       openCodeConfigRepository: OpenCodeConfigRepository(configRootURL: rootURL),
       switchUseCase: switchUseCase,
       loginItemService: StubLoginItemService(),
+      updateChecker: StubUpdateChecker()
     )
   }
 }

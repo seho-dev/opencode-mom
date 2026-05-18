@@ -9,6 +9,7 @@ public struct AppSelectionState: Codable, Equatable, Sendable {
     public var lastSuccessfulWrite: LastSuccessfulWriteMetadata?
     public var lastWarningSummary: ProjectionIssueSummary?
     public var lastErrorSummary: ProjectionIssueSummary?
+    public var openCodeServeConfig: OpenCodeServeConfig
     public var migrationVersion: Int
 
     private enum CodingKeys: String, CodingKey {
@@ -18,6 +19,7 @@ public struct AppSelectionState: Codable, Equatable, Sendable {
         case lastSuccessfulWrite
         case lastWarningSummary
         case lastErrorSummary
+        case openCodeServeConfig
         case migrationVersion
     }
 
@@ -28,6 +30,7 @@ public struct AppSelectionState: Codable, Equatable, Sendable {
         lastSuccessfulWrite: LastSuccessfulWriteMetadata? = nil,
         lastWarningSummary: ProjectionIssueSummary? = nil,
         lastErrorSummary: ProjectionIssueSummary? = nil,
+        openCodeServeConfig: OpenCodeServeConfig = OpenCodeServeConfig(),
         migrationVersion: Int = AppSelectionState.currentSchemaVersion
     ) {
         self.selectedGroupID = selectedGroupID
@@ -36,6 +39,7 @@ public struct AppSelectionState: Codable, Equatable, Sendable {
         self.lastSuccessfulWrite = lastSuccessfulWrite
         self.lastWarningSummary = lastWarningSummary
         self.lastErrorSummary = lastErrorSummary
+        self.openCodeServeConfig = openCodeServeConfig
         self.migrationVersion = migrationVersion
     }
 
@@ -47,7 +51,33 @@ public struct AppSelectionState: Codable, Equatable, Sendable {
         self.lastSuccessfulWrite = try container.decodeIfPresent(LastSuccessfulWriteMetadata.self, forKey: .lastSuccessfulWrite)
         self.lastWarningSummary = try container.decodeIfPresent(ProjectionIssueSummary.self, forKey: .lastWarningSummary)
         self.lastErrorSummary = try container.decodeIfPresent(ProjectionIssueSummary.self, forKey: .lastErrorSummary)
+        self.openCodeServeConfig = try container.decodeIfPresent(OpenCodeServeConfig.self, forKey: .openCodeServeConfig) ?? OpenCodeServeConfig()
         self.migrationVersion = try container.decodeIfPresent(Int.self, forKey: .migrationVersion) ?? 1
+    }
+}
+
+public struct OpenCodeServeConfig: Codable, Equatable, Sendable {
+    public var port: Int
+    public var hostname: String
+    public var mdns: Bool
+    public var mdnsDomain: String
+    public var cors: [String]
+    public var autoStart: Bool
+
+    public init(
+        port: Int = 4096,
+        hostname: String = "127.0.0.1",
+        mdns: Bool = false,
+        mdnsDomain: String = "opencode.local",
+        cors: [String] = [],
+        autoStart: Bool = false
+    ) {
+        self.port = port
+        self.hostname = hostname
+        self.mdns = mdns
+        self.mdnsDomain = mdnsDomain
+        self.cors = cors
+        self.autoStart = autoStart
     }
 }
 

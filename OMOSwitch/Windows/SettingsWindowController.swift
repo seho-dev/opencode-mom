@@ -6,6 +6,7 @@ final class SettingsWindowController: NSWindowController {
   enum Kind {
     case global
     case group
+    case serverConfig
 
     var title: String {
       switch self {
@@ -13,6 +14,8 @@ final class SettingsWindowController: NSWindowController {
         ""
       case .group:
         "Group Settings"
+      case .serverConfig:
+        "Server Config"
       }
     }
 
@@ -22,6 +25,8 @@ final class SettingsWindowController: NSWindowController {
         NSSize(width: 420, height: 220)
       case .group:
         NSSize(width: 700, height: 500)
+      case .serverConfig:
+        NSSize(width: 520, height: 480)
       }
     }
   }
@@ -42,6 +47,8 @@ final class SettingsWindowController: NSWindowController {
       rootView = AnyView(GlobalSettingsView(appStore: appStore))
     case .group:
       rootView = AnyView(SettingsView(appStore: appStore))
+    case .serverConfig:
+      rootView = AnyView(ServerConfigView(appStore: appStore))
     }
     let hostingController = NSHostingController(rootView: rootView)
     let window = NSWindow(contentViewController: hostingController)

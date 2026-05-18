@@ -41,7 +41,6 @@ struct OpenCodeAgentMappingEditor: View {
         degradedState(presentation)
       } else {
         discoveredRows(presentation.discoveredRows)
-        staleOverrides(presentation.staleOverrides)
       }
     }
   }
@@ -52,7 +51,6 @@ struct OpenCodeAgentMappingEditor: View {
     discoveryError: String?
   ) -> Presentation {
     let discoveredNames = uniqueNamesPreservingOrder(discoveredAgentNames)
-    let discoveredNameSet = Set(discoveredNames)
     let isReadOnly = discoveryError != nil
 
     let discoveredRows: [DiscoveredRow]
@@ -69,10 +67,6 @@ struct OpenCodeAgentMappingEditor: View {
       }
     }
 
-    let staleOverrides = overrides
-      .filter { discoveredNameSet.contains($0.agentName) == false }
-      .map { staleOverrideRow(for: $0) }
-
     let preservedOverrides = overrides.map { override in
       OverrideInfoRow(
         id: "preserved:\(override.agentName)",
@@ -85,7 +79,7 @@ struct OpenCodeAgentMappingEditor: View {
 
     return Presentation(
       discoveredRows: discoveredRows,
-      staleOverrides: isReadOnly ? [] : staleOverrides,
+      staleOverrides: [],
       preservedOverrides: isReadOnly ? preservedOverrides : [],
       discoveryError: discoveryError,
       isReadOnly: isReadOnly,
@@ -129,7 +123,7 @@ struct OpenCodeAgentMappingEditor: View {
   private func discoveredRows(_ rows: [DiscoveredRow]) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       if rows.isEmpty {
-        Text("No OpenCode agents discovered. Existing saved overrides are not cleared.")
+        Text("No OpenCode agents discovered.")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -149,20 +143,6 @@ struct OpenCodeAgentMappingEditor: View {
             .placeholder(when: row.modelRef.isEmpty) {
               Text("Optional").foregroundStyle(.tertiary)
             }
-        }
-      }
-    }
-  }
-
-  private func staleOverrides(_ rows: [OverrideInfoRow]) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
-      if rows.isEmpty == false {
-        Text("Undiscovered saved OpenCode overrides")
-          .font(.caption)
-          .foregroundStyle(.orange)
-
-        ForEach(rows) { row in
-          overrideInfoRow(row)
         }
       }
     }
@@ -206,7 +186,7 @@ struct OpenCodeAgentMappingEditor: View {
 
         Text(row.status)
           .font(.caption2)
-          .foregroundStyle(row.status == "Undiscovered" ? .orange : .secondary)
+          .foregroundStyle(.secondary)
       }
 
       Text(row.message)
@@ -229,16 +209,6 @@ struct OpenCodeAgentMappingEditor: View {
           modelRef: newValue
         )
       }
-    )
-  }
-
-  private static func staleOverrideRow(for override: ModelGroupAgentOverride) -> OverrideInfoRow {
-    OverrideInfoRow(
-      id: "stale:\(override.agentName)",
-      agentName: override.agentName,
-      modelRef: override.modelRef,
-      status: "Undiscovered",
-      message: "Ignored during switching until this agent is discovered again."
     )
   }
 

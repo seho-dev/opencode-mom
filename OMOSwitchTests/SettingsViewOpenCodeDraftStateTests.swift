@@ -42,6 +42,31 @@ final class SettingsViewOpenCodeDraftStateTests: XCTestCase {
     XCTAssertEqual(persisted.updatedAt, persistedAt)
   }
 
+  func testSuccessfulDiscoveryExcludesStaleOpenCodeOverridesForDraftAndSave() {
+    let savedOpenCodeOverrides = [
+      ModelGroupAgentOverride(agentName: "stale", modelRef: "openai/o3"),
+      ModelGroupAgentOverride(agentName: "alpha", modelRef: "openai/gpt-5.4"),
+    ]
+    let expectedRetainedOverrides = [
+      ModelGroupAgentOverride(agentName: "alpha", modelRef: "openai/gpt-5.4")
+    ]
+    let group = makeGroup(openCodeAgentOverrides: savedOpenCodeOverrides)
+    let retained = SettingsView.retainedOpenCodeAgentOverrides(
+      from: group,
+      discoveredAgentNames: ["alpha"],
+      discoveryError: nil
+    )
+    let persisted = SettingsView.persistedDraftGroup(
+      draftGroup: group,
+      draftCategoryMappings: group.categoryMappings,
+      draftAgentOverrides: group.agentOverrides,
+      draftOpenCodeAgentOverrides: retained,
+      updatedAt: Date(timeIntervalSince1970: 1_800_000_000)
+    )
+
+    XCTAssertEqual(retained, expectedRetainedOverrides)
+    XCTAssertEqual(persisted.openCodeAgentOverrides, expectedRetainedOverrides)
+  }
   func testDiscoveryErrorDoesNotClearOpenCodeOverridesForLoadCancelOrSave() {
     let expectedOpenCodeOverrides = [
       ModelGroupAgentOverride(agentName: "stale", modelRef: "openai/o3"),

@@ -596,12 +596,14 @@ struct SettingsView: View {
 
   static func retainedOpenCodeAgentOverrides(
     from group: ModelGroup,
-    discoveredAgentNames _: [String],
-    discoveryError _: String?
+    discoveredAgentNames: [String],
+    discoveryError: String?
   ) -> [ModelGroupAgentOverride] {
-    return group.openCodeAgentOverrides
-  }
+    guard discoveryError == nil else { return group.openCodeAgentOverrides }
 
+    let discoveredAgentNameSet = Set(discoveredAgentNames)
+    return group.openCodeAgentOverrides.filter { discoveredAgentNameSet.contains($0.agentName) }
+  }
   static func trimmedModelSearchReplaceValue(_ value: String) -> String {
     value.trimmingCharacters(in: .whitespacesAndNewlines)
   }

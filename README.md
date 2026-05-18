@@ -7,11 +7,7 @@ omo-switch is a lightweight macOS menu bar app for switching Oh My OpenAgent mod
 - Menu bar app with no Dock icon.
 - Create and edit named model groups.
 - Switch active groups directly from the menu bar.
-- Save changes to the active group and automatically sync them to the relevant target config files.
-- Preserve existing unknown fields in the Oh My OpenAgent config where possible.
-- Conditionally sync `~/.config/opencode/opencode.json` when the selected or active group contains OpenCode overrides with non-empty model values.
-- Patch only `agent.<name>.model` on the OpenCode side, while keeping other agent fields and unrelated top-level config untouched.
-- Writes model references without escaping forward slashes, for example `openai/gpt-5.4`.
+- Opencode server management
 
 ## Requirements
 
@@ -70,12 +66,12 @@ On the OpenCode side, omo-switch only patches `agent.<name>.model`. It does not 
 
 omo-switch stores its own group data separately from the target app configs.
 
-| File | Purpose |
-| --- | --- |
-| `~/.config/omo-switch/groups.json` | omo-switch group definitions |
-| `~/.config/omo-switch/state.json` | currently selected group and write metadata |
-| `~/.config/opencode/oh-my-openagent.json` | target Oh My OpenAgent config rewritten on switch and when saving the active group |
-| `~/.config/opencode/opencode.json` | conditional OpenCode sync target, patched only when the group includes effective OpenCode agent model overrides |
+| File                                      | Purpose                                                                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `~/.config/omo-switch/groups.json`        | omo-switch group definitions                                                                                    |
+| `~/.config/omo-switch/state.json`         | currently selected group and write metadata                                                                     |
+| `~/.config/opencode/oh-my-openagent.json` | target Oh My OpenAgent config rewritten on switch and when saving the active group                              |
+| `~/.config/opencode/opencode.json`        | conditional OpenCode sync target, patched only when the group includes effective OpenCode agent model overrides |
 
 Before rewriting target configs, omo-switch creates backups under the omo-switch config directory.
 

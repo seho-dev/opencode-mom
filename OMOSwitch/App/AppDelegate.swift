@@ -2,6 +2,8 @@ import AppKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+  private static let terminationStopTimeoutNanoseconds: UInt64 = 500_000_000
+
   let container: DependencyContainer
   private(set) var statusItemController: StatusItemController?
 
@@ -18,6 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     buildMainMenu()
     statusItemController = container.makeStatusItemController()
+  }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    container.appStore.stopServerAndWait(timeoutNanoseconds: Self.terminationStopTimeoutNanoseconds)
   }
 
   private func buildMainMenu() {

@@ -37,7 +37,7 @@ final class AppShellCompositionTests: XCTestCase {
 
     XCTAssertNotNil(appDelegate.statusItemController)
     XCTAssertEqual(fakeStatusItem.button?.title, "OMO")
-    XCTAssertEqual(appDelegate.statusItemController?.currentMenuTitles(), ["Current Group: Primary", "Primary", "Global Settings", "Group Settings", "Reload", "Quit"])
+    XCTAssertEqual(appDelegate.statusItemController?.currentMenuTitles(), ["Current Group: Primary", "OpenCode Server: Stopped", "Primary", "Server Config", "Start Server", "Global Settings", "Group Settings", "Reload", "Quit"])
   }
 
   func testStatusMenuShowsOnlyEnabledGroupsAndChecksCurrentGroup() {
@@ -82,7 +82,7 @@ final class AppShellCompositionTests: XCTestCase {
       openCodeConfigRepository: OpenCodeConfigRepository(configRootURL: rootURL),
       switchUseCase: switchUseCase,
       loginItemService: StubLoginItemService(),
-      updateChecker: StubUpdateChecker()
+      updateChecker: StubShellUpdateChecker()
     )
     let controller = StatusItemController(
       statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
@@ -97,12 +97,12 @@ final class AppShellCompositionTests: XCTestCase {
     appStore.reload()
     controller.menuWillOpen(controller.statusMenu)
 
-    XCTAssertEqual(controller.currentMenuTitles(), ["Current Group: Current", "Current", "Enabled", "Global Settings", "Group Settings", "Reload", "Quit"])
+    XCTAssertEqual(controller.currentMenuTitles(), ["Current Group: Current", "OpenCode Server: Stopped", "Current", "Enabled", "Server Config", "Start Server", "Global Settings", "Group Settings", "Reload", "Quit"])
     XCTAssertFalse(controller.statusMenu.items.contains(where: { $0.title == "Disabled" }))
-    XCTAssertEqual(controller.statusMenu.items[1].state, .on)
-    XCTAssertEqual(controller.statusMenu.items[1].representedObject as? UUID, currentGroup.id)
-    XCTAssertEqual(controller.statusMenu.items[2].state, .off)
-    XCTAssertEqual(controller.statusMenu.items[2].representedObject as? UUID, enabledGroup.id)
+    XCTAssertEqual(controller.statusMenu.items[2].state, .on)
+    XCTAssertEqual(controller.statusMenu.items[2].representedObject as? UUID, currentGroup.id)
+    XCTAssertEqual(controller.statusMenu.items[3].state, .off)
+    XCTAssertEqual(controller.statusMenu.items[3].representedObject as? UUID, enabledGroup.id)
   }
 
   func testDependencyContainerReusesSingleSettingsWindowControllers() {
@@ -135,7 +135,76 @@ final class AppShellCompositionTests: XCTestCase {
     XCTAssertEqual(firstGroup.window?.isReleasedWhenClosed, false)
   }
 
-  private func makeStore() -> AppStore {
+  func testStatusMenuShowsServerStateAndStartStopActionTitles() {
+    let controller = makeStatusItemController()
+
+    controller.appStore.openCodeServeStatus = .running
+    controller.menuWillOpen(controller.statusMenu)
+    XCTAssertTrue(controller.currentMenuTitles().contains("OpenCode Server: Running"))
+    XCTAssertTrue(controller.currentMenuTitles().contains("Stop Server"))
+
+    controller.appStore.openCodeServeStatus = .starting
+    controller.menuWillOpen(controller.statusMenu)
+    XCTAssertTrue(controller.currentMenuTitles().contains("OpenCode Server: Starting..."))
+    XCTAssertTrue(controller.currentMenuTitles().contains("Stop Server"))
+
+    controller.appStore.openCodeServeStatus = .failed(reason: "boom")
+    controller.menuWillOpen(controller.statusMenu)
+    XCTAssertTrue(controller.currentMenuTitles().contains("OpenCode Server: Server failed: boom"))
+    XCTAssertTrue(controller.currentMenuTitles().contains("Start Server"))
+
+    controller.appStore.openCodeServeStatus = .stopped
+    controller.menuWillOpen(controller.statusMenu)
+    XCTAssertTrue(controller.currentMenuTitles().contains("OpenCode Server: Stopped"))
+    XCTAssertTrue(controller.currentMenuTitles().contains("Start Server"))
+  }
+
+  func testStartStopMenuItemsDispatchAppStoreActionsOnce() async throws {
+    let manager = RecordingOpenCodeServeProcessManager(initialState: .stopped)
+    let controller = makeStatusItemController(processManager: manager)
+    controller.appStore.openCodeServeStatus = .stopped
+    controller.menuWillOpen(controller.statusMenu)
+
+    try performMenuItem(titled: "Start Server", in: controller)
+
+    try await waitUntil { await manager.recordedStartCount() == 1 }
+    let startCount = await manager.recordedStartCount()
+    XCTAssertEqual(startCount, 1)
+
+    controller.appStore.openCodeServeStatus = .running
+    controller.menuWillOpen(controller.statusMenu)
+    try performMenuItem(titled: "Stop Server", in: controller)
+
+    try await waitUntil { await manager.recordedStopCount() == 1 }
+    let stopCount = await manager.recordedStopCount()
+    XCTAssertEqual(stopCount, 1)
+  }
+
+  func testServerConfigMenuItemReusesOneWindowController() throws {
+    let fakeStatusItem = FakeStatusItem()
+    let store = makeStore()
+    let controller = StatusItemController(
+      statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
+      appStore: store,
+      popoverController: QuickSwitchPopoverController(popover: NSPopover()),
+      globalSettingsWindowControllerProvider: { SettingsWindowController(appStore: store, kind: .global) },
+      groupSettingsWindowControllerProvider: { SettingsWindowController(appStore: store, kind: .group) }
+    )
+
+    try performMenuItem(titled: "Server Config", in: controller)
+    let first = controller.resolveServerConfigWindowController()
+    try performMenuItem(titled: "Server Config", in: controller)
+    let second = controller.resolveServerConfigWindowController()
+
+    XCTAssertTrue(first === second)
+    XCTAssertEqual(first.kind, .serverConfig)
+    XCTAssertEqual(first.window?.title, "Server Config")
+    XCTAssertEqual(first.window?.isReleasedWhenClosed, false)
+  }
+
+  private func makeStore(
+    processManager: any OpenCodeServeProcessManaging = RecordingOpenCodeServeProcessManager()
+  ) -> AppStore {
     let rootURL = try! TestSupport.makeTemporaryDirectory()
     tempRootURLs.append(rootURL)
     let modelGroupRepository = ModelGroupRepository(configRootURL: rootURL)
@@ -153,8 +222,30 @@ final class AppShellCompositionTests: XCTestCase {
       openCodeConfigRepository: OpenCodeConfigRepository(configRootURL: rootURL),
       switchUseCase: switchUseCase,
       loginItemService: StubLoginItemService(),
-      updateChecker: StubUpdateChecker()
+      updateChecker: StubShellUpdateChecker(),
+      processManager: processManager
     )
+  }
+
+  private func makeStatusItemController(
+    processManager: any OpenCodeServeProcessManaging = RecordingOpenCodeServeProcessManager()
+  ) -> StatusItemController {
+    let fakeStatusItem = FakeStatusItem()
+    let store = makeStore(processManager: processManager)
+    return StatusItemController(
+      statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
+      appStore: store,
+      popoverController: QuickSwitchPopoverController(popover: NSPopover()),
+      globalSettingsWindowControllerProvider: { SettingsWindowController(appStore: store, kind: .global) },
+      groupSettingsWindowControllerProvider: { SettingsWindowController(appStore: store, kind: .group) }
+    )
+  }
+
+  private func performMenuItem(titled title: String, in controller: StatusItemController) throws {
+    let item = try XCTUnwrap(controller.statusMenu.items.first { $0.title == title })
+    let action = try XCTUnwrap(item.action)
+    let target = try XCTUnwrap(item.target)
+    NSApplication.shared.sendAction(action, to: target, from: item)
   }
 }
 
@@ -185,4 +276,67 @@ private final class FakeStatusItem: StatusItemType {
   init() {
     button = NSStatusBarButton(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
   }
+}
+
+private actor RecordingOpenCodeServeProcessManager: OpenCodeServeProcessManaging {
+  private var state: OpenCodeServeProcessState
+  private var startCount = 0
+  private var stopCount = 0
+
+  init(initialState: OpenCodeServeProcessState = .stopped) {
+    self.state = initialState
+  }
+
+  func currentState() async -> OpenCodeServeProcessState {
+    state
+  }
+
+  func start(config: OpenCodeServeConfig) async {
+    startCount += 1
+    state = .running
+  }
+
+  func restart(config: OpenCodeServeConfig) async {
+    state = .running
+  }
+
+  func start(arguments: [String]) async {
+    state = .running
+  }
+
+  func stop() async {
+    stopCount += 1
+    state = .stopped
+  }
+
+  func restart(arguments: [String]) async {
+    state = .running
+  }
+
+  func recordedStartCount() -> Int {
+    startCount
+  }
+
+  func recordedStopCount() -> Int {
+    stopCount
+  }
+}
+
+private struct StubShellUpdateChecker: UpdateChecker {
+  func checkForUpdates() async throws -> UpdateInfo { throw NSError(domain: "Stub", code: 0) }
+  func downloadUpdate(_ updateInfo: UpdateInfo) async throws -> URL { throw NSError(domain: "Stub", code: 0) }
+  func installUpdate(at url: URL) throws {}
+}
+
+@MainActor
+private func waitUntil(
+  timeoutNanoseconds: UInt64 = 1_000_000_000,
+  condition: @escaping @MainActor () async throws -> Bool
+) async throws {
+  let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+  while DispatchTime.now().uptimeNanoseconds < deadline {
+    if try await condition() { return }
+    try await Task.sleep(nanoseconds: 10_000_000)
+  }
+  XCTFail("Timed out waiting for condition")
 }

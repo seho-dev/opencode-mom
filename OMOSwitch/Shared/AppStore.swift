@@ -18,6 +18,8 @@ final class AppStore: NSObject, ObservableObject {
   @Published var updateError: String? = nil
   @Published var isDownloadingUpdate: Bool = false
   @Published var downloadProgress: Double? = nil
+  @Published var openCodeServeConfig: OpenCodeServeConfig = OpenCodeServeConfig()
+  @Published var openCodeServeStatus: OpenCodeServeProcessState = .stopped
 
   let modelGroupRepository: ModelGroupRepository
   let appStateRepository: AppStateRepository
@@ -25,6 +27,7 @@ final class AppStore: NSObject, ObservableObject {
   let switchUseCase: SwitchGroupUseCase
   let loginItemService: any LoginItemService
   let updateChecker: any UpdateChecker
+  let processManager: any OpenCodeServeProcessManaging
 
   static var livePreview: AppStore {
     let modelGroupRepository = ModelGroupRepository()
@@ -42,7 +45,8 @@ final class AppStore: NSObject, ObservableObject {
       openCodeConfigRepository: OpenCodeConfigRepository(),
       switchUseCase: switchUseCase,
       loginItemService: SMAppServiceLoginItemService(),
-      updateChecker: GitHubUpdateChecker()
+      updateChecker: GitHubUpdateChecker(),
+      processManager: OpenCodeServeProcessManager()
     )
   }
 
@@ -52,7 +56,8 @@ final class AppStore: NSObject, ObservableObject {
     openCodeConfigRepository: OpenCodeConfigRepository,
     switchUseCase: SwitchGroupUseCase,
     loginItemService: any LoginItemService,
-    updateChecker: any UpdateChecker
+    updateChecker: any UpdateChecker,
+    processManager: any OpenCodeServeProcessManaging = OpenCodeServeProcessManager()
   ) {
     self.modelGroupRepository = modelGroupRepository
     self.appStateRepository = appStateRepository
@@ -60,6 +65,7 @@ final class AppStore: NSObject, ObservableObject {
     self.switchUseCase = switchUseCase
     self.loginItemService = loginItemService
     self.updateChecker = updateChecker
+    self.processManager = processManager
     super.init()
   }
 
@@ -73,9 +79,15 @@ final class AppStore: NSObject, ObservableObject {
       currentGroupID = state.selectedGroupID
       currentGroupName = state.selectedGroupName
       launchAtLoginEnabled = state.launchAtLoginEnabled
+      openCodeServeConfig = state.openCodeServeConfig
       launchAtLoginStatusMessage = nil
       lastSwitchError = state.lastErrorSummary?.message
       lastSwitchWarning = state.lastWarningSummary?.message
+
+      refreshServerStatus()
+      if state.openCodeServeConfig.autoStart {
+        startServer(config: state.openCodeServeConfig)
+      }
 
       do {
         let systemLaunchAtLoginStatus = try loginItemService.currentStatus()
@@ -94,6 +106,102 @@ final class AppStore: NSObject, ObservableObject {
     }
 
     loadDiscoveredOpenCodeAgents()
+  }
+
+  func loadServerConfig() {
+    do {
+      let state = try appStateRepository.load()
+      openCodeServeConfig = state.openCodeServeConfig
+    } catch {
+      lastSwitchError = error.localizedDescription
+    }
+  }
+
+  func saveServerConfig(_ config: OpenCodeServeConfig) throws {
+    let validationErrors = OpenCodeServeArgumentBuilder.validationErrors(for: config)
+    guard validationErrors.isEmpty else { throw validationErrors[0] }
+
+    var state = try appStateRepository.load()
+    let previousConfig = state.openCodeServeConfig
+    state.openCodeServeConfig = config
+    try appStateRepository.save(state)
+    openCodeServeConfig = config
+
+    guard openCodeServeStatus == .running, serverArgumentsChanged(from: previousConfig, to: config) else {
+      return
+    }
+
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await processManager.restart(config: config)
+      await updateServerStatusFromProcessManager()
+    }
+  }
+
+  private func serverArgumentsChanged(from previous: OpenCodeServeConfig, to next: OpenCodeServeConfig) -> Bool {
+    previous.port != next.port
+      || previous.hostname != next.hostname
+      || previous.mdns != next.mdns
+      || previous.mdnsDomain != next.mdnsDomain
+      || previous.cors != next.cors
+  }
+
+  func startServer() {
+    startServer(config: openCodeServeConfig)
+  }
+
+  func stopServer() {
+    openCodeServeStatus = .stopping
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await processManager.stop()
+      await updateServerStatusFromProcessManager()
+    }
+  }
+
+  func stopServerAndWait(timeoutNanoseconds: UInt64) {
+    openCodeServeStatus = .stopping
+    let processManager = processManager
+    let semaphore = DispatchSemaphore(value: 0)
+
+    Task.detached {
+      await processManager.stop()
+      semaphore.signal()
+    }
+
+    let timeout = DispatchTime.now() + .nanosecondsClamped(timeoutNanoseconds)
+    if semaphore.wait(timeout: timeout) == .success {
+      openCodeServeStatus = .stopped
+    }
+  }
+
+  func restartServer() {
+    openCodeServeStatus = .starting
+    let config = openCodeServeConfig
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await processManager.restart(config: config)
+      await updateServerStatusFromProcessManager()
+    }
+  }
+
+  private func startServer(config: OpenCodeServeConfig) {
+    openCodeServeStatus = .starting
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await processManager.start(config: config)
+      await updateServerStatusFromProcessManager()
+    }
+  }
+
+  private func refreshServerStatus() {
+    Task { @MainActor [weak self] in
+      await self?.updateServerStatusFromProcessManager()
+    }
+  }
+
+  private func updateServerStatusFromProcessManager() async {
+    openCodeServeStatus = await processManager.currentState()
   }
 
   func setLaunchAtLoginEnabled(_ isEnabled: Bool) throws {
@@ -269,6 +377,7 @@ final class AppStore: NSObject, ObservableObject {
     let task = Process()
     task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
     task.arguments = ["-n", Bundle.main.bundlePath]
+
     try? task.run()
 
     NSApplication.shared.terminate(nil)
@@ -290,6 +399,9 @@ final class AppStore: NSObject, ObservableObject {
       case .success(let projectionResult):
         lastSwitchError = nil
         lastSwitchWarning = projectionResult.warnings.isEmpty ? nil : projectionResult.warnings.joined(separator: "; ")
+        if openCodeServeStatus == .running {
+          await processManager.restart(config: openCodeServeConfig)
+        }
       case .noOp:
         lastSwitchError = nil
         lastSwitchWarning = nil
@@ -301,5 +413,11 @@ final class AppStore: NSObject, ObservableObject {
     }
 
     reload()
+  }
+}
+
+private extension DispatchTimeInterval {
+  static func nanosecondsClamped(_ value: UInt64) -> DispatchTimeInterval {
+    .nanoseconds(Int(min(value, UInt64(Int.max))))
   }
 }

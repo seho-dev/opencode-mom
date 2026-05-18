@@ -12,6 +12,7 @@ final class DependencyContainer {
   let switchUseCase: SwitchGroupUseCase
   let appStore: AppStore
   let loginItemService: any LoginItemService
+  let processManager: any OpenCodeServeProcessManaging
 
   private let statusBarProvider: StatusBarProviding
   private let popoverControllerFactory: () -> QuickSwitchPopoverController
@@ -33,13 +34,15 @@ final class DependencyContainer {
     )
     let loginItemService = SMAppServiceLoginItemService()
     let updateChecker = GitHubUpdateChecker()
+    let processManager = OpenCodeServeProcessManager()
     let appStore = AppStore(
       modelGroupRepository: modelGroupRepository,
       appStateRepository: appStateRepository,
       openCodeConfigRepository: openCodeConfigRepository,
       switchUseCase: switchUseCase,
       loginItemService: loginItemService,
-      updateChecker: updateChecker
+      updateChecker: updateChecker,
+      processManager: processManager
     )
     let sharedGlobalSettingsWindowController = SettingsWindowController(appStore: appStore, kind: .global)
     let sharedGroupSettingsWindowController = SettingsWindowController(appStore: appStore, kind: .group)
@@ -51,6 +54,7 @@ final class DependencyContainer {
     self.switchUseCase = switchUseCase
     self.appStore = appStore
     self.loginItemService = loginItemService
+    self.processManager = processManager
     self.statusBarProvider = CocoaStatusBarProvider()
     self.popoverControllerFactory = { QuickSwitchPopoverController(appStore: appStore) }
     self.globalSettingsWindowControllerFactory = { sharedGlobalSettingsWindowController }
@@ -64,6 +68,7 @@ final class DependencyContainer {
     groupSettingsWindowController: SettingsWindowController,
     loginItemService: (any LoginItemService)? = nil,
     updateChecker: (any UpdateChecker)? = nil,
+    processManager: (any OpenCodeServeProcessManaging)? = nil,
     configRootURL: URL? = nil
   ) {
     let modelGroupRepository = ModelGroupRepository(configRootURL: configRootURL)
@@ -80,13 +85,15 @@ final class DependencyContainer {
     )
     let resolvedLoginItemService = loginItemService ?? SMAppServiceLoginItemService()
     let resolvedUpdateChecker = updateChecker ?? GitHubUpdateChecker()
+    let resolvedProcessManager = processManager ?? OpenCodeServeProcessManager()
     let appStore = AppStore(
       modelGroupRepository: modelGroupRepository,
       appStateRepository: appStateRepository,
       openCodeConfigRepository: openCodeConfigRepository,
       switchUseCase: switchUseCase,
       loginItemService: resolvedLoginItemService,
-      updateChecker: resolvedUpdateChecker
+      updateChecker: resolvedUpdateChecker,
+      processManager: resolvedProcessManager
     )
     let sharedGlobalSettingsWindowController = globalSettingsWindowController
     let sharedGroupSettingsWindowController = groupSettingsWindowController
@@ -98,6 +105,7 @@ final class DependencyContainer {
     self.switchUseCase = switchUseCase
     self.appStore = appStore
     self.loginItemService = resolvedLoginItemService
+    self.processManager = resolvedProcessManager
     self.statusBarProvider = statusBarProvider
     self.popoverControllerFactory = popoverControllerFactory
     self.globalSettingsWindowControllerFactory = { sharedGlobalSettingsWindowController }

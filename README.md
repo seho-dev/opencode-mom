@@ -4,10 +4,10 @@ omo-switch is a lightweight macOS menu bar app for switching Oh My OpenAgent mod
 
 ## Features
 
-- Menu bar app with no Dock icon.
-- Create and edit named model groups.
-- Switch active groups directly from the menu bar.
-- Opencode server management
+- 🧭 **Menu bar first** — runs quietly with no Dock icon.
+- 🧩 **Model groups** — create and edit named category / agent mappings.
+- ⚡️ **Quick switching** — switch active groups directly from the menu bar.
+- 🖥️ **OpenCode server control** — configure, start, stop, and auto-start `opencode serve`.
 
 ## Requirements
 
@@ -25,22 +25,13 @@ Each tagged release uploads a DMG asset built by GitHub Actions. Download the `.
 
 ## First launch on macOS
 
-Current GitHub release builds are distributed without Apple notarization. macOS Gatekeeper may show a warning such as:
+Current GitHub release builds are unsigned and not notarized. If macOS blocks the app, remove the quarantine flag after dragging `omo-switch.app` into `/Applications`:
 
-- “omo-switch cannot be opened because Apple cannot check it for malicious software.”
-- “omo-switch is damaged and can’t be opened.”
-- “This app is from an unidentified developer.”
+```bash
+sudo xattr -dr com.apple.quarantine /Applications/omo-switch.app
+```
 
-If macOS blocks the app:
-
-1. Open **System Settings**.
-2. Go to **Privacy & Security**.
-3. Scroll to the **Security** section.
-4. Find the message about `omo-switch` being blocked.
-5. Click **Open Anyway** or **Allow Anyway**.
-6. Launch `omo-switch` again and confirm the prompt.
-
-You can also right-click `omo-switch.app` and choose **Open** for the first launch.
+Then launch `omo-switch` from `/Applications`.
 
 ## Usage
 

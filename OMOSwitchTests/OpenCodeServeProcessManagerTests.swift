@@ -5,18 +5,37 @@ import XCTest
 final class OpenCodeServeProcessManagerTests: XCTestCase {
     func testStartTransitionsStoppedStartingRunning() async {
         let runner = FakeServerProcessRunner()
+        let readiness = FakeServerReadinessChecker(nextResult: nil)
         await runner.pauseLaunches()
-        let manager = OpenCodeServeProcessManager(runner: runner)
+        let manager = OpenCodeServeProcessManager(runner: runner, readinessChecker: readiness)
 
         let startTask = Task { await manager.start(arguments: ["serve", "--port", "4096"]) }
         await runner.waitForLaunchCount(1)
 
         await XCTAssertState(manager, .starting)
 
+        let readinessCheckCountBeforeLaunchCompletes = await readiness.checkCount
+        XCTAssertEqual(readinessCheckCountBeforeLaunchCompletes, 0)
+
         await runner.completeLaunch(at: 0)
+        await readiness.waitForCheckCount(1)
+        await XCTAssertState(manager, .starting)
+        await readiness.completeCheck(at: 0, result: .success(()))
         await startTask.value
 
         await XCTAssertState(manager, .running)
+    }
+
+    func testReadinessFailureStopsLaunchedProcessAndTransitionsToFailed() async {
+        let runner = FakeServerProcessRunner()
+        let readiness = FakeServerReadinessChecker(nextResult: .failure(FakeServerReadinessError.notReady))
+        let manager = OpenCodeServeProcessManager(runner: runner, readinessChecker: readiness)
+
+        await manager.start(arguments: ["serve", "--port", "4096"])
+
+        await XCTAssertState(manager, .failed(reason: "opencode serve did not become ready"))
+        let stopCount = await runner.stopCount
+        XCTAssertEqual(stopCount, 1)
     }
 
     func testStopTransitionsRunningStoppingStopped() async {
@@ -189,6 +208,17 @@ private enum FakeServerProcessError: Error, LocalizedError, Sendable {
     }
 }
 
+private enum FakeServerReadinessError: Error, LocalizedError, Sendable {
+    case notReady
+
+    var errorDescription: String? {
+        switch self {
+        case .notReady:
+            "opencode serve did not become ready"
+        }
+    }
+}
+
 private actor FakeServerProcessRunner: ServerProcessRunning {
     private var launches: [FakeLaunch] = []
     private var nextLaunchResult: Result<Void, Error> = .success(())
@@ -205,7 +235,7 @@ private actor FakeServerProcessRunner: ServerProcessRunning {
     var stopCount: Int { recordedStopCount }
     var events: [FakeServerProcessEvent] { recordedEvents }
 
-    func launch(arguments: [String], onExit: @escaping @Sendable (ServerProcessExit) -> Void) async throws -> any ServerProcessHandle {
+    func launch(executablePath: String?, arguments: [String], onExit: @escaping @Sendable (ServerProcessExit) -> Void) async throws -> any ServerProcessHandle {
         let index = launches.count
         launches.append(FakeLaunch(arguments: arguments, onExit: onExit))
         recordedEvents.append(.launch)
@@ -291,6 +321,59 @@ private actor FakeServerProcessRunner: ServerProcessRunning {
         stopWaiters.removeAll { recordedStopCount >= $0.0 }
         ready.forEach { $0.1.resume() }
     }
+}
+
+private actor FakeServerReadinessChecker: ServerProcessReadinessChecking {
+    private var nextResult: Result<Void, Error>?
+    private var checks: [FakeServerReadinessCheck] = []
+    private var checkWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    init(nextResult: Result<Void, Error>? = .success(())) {
+        self.nextResult = nextResult
+    }
+
+    var checkCount: Int { checks.count }
+
+    func waitUntilReady(arguments: [String]) async throws {
+        if let nextResult {
+            self.nextResult = .success(())
+            try nextResult.get()
+            return
+        }
+
+        try await withCheckedThrowingContinuation { continuation in
+            checks.append(FakeServerReadinessCheck(arguments: arguments, continuation: continuation))
+            resumeReadyCheckWaiters()
+        }
+    }
+
+    func waitForCheckCount(_ count: Int) async {
+        guard checks.count < count else { return }
+        await withCheckedContinuation { continuation in
+            checkWaiters.append((count, continuation))
+        }
+    }
+
+    func completeCheck(at index: Int, result: Result<Void, Error>) {
+        let continuation = checks[index].continuation
+        switch result {
+        case .success:
+            continuation.resume()
+        case .failure(let error):
+            continuation.resume(throwing: error)
+        }
+    }
+
+    private func resumeReadyCheckWaiters() {
+        let ready = checkWaiters.filter { checks.count >= $0.0 }
+        checkWaiters.removeAll { checks.count >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
+}
+
+private struct FakeServerReadinessCheck: Sendable {
+    let arguments: [String]
+    let continuation: CheckedContinuation<Void, any Error>
 }
 
 private struct FakeLaunch: Sendable {

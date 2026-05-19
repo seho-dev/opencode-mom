@@ -27,9 +27,14 @@ public protocol ServerProcessHandle: Sendable {
 
 public protocol ServerProcessRunning: Sendable {
     func launch(
+        executablePath: String?,
         arguments: [String],
         onExit: @escaping @Sendable (ServerProcessExit) -> Void
     ) async throws -> any ServerProcessHandle
+}
+
+public protocol ServerProcessReadinessChecking: Sendable {
+    func waitUntilReady(arguments: [String]) async throws
 }
 
 public protocol ServerProcessManaging: Sendable {
@@ -46,6 +51,7 @@ public protocol OpenCodeServeProcessManaging: ServerProcessManaging {
 
 public actor OpenCodeServeProcessManager: OpenCodeServeProcessManaging {
     private let runner: any ServerProcessRunning
+    private let readinessChecker: any ServerProcessReadinessChecking
     private let argumentBuilder: OpenCodeServeArgumentBuilder
     private var state: OpenCodeServeProcessState = .stopped
     private var handle: (any ServerProcessHandle)?
@@ -53,14 +59,17 @@ public actor OpenCodeServeProcessManager: OpenCodeServeProcessManaging {
 
     public init(argumentBuilder: OpenCodeServeArgumentBuilder = OpenCodeServeArgumentBuilder()) {
         self.runner = OpenCodeServeProcessRunner()
+        self.readinessChecker = OpenCodeServeHTTPReadinessChecker()
         self.argumentBuilder = argumentBuilder
     }
 
     public init(
         runner: any ServerProcessRunning,
+        readinessChecker: any ServerProcessReadinessChecking = ImmediateServerProcessReadinessChecker(),
         argumentBuilder: OpenCodeServeArgumentBuilder = OpenCodeServeArgumentBuilder()
     ) {
         self.runner = runner
+        self.readinessChecker = readinessChecker
         self.argumentBuilder = argumentBuilder
     }
 
@@ -70,7 +79,7 @@ public actor OpenCodeServeProcessManager: OpenCodeServeProcessManaging {
 
     public func start(config: OpenCodeServeConfig) async {
         do {
-            try await start(arguments: argumentBuilder.arguments(for: config))
+            try await start(executablePath: config.executablePath, arguments: argumentBuilder.arguments(for: config))
         } catch {
             state = .failed(reason: error.localizedDescription)
         }
@@ -78,34 +87,48 @@ public actor OpenCodeServeProcessManager: OpenCodeServeProcessManaging {
 
     public func restart(config: OpenCodeServeConfig) async {
         do {
-            try await restart(arguments: argumentBuilder.arguments(for: config))
+            try await restart(executablePath: config.executablePath, arguments: argumentBuilder.arguments(for: config))
         } catch {
             state = .failed(reason: error.localizedDescription)
         }
     }
 
     public func start(arguments: [String]) async {
+        await start(executablePath: nil, arguments: arguments)
+    }
+
+    private func start(executablePath: String?, arguments: [String]) async {
         guard canStart else { return }
 
         state = .starting
         generation += 1
         let launchGeneration = generation
+        var launchedHandle: (any ServerProcessHandle)?
 
         do {
-            let launchedHandle = try await runner.launch(arguments: arguments) { [weak self] exit in
+            let processHandle = try await runner.launch(executablePath: executablePath, arguments: arguments) { [weak self] exit in
                 Task { await self?.recordUnexpectedExit(exit, generation: launchGeneration) }
             }
 
             guard generation == launchGeneration else {
-                await launchedHandle.stop()
+                await processHandle.stop()
                 return
             }
 
-            handle = launchedHandle
+            launchedHandle = processHandle
+            handle = processHandle
+            try await readinessChecker.waitUntilReady(arguments: arguments)
+
+            guard generation == launchGeneration else {
+                return
+            }
+
             state = .running
         } catch {
             if generation == launchGeneration {
+                let processHandle = handle ?? launchedHandle
                 handle = nil
+                await processHandle?.stop()
                 state = .failed(reason: error.localizedDescription)
             }
         }
@@ -127,6 +150,10 @@ public actor OpenCodeServeProcessManager: OpenCodeServeProcessManaging {
     }
 
     public func restart(arguments: [String]) async {
+        await restart(executablePath: nil, arguments: arguments)
+    }
+
+    private func restart(executablePath: String?, arguments: [String]) async {
         switch state {
         case .starting, .running, .stopping:
             await stop()
@@ -134,7 +161,7 @@ public actor OpenCodeServeProcessManager: OpenCodeServeProcessManaging {
             break
         }
 
-        await start(arguments: arguments)
+        await start(executablePath: executablePath, arguments: arguments)
     }
 
     private var canStart: Bool {
@@ -149,8 +176,108 @@ public actor OpenCodeServeProcessManager: OpenCodeServeProcessManaging {
     private func recordUnexpectedExit(_ exit: ServerProcessExit, generation exitGeneration: Int) {
         guard generation == exitGeneration else { return }
 
+        generation += 1
         handle = nil
         state = .failed(reason: exit.reason ?? "Process exited with status \(exit.status).")
+    }
+}
+
+public struct ImmediateServerProcessReadinessChecker: ServerProcessReadinessChecking {
+    public init() {}
+
+    public func waitUntilReady(arguments: [String]) async throws {}
+}
+
+public enum OpenCodeServeReadinessError: LocalizedError, Sendable {
+    case timedOut(endpoint: String, reason: String?)
+
+    public var errorDescription: String? {
+        switch self {
+        case .timedOut(let endpoint, let reason):
+            if let reason, reason.isEmpty == false {
+                return "opencode serve did not become ready at \(endpoint): \(reason)"
+            }
+            return "opencode serve did not become ready at \(endpoint)."
+        }
+    }
+}
+
+public struct OpenCodeServeHTTPReadinessChecker: ServerProcessReadinessChecking {
+    private let timeoutNanoseconds: UInt64
+    private let pollIntervalNanoseconds: UInt64
+
+    public init(
+        timeoutNanoseconds: UInt64 = 5_000_000_000,
+        pollIntervalNanoseconds: UInt64 = 100_000_000
+    ) {
+        self.timeoutNanoseconds = timeoutNanoseconds
+        self.pollIntervalNanoseconds = pollIntervalNanoseconds
+    }
+
+    public func waitUntilReady(arguments: [String]) async throws {
+        let endpoint = Self.healthURL(arguments: arguments)
+        let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+        var lastFailure: String?
+
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            try Task.checkCancellation()
+
+            do {
+                var request = URLRequest(url: endpoint)
+                request.timeoutInterval = 1
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let httpResponse = response as? HTTPURLResponse {
+                    if (200..<300).contains(httpResponse.statusCode) {
+                        return
+                    }
+                    lastFailure = "HTTP \(httpResponse.statusCode)"
+                } else {
+                    lastFailure = "non-HTTP response"
+                }
+            } catch {
+                lastFailure = error.localizedDescription
+            }
+
+            try await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+        }
+
+        throw OpenCodeServeReadinessError.timedOut(endpoint: endpoint.absoluteString, reason: lastFailure)
+    }
+
+    private static func healthURL(arguments: [String]) -> URL {
+        var hostname = "127.0.0.1"
+        var port = 4096
+        var index = 0
+
+        while index < arguments.count {
+            switch arguments[index] {
+            case "--hostname" where index + 1 < arguments.count:
+                hostname = arguments[index + 1]
+                index += 1
+            case "--port" where index + 1 < arguments.count:
+                port = Int(arguments[index + 1]) ?? port
+                index += 1
+            default:
+                break
+            }
+            index += 1
+        }
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = connectableHostname(hostname)
+        components.port = port
+        components.path = "/global/health"
+        return components.url ?? URL(string: "http://127.0.0.1:\(port)/global/health")!
+    }
+
+    private static func connectableHostname(_ hostname: String) -> String {
+        switch hostname.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "", "0.0.0.0", "::", "[::]":
+            "127.0.0.1"
+        default:
+            hostname
+        }
     }
 }
 
@@ -193,14 +320,20 @@ public struct OpenCodeServeProcessRunner: ServerProcessRunning {
     }
 
     public func launch(
+        executablePath: String? = nil,
         arguments: [String],
         onExit: @escaping @Sendable (ServerProcessExit) -> Void
     ) async throws -> any ServerProcessHandle {
         let process = processFactory()
         let output = BoundedProcessOutput(limit: outputLimit)
 
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["opencode"] + arguments
+        if let executablePath = Self.trimmedExecutablePath(executablePath) {
+            process.executableURL = URL(fileURLWithPath: executablePath)
+            process.arguments = arguments
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["PATH=\(Self.opencodeSearchPath())", "opencode"] + arguments
+        }
         process.standardOutput = output.makePipe()
         process.standardError = output.makePipe()
         process.terminationHandler = { terminatedProcess in
@@ -223,6 +356,28 @@ public struct OpenCodeServeProcessRunner: ServerProcessRunning {
         }
 
         return OpenCodeServeProcessHandle(process: process, timeoutNanoseconds: stopTimeoutNanoseconds)
+    }
+
+    private static func opencodeSearchPath() -> String {
+        let defaultPath = "/usr/bin:/bin:/usr/sbin:/sbin"
+        let inheritedPath = ProcessInfo.processInfo.environment["PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let basePath = inheritedPath?.isEmpty == false ? inheritedPath! : defaultPath
+        let bunBinPath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".bun/bin").path
+        var seen = Set<String>()
+
+        return ([bunBinPath] + basePath.components(separatedBy: ":"))
+            .filter { component in
+                let trimmed = component.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard trimmed.isEmpty == false, seen.contains(trimmed) == false else { return false }
+                seen.insert(trimmed)
+                return true
+            }
+            .joined(separator: ":")
+    }
+
+    private static func trimmedExecutablePath(_ executablePath: String?) -> String? {
+        let trimmedPath = executablePath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedPath.isEmpty ? nil : trimmedPath
     }
 
     private static func launchFailureReason(error: Error, output: BoundedProcessOutput) -> String {

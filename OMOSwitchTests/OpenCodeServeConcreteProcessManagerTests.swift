@@ -18,8 +18,10 @@ final class OpenCodeServeConcreteProcessManagerTests: XCTestCase {
         await manager.start(config: config)
 
         XCTAssertEqual(process.executableURL?.path, "/usr/bin/env")
+        let processArguments = process.arguments ?? []
+        XCTAssertTrue(processArguments.first?.hasPrefix("PATH=") == true)
         XCTAssertEqual(
-            process.arguments,
+            Array(processArguments.dropFirst()),
             [
                 "opencode",
                 "serve",
@@ -37,6 +39,33 @@ final class OpenCodeServeConcreteProcessManagerTests: XCTestCase {
             ]
         )
         await XCTAssertConcreteState(manager, .running)
+    }
+
+    func testStartConfigAddsBunBinToEnvPathBeforeOpencode() async {
+        let process = FakeOpenCodeServeSystemProcess()
+        let runner = OpenCodeServeProcessRunner(processFactory: { process }, stopTimeoutNanoseconds: 1_000_000)
+        let manager = OpenCodeServeProcessManager(runner: runner)
+
+        await manager.start(config: OpenCodeServeConfig(port: 5000))
+
+        let processArguments = process.arguments ?? []
+        let pathArgument = processArguments.first ?? ""
+        XCTAssertTrue(pathArgument.hasPrefix("PATH="), "Expected PATH assignment before opencode, got \(processArguments)")
+        XCTAssertTrue(pathArgument.contains(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".bun/bin").path))
+        XCTAssertEqual(processArguments.dropFirst().first, "opencode")
+        XCTAssertEqual(Array(processArguments.dropFirst(2)), ["serve", "--port", "5000", "--hostname", "127.0.0.1"])
+    }
+
+    func testStartConfigUsesManualExecutablePathWithoutEnvLookup() async {
+        let process = FakeOpenCodeServeSystemProcess()
+        let runner = OpenCodeServeProcessRunner(processFactory: { process }, stopTimeoutNanoseconds: 1_000_000)
+        let manager = OpenCodeServeProcessManager(runner: runner)
+        let config = OpenCodeServeConfig(port: 5000, executablePath: "/opt/homebrew/bin/opencode")
+
+        await manager.start(config: config)
+
+        XCTAssertEqual(process.executableURL?.path, "/opt/homebrew/bin/opencode")
+        XCTAssertEqual(process.arguments, ["serve", "--port", "5000", "--hostname", "127.0.0.1"])
     }
 
     func testLaunchFailureTransitionsToFailedWithNonEmptyReason() async {

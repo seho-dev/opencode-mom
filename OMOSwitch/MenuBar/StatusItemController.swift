@@ -41,14 +41,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
   let statusItem: StatusItemType
   let popoverController: QuickSwitchPopoverController
   let appStore: AppStore
-  private let globalSettingsWindowControllerProvider: () -> SettingsWindowController
-  private let groupSettingsWindowControllerProvider: () -> SettingsWindowController
-  private var serverConfigWindowController: SettingsWindowController?
+  private let settingsWindowControllerProvider: () -> SettingsWindowController
+  private var resolvedSettingsWindowController: SettingsWindowController?
   private var openCodeServeStatusCancellable: AnyCancellable?
   private(set) lazy var statusMenu: NSMenu = makeStatusMenu()
 
   private static let serverStatusRole = "serverStatus"
-  private static let serverConfigRole = "serverConfig"
   private static let serverActionRole = "serverAction"
 
   override init() {
@@ -56,9 +54,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     self.statusItem = CocoaStatusBarProvider().makeStatusItem(length: NSStatusItem.variableLength)
     self.appStore = appStore
     self.popoverController = QuickSwitchPopoverController(appStore: appStore)
-    self.globalSettingsWindowControllerProvider = { SettingsWindowController(appStore: appStore, kind: .global) }
-    self.groupSettingsWindowControllerProvider = { SettingsWindowController(appStore: appStore, kind: .group) }
+    self.settingsWindowControllerProvider = { SettingsWindowController(appStore: appStore) }
     super.init()
+    popoverController.onOpenSettings = { [weak self] in self?.openSettings() }
     observeOpenCodeServeStatus()
     configureStatusItem()
   }
@@ -67,36 +65,40 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     statusBarProvider: StatusBarProviding,
     appStore: AppStore,
     popoverController: QuickSwitchPopoverController,
-    globalSettingsWindowControllerProvider: @escaping () -> SettingsWindowController,
-    groupSettingsWindowControllerProvider: @escaping () -> SettingsWindowController
+    settingsWindowControllerProvider: @escaping () -> SettingsWindowController
   ) {
     self.appStore = appStore
     self.statusItem = statusBarProvider.makeStatusItem(length: NSStatusItem.variableLength)
     self.popoverController = popoverController
-    self.globalSettingsWindowControllerProvider = globalSettingsWindowControllerProvider
-    self.groupSettingsWindowControllerProvider = groupSettingsWindowControllerProvider
+    self.settingsWindowControllerProvider = settingsWindowControllerProvider
     super.init()
-    popoverController.onOpenGlobalSettings = { [weak self] in self?.openGlobalSettings() }
-    popoverController.onOpenGroupSettings = { [weak self] in self?.openGroupSettings() }
+    popoverController.onOpenSettings = { [weak self] in self?.openSettings() }
     observeOpenCodeServeStatus()
     configureStatusItem()
+  }
+
+  convenience init(
+    statusBarProvider: StatusBarProviding,
+    appStore: AppStore,
+    popoverController: QuickSwitchPopoverController,
+    globalSettingsWindowControllerProvider: @escaping () -> SettingsWindowController,
+    groupSettingsWindowControllerProvider: @escaping () -> SettingsWindowController
+  ) {
+    self.init(
+      statusBarProvider: statusBarProvider,
+      appStore: appStore,
+      popoverController: popoverController,
+      settingsWindowControllerProvider: groupSettingsWindowControllerProvider
+    )
   }
 
   func currentMenuTitles() -> [String] {
     statusMenu.items.map(\.title)
   }
 
-  func resolveGlobalSettingsWindowController() -> SettingsWindowController {
-    globalSettingsWindowControllerProvider()
-  }
-
-  func resolveGroupSettingsWindowController() -> SettingsWindowController {
-    groupSettingsWindowControllerProvider()
-  }
-
-  func resolveServerConfigWindowController() -> SettingsWindowController {
-    let controller = serverConfigWindowController ?? SettingsWindowController(appStore: appStore, kind: .serverConfig)
-    serverConfigWindowController = controller
+  func resolveSettingsWindowController() -> SettingsWindowController {
+    let controller = resolvedSettingsWindowController ?? settingsWindowControllerProvider()
+    resolvedSettingsWindowController = controller
     return controller
   }
 
@@ -118,14 +120,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     serverStatusItem.isEnabled = false
     serverStatusItem.representedObject = Self.serverStatusRole
     menu.addItem(serverStatusItem)
-    let serverConfigItem = NSMenuItem(title: "Server Config", action: #selector(openServerConfig), keyEquivalent: "")
-    serverConfigItem.representedObject = Self.serverConfigRole
-    menu.addItem(serverConfigItem)
     let serverActionItem = NSMenuItem(title: openCodeServeActionMenuTitle(), action: openCodeServeActionSelector(), keyEquivalent: "")
     serverActionItem.representedObject = Self.serverActionRole
     menu.addItem(serverActionItem)
-    menu.addItem(NSMenuItem(title: "Global Settings", action: #selector(openGlobalSettings), keyEquivalent: ","))
-    menu.addItem(NSMenuItem(title: "Group Settings", action: #selector(openGroupSettings), keyEquivalent: ""))
+    menu.addItem(NSMenuItem(title: "Settings", action: #selector(openSettings), keyEquivalent: ","))
     menu.addItem(NSMenuItem(title: "Reload", action: #selector(reload), keyEquivalent: "r"))
     menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
     menu.items.forEach {
@@ -235,23 +233,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
   }
 
   @objc
-  func openGlobalSettings() {
+  func openSettings() {
     NSApplication.shared.activate(ignoringOtherApps: true)
-    let controller = globalSettingsWindowControllerProvider()
-    controller.showWindow(nil)
-  }
-
-  @objc
-  func openGroupSettings() {
-    NSApplication.shared.activate(ignoringOtherApps: true)
-    let controller = groupSettingsWindowControllerProvider()
-    controller.showWindow(nil)
-  }
-
-  @objc
-  func openServerConfig() {
-    NSApplication.shared.activate(ignoringOtherApps: true)
-    let controller = resolveServerConfigWindowController()
+    let controller = resolveSettingsWindowController()
     controller.showWindow(nil)
   }
 

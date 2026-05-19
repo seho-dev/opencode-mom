@@ -2,8 +2,7 @@ import SwiftUI
 
 struct QuickSwitchView: View {
   @ObservedObject var appStore: AppStore
-  var onOpenGlobalSettings: (() -> Void)?
-  var onOpenGroupSettings: (() -> Void)?
+  var onOpenSettings: (() -> Void)?
 
   private var currentGroup: ModelGroup? {
     guard let id = appStore.currentGroupID else { return nil }
@@ -199,18 +198,9 @@ struct QuickSwitchView: View {
   private var settingsButtons: some View {
     VStack(alignment: .leading, spacing: 8) {
       Button {
-        onOpenGlobalSettings?()
+        onOpenSettings?()
       } label: {
-        Label("Global Settings", systemImage: "gearshape")
-          .font(.system(size: 12))
-      }
-      .buttonStyle(.bordered)
-      .controlSize(.small)
-
-      Button {
-        onOpenGroupSettings?()
-      } label: {
-        Label("Group Settings", systemImage: "slider.horizontal.3")
+        Label("Settings", systemImage: "gearshape")
           .font(.system(size: 12))
       }
       .buttonStyle(.bordered)

@@ -25,8 +25,7 @@ final class AppShellCompositionTests: XCTestCase {
     let container = DependencyContainer(
       statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
       popoverControllerFactory: { QuickSwitchPopoverController(popover: NSPopover()) },
-      globalSettingsWindowController: SettingsWindowController(appStore: .livePreview, kind: .global),
-      groupSettingsWindowController: SettingsWindowController(appStore: .livePreview, kind: .group),
+      settingsWindowController: SettingsWindowController(appStore: .livePreview),
       configRootURL: rootURL,
     )
     try! container.modelGroupRepository.save([currentGroup])
@@ -37,7 +36,7 @@ final class AppShellCompositionTests: XCTestCase {
 
     XCTAssertNotNil(appDelegate.statusItemController)
     XCTAssertEqual(fakeStatusItem.button?.title, "OMO")
-    XCTAssertEqual(appDelegate.statusItemController?.currentMenuTitles(), ["Current Group: Primary", "OpenCode Server: Stopped", "Primary", "Server Config", "Start Server", "Global Settings", "Group Settings", "Reload", "Quit"])
+    XCTAssertEqual(appDelegate.statusItemController?.currentMenuTitles(), ["Current Group: Primary", "OpenCode Server: Stopped", "Primary", "Start Server", "Settings", "Reload", "Quit"])
   }
 
   func testStatusMenuShowsOnlyEnabledGroupsAndChecksCurrentGroup() {
@@ -88,8 +87,7 @@ final class AppShellCompositionTests: XCTestCase {
       statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
       appStore: appStore,
       popoverController: QuickSwitchPopoverController(popover: NSPopover()),
-      globalSettingsWindowControllerProvider: { SettingsWindowController(appStore: appStore, kind: .global) },
-      groupSettingsWindowControllerProvider: { SettingsWindowController(appStore: appStore, kind: .group) }
+      settingsWindowControllerProvider: { SettingsWindowController(appStore: appStore) }
     )
 
     try! modelGroupRepository.save([currentGroup, enabledGroup, disabledGroup])
@@ -97,7 +95,7 @@ final class AppShellCompositionTests: XCTestCase {
     appStore.reload()
     controller.menuWillOpen(controller.statusMenu)
 
-    XCTAssertEqual(controller.currentMenuTitles(), ["Current Group: Current", "OpenCode Server: Stopped", "Current", "Enabled", "Server Config", "Start Server", "Global Settings", "Group Settings", "Reload", "Quit"])
+    XCTAssertEqual(controller.currentMenuTitles(), ["Current Group: Current", "OpenCode Server: Stopped", "Current", "Enabled", "Start Server", "Settings", "Reload", "Quit"])
     XCTAssertFalse(controller.statusMenu.items.contains(where: { $0.title == "Disabled" }))
     XCTAssertEqual(controller.statusMenu.items[2].state, .on)
     XCTAssertEqual(controller.statusMenu.items[2].representedObject as? UUID, currentGroup.id)
@@ -105,34 +103,36 @@ final class AppShellCompositionTests: XCTestCase {
     XCTAssertEqual(controller.statusMenu.items[3].representedObject as? UUID, enabledGroup.id)
   }
 
-  func testDependencyContainerReusesSingleSettingsWindowControllers() {
+  func testDependencyContainerReusesSingleSettingsWindowController() {
     let fakeStatusItem = FakeStatusItem()
     let store = makeStore()
-    let sharedGlobalSettingsWindowController = SettingsWindowController(appStore: store, kind: .global)
-    let sharedGroupSettingsWindowController = SettingsWindowController(appStore: store, kind: .group)
+    let sharedSettingsWindowController = SettingsWindowController(appStore: store)
     let container = DependencyContainer(
       statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
       popoverControllerFactory: { QuickSwitchPopoverController(popover: NSPopover()) },
-      globalSettingsWindowController: sharedGlobalSettingsWindowController,
-      groupSettingsWindowController: sharedGroupSettingsWindowController,
+      settingsWindowController: sharedSettingsWindowController,
     )
     let appDelegate = AppDelegate(container: container)
 
     appDelegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
 
-    let firstGlobal = container.sharedGlobalSettingsWindowController()
-    let secondGlobal = appDelegate.statusItemController?.resolveGlobalSettingsWindowController()
-    let firstGroup = container.sharedGroupSettingsWindowController()
-    let secondGroup = appDelegate.statusItemController?.resolveGroupSettingsWindowController()
+    let first = container.sharedSettingsWindowController()
+    let second = appDelegate.statusItemController?.resolveSettingsWindowController()
 
-    XCTAssertTrue(firstGlobal === sharedGlobalSettingsWindowController)
-    XCTAssertTrue(firstGlobal === secondGlobal)
-    XCTAssertTrue(firstGroup === sharedGroupSettingsWindowController)
-    XCTAssertTrue(firstGroup === secondGroup)
-    XCTAssertEqual(firstGlobal.window?.title, "")
-    XCTAssertEqual(firstGroup.window?.title, "Group Settings")
-    XCTAssertEqual(firstGlobal.window?.isReleasedWhenClosed, false)
-    XCTAssertEqual(firstGroup.window?.isReleasedWhenClosed, false)
+    XCTAssertTrue(first === sharedSettingsWindowController)
+    XCTAssertTrue(first === second)
+    XCTAssertEqual(first.window?.title, "Settings")
+    XCTAssertEqual(first.window?.isReleasedWhenClosed, false)
+  }
+
+  func testSettingsCategoriesPutGroupServerGlobalInOrder() {
+    XCTAssertEqual(SettingsCategory.allCases.map(\.title), ["Group Settings", "Server Config", "Global Settings"])
+  }
+
+  func testGroupSettingsLayoutUsesPlainSidebarWidthInsideUnifiedSettings() {
+    XCTAssertEqual(SettingsView.groupSidebarWidth.min, 220)
+    XCTAssertEqual(SettingsView.groupSidebarWidth.ideal, 240)
+    XCTAssertEqual(SettingsView.groupSidebarWidth.max, 280)
   }
 
   func testStatusMenuShowsServerStateAndStartStopActionTitles() {
@@ -180,25 +180,23 @@ final class AppShellCompositionTests: XCTestCase {
     XCTAssertEqual(stopCount, 1)
   }
 
-  func testServerConfigMenuItemReusesOneWindowController() throws {
+  func testSettingsMenuItemReusesOneWindowController() throws {
     let fakeStatusItem = FakeStatusItem()
     let store = makeStore()
     let controller = StatusItemController(
       statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
       appStore: store,
       popoverController: QuickSwitchPopoverController(popover: NSPopover()),
-      globalSettingsWindowControllerProvider: { SettingsWindowController(appStore: store, kind: .global) },
-      groupSettingsWindowControllerProvider: { SettingsWindowController(appStore: store, kind: .group) }
+      settingsWindowControllerProvider: { SettingsWindowController(appStore: store) }
     )
 
-    try performMenuItem(titled: "Server Config", in: controller)
-    let first = controller.resolveServerConfigWindowController()
-    try performMenuItem(titled: "Server Config", in: controller)
-    let second = controller.resolveServerConfigWindowController()
+    try performMenuItem(titled: "Settings", in: controller)
+    let first = controller.resolveSettingsWindowController()
+    try performMenuItem(titled: "Settings", in: controller)
+    let second = controller.resolveSettingsWindowController()
 
     XCTAssertTrue(first === second)
-    XCTAssertEqual(first.kind, .serverConfig)
-    XCTAssertEqual(first.window?.title, "Server Config")
+    XCTAssertEqual(first.window?.title, "Settings")
     XCTAssertEqual(first.window?.isReleasedWhenClosed, false)
   }
 
@@ -236,8 +234,7 @@ final class AppShellCompositionTests: XCTestCase {
       statusBarProvider: FakeStatusBarProvider(statusItem: fakeStatusItem),
       appStore: store,
       popoverController: QuickSwitchPopoverController(popover: NSPopover()),
-      globalSettingsWindowControllerProvider: { SettingsWindowController(appStore: store, kind: .global) },
-      groupSettingsWindowControllerProvider: { SettingsWindowController(appStore: store, kind: .group) }
+      settingsWindowControllerProvider: { SettingsWindowController(appStore: store) }
     )
   }
 

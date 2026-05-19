@@ -16,8 +16,7 @@ final class DependencyContainer {
 
   private let statusBarProvider: StatusBarProviding
   private let popoverControllerFactory: () -> QuickSwitchPopoverController
-  private let globalSettingsWindowControllerFactory: () -> SettingsWindowController
-  private let groupSettingsWindowControllerFactory: () -> SettingsWindowController
+  private let settingsWindowControllerFactory: () -> SettingsWindowController
 
   init() {
     let modelGroupRepository = ModelGroupRepository()
@@ -44,8 +43,7 @@ final class DependencyContainer {
       updateChecker: updateChecker,
       processManager: processManager
     )
-    let sharedGlobalSettingsWindowController = SettingsWindowController(appStore: appStore, kind: .global)
-    let sharedGroupSettingsWindowController = SettingsWindowController(appStore: appStore, kind: .group)
+    let sharedSettingsWindowController = SettingsWindowController(appStore: appStore)
     self.modelGroupRepository = modelGroupRepository
     self.appStateRepository = appStateRepository
     self.backupRepository = backupRepository
@@ -57,15 +55,13 @@ final class DependencyContainer {
     self.processManager = processManager
     self.statusBarProvider = CocoaStatusBarProvider()
     self.popoverControllerFactory = { QuickSwitchPopoverController(appStore: appStore) }
-    self.globalSettingsWindowControllerFactory = { sharedGlobalSettingsWindowController }
-    self.groupSettingsWindowControllerFactory = { sharedGroupSettingsWindowController }
+    self.settingsWindowControllerFactory = { sharedSettingsWindowController }
   }
 
   init(
     statusBarProvider: StatusBarProviding,
     popoverControllerFactory: @escaping () -> QuickSwitchPopoverController,
-    globalSettingsWindowController: SettingsWindowController,
-    groupSettingsWindowController: SettingsWindowController,
+    settingsWindowController: SettingsWindowController,
     loginItemService: (any LoginItemService)? = nil,
     updateChecker: (any UpdateChecker)? = nil,
     processManager: (any OpenCodeServeProcessManaging)? = nil,
@@ -95,8 +91,7 @@ final class DependencyContainer {
       updateChecker: resolvedUpdateChecker,
       processManager: resolvedProcessManager
     )
-    let sharedGlobalSettingsWindowController = globalSettingsWindowController
-    let sharedGroupSettingsWindowController = groupSettingsWindowController
+    let sharedSettingsWindowController = settingsWindowController
     self.modelGroupRepository = modelGroupRepository
     self.appStateRepository = appStateRepository
     self.backupRepository = backupRepository
@@ -108,8 +103,28 @@ final class DependencyContainer {
     self.processManager = resolvedProcessManager
     self.statusBarProvider = statusBarProvider
     self.popoverControllerFactory = popoverControllerFactory
-    self.globalSettingsWindowControllerFactory = { sharedGlobalSettingsWindowController }
-    self.groupSettingsWindowControllerFactory = { sharedGroupSettingsWindowController }
+    self.settingsWindowControllerFactory = { sharedSettingsWindowController }
+  }
+
+  convenience init(
+    statusBarProvider: StatusBarProviding,
+    popoverControllerFactory: @escaping () -> QuickSwitchPopoverController,
+    globalSettingsWindowController: SettingsWindowController,
+    groupSettingsWindowController: SettingsWindowController,
+    loginItemService: (any LoginItemService)? = nil,
+    updateChecker: (any UpdateChecker)? = nil,
+    processManager: (any OpenCodeServeProcessManaging)? = nil,
+    configRootURL: URL? = nil
+  ) {
+    self.init(
+      statusBarProvider: statusBarProvider,
+      popoverControllerFactory: popoverControllerFactory,
+      settingsWindowController: groupSettingsWindowController,
+      loginItemService: loginItemService,
+      updateChecker: updateChecker,
+      processManager: processManager,
+      configRootURL: configRootURL
+    )
   }
 
   func makeStatusItemController() -> StatusItemController {
@@ -117,16 +132,11 @@ final class DependencyContainer {
       statusBarProvider: statusBarProvider,
       appStore: appStore,
       popoverController: popoverControllerFactory(),
-      globalSettingsWindowControllerProvider: globalSettingsWindowControllerFactory,
-      groupSettingsWindowControllerProvider: groupSettingsWindowControllerFactory,
+      settingsWindowControllerProvider: settingsWindowControllerFactory,
     )
   }
 
-  func sharedGlobalSettingsWindowController() -> SettingsWindowController {
-    globalSettingsWindowControllerFactory()
-  }
-
-  func sharedGroupSettingsWindowController() -> SettingsWindowController {
-    groupSettingsWindowControllerFactory()
+  func sharedSettingsWindowController() -> SettingsWindowController {
+    settingsWindowControllerFactory()
   }
 }

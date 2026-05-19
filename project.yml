@@ -38,7 +38,7 @@ targets:
         CFBundleDisplayName: omo-switch
         CFBundleIdentifier: com.omOSwitch.omo-switch
         CFBundleVersion: "1"
-        CFBundleShortVersionString: "0.0.5"
+        CFBundleShortVersionString: "0.0.6"
         CFBundlePackageType: APPL
         CFBundleExecutable: omo-switch
         LSMinimumSystemVersion: "13.0"
@@ -69,6 +69,6 @@ targets:
         CFBundleName: OMOSwitchTests
         CFBundleIdentifier: com.omOSwitch.omo-switch.tests
         CFBundleVersion: "1"
-        CFBundleShortVersionString: "0.0.5"
+        CFBundleShortVersionString: "0.0.6"
         CFBundlePackageType: BNDL
         CFBundleExecutable: OMOSwitchTests

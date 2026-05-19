@@ -204,10 +204,24 @@ struct SettingsView: View {
   @State private var currentGroupModelSearchValue = ""
   @State private var currentGroupModelReplaceValue = ""
 
+  struct SidebarWidth: Equatable {
+    let min: CGFloat
+    let ideal: CGFloat
+    let max: CGFloat
+  }
+
+  static let groupSidebarWidth = SidebarWidth(min: 220, ideal: 240, max: 280)
+
   var body: some View {
-    NavigationSplitView {
+    HStack(spacing: 0) {
       sidebar
-    } detail: {
+        .frame(
+          minWidth: Self.groupSidebarWidth.min,
+          idealWidth: Self.groupSidebarWidth.ideal,
+          maxWidth: Self.groupSidebarWidth.max,
+          maxHeight: .infinity
+        )
+      Divider()
       detail
     }
     .frame(minWidth: 700, minHeight: 500)

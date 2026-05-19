@@ -10,6 +10,7 @@ final class ServerConfigViewTests: XCTestCase {
     XCTAssertFalse(draft.mdns)
     XCTAssertEqual(draft.mdnsDomain, "opencode.local")
     XCTAssertEqual(draft.corsText, "")
+    XCTAssertEqual(draft.executablePath, "")
     XCTAssertFalse(draft.autoStart)
   }
 
@@ -20,6 +21,7 @@ final class ServerConfigViewTests: XCTestCase {
       mdns: true,
       mdnsDomain: "dev.local",
       cors: ["http://localhost:5173", "https://app.example.com"],
+      executablePath: "/opt/homebrew/bin/opencode",
       autoStart: true
     )
 
@@ -30,6 +32,7 @@ final class ServerConfigViewTests: XCTestCase {
     XCTAssertTrue(draft.mdns)
     XCTAssertEqual(draft.mdnsDomain, "dev.local")
     XCTAssertEqual(draft.corsText, "http://localhost:5173\nhttps://app.example.com")
+    XCTAssertEqual(draft.executablePath, "/opt/homebrew/bin/opencode")
     XCTAssertTrue(draft.autoStart)
   }
 
@@ -40,6 +43,7 @@ final class ServerConfigViewTests: XCTestCase {
       mdns: true,
       mdnsDomain: " dev.local ",
       corsText: " http://localhost:5173 \n\n https://app.example.com \n   ",
+      executablePath: " /opt/homebrew/bin/opencode ",
       autoStart: true
     )
 
@@ -50,11 +54,20 @@ final class ServerConfigViewTests: XCTestCase {
     XCTAssertTrue(config.mdns)
     XCTAssertEqual(config.mdnsDomain, "dev.local")
     XCTAssertEqual(config.cors, ["http://localhost:5173", "https://app.example.com"])
+    XCTAssertEqual(config.executablePath, "/opt/homebrew/bin/opencode")
     XCTAssertTrue(config.autoStart)
   }
 
+  func testValidatedConfigTreatsBlankExecutablePathAsAutomatic() throws {
+    let draft = ServerConfigDraft(portText: "4096", hostname: "127.0.0.1", mdns: false, mdnsDomain: "opencode.local", corsText: "", executablePath: "   ", autoStart: false)
+
+    let config = try draft.validatedConfig()
+
+    XCTAssertNil(config.executablePath)
+  }
+
   func testInvalidPortDoesNotBuildConfig() {
-    let draft = ServerConfigDraft(portText: "0", hostname: "127.0.0.1", mdns: false, mdnsDomain: "opencode.local", corsText: "", autoStart: false)
+    let draft = ServerConfigDraft(portText: "0", hostname: "127.0.0.1", mdns: false, mdnsDomain: "opencode.local", corsText: "", executablePath: "", autoStart: false)
 
     XCTAssertThrowsError(try draft.validatedConfig()) { error in
       XCTAssertEqual(error as? OpenCodeServeValidationError, .portOutOfRange(0))
@@ -62,7 +75,7 @@ final class ServerConfigViewTests: XCTestCase {
   }
 
   func testEmptyHostnameDoesNotBuildConfig() {
-    let draft = ServerConfigDraft(portText: "4096", hostname: "   ", mdns: false, mdnsDomain: "opencode.local", corsText: "", autoStart: false)
+    let draft = ServerConfigDraft(portText: "4096", hostname: "   ", mdns: false, mdnsDomain: "opencode.local", corsText: "", executablePath: "", autoStart: false)
 
     XCTAssertThrowsError(try draft.validatedConfig()) { error in
       XCTAssertEqual(error as? OpenCodeServeValidationError, .emptyHostname)
@@ -70,7 +83,7 @@ final class ServerConfigViewTests: XCTestCase {
   }
 
   func testEmptyMDNSDomainDoesNotBuildConfigWhenMDNSEnabled() {
-    let draft = ServerConfigDraft(portText: "4096", hostname: "127.0.0.1", mdns: true, mdnsDomain: "   ", corsText: "", autoStart: false)
+    let draft = ServerConfigDraft(portText: "4096", hostname: "127.0.0.1", mdns: true, mdnsDomain: "   ", corsText: "", executablePath: "", autoStart: false)
 
     XCTAssertThrowsError(try draft.validatedConfig()) { error in
       XCTAssertEqual(error as? OpenCodeServeValidationError, .emptyMDNSDomain)

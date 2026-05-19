@@ -33,6 +33,7 @@ final class OpenCodeServeConfigPersistenceTests: XCTestCase {
             mdns: true,
             mdnsDomain: "myproject.local",
             cors: ["http://localhost:5173", "https://app.example.com"],
+            executablePath: "/opt/homebrew/bin/opencode",
             autoStart: true
         )
         let state = AppSelectionState(
@@ -50,6 +51,7 @@ final class OpenCodeServeConfigPersistenceTests: XCTestCase {
         XCTAssertTrue(reloaded.openCodeServeConfig.mdns)
         XCTAssertEqual(reloaded.openCodeServeConfig.mdnsDomain, "myproject.local")
         XCTAssertEqual(reloaded.openCodeServeConfig.cors, ["http://localhost:5173", "https://app.example.com"])
+        XCTAssertEqual(reloaded.openCodeServeConfig.executablePath, "/opt/homebrew/bin/opencode")
         XCTAssertTrue(reloaded.openCodeServeConfig.autoStart)
     }
 

@@ -9,6 +9,35 @@ final class OpenCodeServeArgumentBuilderTests: XCTestCase {
         XCTAssertEqual(arguments, ["serve", "--port", "4096", "--hostname", "127.0.0.1"])
     }
 
+    func testManualExecutablePathIsStoredOnConfigButNotServeArguments() throws {
+        let config = try OpenCodeServeArgumentBuilder.config(
+            portText: "4096",
+            hostname: "127.0.0.1",
+            mdns: false,
+            mdnsDomain: "opencode.local",
+            corsText: "",
+            executablePath: " /opt/homebrew/bin/opencode ",
+            autoStart: false
+        )
+
+        XCTAssertEqual(config.executablePath, "/opt/homebrew/bin/opencode")
+        XCTAssertEqual(try OpenCodeServeArgumentBuilder().arguments(for: config), ["serve", "--port", "4096", "--hostname", "127.0.0.1"])
+    }
+
+    func testBlankManualExecutablePathBecomesNil() throws {
+        let config = try OpenCodeServeArgumentBuilder.config(
+            portText: "4096",
+            hostname: "127.0.0.1",
+            mdns: false,
+            mdnsDomain: "opencode.local",
+            corsText: "",
+            executablePath: "   ",
+            autoStart: false
+        )
+
+        XCTAssertNil(config.executablePath)
+    }
+
     func testFullConfigBuildsExactServeArguments() throws {
         let config = OpenCodeServeConfig(
             port: 5000,
@@ -94,6 +123,7 @@ final class OpenCodeServeArgumentBuilderTests: XCTestCase {
             mdns: true,
             mdnsDomain: " dev.local ",
             corsText: " https://a.example \n\n https://b.example ",
+            executablePath: " /usr/local/bin/opencode ",
             autoStart: true
         )
 
@@ -102,6 +132,7 @@ final class OpenCodeServeArgumentBuilderTests: XCTestCase {
         XCTAssertTrue(config.mdns)
         XCTAssertEqual(config.mdnsDomain, "dev.local")
         XCTAssertEqual(config.cors, ["https://a.example", "https://b.example"])
+        XCTAssertEqual(config.executablePath, "/usr/local/bin/opencode")
         XCTAssertTrue(config.autoStart)
     }
 
@@ -160,7 +191,8 @@ final class OpenCodeServeArgumentBuilderTests: XCTestCase {
             hostname: "127.0.0.1",
             mdns: false,
             mdnsDomain: "opencode.local",
-            corsText: ""
+            corsText: "",
+            executablePath: ""
         )
     }
 }

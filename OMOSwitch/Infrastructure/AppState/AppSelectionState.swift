@@ -62,6 +62,7 @@ public struct OpenCodeServeConfig: Codable, Equatable, Sendable {
     public var mdns: Bool
     public var mdnsDomain: String
     public var cors: [String]
+    public var executablePath: String?
     public var autoStart: Bool
 
     public init(
@@ -70,6 +71,7 @@ public struct OpenCodeServeConfig: Codable, Equatable, Sendable {
         mdns: Bool = false,
         mdnsDomain: String = "opencode.local",
         cors: [String] = [],
+        executablePath: String? = nil,
         autoStart: Bool = false
     ) {
         self.port = port
@@ -77,6 +79,7 @@ public struct OpenCodeServeConfig: Codable, Equatable, Sendable {
         self.mdns = mdns
         self.mdnsDomain = mdnsDomain
         self.cors = cors
+        self.executablePath = executablePath
         self.autoStart = autoStart
     }
 }

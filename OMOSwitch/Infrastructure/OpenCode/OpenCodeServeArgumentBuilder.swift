@@ -76,6 +76,7 @@ public struct OpenCodeServeArgumentBuilder: Sendable {
         mdns: Bool,
         mdnsDomain: String,
         corsText: String,
+        executablePath: String = "",
         autoStart: Bool = false
     ) throws -> OpenCodeServeConfig {
         let trimmedPort = trimmed(portText)
@@ -88,6 +89,7 @@ public struct OpenCodeServeArgumentBuilder: Sendable {
             mdns: mdns,
             mdnsDomain: trimmed(mdnsDomain),
             cors: parseCORSTextArea(corsText),
+            executablePath: optionalTrimmed(executablePath),
             autoStart: autoStart
         )
         let validationErrors = validationErrors(for: config)
@@ -107,5 +109,10 @@ public struct OpenCodeServeArgumentBuilder: Sendable {
 
     private static func trimmed(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func optionalTrimmed(_ value: String) -> String? {
+        let trimmedValue = trimmed(value)
+        return trimmedValue.isEmpty ? nil : trimmedValue
     }
 }

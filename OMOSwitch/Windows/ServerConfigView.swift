@@ -6,6 +6,7 @@ struct ServerConfigDraft: Equatable {
   var mdns: Bool
   var mdnsDomain: String
   var corsText: String
+  var executablePath: String
   var autoStart: Bool
 
   init(
@@ -14,6 +15,7 @@ struct ServerConfigDraft: Equatable {
     mdns: Bool,
     mdnsDomain: String,
     corsText: String,
+    executablePath: String,
     autoStart: Bool
   ) {
     self.portText = portText
@@ -21,6 +23,7 @@ struct ServerConfigDraft: Equatable {
     self.mdns = mdns
     self.mdnsDomain = mdnsDomain
     self.corsText = corsText
+    self.executablePath = executablePath
     self.autoStart = autoStart
   }
 
@@ -30,6 +33,7 @@ struct ServerConfigDraft: Equatable {
     self.mdns = config.mdns
     self.mdnsDomain = config.mdnsDomain
     self.corsText = config.cors.joined(separator: "\n")
+    self.executablePath = config.executablePath ?? ""
     self.autoStart = config.autoStart
   }
 
@@ -40,6 +44,7 @@ struct ServerConfigDraft: Equatable {
       mdns: mdns,
       mdnsDomain: mdnsDomain,
       corsText: corsText,
+      executablePath: executablePath,
       autoStart: autoStart
     )
     let validationErrors = OpenCodeServeArgumentBuilder.validationErrors(for: config)
@@ -80,6 +85,14 @@ struct ServerConfigView: View {
             fieldRow("Hostname") {
               TextField("127.0.0.1", text: $draft.hostname)
                 .textFieldStyle(.roundedBorder)
+            }
+
+            fieldRow("OpenCode Executable Path") {
+              TextField("Leave blank to auto-detect opencode", text: $draft.executablePath)
+                .textFieldStyle(.roundedBorder)
+              Text("Use an absolute path when opencode is installed outside the app's PATH, for example /opt/homebrew/bin/opencode.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Toggle("Enable mDNS", isOn: $draft.mdns)

@@ -2,8 +2,13 @@
 /.build
 /Packages
 .sisyphus/
-xcuserdata/
-DerivedData/
-.swiftpm/configuration/registries.json
-.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.omo/
 .netrc
+node_modules/
+.svelte-kit/
+build/
+dist/
+/test-results/
+src-tauri/target/
+.slim/deepwork/
+.graymatter/

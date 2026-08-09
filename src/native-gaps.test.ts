@@ -27,7 +27,6 @@ gapSuite("Task 5 native and release gaps", () => {
     const retainedSources = [
       read("src-tauri/Cargo.toml"),
       read("src-tauri/src/lib.rs"),
-      read("src-tauri/src/core/system/mod.rs"),
       read("src-tauri/Cargo.lock"),
       read("src-tauri/src/commands/system.rs"),
       read("src/lib/tauriClient.ts"),
@@ -35,6 +34,7 @@ gapSuite("Task 5 native and release gaps", () => {
       read(".github/workflows/ci.yml"),
     ].join("\n");
 
+    expect(existsSync(resolve("src-tauri/src/core/system/mod.rs"))).toBe(false);
     expect(retainedSources.toLowerCase()).not.toContain("updater");
     expect(retainedSources).not.toMatch(
       /check_for_updates|install_update|Updates|Check for Updates/,
@@ -180,7 +180,7 @@ gapSuite("Task 5 native and release gaps", () => {
   });
 
   it("requires deterministic Windows and macOS Tauri pull request gates", () => {
-    const workflow = read(".github/workflows/ci.yml");
+    const workflow = read(".github/workflows/ci.yml").replace(/\r\n/g, "\n");
 
     expect(workflow).toContain("pull_request:");
     expect(workflow).toContain("tauri-windows:");

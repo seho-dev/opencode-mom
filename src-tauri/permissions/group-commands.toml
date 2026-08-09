@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "group-commands"
+description = "Model group and OpenCode agent mapping commands."
+commands.allow = [
+  "load_app_state",
+  "save_group",
+  "copy_group",
+  "delete_group",
+  "switch_group",
+  "discover_open_code_agents"
+]
+
+[[permission]]
+identifier = "quick-switch-commands"
+description = "Commands required by the quick-switch window."
+commands.allow = [
+  "load_app_state",
+  "switch_group"
+]

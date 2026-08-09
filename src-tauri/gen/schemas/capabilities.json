@@ -1,0 +1,1 @@
+{"quick-switch":{"identifier":"quick-switch","description":"Least-privilege command access for the quick-switch window.","local":true,"windows":["quick-switch"],"permissions":["quick-switch-commands"]},"settings":{"identifier":"settings","description":"Least-privilege command access for the settings window.","local":true,"windows":["settings"],"permissions":["group-commands"]}}

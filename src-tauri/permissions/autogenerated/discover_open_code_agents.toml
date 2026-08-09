@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-discover-open-code-agents"
+description = "Enables the discover_open_code_agents command without any pre-configured scope."
+commands.allow = ["discover_open_code_agents"]
+
+[[permission]]
+identifier = "deny-discover-open-code-agents"
+description = "Denies the discover_open_code_agents command without any pre-configured scope."
+commands.deny = ["discover_open_code_agents"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-copy-group"
+description = "Enables the copy_group command without any pre-configured scope."
+commands.allow = ["copy_group"]
+
+[[permission]]
+identifier = "deny-copy-group"
+description = "Denies the copy_group command without any pre-configured scope."
+commands.deny = ["copy_group"]

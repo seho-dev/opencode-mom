@@ -28,13 +28,13 @@ gapSuite("Task 5 native and release gaps", () => {
       read("src-tauri/Cargo.toml"),
       read("src-tauri/src/lib.rs"),
       read("src-tauri/Cargo.lock"),
-      read("src-tauri/src/commands/system.rs"),
       read("src/lib/tauriClient.ts"),
       read("src-tauri/tauri.conf.json"),
       read(".github/workflows/ci.yml"),
     ].join("\n");
 
     expect(existsSync(resolve("src-tauri/src/core/system/mod.rs"))).toBe(false);
+    expect(existsSync(resolve("src-tauri/src/commands/system.rs"))).toBe(false);
     expect(retainedSources.toLowerCase()).not.toContain("updater");
     expect(retainedSources).not.toMatch(
       /check_for_updates|install_update|Updates|Check for Updates/,

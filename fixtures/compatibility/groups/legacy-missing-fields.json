@@ -1,0 +1,14 @@
+{
+  "migrationVersion": 1,
+  "groups": [
+    {
+      "id": "9d13ef4d-d873-42a4-bcc9-55f5e0209c00",
+      "name": "Legacy Primary",
+      "description": null,
+      "categoryMappings": [],
+      "agentOverrides": [],
+      "isEnabled": true,
+      "updatedAt": "2023-11-14T22:13:20Z"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  // This JSONC fixture exercises line comments.
+  "provider": {
+    "cliproxyapi": {
+      "name": "CLIProxyAPI",
+      "endpoint": "https://example.invalid/v1"
+    }
+  },
+  "agents": {
+    "test": {
+      "model": "cliproxyapi/gpt-5.4"
+    }
+  },
+  /* This JSONC fixture also exercises block comments. */
+  "categories": {
+    "test": {
+      "model": "cliproxyapi/minimax-m2.7"
+    }
+  }
+}

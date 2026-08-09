@@ -1,0 +1,12 @@
+{
+  "agents": {
+    "oracle": {
+      "model": "cliproxyapi/gpt-5.4"
+    }
+  },
+  "categories": {
+    "quick": {
+      "model": "cliproxyapi/minimax-m2.7"
+    }
+  }
+}

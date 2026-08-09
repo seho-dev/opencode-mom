@@ -1,0 +1,22 @@
+{
+  "zebra": "last source key",
+  "agent": {
+    "model": "cliproxyapi/minimax-m2.7",
+    "mode": "subagent",
+    "prompt": "{file:./prompts/test.md}"
+  },
+  "aardvark": "first alphabetic key",
+  "provider": {
+    "cliproxyapi": {
+      "models": {
+        "betaModel": {
+          "name": "beta"
+        },
+        "alphaModel": {
+          "name": "alpha"
+        }
+      }
+    }
+  },
+  "middle": "between aardvark and zebra"
+}

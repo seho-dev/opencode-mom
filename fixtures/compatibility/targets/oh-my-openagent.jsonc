@@ -1,0 +1,18 @@
+{
+  // Target config preserves unrelated top-level data.
+  "$schema": "https://example.invalid/oh-my-openagent.schema.json",
+  "agents": {
+    "oracle": {
+      "model": "cliproxyapi/gpt-5.4",
+      "variant": "xhigh"
+    }
+  },
+  "categories": {
+    "quick": {
+      "model": "cliproxyapi/gpt-5.4"
+    }
+  },
+  "unrelated": {
+    "preserve": true
+  }
+}

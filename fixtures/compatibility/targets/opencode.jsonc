@@ -1,0 +1,15 @@
+{
+  /* OpenCode configuration fixture. */
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "reviewer": {
+      "model": "cliproxyapi/gpt-5.4",
+      "mode": "primary"
+    }
+  },
+  "provider": {
+    "cliproxyapi": {
+      "name": "CLIProxyAPI"
+    }
+  }
+}

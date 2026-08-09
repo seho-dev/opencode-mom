@@ -1,0 +1,22 @@
+{
+  "agents": {
+    "oracle": {
+      "model": "cliproxyapi/gpt-5.4"
+    }
+  },
+  "categories": {
+    "deep": {
+      "model": "cliproxyapi/minimax-m2.7"
+    }
+  },
+  "provider": {
+    "cliproxyapi": {
+      "models": {
+        "minimax-m2.7": {
+          "name": "minimax-m2.7"
+        },
+        "note": "gpt-5.4 is intentionally not declared"
+      }
+    }
+  }
+}

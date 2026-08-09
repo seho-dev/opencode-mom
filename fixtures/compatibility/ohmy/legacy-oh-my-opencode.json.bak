@@ -1,0 +1,15 @@
+{
+  "agents": {
+    "oracle": {
+      "model": "cliproxyapi/gpt-5.4"
+    },
+    "librarian": {
+      "model": "cliproxyapi/minimax-m2.7"
+    }
+  },
+  "categories": {
+    "visual-engineering": {
+      "model": "cliproxyapi/gemini-3.1-pro-preview"
+    }
+  }
+}

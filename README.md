@@ -1,132 +1,112 @@
 # omo-switch
 
-omo-switch is a lightweight macOS menu bar app for switching Oh My OpenAgent model groups. It lets you maintain named groups of category mappings, Oh My OpenAgent agent overrides, and optional OpenCode agent model overrides, then sync the selected group into the matching config files.
+omo-switch is a cross-platform desktop app for switching Oh My OpenAgent model groups. It maintains named category mappings, Oh My OpenAgent agent overrides, and optional OpenCode agent model overrides, then syncs the selected group into the matching config files.
+
+The active application is built with Tauri 2. The Svelte 5 and TypeScript frontend provides the quick-switch and settings interfaces, while the Rust backend owns config persistence, projection, backups, tray integration, and native Windows/macOS behavior.
 
 ## Features
 
-- 🧭 **Menu bar first** — runs quietly with no Dock icon.
-- 🧩 **Model groups** — create and edit named category / agent mappings.
-- ⚡️ **Quick switching** — switch active groups directly from the menu bar.
-- 🖥️ **OpenCode server control** — configure, start, stop, and auto-start `opencode serve`.
+- Model groups with category and agent mappings.
+- Quick switching from the system tray or menu bar.
+- Conditional OpenCode agent model overrides.
+- Native Windows NSIS and macOS app/DMG packages.
 
 ## Requirements
 
-- macOS 13.0 or later.
+- Node.js 22.23.0 and npm.
+- Rust 1.77.2 or later with Cargo. CI and release workflows build with Rust 1.96.0.
+- Platform prerequisites required by Tauri 2 for Windows or macOS desktop builds.
 - Oh My OpenAgent config location: `~/.config/opencode/oh-my-openagent.json`.
 - Optional OpenCode config location: `~/.config/opencode/opencode.json`.
 
 ## Download
 
-Download the latest DMG from the GitHub Releases page:
+Tagged release workflows produce these Tauri artifacts:
+
+- GitHub Release asset: `omo-switch_0.1.0_x64-setup.exe` (Windows NSIS installer).
+- GitHub Release asset: `omo-switch_0.1.0_aarch64.dmg` (macOS disk image).
+- GitHub Release asset: `omo-switch_0.1.0_aarch64.app.tar.gz` (macOS app bundle archive preserving bundle metadata and executable permissions).
 
 <https://github.com/seho-dev/omo-switch/releases/latest>
 
-Each tagged release uploads a DMG asset built by GitHub Actions. Download the `.dmg`, open it, and drag `omo-switch.app` into `Applications`.
+## Unsigned macOS builds
 
-## First launch on macOS
-
-Current GitHub release builds are unsigned and not notarized. If macOS blocks the app, remove the quarantine flag after dragging `omo-switch.app` into `/Applications`:
+Current macOS release artifacts are unsigned and not notarized. macOS may block the app or require approval in **System Settings > Privacy & Security**. After moving `omo-switch.app` into `/Applications`, the quarantine attribute can be removed manually:
 
 ```bash
 sudo xattr -dr com.apple.quarantine /Applications/omo-switch.app
 ```
 
-Then launch `omo-switch` from `/Applications`.
+No signing or notarization is performed by the current release workflow.
 
-## Usage
+## Configuration behavior
 
-1. Launch `omo-switch`.
-2. Click the `OMO` item in the macOS menu bar.
-3. Open **Settings**.
-4. Create or edit a group.
-5. Add category mappings and agent overrides.
-6. Click **Save**.
-7. Use the menu bar group list to switch active groups directly.
+omo-switch stores its own group data separately from the target application configs.
 
-When you switch to another group, omo-switch rewrites `~/.config/opencode/oh-my-openagent.json` for that group.
+| File                                      | Purpose                                                           |
+| ----------------------------------------- | ----------------------------------------------------------------- |
+| `~/.config/omo-switch/groups.json`        | omo-switch group definitions.                                     |
+| `~/.config/omo-switch/state.json`         | Current group selection and write metadata.                       |
+| `~/.config/opencode/oh-my-openagent.json` | Rewritten when switching groups or saving the active group.       |
+| `~/.config/opencode/opencode.json`        | Patched only when effective OpenCode agent model overrides exist. |
 
-When you save the currently active group, omo-switch immediately reapplies that active group's projection to the same target config.
+Before rewriting target configs, omo-switch creates backups under its config directory. Existing files at these paths remain compatible and require no migration.
 
-If the selected or active group contains OpenCode overrides with effective model values, omo-switch also syncs `~/.config/opencode/opencode.json` in the same operation.
+When switching groups, omo-switch rewrites the Oh My OpenAgent projection. Saving the active group reapplies that projection immediately. OpenCode sync is skipped when no effective OpenCode overrides exist, so a missing `opencode.json` only blocks operations that actually require OpenCode changes.
 
-If the group has no effective OpenCode overrides, omo-switch skips `opencode.json` entirely. A missing OpenCode config is only a blocker when the group actually needs OpenCode sync.
-
-On the OpenCode side, omo-switch only patches `agent.<name>.model`. It does not rewrite other fields inside the agent object, and it does not touch unrelated top-level keys such as `$schema`, `plugin`, or `provider`.
-
-## Configuration files
-
-omo-switch stores its own group data separately from the target app configs.
-
-| File                                      | Purpose                                                                                                         |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `~/.config/omo-switch/groups.json`        | omo-switch group definitions                                                                                    |
-| `~/.config/omo-switch/state.json`         | currently selected group and write metadata                                                                     |
-| `~/.config/opencode/oh-my-openagent.json` | target Oh My OpenAgent config rewritten on switch and when saving the active group                              |
-| `~/.config/opencode/opencode.json`        | conditional OpenCode sync target, patched only when the group includes effective OpenCode agent model overrides |
-
-Before rewriting target configs, omo-switch creates backups under the omo-switch config directory.
+For OpenCode, omo-switch patches only `agent.<name>.model`. Existing fields inside agent objects and unrelated top-level keys such as `$schema`, `plugin`, and `provider` are preserved.
 
 ## Development
 
-Run the test suite:
+Install dependencies:
 
 ```bash
-swift test
+npm ci
 ```
 
-Run the task-specific verification commands:
+Run the frontend and contract tests:
 
 ```bash
-swift test --filter EndToEndSwitchingTests
-swift test --filter AppStoreTests
-swift test
+npm test
 ```
 
-Generate the Xcode project from `project.yml`:
+Run the six native delivery contract tests from PowerShell:
+
+```powershell
+$env:OMO_CHARACTERIZE_NATIVE_GAPS='1'; npm test -- --run src/native-gaps.test.ts
+```
+
+Run the same six tests from a POSIX shell:
 
 ```bash
-brew install xcodegen
-xcodegen generate
+OMO_CHARACTERIZE_NATIVE_GAPS=1 npm test -- --run src/native-gaps.test.ts
 ```
 
-Build the app locally:
+Run the Tauri app in development:
 
 ```bash
-xcodebuild \
-  -project omo-switch.xcodeproj \
-  -scheme OMOSwitch \
-  -configuration Debug \
-  -destination 'platform=macOS' \
-  CODE_SIGN_IDENTITY="" \
-  CODE_SIGNING_REQUIRED=NO \
-  build
+npm run tauri dev
 ```
+
+Build the frontend and Rust backend independently:
+
+```bash
+npm run build
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+```
+
+Build native Tauri packages for the current platform:
+
+```bash
+npm run tauri build
+```
+
+The configured package identity is `dev.seho.omo-switch`, product name `omo-switch`, version `0.1.0`. Tauri targets are Windows NSIS plus macOS app and DMG.
 
 ## Release process
 
-Releases are built and published by GitHub Actions.
-
-To publish a release:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-The release workflow will:
-
-1. Run tests.
-2. Generate the Xcode project with XcodeGen.
-3. Build `omo-switch.app` in Release configuration.
-4. Package the app into a DMG.
-5. Create or update the GitHub Release for the tag.
-6. Upload the DMG as a downloadable release asset.
-
-## Notes about signing
-
-The current release workflow builds an unsigned app. This keeps the project releasable from public GitHub Actions without Apple Developer credentials, but it also means macOS may require the manual **Privacy & Security → Open Anyway** approval described above.
-
-Future releases can add Developer ID signing and notarization by configuring Apple certificate and notarization secrets in GitHub Actions.
+Pushing a `v*` tag starts the release workflow. Each build job first requires the pushed tag to exactly equal `v<version>` from `src-tauri/tauri.conf.json`, then uses the pinned Node and Rust versions above to build and assert the exact Tauri artifact paths. The macOS job packages `omo-switch.app` as `omo-switch_0.1.0_aarch64.app.tar.gz` with macOS `tar` so bundle metadata and executable permissions survive transfer. A least-privilege publishing job downloads each platform artifact into an explicit directory and creates or updates the GitHub Release with the exact NSIS installer, app archive, and DMG.
 
 ## License
 

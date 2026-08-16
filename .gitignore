@@ -10,5 +10,5 @@ build/
 dist/
 /test-results/
 src-tauri/target/
-.slim/deepwork/
 .graymatter/
+.slim

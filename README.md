@@ -41,16 +41,15 @@ No signing or notarization is performed by the current release workflow.
 
 ## Configuration behavior
 
-omo-switch stores its own group data separately from the target application configs.
+omo-switch stores its own groups and selection state in one config file, separately from target application configs.
 
 | File                                      | Purpose                                                           |
 | ----------------------------------------- | ----------------------------------------------------------------- |
-| `~/.config/omo-switch/groups.json`        | omo-switch group definitions.                                     |
-| `~/.config/omo-switch/state.json`         | Current group selection and write metadata.                       |
+| `~/.config/omo-switch/config.json`        | omo-switch group definitions, selection, and write metadata.      |
 | `~/.config/opencode/oh-my-openagent.json` | Rewritten when switching groups or saving the active group.       |
 | `~/.config/opencode/opencode.json`        | Patched only when effective OpenCode agent model overrides exist. |
 
-Before rewriting target configs, omo-switch creates backups under its config directory. Existing files at these paths remain compatible and require no migration.
+Before rewriting target configs, omo-switch creates backups under its config directory. Only `config.json` is read or written for omo-switch data; legacy split files are ignored and are not migrated.
 
 When switching groups, omo-switch rewrites the Oh My OpenAgent projection. Saving the active group reapplies that projection immediately. OpenCode sync is skipped when no effective OpenCode overrides exist, so a missing `opencode.json` only blocks operations that actually require OpenCode changes.
 

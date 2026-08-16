@@ -45,12 +45,8 @@ impl ConfigPaths {
         self.home.join(".config").join("opencode")
     }
 
-    pub fn groups_file(&self) -> PathBuf {
-        self.omo_switch_dir().join("groups.json")
-    }
-
-    pub fn state_file(&self) -> PathBuf {
-        self.omo_switch_dir().join("state.json")
+    pub fn config_file(&self) -> PathBuf {
+        self.omo_switch_dir().join("config.json")
     }
 
     pub fn oh_my_openagent_file(&self) -> PathBuf {

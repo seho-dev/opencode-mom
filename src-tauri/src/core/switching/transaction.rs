@@ -8,14 +8,14 @@ use uuid::Uuid;
 use crate::core::backup::{BackupArtifact, BackupError, BackupRepository};
 use crate::core::document::{OhMyOpenAgentDocument, OpenCodeDocument};
 use crate::core::models::{
-    AppSelectionState, LastSuccessfulWriteMetadata, ModelGroup, ProjectionIssueSummary,
+    AppSelectionState, LastSuccessfulWriteMetadata, ModelGroup, OmoSwitchConfig,
+    ProjectionIssueSummary,
 };
 use crate::core::projection::{
     OhMyOpenAgentProjectionService, OpenCodeProjectionService, ProjectionResult,
 };
 use crate::core::repository::{
-    AppStateRepository, ModelGroupRepository, OhMyOpenAgentConfigRepository,
-    OpenCodeConfigRepository,
+    ConfigRepository, OhMyOpenAgentConfigRepository, OpenCodeConfigRepository,
 };
 
 use super::error::SwitchError;
@@ -26,8 +26,7 @@ const BACKUP_RETENTION_LIMIT: usize = 5;
 
 #[derive(Debug, Clone)]
 pub struct SwitchGroupRepositories {
-    pub model_groups: ModelGroupRepository,
-    pub app_state: AppStateRepository,
+    pub config: ConfigRepository,
     pub backups_root: PathBuf,
     pub opencode: OpenCodeConfigRepository,
     pub oh_my_openagent: OhMyOpenAgentConfigRepository,
@@ -143,11 +142,11 @@ where
 
     pub fn switch_to(&self, group_id: Uuid) -> Result<SwitchOutcome, SwitchError> {
         self.recover_pending()?;
-        let (group, current_state) = self.load_context(group_id)?;
-        if current_state.selected_group_id == Some(group_id) {
+        let (group, current_config) = self.load_context(group_id)?;
+        if current_config.state.selected_group_id == Some(group_id) {
             return Ok(SwitchOutcome::NoOp);
         }
-        self.persist_projection(&group, current_state)
+        self.persist_projection(&group, current_config)
     }
 
     pub fn save_active_group_projection(
@@ -155,38 +154,56 @@ where
         group_id: Uuid,
     ) -> Result<SwitchOutcome, SwitchError> {
         self.recover_pending()?;
-        let (group, current_state) = self.load_context(group_id)?;
-        if current_state.selected_group_id != Some(group_id) {
+        let (group, current_config) = self.load_context(group_id)?;
+        if current_config.state.selected_group_id != Some(group_id) {
             return Ok(SwitchOutcome::NoOp);
         }
-        self.persist_projection(&group, current_state)
+        self.persist_projection(&group, current_config)
     }
 
-    fn load_context(&self, group_id: Uuid) -> Result<(ModelGroup, AppSelectionState), SwitchError> {
-        let groups = self
+    pub fn save_active_group_projection_for_config(
+        &self,
+        config: OmoSwitchConfig,
+    ) -> Result<SwitchOutcome, SwitchError> {
+        self.recover_pending()?;
+        let group_id = config
+            .state
+            .selected_group_id
+            .ok_or(SwitchError::GroupNotFound)?;
+        let group = config
+            .groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .cloned()
+            .ok_or(SwitchError::GroupNotFound)?;
+        if !group.is_enabled {
+            return Err(SwitchError::GroupDisabled);
+        }
+        self.persist_projection(&group, config)
+    }
+
+    fn load_context(&self, group_id: Uuid) -> Result<(ModelGroup, OmoSwitchConfig), SwitchError> {
+        let config = self
             .repositories
-            .model_groups
+            .config
             .load()
             .map_err(|source| SwitchError::LoadGroupsFailed { source })?;
-        let group = groups
-            .into_iter()
+        let group = config
+            .groups
+            .iter()
+            .cloned()
             .find(|group| group.id == group_id)
             .ok_or(SwitchError::GroupNotFound)?;
         if !group.is_enabled {
             return Err(SwitchError::GroupDisabled);
         }
-        let state = self
-            .repositories
-            .app_state
-            .load()
-            .map_err(|source| SwitchError::LoadAppStateFailed { source })?;
-        Ok((group, state))
+        Ok((group, config))
     }
 
     fn persist_projection(
         &self,
         group: &ModelGroup,
-        current_state: AppSelectionState,
+        mut current_config: OmoSwitchConfig,
     ) -> Result<SwitchOutcome, SwitchError> {
         let should_write_opencode = has_effective_opencode_overrides(group);
         let opencode_document = self.load_opencode_if_needed(should_write_opencode)?;
@@ -202,8 +219,12 @@ where
         let oh_my_projection = OhMyOpenAgentProjectionService::project(group, &oh_my_document);
 
         let warnings = merge_warnings(opencode_projection.as_ref(), &oh_my_projection);
-        let next_state = self.success_state(current_state, group, &backups, &warnings);
-        self.save_transaction(opencode_projection.as_ref(), &oh_my_projection, &next_state)?;
+        current_config.state = self.success_state(current_config.state, group, &backups, &warnings);
+        self.save_transaction(
+            opencode_projection.as_ref(),
+            &oh_my_projection,
+            &current_config,
+        )?;
         self.cleanup_backups(should_write_opencode);
 
         Ok(SwitchOutcome::Success {
@@ -250,7 +271,7 @@ where
         &self,
         opencode_projection: Option<&ProjectionResult<OpenCodeDocument>>,
         oh_my_projection: &ProjectionResult<OhMyOpenAgentDocument>,
-        state: &AppSelectionState,
+        config: &OmoSwitchConfig,
     ) -> Result<(), SwitchError> {
         let opencode_bytes = opencode_projection
             .map(|projection| projection.document.serialize())
@@ -260,9 +281,9 @@ where
             .document
             .serialize()
             .map_err(|_| SwitchError::LoadOhMyConfigFailed)?;
-        let state_bytes =
-            serde_json::to_vec_pretty(state).map_err(|source| SwitchError::TransactionFailed {
-                stage: "state-serialize",
+        let config_bytes =
+            serde_json::to_vec_pretty(config).map_err(|source| SwitchError::TransactionFailed {
+                stage: "config-serialize",
                 source: io::Error::other(source),
             })?;
         let mut writes = Vec::with_capacity(if opencode_bytes.is_some() { 3 } else { 2 });
@@ -279,9 +300,9 @@ where
             oh_my_bytes.as_bytes(),
         ));
         writes.push((
-            "state",
-            self.repositories.app_state.state_file(),
-            state_bytes.as_slice(),
+            "config",
+            self.repositories.config.config_file(),
+            config_bytes.as_slice(),
         ));
         let mut transaction =
             TransactionFiles::prepare(&self.repositories.backups_root, &writes, |stage| {

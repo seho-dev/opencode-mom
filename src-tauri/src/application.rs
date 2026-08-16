@@ -7,8 +7,8 @@ use uuid::Uuid;
 use crate::core::models::{AppSelectionState, ModelGroup};
 use crate::core::paths::{ConfigPathError, ConfigPaths, HomeEnv};
 use crate::core::repository::{
-    AppStateRepository, ModelGroupRepository, OhMyOpenAgentConfigRepository, OpenCodeConfigError,
-    OpenCodeConfigRepository, RepositoryError,
+    ConfigRepository, OhMyOpenAgentConfigRepository, OpenCodeConfigError, OpenCodeConfigRepository,
+    RepositoryError,
 };
 use crate::core::switching::{
     recover_pending_transaction, SwitchError, SwitchGroupRepositories, SwitchGroupUseCase,
@@ -97,18 +97,11 @@ impl GroupApplicationService {
     }
 
     pub fn load_app_state(&self) -> Result<LoadedAppState, ApplicationError> {
-        let groups = self
-            .model_groups()
-            .load()
-            .map_err(ApplicationError::LoadGroups)?;
-        let app_state = self
-            .app_state()
-            .load()
-            .map_err(ApplicationError::LoadAppState)?;
+        let config = self.config().load().map_err(ApplicationError::LoadGroups)?;
         let discovery = self.discovered_open_code_agents();
         Ok(LoadedAppState {
-            groups,
-            app_state,
+            groups: config.groups,
+            app_state: config.state,
             discovered_open_code_agent_names: discovery.agent_names,
             open_code_agent_discovery_error: discovery.error,
         })
@@ -116,11 +109,8 @@ impl GroupApplicationService {
 
     pub fn save_group(&self, group: ModelGroup) -> Result<GroupMutation, ApplicationError> {
         let group_id = group.id;
-        let mut groups = self
-            .model_groups()
-            .load()
-            .map_err(ApplicationError::LoadGroups)?;
-        if groups.iter().any(|candidate| {
+        let mut config = self.config().load().map_err(ApplicationError::LoadGroups)?;
+        if config.groups.iter().any(|candidate| {
             candidate.id != group_id
                 && candidate
                     .name
@@ -129,97 +119,88 @@ impl GroupApplicationService {
         }) {
             return Err(ApplicationError::DuplicateGroupName);
         }
-        match groups.iter_mut().find(|candidate| candidate.id == group_id) {
+        match config
+            .groups
+            .iter_mut()
+            .find(|candidate| candidate.id == group_id)
+        {
             Some(existing) => *existing = group.clone(),
-            None => groups.push(group.clone()),
+            None => config.groups.push(group.clone()),
         }
-        self.model_groups()
-            .save(&groups)
-            .map_err(ApplicationError::SaveGroups)?;
-        let state = self
-            .app_state()
-            .load()
-            .map_err(ApplicationError::LoadAppState)?;
-        if state.selected_group_id == Some(group_id) {
+        if config.state.selected_group_id == Some(group_id) {
             self.switch_use_case()
-                .save_active_group_projection(group_id)
+                .save_active_group_projection_for_config(config.clone())
                 .map_err(ApplicationError::Switch)?;
+        } else {
+            self.config()
+                .save(&config)
+                .map_err(ApplicationError::SaveGroups)?;
         }
         let app_state = self
-            .app_state()
+            .config()
             .load()
-            .map_err(ApplicationError::LoadAppState)?;
+            .map_err(ApplicationError::LoadAppState)?
+            .state;
         Ok(GroupMutation {
             group,
-            groups,
+            groups: config.groups,
             app_state,
         })
     }
 
     pub fn copy_group(&self, id: Uuid) -> Result<GroupMutation, ApplicationError> {
-        let mut groups = self
-            .model_groups()
-            .load()
-            .map_err(ApplicationError::LoadGroups)?;
-        let source = groups
+        let mut config = self.config().load().map_err(ApplicationError::LoadGroups)?;
+        let source = config
+            .groups
             .iter()
             .find(|group| group.id == id)
             .cloned()
             .ok_or(ApplicationError::GroupNotFound)?;
-        let copied_name = unique_copy_group_name(&source.name, &groups);
+        let copied_name = unique_copy_group_name(&source.name, &config.groups);
         let copied = ModelGroup {
             id: Uuid::new_v4(),
             name: copied_name,
             updated_at: OffsetDateTime::now_utc(),
             ..source
         };
-        groups.push(copied.clone());
-        self.model_groups()
-            .save(&groups)
+        config.groups.push(copied.clone());
+        self.config()
+            .save(&config)
             .map_err(ApplicationError::SaveGroups)?;
-        let app_state = self
-            .app_state()
-            .load()
-            .map_err(ApplicationError::LoadAppState)?;
         Ok(GroupMutation {
             group: copied,
-            groups,
-            app_state,
+            groups: config.groups,
+            app_state: config.state,
         })
     }
 
     pub fn delete_group(&self, id: Uuid) -> Result<GroupMutation, ApplicationError> {
-        let groups = self
-            .model_groups()
-            .load()
-            .map_err(ApplicationError::LoadGroups)?;
-        let deleted = groups
+        let mut config = self.config().load().map_err(ApplicationError::LoadGroups)?;
+        let deleted = config
+            .groups
             .iter()
             .find(|group| group.id == id)
             .cloned()
             .ok_or(ApplicationError::GroupNotFound)?;
-        let remaining = groups
+        let remaining = config
+            .groups
+            .iter()
+            .cloned()
             .into_iter()
             .filter(|group| group.id != id)
             .collect::<Vec<_>>();
-        self.model_groups()
-            .save(&remaining)
-            .map_err(ApplicationError::SaveGroups)?;
-        let mut app_state = self
-            .app_state()
-            .load()
-            .map_err(ApplicationError::LoadAppState)?;
-        if app_state.selected_group_id == Some(id) {
-            app_state.selected_group_id = None;
-            app_state.selected_group_name = None;
-            self.app_state()
-                .save(&app_state)
-                .map_err(ApplicationError::SaveAppState)?;
+        config.groups = remaining.clone();
+        if config.state.selected_group_id == Some(id) {
+            config.state.selected_group_id = None;
+            config.state.selected_group_name = None;
         }
+        self.config()
+            .save(&config)
+            .map_err(ApplicationError::SaveGroups)?;
         Ok(GroupMutation {
             group: deleted,
             groups: remaining,
-            app_state,
+            app_state: config.state,
         })
     }
 
@@ -229,9 +210,10 @@ impl GroupApplicationService {
             .switch_to(id)
             .map_err(ApplicationError::Switch)?;
         let app_state = self
-            .app_state()
+            .config()
             .load()
-            .map_err(ApplicationError::LoadAppState)?;
+            .map_err(ApplicationError::LoadAppState)?
+            .state;
         match outcome {
             SwitchOutcome::Success { warnings, .. } => Ok(GroupSwitch {
                 outcome: GroupSwitchOutcome::Success,
@@ -261,8 +243,7 @@ impl GroupApplicationService {
     fn switch_use_case(&self) -> SwitchGroupUseCase<fn() -> OffsetDateTime> {
         SwitchGroupUseCase::new(
             SwitchGroupRepositories {
-                model_groups: self.model_groups(),
-                app_state: self.app_state(),
+                config: self.config(),
                 backups_root: self.paths.omo_switch_dir(),
                 opencode: self.opencode(),
                 oh_my_openagent: self.oh_my_openagent(),
@@ -271,12 +252,8 @@ impl GroupApplicationService {
         )
     }
 
-    fn model_groups(&self) -> ModelGroupRepository {
-        ModelGroupRepository::new(self.paths.groups_file())
-    }
-
-    fn app_state(&self) -> AppStateRepository {
-        AppStateRepository::new(self.paths.state_file())
+    fn config(&self) -> ConfigRepository {
+        ConfigRepository::new(self.paths.config_file())
     }
 
     fn opencode(&self) -> OpenCodeConfigRepository {

@@ -15,7 +15,7 @@ pub(crate) enum CommitPhase {
     Prepared,
     FirstTargetCommitted,
     TargetsCommitted,
-    StateCommitted,
+    ConfigCommitted,
     Compensated,
 }
 
@@ -166,7 +166,7 @@ impl TransactionFiles {
             let rename_fault = match index {
                 0 => TransactionFault::FirstTargetRename,
                 1 => TransactionFault::SecondTargetRename,
-                _ => TransactionFault::StateRename,
+                _ => TransactionFault::ConfigRename,
             };
             inject(rename_fault)?;
             replace(
@@ -177,13 +177,13 @@ impl TransactionFiles {
             self.journal.phase = match index {
                 0 => CommitPhase::FirstTargetCommitted,
                 1 if self.journal.entries.len() == 3 => CommitPhase::TargetsCommitted,
-                _ => CommitPhase::StateCommitted,
+                _ => CommitPhase::ConfigCommitted,
             };
             self.sync_journal(&mut inject)?;
             let interruption = match index {
                 0 => TransactionFault::AfterFirstTargetRename,
                 1 if self.journal.entries.len() == 3 => TransactionFault::AfterSecondTargetRename,
-                _ => TransactionFault::AfterStateRename,
+                _ => TransactionFault::AfterConfigRename,
             };
             inject(interruption)?;
         }
@@ -273,7 +273,7 @@ pub fn recover_pending_transaction(root: &Path) -> io::Result<()> {
         journal,
     };
     match files.journal.phase {
-        CommitPhase::StateCommitted => {
+        CommitPhase::ConfigCommitted => {
             files.verify_new()?;
             files.cleanup()
         }

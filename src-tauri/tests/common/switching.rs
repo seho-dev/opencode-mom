@@ -9,8 +9,7 @@ use omo_switch_tauri::core::models::{
 };
 use omo_switch_tauri::core::paths::{ConfigPaths, HomeEnv};
 use omo_switch_tauri::core::repository::{
-    AppStateRepository, ModelGroupRepository, OhMyOpenAgentConfigRepository,
-    OpenCodeConfigRepository,
+    ConfigRepository, OhMyOpenAgentConfigRepository, OpenCodeConfigRepository,
 };
 use omo_switch_tauri::core::switching::SwitchOutcome;
 use omo_switch_tauri::core::switching::{SwitchGroupRepositories, SwitchGroupUseCase};
@@ -76,8 +75,7 @@ pub fn group(
 pub fn use_case(home: &Path) -> SwitchGroupUseCase<fn() -> OffsetDateTime> {
     let resolved = paths(home);
     let repositories = SwitchGroupRepositories {
-        model_groups: ModelGroupRepository::new(resolved.groups_file()),
-        app_state: AppStateRepository::new(resolved.state_file()),
+        config: ConfigRepository::new(resolved.config_file()),
         backups_root: resolved.omo_switch_dir(),
         opencode: OpenCodeConfigRepository::new(resolved.opencode_file()),
         oh_my_openagent: OhMyOpenAgentConfigRepository::new(resolved.oh_my_openagent_file()),
@@ -86,18 +84,21 @@ pub fn use_case(home: &Path) -> SwitchGroupUseCase<fn() -> OffsetDateTime> {
 }
 
 pub fn seed_groups(home: &Path, groups: &[ModelGroup]) {
-    let repo = ModelGroupRepository::new(paths(home).groups_file());
-    repo.save(groups).expect("Given: groups save");
+    let repo = ConfigRepository::new(paths(home).config_file());
+    let mut config = repo.load().expect("Given: config loads");
+    config.groups = groups.to_vec();
+    repo.save(&config).expect("Given: groups save");
 }
 
 pub fn seed_state(home: &Path, selected_group_id: Option<Uuid>, selected_group_name: Option<&str>) {
-    let repo = AppStateRepository::new(paths(home).state_file());
-    let state = AppSelectionState {
+    let repo = ConfigRepository::new(paths(home).config_file());
+    let mut config = repo.load().expect("Given: config loads");
+    config.state = AppSelectionState {
         selected_group_id,
         selected_group_name: selected_group_name.map(str::to_owned),
         ..AppSelectionState::default()
     };
-    repo.save(&state).expect("Given: app state saves");
+    repo.save(&config).expect("Given: app state saves");
 }
 
 pub fn seed_oh_my(home: &Path) {
@@ -149,9 +150,10 @@ pub fn assert_dual_target_success(home: &Path, target_group: &ModelGroup, outcom
     assert!(opencode.raw().get("plugin").is_some());
     assert!(opencode.raw().get("provider").is_some());
     assert!(opencode.agents().get("karen").is_some());
-    let state = AppStateRepository::new(resolved.state_file())
+    let state = ConfigRepository::new(resolved.config_file())
         .load()
-        .expect("Then: state loads");
+        .expect("Then: config loads")
+        .state;
     assert_eq!(state.selected_group_id, Some(target_group.id));
     assert_eq!(state.selected_group_name.as_deref(), Some("Dual Target"));
     assert_eq!(

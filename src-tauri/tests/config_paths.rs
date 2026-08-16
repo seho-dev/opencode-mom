@@ -22,7 +22,7 @@ fn remove_temp(path: &Path) {
 }
 
 #[test]
-fn config_paths_when_home_is_available_resolve_exact_legacy_dot_config_locations() {
+fn config_paths_when_home_is_available_resolve_exact_dot_config_locations() {
     // Given: a fake HOME directory controls path resolution.
     let home = temp_home("home-paths");
 
@@ -30,8 +30,7 @@ fn config_paths_when_home_is_available_resolve_exact_legacy_dot_config_locations
     let paths = ConfigPaths::from_home_env(HomeEnv::new(Some(home.as_path()), None))
         .expect("When: HOME path should resolve");
     println!("HOME config root: {}", home.display());
-    println!("groups.json path: {}", paths.groups_file().display());
-    println!("state.json path: {}", paths.state_file().display());
+    println!("config.json path: {}", paths.config_file().display());
     println!(
         "oh-my-openagent.json path: {}",
         paths.oh_my_openagent_file().display()
@@ -44,12 +43,8 @@ fn config_paths_when_home_is_available_resolve_exact_legacy_dot_config_locations
         home.join(".config").join("omo-switch")
     );
     assert_eq!(
-        paths.groups_file(),
-        home.join(".config").join("omo-switch").join("groups.json")
-    );
-    assert_eq!(
-        paths.state_file(),
-        home.join(".config").join("omo-switch").join("state.json")
+        paths.config_file(),
+        home.join(".config").join("omo-switch").join("config.json")
     );
     assert_eq!(
         paths.oh_my_openagent_file(),
@@ -75,28 +70,17 @@ fn config_paths_when_home_is_missing_use_userprofile_without_app_data_migration(
         .expect("When: USERPROFILE path should resolve");
     println!("USERPROFILE config root: {}", userprofile.display());
     println!(
-        "USERPROFILE groups.json path: {}",
-        paths.groups_file().display()
-    );
-    println!(
-        "USERPROFILE state.json path: {}",
-        paths.state_file().display()
+        "USERPROFILE config.json path: {}",
+        paths.config_file().display()
     );
 
     // Then: even on Windows the app keeps literal ~/.config paths, not APPDATA.
     assert_eq!(
-        paths.groups_file(),
+        paths.config_file(),
         userprofile
             .join(".config")
             .join("omo-switch")
-            .join("groups.json")
-    );
-    assert_eq!(
-        paths.state_file(),
-        userprofile
-            .join(".config")
-            .join("omo-switch")
-            .join("state.json")
+            .join("config.json")
     );
     assert_eq!(
         paths.oh_my_openagent_file(),
@@ -112,7 +96,7 @@ fn config_paths_when_home_is_missing_use_userprofile_without_app_data_migration(
             .join("opencode")
             .join("opencode.json")
     );
-    assert!(!paths.groups_file().to_string_lossy().contains("AppData"));
+    assert!(!paths.config_file().to_string_lossy().contains("AppData"));
 
     remove_temp(&userprofile);
 }

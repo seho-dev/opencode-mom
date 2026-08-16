@@ -6,9 +6,11 @@ use omo_switch_tauri::core::document::OpenCodeDocument;
 use omo_switch_tauri::core::error::{
     ConfigPathError, PersistenceOperation, RepositoryErrorCode, TargetConfigErrorCode,
 };
-use omo_switch_tauri::core::models::{AppSelectionState, LastSuccessfulWriteMetadata, ModelGroup};
+use omo_switch_tauri::core::models::{
+    AppSelectionState, LastSuccessfulWriteMetadata, ModelGroup, OmoSwitchConfig,
+};
 use omo_switch_tauri::core::paths::{ConfigPaths, HomeEnv};
-use omo_switch_tauri::core::repository::{AppStateRepository, OpenCodeConfigRepository};
+use omo_switch_tauri::core::repository::{ConfigRepository, OpenCodeConfigRepository};
 
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -38,23 +40,23 @@ fn persistence_error_when_home_variables_are_missing_is_stable_and_typed() {
 }
 
 #[test]
-fn persistence_error_when_state_is_malformed_includes_operation_and_path() {
-    // Given: malformed state at the literal compatibility location.
-    let home = temp_home("malformed-state");
+fn persistence_error_when_config_is_malformed_includes_operation_and_path() {
+    // Given: malformed config at the literal compatibility location.
+    let home = temp_home("malformed-config");
     let paths = ConfigPaths::from_home_env(HomeEnv::new(Some(&home), None))
         .expect("Given: fake HOME resolves");
     fs::create_dir_all(paths.omo_switch_dir()).expect("Given: app config directory exists");
-    fs::write(paths.state_file(), "{ malformed").expect("Given: malformed state writes");
-    let repository = AppStateRepository::new(paths.state_file());
+    fs::write(paths.config_file(), "{ malformed").expect("Given: malformed config writes");
+    let repository = ConfigRepository::new(paths.config_file());
 
-    // When: state is loaded through its repository boundary.
-    let error = repository.load().expect_err("When: malformed state fails");
+    // When: config is loaded through its repository boundary.
+    let error = repository.load().expect_err("When: malformed config fails");
 
     // Then: the error identifies the stable class, operation, and exact path.
     assert_eq!(error.code(), RepositoryErrorCode::MalformedJson);
     assert_eq!(error.operation(), PersistenceOperation::Parse);
-    assert_eq!(error.path(), paths.state_file());
-    assert!(error.detail().contains("state.json"));
+    assert_eq!(error.path(), paths.config_file());
+    assert!(error.detail().contains("config.json"));
 
     fs::remove_dir_all(home).expect("Then: temp home is removed");
 }
@@ -83,17 +85,17 @@ fn persistence_error_when_target_jsonc_is_malformed_includes_operation_and_path(
 
 #[test]
 fn persistence_error_when_parent_is_a_file_returns_stable_write_context() {
-    // Given: a file occupies the directory required by state persistence.
+    // Given: a file occupies the directory required by config persistence.
     let home = temp_home("unwritable-parent");
     let blocked_parent = home.join("blocked");
     fs::write(&blocked_parent, "not a directory").expect("Given: blocking file exists");
-    let state_file = blocked_parent.join("state.json");
-    let repository = AppStateRepository::new(state_file.clone());
+    let config_file = blocked_parent.join("config.json");
+    let repository = ConfigRepository::new(config_file.clone());
 
-    // When: state persistence attempts to create the parent directory.
+    // When: config persistence attempts to create the parent directory.
     let error = repository
-        .save(&AppSelectionState::default())
-        .expect_err("When: state save fails");
+        .save(&OmoSwitchConfig::default())
+        .expect_err("When: config save fails");
 
     // Then: the failure is deterministic on Windows and Unix fake homes.
     assert_eq!(error.code(), RepositoryErrorCode::WriteFailed);
@@ -127,17 +129,14 @@ fn persistence_error_when_target_parent_is_a_file_keeps_target_write_context() {
 }
 
 #[test]
-fn persistence_error_when_model_or_state_serialization_fails_keeps_existing_bytes() {
+fn persistence_error_when_config_serialization_fails_keeps_existing_bytes() {
     let home = temp_home("serialization-retention");
     let paths = ConfigPaths::from_home_env(HomeEnv::new(Some(&home), None))
         .expect("Given: fake HOME resolves");
     fs::create_dir_all(paths.omo_switch_dir()).expect("Given: app config directory exists");
-    let groups_bytes = b"original groups bytes";
-    let state_bytes = b"original state bytes";
-    fs::write(paths.groups_file(), groups_bytes).expect("Given: original groups bytes persist");
-    fs::write(paths.state_file(), state_bytes).expect("Given: original state bytes persist");
-    let groups = omo_switch_tauri::core::repository::ModelGroupRepository::new(paths.groups_file());
-    let state = AppStateRepository::new(paths.state_file());
+    let config_bytes = b"original config bytes";
+    fs::write(paths.config_file(), config_bytes).expect("Given: original config bytes persist");
+    let repository = ConfigRepository::new(paths.config_file());
     let invalid_timestamp = time::Date::from_calendar_date(-1, time::Month::January, 1)
         .expect("Given: negative year is representable by the domain time type")
         .with_time(time::Time::MIDNIGHT)
@@ -161,26 +160,19 @@ fn persistence_error_when_model_or_state_serialization_fails_keeps_existing_byte
         ..AppSelectionState::default()
     };
 
-    let group_error = groups
-        .save(&[group])
-        .expect_err("When: an out-of-range group timestamp cannot serialize");
-    let state_error = state
-        .save(&state_with_invalid_timestamp)
-        .expect_err("When: an out-of-range state timestamp cannot serialize");
+    let error = repository
+        .save(&OmoSwitchConfig {
+            groups: vec![group],
+            state: state_with_invalid_timestamp,
+        })
+        .expect_err("When: an out-of-range config timestamp cannot serialize");
 
-    assert_eq!(group_error.code(), RepositoryErrorCode::MalformedJson);
-    assert_eq!(group_error.operation(), PersistenceOperation::Serialize);
-    assert_eq!(group_error.path(), paths.groups_file());
-    assert_eq!(state_error.code(), RepositoryErrorCode::MalformedJson);
-    assert_eq!(state_error.operation(), PersistenceOperation::Serialize);
-    assert_eq!(state_error.path(), paths.state_file());
+    assert_eq!(error.code(), RepositoryErrorCode::MalformedJson);
+    assert_eq!(error.operation(), PersistenceOperation::Serialize);
+    assert_eq!(error.path(), paths.config_file());
     assert_eq!(
-        fs::read(paths.groups_file()).expect("Then: original groups bytes read"),
-        groups_bytes
-    );
-    assert_eq!(
-        fs::read(paths.state_file()).expect("Then: original state bytes read"),
-        state_bytes
+        fs::read(paths.config_file()).expect("Then: original config bytes read"),
+        config_bytes
     );
 
     fs::remove_dir_all(home).expect("Then: temp home is removed");

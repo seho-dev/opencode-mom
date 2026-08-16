@@ -62,7 +62,7 @@ fn transaction_when_each_precommit_stage_fails_preserves_original_three_file_set
         let originals = [
             bytes(&resolved.opencode_file()),
             bytes(&resolved.oh_my_openagent_file()),
-            bytes(&resolved.state_file()),
+            bytes(&resolved.config_file()),
         ];
         let control = SwitchTestControl::fail_once(fault);
 
@@ -74,19 +74,19 @@ fn transaction_when_each_precommit_stage_fails_preserves_original_three_file_set
         assert!(matches!(error, SwitchError::TransactionFailed { .. }));
         assert_eq!(bytes(&resolved.opencode_file()), originals[0]);
         assert_eq!(bytes(&resolved.oh_my_openagent_file()), originals[1]);
-        assert_eq!(bytes(&resolved.state_file()), originals[2]);
+        assert_eq!(bytes(&resolved.config_file()), originals[2]);
         remove_temp(&home);
     }
 }
 
 #[test]
-fn transaction_when_second_target_rename_fails_compensates_first_target_and_state() {
+fn transaction_when_second_target_rename_fails_compensates_first_target_and_config() {
     let home = seeded_home("second-rename");
     let resolved = paths(&home);
     let originals = [
         bytes(&resolved.opencode_file()),
         bytes(&resolved.oh_my_openagent_file()),
-        bytes(&resolved.state_file()),
+        bytes(&resolved.config_file()),
     ];
 
     let error = use_case(&home)
@@ -99,30 +99,30 @@ fn transaction_when_second_target_rename_fails_compensates_first_target_and_stat
     assert!(matches!(error, SwitchError::TransactionFailed { .. }));
     assert_eq!(bytes(&resolved.opencode_file()), originals[0]);
     assert_eq!(bytes(&resolved.oh_my_openagent_file()), originals[1]);
-    assert_eq!(bytes(&resolved.state_file()), originals[2]);
+    assert_eq!(bytes(&resolved.config_file()), originals[2]);
     assert!(!journal(&home).exists());
     remove_temp(&home);
 }
 
 #[test]
-fn transaction_when_state_rename_fails_compensates_both_targets() {
-    let home = seeded_home("state-rename");
+fn transaction_when_config_rename_fails_compensates_both_targets() {
+    let home = seeded_home("config-rename");
     let resolved = paths(&home);
     let originals = [
         bytes(&resolved.opencode_file()),
         bytes(&resolved.oh_my_openagent_file()),
-        bytes(&resolved.state_file()),
+        bytes(&resolved.config_file()),
     ];
 
     let error = use_case(&home)
-        .with_test_control(SwitchTestControl::fail_once(TransactionFault::StateRename))
+        .with_test_control(SwitchTestControl::fail_once(TransactionFault::ConfigRename))
         .switch_to(dual_target_group().id)
         .expect_err("When: state rename fails");
 
     assert!(matches!(error, SwitchError::TransactionFailed { .. }));
     assert_eq!(bytes(&resolved.opencode_file()), originals[0]);
     assert_eq!(bytes(&resolved.oh_my_openagent_file()), originals[1]);
-    assert_eq!(bytes(&resolved.state_file()), originals[2]);
+    assert_eq!(bytes(&resolved.config_file()), originals[2]);
     remove_temp(&home);
 }
 
@@ -155,11 +155,11 @@ fn transaction_when_interrupted_after_each_commit_phase_recovers_consistent_byte
         TransactionFault::AfterJournalSync,
         TransactionFault::AfterFirstTargetRename,
         TransactionFault::AfterSecondTargetRename,
-        TransactionFault::AfterStateRename,
+        TransactionFault::AfterConfigRename,
     ] {
         let home = seeded_home(fault.label());
         let resolved = paths(&home);
-        let original_state = bytes(&resolved.state_file());
+        let original_config = bytes(&resolved.config_file());
         let error = use_case(&home)
             .with_test_control(SwitchTestControl::fail_once(fault))
             .switch_to(dual_target_group().id)
@@ -174,8 +174,8 @@ fn transaction_when_interrupted_after_each_commit_phase_recovers_consistent_byte
             .expect("When: startup recovery resolves journal");
 
         assert!(!journal(&home).exists());
-        let state = bytes(&resolved.state_file());
-        let committed = state != original_state;
+        let config = bytes(&resolved.config_file());
+        let committed = config != original_config;
         let opencode = String::from_utf8(bytes(&resolved.opencode_file())).expect("UTF-8");
         let oh_my = String::from_utf8(bytes(&resolved.oh_my_openagent_file())).expect("UTF-8");
         assert_eq!(committed, opencode.contains("new/opencode"));
@@ -211,7 +211,7 @@ fn transaction_when_switch_is_noop_creates_no_backup_stage_or_journal() {
 fn transaction_when_subprocess_aborts_after_first_rename_recovers_on_restart() {
     let home = seeded_home("subprocess-abort");
     let resolved = paths(&home);
-    let original_state = bytes(&resolved.state_file());
+    let original_config = bytes(&resolved.config_file());
 
     let status = Command::new(std::env::current_exe().expect("Given: current test executable"))
         .args(["--exact", "transaction_crash_child", "--nocapture"])
@@ -223,7 +223,7 @@ fn transaction_when_subprocess_aborts_after_first_rename_recovers_on_restart() {
     assert!(journal(&home).exists());
     recover_pending_transaction(&resolved.omo_switch_dir())
         .expect("When: restarted process recovers");
-    assert_eq!(bytes(&resolved.state_file()), original_state);
+    assert_eq!(bytes(&resolved.config_file()), original_config);
     assert!(!String::from_utf8(bytes(&resolved.opencode_file()))
         .expect("UTF-8")
         .contains("new/opencode"));

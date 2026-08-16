@@ -4,10 +4,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use omo_switch_tauri::core::models::{
     AppSelectionState, LastSuccessfulWriteMetadata, ModelGroup, ModelGroupAgentOverride,
-    ModelGroupCategoryMapping, ModelGroupStore, ProjectionIssueSummary,
+    ModelGroupCategoryMapping, OmoSwitchConfig, ProjectionIssueSummary,
 };
 use omo_switch_tauri::core::paths::{ConfigPaths, HomeEnv};
-use omo_switch_tauri::core::repository::{AppStateRepository, ModelGroupRepository};
+use omo_switch_tauri::core::repository::ConfigRepository;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
@@ -78,10 +78,9 @@ fn schemas_when_legacy_server_fields_are_read_do_not_become_app_state_projection
 }
 
 #[test]
-fn schemas_when_groups_and_state_round_trip_preserve_uuid_and_iso8601_dates() {
-    // Given: persisted compatible group and state values with fixed UUID/date strings.
-    let group_payload = r#"{
-  "migrationVersion" : 1,
+fn schemas_when_config_round_trip_preserves_uuid_and_iso8601_dates() {
+    // Given: persisted compatible config values with fixed UUID/date strings.
+    let config_payload = r#"{
   "groups" : [
     {
       "agentOverrides" : [
@@ -102,9 +101,8 @@ fn schemas_when_groups_and_state_round_trip_preserve_uuid_and_iso8601_dates() {
       "name" : "Primary",
       "updatedAt" : "2023-11-14T22:13:20Z"
     }
-  ]
-}"#;
-    let state_payload = r#"{
+  ],
+  "state" : {
   "lastSuccessfulWrite" : {
     "backupPath" : "/tmp/backup.json",
     "target" : "oh-my-openagent.categories",
@@ -113,40 +111,39 @@ fn schemas_when_groups_and_state_round_trip_preserve_uuid_and_iso8601_dates() {
   "migrationVersion" : 2,
   "selectedGroupID" : "4F648C2A-1D48-44D6-B0C0-4D340816E1F3",
   "selectedGroupName" : "Primary"
+  }
 }"#;
 
-    // When: Rust decodes and re-encodes both persisted schema families.
-    let groups: ModelGroupStore = serde_json::from_str(group_payload).expect("When: groups decode");
-    let state: AppSelectionState =
-        serde_json::from_str(state_payload).expect("When: state decodes");
-    let encoded_groups = serde_json::to_string_pretty(&groups).expect("Then: groups encode");
-    let encoded_state = serde_json::to_string_pretty(&state).expect("Then: state encode");
+    // When: Rust decodes and re-encodes the persisted config schema.
+    let config: OmoSwitchConfig =
+        serde_json::from_str(config_payload).expect("When: config decodes");
+    let encoded = serde_json::to_string_pretty(&config).expect("Then: config encodes");
 
     // Then: UUID and ISO8601 date strings survive round trip.
     assert_eq!(
-        groups.groups[0].id.to_string().to_uppercase(),
+        config.groups[0].id.to_string().to_uppercase(),
         "4F648C2A-1D48-44D6-B0C0-4D340816E1F3"
     );
-    assert!(encoded_groups.contains("2023-11-14T22:13:20Z"));
+    assert!(encoded.contains("2023-11-14T22:13:20Z"));
     assert_eq!(
-        state
+        config
+            .state
             .selected_group_id
             .expect("selected group id")
             .to_string()
             .to_uppercase(),
         "4F648C2A-1D48-44D6-B0C0-4D340816E1F3"
     );
-    assert!(encoded_state.contains("2023-11-14T22:21:40Z"));
+    assert!(encoded.contains("2023-11-14T22:21:40Z"));
 }
 
 #[test]
-fn config_paths_schemas_when_repositories_save_write_compatible_files_under_temp_home() {
+fn config_paths_schemas_when_repository_saves_complete_config_under_temp_home() {
     // Given: Rust repositories are rooted at fake HOME-derived config paths.
     let home = temp_home("repository-save");
     let paths = ConfigPaths::from_home_env(HomeEnv::new(Some(home.as_path()), None))
         .expect("Given: HOME path should resolve");
-    let groups_repo = ModelGroupRepository::new(paths.groups_file());
-    let state_repo = AppStateRepository::new(paths.state_file());
+    let repository = ConfigRepository::new(paths.config_file());
     let group_id = "4F648C2A-1D48-44D6-B0C0-4D340816E1F3"
         .parse()
         .expect("Given: UUID fixture parses");
@@ -187,35 +184,27 @@ fn config_paths_schemas_when_repositories_save_write_compatible_files_under_temp
     };
 
     fs::create_dir_all(paths.omo_switch_dir()).expect("Given: repository directory exists");
-    fs::write(paths.groups_file(), b"old groups bytes")
-        .expect("Given: existing groups bytes persist");
-    fs::write(paths.state_file(), b"old state bytes").expect("Given: existing state bytes persist");
+    fs::write(paths.config_file(), b"old config bytes")
+        .expect("Given: existing config bytes persist");
 
-    // When: repositories save and reload their payloads.
-    groups_repo
-        .save(&[group.clone()])
-        .expect("When: groups save");
-    state_repo.save(&state).expect("When: state saves");
+    // When: the repository saves and reloads its complete payload.
+    let config = OmoSwitchConfig {
+        groups: vec![group.clone()],
+        state: state.clone(),
+    };
+    repository.save(&config).expect("When: config saves");
     println!(
-        "repository groups.json path: {}",
-        paths.groups_file().display()
-    );
-    println!(
-        "repository state.json path: {}",
-        paths.state_file().display()
+        "repository config.json path: {}",
+        paths.config_file().display()
     );
 
-    // Then: observable files, load behavior, defaults, and paths match the persisted contract.
-    assert_eq!(groups_repo.load().expect("Then: groups load"), vec![group]);
-    assert_eq!(state_repo.load().expect("Then: state loads"), state);
-    assert!(paths.groups_file().exists());
-    assert!(paths.state_file().exists());
-    assert!(fs::read_to_string(paths.groups_file())
-        .expect("Then: groups file reads")
-        .contains("\"migrationVersion\": 1"));
-    assert!(fs::read_to_string(paths.state_file())
-        .expect("Then: state file reads")
-        .contains("\"migrationVersion\": 2"));
+    // Then: observable file, load behavior, defaults, and path match the persisted contract.
+    assert_eq!(repository.load().expect("Then: config loads"), config);
+    assert!(paths.config_file().exists());
+    let encoded = fs::read_to_string(paths.config_file()).expect("Then: config file reads");
+    assert!(encoded.contains("\"groups\":"));
+    assert!(encoded.contains("\"state\":"));
+    assert!(encoded.contains("\"migrationVersion\": 2"));
 
     remove_temp(&home);
 }

@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn replacement_when_destination_exists_overwrites_it_on_the_same_directory() {
         let directory = temporary_directory("existing-overwrite");
-        let destination = directory.join("state.json");
+        let destination = directory.join("config.json");
         fs::write(&destination, b"old bytes").expect("Given: original bytes persist");
 
         replace_file(&destination, b"new bytes").expect("When: replacement succeeds");
@@ -230,7 +230,7 @@ mod tests {
         let directory = temporary_directory("parent-failure");
         let blocked_parent = directory.join("blocked");
         fs::write(&blocked_parent, b"not a directory").expect("Given: blocking file persists");
-        let destination = blocked_parent.join("state.json");
+        let destination = blocked_parent.join("config.json");
 
         let error = replace_file(&destination, b"new bytes")
             .expect_err("When: parent directory cannot be created");
@@ -255,7 +255,7 @@ mod tests {
             ),
         ] {
             let directory = temporary_directory(label);
-            let destination = directory.join("groups.json");
+            let destination = directory.join("config.json");
             fs::write(&destination, b"original bytes")
                 .expect("Given: original destination bytes persist");
             let _failure = inject_failure(step);

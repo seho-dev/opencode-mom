@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 
 use omo_switch_tauri::core::backup::BackupRepository;
 use omo_switch_tauri::core::document::{OhMyOpenAgentDocument, OpenCodeDocument};
-use omo_switch_tauri::core::models::{AppSelectionState, ModelGroupStore};
+use omo_switch_tauri::core::models::OmoSwitchConfig;
 use omo_switch_tauri::core::paths::{ConfigPaths, HomeEnv};
-use omo_switch_tauri::core::repository::{AppStateRepository, ModelGroupRepository};
+use omo_switch_tauri::core::repository::ConfigRepository;
 use omo_switch_tauri::core::switching::recover_pending_transaction;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -29,90 +29,22 @@ fn fixed_now() -> OffsetDateTime {
 }
 
 #[test]
-fn compatibility_fixtures_when_schemas_load_pin_current_and_legacy_defaults() {
-    // Given: current and legacy language-neutral persisted payloads.
-    let current_state_source = fixture_text("state/current.json");
-    let legacy_server_state_source = r#"{
-  "selectedGroupID": "4f648c2a-1d48-44d6-b0c0-4d340816e1f3",
-  "selectedGroupName": "Primary",
-  "launchAtLoginEnabled": true,
-  "openCodeServeConfig": {
-    "port": 4096,
-    "hostname": "127.0.0.1",
-    "mdns": false,
-    "mdnsDomain": "opencode.local",
-    "cors": [],
-    "executablePath": null,
-    "autoStart": false
-  },
-  "lastSuccessfulWrite": {
-    "target": "switch-group",
-    "wroteAt": "2023-11-14T22:21:40Z",
-    "backupPath": "legacy-backup.json"
-  },
-  "lastWarningSummary": null,
-  "lastErrorSummary": null,
-  "migrationVersion": 2
-}"#;
-    let current_groups: ModelGroupStore =
-        serde_json::from_str(&fixture_text("groups/current.json")).expect("Given: groups parse");
-    let legacy_groups: ModelGroupStore =
-        serde_json::from_str(&fixture_text("groups/legacy-missing-fields.json"))
-            .expect("Given: legacy groups parse");
-    let current_state: AppSelectionState =
-        serde_json::from_str(&current_state_source).expect("Given: state parses");
-    let legacy_server_state: AppSelectionState = serde_json::from_str(legacy_server_state_source)
-        .expect("Given: legacy server state parses");
-    let legacy_state: AppSelectionState =
-        serde_json::from_str(&fixture_text("state/legacy-missing-fields.json"))
-            .expect("Given: legacy state parses");
+fn compatibility_fixtures_when_config_schema_loads_pin_current_defaults() {
+    // Given: a current language-neutral single-file config payload.
+    let config: OmoSwitchConfig =
+        serde_json::from_str(&fixture_text("config/current.json")).expect("Given: config parses");
 
-    // When: values are observed through current Rust schema types.
-    let current_group = &current_groups.groups[0];
-    let legacy_group = &legacy_groups.groups[0];
-
-    // Then: UUID/date encodings and missing-field defaults remain compatible.
+    // Then: UUID/date encodings and defaults remain compatible.
+    let current_group = &config.groups[0];
     assert_eq!(current_group.name, "Primary");
     assert_eq!(
         current_group.updated_at,
         OffsetDateTime::parse("2023-11-14T22:13:20Z", &Rfc3339)
             .expect("Then: group timestamp parses")
     );
-    assert!(legacy_group.open_code_agent_overrides.is_empty());
-    assert!(legacy_group.is_enabled);
-    assert_eq!(
-        current_state.selected_group_name.as_deref(),
-        Some("Primary")
-    );
-    let persisted_legacy_server_state: serde_json::Value =
-        serde_json::from_str(legacy_server_state_source)
-            .expect("Given: legacy server state JSON parses");
-    assert_eq!(persisted_legacy_server_state["launchAtLoginEnabled"], true);
-    assert_eq!(
-        persisted_legacy_server_state["openCodeServeConfig"],
-        serde_json::json!({
-            "port": 4096,
-            "hostname": "127.0.0.1",
-            "mdns": false,
-            "mdnsDomain": "opencode.local",
-            "cors": [],
-            "executablePath": null,
-            "autoStart": false
-        })
-    );
-    assert_eq!(legacy_state.migration_version, 1);
-    let encoded_state = serde_json::to_value(&legacy_server_state).expect("Then: state encodes");
-    assert_eq!(
-        encoded_state["selectedGroupID"],
-        "4f648c2a-1d48-44d6-b0c0-4d340816e1f3"
-    );
-    assert!(encoded_state.get("launchAtLoginEnabled").is_none());
-    assert!(encoded_state.get("openCodeServeConfig").is_none());
+    assert_eq!(config.state.selected_group_name.as_deref(), Some("Primary"));
     assert!(
-        serde_json::from_str::<ModelGroupStore>(&fixture_text("groups/malformed.json")).is_err()
-    );
-    assert!(
-        serde_json::from_str::<AppSelectionState>(&fixture_text("state/malformed.json")).is_err()
+        serde_json::from_str::<OmoSwitchConfig>(&fixture_text("config/malformed.json")).is_err()
     );
 }
 
@@ -127,25 +59,19 @@ fn compatibility_fixtures_when_temp_home_is_resolved_pin_literal_config_paths() 
         .expect("When: full HOME resolves");
     let conditional_paths = ConfigPaths::from_home_env(HomeEnv::new(Some(&conditional_home), None))
         .expect("When: conditional HOME resolves");
-    let groups = ModelGroupRepository::new(full_paths.groups_file())
+    let config = ConfigRepository::new(full_paths.config_file())
         .load()
-        .expect("When: groups load");
-    let state = AppStateRepository::new(full_paths.state_file())
-        .load()
-        .expect("When: state loads");
+        .expect("When: config loads");
 
     // Then: paths stay under HOME/.config and conditional OpenCode absence is represented on disk.
-    assert!(groups.is_empty());
-    assert_eq!(state.migration_version, 2);
+    assert!(config.groups.is_empty());
+    assert_eq!(config.state.migration_version, 2);
     assert!(full_paths.opencode_file().exists());
     assert!(conditional_paths.oh_my_openagent_file().exists());
     assert!(!conditional_paths.opencode_file().exists());
     assert!(full_paths
-        .groups_file()
-        .ends_with(".config/omo-switch/groups.json"));
-    assert!(full_paths
-        .state_file()
-        .ends_with(".config/omo-switch/state.json"));
+        .config_file()
+        .ends_with(".config/omo-switch/config.json"));
 }
 
 #[test]
@@ -204,11 +130,9 @@ fn transaction_guarantee_when_stale_artifacts_exist_recovers_on_startup() {
     let _ = fs::remove_dir_all(&copy);
     copy_tree(&home, &copy);
     let root = copy.join(".config/omo-switch");
-    let groups_before = fs::read(root.join("groups.json")).expect("Given: groups fixture reads");
-    let state_before = fs::read(root.join("state.json")).expect("Given: state fixture reads");
+    let config_before = fs::read(root.join("config.json")).expect("Given: config fixture reads");
     let stale_paths = [
-        root.join(".groups.json.omo-txn-11111111-1111-1111-1111-111111111111.staged"),
-        root.join(".state.json.omo-txn-11111111-1111-1111-1111-111111111111.original"),
+        root.join(".config.json.omo-txn-11111111-1111-1111-1111-111111111111.staged"),
         root.join(".transaction-journal.json.tmp"),
     ];
     assert!(stale_paths.iter().all(|path| path.exists()));
@@ -217,12 +141,8 @@ fn transaction_guarantee_when_stale_artifacts_exist_recovers_on_startup() {
 
     assert!(stale_paths.iter().all(|path| !path.exists()));
     assert_eq!(
-        fs::read(root.join("groups.json")).expect("Then: groups fixture reads"),
-        groups_before
-    );
-    assert_eq!(
-        fs::read(root.join("state.json")).expect("Then: state fixture reads"),
-        state_before
+        fs::read(root.join("config.json")).expect("Then: config fixture reads"),
+        config_before
     );
     let _ = fs::remove_dir_all(copy);
 }

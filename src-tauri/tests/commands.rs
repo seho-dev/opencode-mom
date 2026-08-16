@@ -232,16 +232,29 @@ fn commands_when_switching_valid_group_persists_state_and_warnings() {
 }
 
 #[test]
-fn commands_when_legacy_server_state_is_loaded_and_group_switched_drops_retired_fields() {
-    let home = temp_home("commands-legacy-server-state");
+fn commands_when_config_state_with_unknown_fields_is_loaded_and_group_switched_drops_them() {
+    let home = temp_home("commands-config-state-unknown-fields");
     let target = dual_target_group();
     seed_groups(&home, &[target.clone()]);
     seed_oh_my(&home);
     seed_opencode(&home);
     let target_paths = paths(&home);
     fs::write(
-        target_paths.state_file(),
+        target_paths.config_file(),
         r#"{
+  "groups": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "name": "Dual Target",
+      "description": null,
+      "categoryMappings": [{ "categoryName": "unspecified-high", "modelRef": "cliproxyapi/gpt-5.4-xhigh" }],
+      "agentOverrides": [],
+      "openCodeAgentOverrides": [{ "agentName": "creative-ui-coder", "modelRef": "cliproxyapi/gpt-5.4" }, { "agentName": "Jenny", "modelRef": "cliproxyapi/gpt-5.4-xhigh" }],
+      "isEnabled": true,
+      "updatedAt": "2023-11-14T22:13:20Z"
+    }
+  ],
+  "state": {
   "selectedGroupID": "4f648c2a-1d48-44d6-b0c0-4d340816e1f3",
   "selectedGroupName": "Primary",
   "launchAtLoginEnabled": true,
@@ -262,15 +275,16 @@ fn commands_when_legacy_server_state_is_loaded_and_group_switched_drops_retired_
   "lastWarningSummary": null,
   "lastErrorSummary": null,
   "migrationVersion": 2
+  }
 }"#,
     )
-    .expect("Given: legacy state persists");
+    .expect("Given: config persists");
     let backend = GroupApplicationService::for_home(&home)
         .expect("Given: command backend resolves fake HOME");
 
     let loaded = backend
         .load_app_state()
-        .expect("When: legacy app state loads");
+        .expect("When: config app state loads");
     assert_eq!(loaded.groups, vec![target.clone()]);
     let response = serde_json::to_value(AppStateResponse {
         groups: loaded.groups,
@@ -289,10 +303,11 @@ fn commands_when_legacy_server_state_is_loaded_and_group_switched_drops_retired_
         .switch_group(target.id)
         .expect("When: group switch persists the retained state");
     assert_eq!(switched.outcome, GroupSwitchOutcome::Success);
-    let persisted_state: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(target_paths.state_file()).expect("Then: persisted state reads"),
+    let persisted_config: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(target_paths.config_file()).expect("Then: persisted config reads"),
     )
-    .expect("Then: persisted state JSON parses");
+    .expect("Then: persisted config JSON parses");
+    let persisted_state = &persisted_config["state"];
     assert!(persisted_state.get("launchAtLoginEnabled").is_none());
     assert!(persisted_state.get("openCodeServeConfig").is_none());
     assert_eq!(persisted_state["selectedGroupID"], target.id.to_string());

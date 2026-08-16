@@ -37,25 +37,6 @@ pub struct ModelGroup {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ModelGroupStore {
-    #[serde(default = "default_migration_version")]
-    pub migration_version: u16,
-    pub groups: Vec<ModelGroup>,
-}
-
-impl ModelGroupStore {
-    pub const CURRENT_SCHEMA_VERSION: u16 = 1;
-
-    pub fn new(groups: Vec<ModelGroup>) -> Self {
-        Self {
-            migration_version: Self::CURRENT_SCHEMA_VERSION,
-            groups,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AppSelectionState {
     #[serde(rename = "selectedGroupID")]
     pub selected_group_id: Option<Uuid>,
@@ -80,6 +61,24 @@ impl Default for AppSelectionState {
             last_warning_summary: None,
             last_error_summary: None,
             migration_version: Self::CURRENT_SCHEMA_VERSION,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OmoSwitchConfig {
+    #[serde(default)]
+    pub groups: Vec<ModelGroup>,
+    #[serde(default)]
+    pub state: AppSelectionState,
+}
+
+impl Default for OmoSwitchConfig {
+    fn default() -> Self {
+        Self {
+            groups: Vec::new(),
+            state: AppSelectionState::default(),
         }
     }
 }

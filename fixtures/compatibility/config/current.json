@@ -1,5 +1,4 @@
 {
-  "migrationVersion": 1,
   "groups": [
     {
       "id": "4f648c2a-1d48-44d6-b0c0-4d340816e1f3",
@@ -26,5 +25,17 @@
       "isEnabled": true,
       "updatedAt": "2023-11-14T22:13:20Z"
     }
-  ]
+  ],
+  "state": {
+    "selectedGroupID": "4f648c2a-1d48-44d6-b0c0-4d340816e1f3",
+    "selectedGroupName": "Primary",
+    "lastSuccessfulWrite": {
+      "target": "switch-group",
+      "wroteAt": "2023-11-14T22:21:40Z",
+      "backupPath": "fixtures/compatibility/backups/oh-my-openagent/20231114T221325Z-oh-my-openagent.json"
+    },
+    "lastWarningSummary": null,
+    "lastErrorSummary": null,
+    "migrationVersion": 2
+  }
 }

@@ -3,7 +3,7 @@ mod replacement;
 mod target;
 
 pub use crate::core::error::{RepositoryError, RepositoryErrorCode, TargetConfigError};
-pub use model::{AppStateRepository, ModelGroupRepository};
+pub use model::ConfigRepository;
 pub use target::{OhMyOpenAgentConfigRepository, OpenCodeConfigRepository};
 
 pub type OhMyOpenAgentConfigError = TargetConfigError;

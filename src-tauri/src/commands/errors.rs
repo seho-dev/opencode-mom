@@ -287,12 +287,12 @@ mod tests {
             (
                 "interrupted",
                 SwitchError::Interrupted {
-                    stage: "after-state-rename",
+                    stage: "after-config-rename",
                 },
                 CommandErrorCode::WriteFailed,
                 Some((
                     "Transactional config write was interrupted.",
-                    "after-state-rename",
+                    "after-config-rename",
                 )),
             ),
         ];

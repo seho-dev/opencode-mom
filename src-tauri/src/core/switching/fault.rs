@@ -12,12 +12,12 @@ pub enum TransactionFault {
     JournalFlush,
     FirstTargetRename,
     SecondTargetRename,
-    StateRename,
+    ConfigRename,
     CompensationRename,
     AfterJournalSync,
     AfterFirstTargetRename,
     AfterSecondTargetRename,
-    AfterStateRename,
+    AfterConfigRename,
 }
 
 impl TransactionFault {
@@ -31,12 +31,12 @@ impl TransactionFault {
             Self::JournalFlush => "journal-flush",
             Self::FirstTargetRename => "first-target-rename",
             Self::SecondTargetRename => "second-target-rename",
-            Self::StateRename => "state-rename",
+            Self::ConfigRename => "config-rename",
             Self::CompensationRename => "compensation-rename",
             Self::AfterJournalSync => "after-journal-sync",
             Self::AfterFirstTargetRename => "after-first-target-rename",
             Self::AfterSecondTargetRename => "after-second-target-rename",
-            Self::AfterStateRename => "after-state-rename",
+            Self::AfterConfigRename => "after-config-rename",
         }
     }
 }
@@ -50,7 +50,7 @@ pub(crate) fn interruption_stage(error: &io::Error) -> &'static str {
         "after-journal-sync" => "after-journal-sync",
         "after-first-target-rename" => "after-first-target-rename",
         "after-second-target-rename" => "after-second-target-rename",
-        "after-state-rename" => "after-state-rename",
+        "after-config-rename" => "after-config-rename",
         _ => "unknown-interruption",
     }
 }

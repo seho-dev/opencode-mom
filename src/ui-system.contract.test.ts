@@ -18,7 +18,6 @@ type TauriConfig = Readonly<{
     windows: readonly WindowContract[];
     security: Readonly<{
       csp: string;
-      capabilities: readonly string[];
     }>;
   }>;
 }>;
@@ -56,9 +55,9 @@ describe('UI system native contracts', () => {
     }));
   });
 
-  it('Given the Tauri config When security is inspected Then CSP and capability labels are unchanged', () => {
+  it('Given the Tauri config When security is inspected Then CSP remains without application capabilities', () => {
     expect(tauriConfig.app.security.csp).toBe(expectedCsp);
-    expect(tauriConfig.app.security.capabilities).toEqual(['quick-switch', 'settings']);
+    expect(tauriConfig.app.security).not.toHaveProperty('capabilities');
   });
 });
 

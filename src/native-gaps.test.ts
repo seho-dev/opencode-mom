@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -7,6 +7,20 @@ const characterize = process.env["OMO_CHARACTERIZE_NATIVE_GAPS"] === "1";
 const gapSuite = characterize ? describe : describe.skip;
 
 const read = (path: string): string => readFileSync(resolve(path), "utf8");
+
+const configurationFiles = (directory: string, extension: string): string[] => {
+  if (!existsSync(resolve(directory))) {
+    return [];
+  }
+
+  return readdirSync(resolve(directory), { withFileTypes: true }).flatMap((entry) => {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      return configurationFiles(path, extension);
+    }
+    return entry.name.endsWith(extension) ? [path] : [];
+  });
+};
 
 const activeProductFiles = [
   "package.json",
@@ -115,29 +129,16 @@ gapSuite("Task 5 native and release gaps", () => {
 
     expect(tauri.app.security.csp).toEqual(expect.any(String));
     expect(tauri.app.security.csp).not.toHaveLength(0);
+    expect(tauri.app.security).not.toHaveProperty("capabilities");
     expect(tauri.bundle.icon.length).toBeGreaterThan(0);
     for (const icon of tauri.bundle.icon) {
       expect(existsSync(resolve("src-tauri", icon))).toBe(true);
     }
   });
 
-  it("defines least-privilege capabilities for quick-switch and settings windows", () => {
-    expect(
-      existsSync(resolve("src-tauri/capabilities/quick-switch.json")),
-    ).toBe(true);
-    expect(existsSync(resolve("src-tauri/capabilities/settings.json"))).toBe(
-      true,
-    );
-
-    const quickSwitch = read("src-tauri/capabilities/quick-switch.json");
-    const settings = read("src-tauri/capabilities/settings.json");
-    const capabilityText = `${quickSwitch}\n${settings}`;
-
-    expect(quickSwitch).toContain("quick-switch");
-    expect(settings).toContain("settings");
-    expect(capabilityText).not.toMatch(
-      /"windows"\s*:\s*\[\s*"\*"|core:default|\*/,
-    );
+  it("uses Tauri default command access without application ACL files", () => {
+    expect(configurationFiles("src-tauri/capabilities", ".json")).toEqual([]);
+    expect(configurationFiles("src-tauri/permissions", ".toml")).toEqual([]);
   });
 
   it("pins NSIS, macOS app, and DMG targets with product-specific artifact names", () => {

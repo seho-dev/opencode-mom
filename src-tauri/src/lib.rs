@@ -2,15 +2,9 @@ mod app_shell;
 pub mod application;
 pub mod commands;
 pub mod core;
-pub mod runtime;
 pub mod shell;
-mod shell_lifecycle;
 
 use tauri::Manager;
-
-use runtime::AppRuntime;
-
-pub type LiveAppRuntime = AppRuntime;
 
 pub fn run() {
     tauri::Builder::default()
@@ -23,11 +17,12 @@ pub fn run() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let application = application::GroupApplicationService::live()
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
-            let runtime = LiveAppRuntime::new(application);
-            runtime
-                .startup()
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            app.manage(runtime);
+            application.recover_pending_transaction().map_err(|error| {
+                std::io::Error::other(format!(
+                    "Pending configuration transaction recovery failed during startup: {error}"
+                ))
+            })?;
+            app.manage(application);
             app_shell::install_window_lifecycle(app);
             app_shell::build_tray(app)?;
             Ok(())

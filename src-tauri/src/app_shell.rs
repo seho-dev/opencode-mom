@@ -6,11 +6,11 @@ use tauri::{
 };
 use tauri_plugin_positioner::{Position, WindowExt};
 
+use crate::application::GroupApplicationService;
 use crate::shell::{resolve_shell_action, ShellAction, ShellStateSnapshot};
-use crate::LiveAppRuntime;
 
 pub fn build_tray(app: &mut App) -> tauri::Result<()> {
-    let state = app.state::<LiveAppRuntime>();
+    let state = app.state::<GroupApplicationService>();
     let menu = build_menu(app, &state)?;
 
     TrayIconBuilder::with_id("omo-switch-tray")
@@ -53,8 +53,8 @@ pub fn dispatch_shell_action<R: Runtime>(app: &AppHandle<R>, action: ShellAction
         ShellAction::ReloadAppState => refresh_tray(app),
         ShellAction::Quit => app.exit(0),
         ShellAction::SwitchGroup(group_id) => {
-            if let Some(runtime) = app.try_state::<LiveAppRuntime>() {
-                let _ = runtime.switch_group(group_id);
+            if let Some(application) = app.try_state::<GroupApplicationService>() {
+                let _ = application.switch_group(group_id);
             }
             refresh_tray(app);
         }
@@ -103,19 +103,19 @@ pub fn refresh_tray<R: Runtime>(app: &AppHandle<R>) {
     let Some(tray) = app.tray_by_id("omo-switch-tray") else {
         return;
     };
-    let Some(runtime) = app.try_state::<LiveAppRuntime>() else {
+    let Some(application) = app.try_state::<GroupApplicationService>() else {
         return;
     };
-    if let Ok(menu) = build_menu(app, &runtime) {
+    if let Ok(menu) = build_menu(app, &application) {
         let _ = tray.set_menu(Some(menu));
     }
 }
 
 fn build_menu<R: Runtime, M: Manager<R>>(
     manager: &M,
-    runtime: &State<'_, LiveAppRuntime>,
+    application: &State<'_, GroupApplicationService>,
 ) -> tauri::Result<Menu<R>> {
-    let model = load_shell_state(runtime).menu_model();
+    let model = load_shell_state(application).menu_model();
     let current_group = MenuItem::with_id(
         manager,
         "current_group",
@@ -149,8 +149,8 @@ fn build_menu<R: Runtime, M: Manager<R>>(
     Ok(menu)
 }
 
-fn load_shell_state(runtime: &LiveAppRuntime) -> ShellStateSnapshot {
-    match runtime.load_app_state() {
+fn load_shell_state(application: &GroupApplicationService) -> ShellStateSnapshot {
+    match application.load_app_state() {
         Ok(response) => ShellStateSnapshot {
             groups: response.groups,
             app_state: response.app_state,

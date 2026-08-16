@@ -1,7 +1,6 @@
 use omo_switch_tauri::core::models::{AppSelectionState, ModelGroup};
 use omo_switch_tauri::shell::{
-    resolve_shell_action, ShellAction, ShellMenuItemKind, ShellStateSnapshot, WindowLifecycleState,
-    WindowRestoreStep,
+    resolve_shell_action, ShellAction, ShellMenuItemKind, ShellStateSnapshot,
 };
 use uuid::Uuid;
 
@@ -82,116 +81,6 @@ fn tray_menu_when_no_enabled_groups_contains_shell_actions_without_group_items()
         resolve_shell_action("open_settings"),
         Some(ShellAction::OpenSettings),
         "the primary-window action remains available to tray-left-click and IPC callers"
-    );
-}
-
-#[test]
-fn lifecycle_when_actions_dispatch_records_quick_switch_settings_reload_and_quit() {
-    let mut recorder = omo_switch_tauri::shell::ShellActionRecorder::default();
-
-    recorder.dispatch(ShellAction::ShowQuickSwitch);
-    recorder.dispatch(ShellAction::OpenSettings);
-    recorder.dispatch(ShellAction::ReloadAppState);
-    recorder.dispatch(ShellAction::Quit);
-
-    assert_eq!(
-        recorder.events(),
-        [
-            "show_quick_switch",
-            "open_settings",
-            "reload_app_state",
-            "quit",
-        ]
-    );
-}
-
-#[test]
-fn quick_switch_when_hidden_restores_in_required_order() {
-    let state = WindowLifecycleState {
-        visible: false,
-        minimized: false,
-        on_screen: true,
-        focused: false,
-    };
-
-    let steps = state.restore_steps();
-
-    assert_eq!(
-        steps,
-        [
-            WindowRestoreStep::ActivateApp,
-            WindowRestoreStep::Reposition,
-            WindowRestoreStep::Show,
-            WindowRestoreStep::Focus,
-        ]
-    );
-}
-
-#[test]
-fn quick_switch_when_minimized_unminimizes_before_reposition_show_and_focus() {
-    let state = WindowLifecycleState {
-        visible: true,
-        minimized: true,
-        on_screen: true,
-        focused: false,
-    };
-
-    let steps = state.restore_steps();
-
-    assert_eq!(
-        steps,
-        [
-            WindowRestoreStep::ActivateApp,
-            WindowRestoreStep::Unminimize,
-            WindowRestoreStep::Reposition,
-            WindowRestoreStep::Show,
-            WindowRestoreStep::Focus,
-        ]
-    );
-}
-
-#[test]
-fn quick_switch_when_off_screen_repositions_without_creating_a_window() {
-    let state = WindowLifecycleState {
-        visible: true,
-        minimized: false,
-        on_screen: false,
-        focused: false,
-    };
-
-    let steps = state.restore_steps();
-
-    assert_eq!(
-        steps,
-        [
-            WindowRestoreStep::ActivateApp,
-            WindowRestoreStep::Reposition,
-            WindowRestoreStep::Show,
-            WindowRestoreStep::Focus,
-        ]
-    );
-    assert!(!steps.contains(&WindowRestoreStep::Create));
-}
-
-#[test]
-fn quick_switch_when_visible_but_unfocused_uses_the_same_restore_path() {
-    let state = WindowLifecycleState {
-        visible: true,
-        minimized: false,
-        on_screen: true,
-        focused: false,
-    };
-
-    let steps = state.restore_steps();
-
-    assert_eq!(
-        steps,
-        [
-            WindowRestoreStep::ActivateApp,
-            WindowRestoreStep::Reposition,
-            WindowRestoreStep::Show,
-            WindowRestoreStep::Focus,
-        ]
     );
 }
 

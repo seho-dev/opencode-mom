@@ -3,18 +3,6 @@ use crate::commands::types::{CommandError, CommandErrorCode};
 use crate::core::paths::ConfigPathError;
 use crate::core::repository::RepositoryError;
 use crate::core::switching::SwitchError;
-use crate::runtime::RuntimeError;
-
-pub(crate) fn command_error_from_runtime(error: RuntimeError) -> CommandError {
-    match error {
-        RuntimeError::Application(error) => command_error_from_application(error),
-        RuntimeError::StartupRecovery(error) => CommandError::with_detail(
-            CommandErrorCode::WriteFailed,
-            "Pending configuration transaction recovery failed during runtime startup.",
-            error.to_string(),
-        ),
-    }
-}
 
 pub(crate) fn command_error_from_application(error: ApplicationError) -> CommandError {
     match error {
@@ -187,30 +175,6 @@ mod tests {
         for (name, error, expected_code) in cases {
             assert_eq!(
                 command_error_from_application(error).code,
-                expected_code,
-                "{name}"
-            );
-        }
-    }
-
-    #[test]
-    fn runtime_errors_map_every_variant_to_its_stable_wire_code() {
-        let cases = vec![
-            (
-                "application delegation",
-                RuntimeError::Application(ApplicationError::DuplicateGroupName),
-                CommandErrorCode::DuplicateGroupName,
-            ),
-            (
-                "startup recovery",
-                RuntimeError::StartupRecovery(io::Error::other("malformed journal")),
-                CommandErrorCode::WriteFailed,
-            ),
-        ];
-
-        for (name, error, expected_code) in cases {
-            assert_eq!(
-                command_error_from_runtime(error).code,
                 expected_code,
                 "{name}"
             );

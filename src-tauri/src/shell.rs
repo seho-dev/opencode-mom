@@ -2,8 +2,6 @@ use uuid::Uuid;
 
 use crate::core::models::{AppSelectionState, ModelGroup};
 
-pub use crate::shell_lifecycle::{WindowLifecycleState, WindowRestoreStep};
-
 pub const SHOW_QUICK_SWITCH: &str = "show_quick_switch";
 pub const OPEN_SETTINGS: &str = "open_settings";
 pub const RELOAD_APP_STATE: &str = "reload_app_state";
@@ -103,27 +101,6 @@ pub fn resolve_shell_action(id: &str) -> Option<ShellAction> {
             .strip_prefix("switch_group:")
             .and_then(|group_id| Uuid::parse_str(group_id).ok())
             .map(ShellAction::SwitchGroup),
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct ShellActionRecorder {
-    events: Vec<&'static str>,
-}
-
-impl ShellActionRecorder {
-    pub fn dispatch(&mut self, action: ShellAction) {
-        match action {
-            ShellAction::ShowQuickSwitch => self.events.push(SHOW_QUICK_SWITCH),
-            ShellAction::OpenSettings => self.events.push(OPEN_SETTINGS),
-            ShellAction::ReloadAppState => self.events.push(RELOAD_APP_STATE),
-            ShellAction::Quit => self.events.push(QUIT),
-            ShellAction::SwitchGroup(_) => self.events.push("switch_group"),
-        }
-    }
-
-    pub fn events(&self) -> &[&'static str] {
-        &self.events
     }
 }
 

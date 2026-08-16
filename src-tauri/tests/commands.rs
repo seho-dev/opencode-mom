@@ -1,6 +1,16 @@
 #[path = "common/switching.rs"]
 mod switching;
 
+mod core {
+    pub mod models {
+        pub use omo_switch_tauri::core::models::*;
+    }
+}
+
+#[allow(dead_code)]
+#[path = "../src/commands/types.rs"]
+mod command_types;
+
 use std::fs;
 
 use omo_switch_tauri::application::{
@@ -70,6 +80,83 @@ fn commands_when_groups_are_saved_copied_and_deleted_persist_typed_results() {
         .expect("When: active group deletes");
     assert_eq!(remaining.groups, vec![copied.group]);
     assert_eq!(remaining.app_state.selected_group_id, None);
+
+    remove_temp(&home);
+}
+
+#[test]
+fn commands_when_copying_group_repeatedly_increments_the_copy_suffix() {
+    let home = temp_home("commands-copy-sequence");
+    let source = group(
+        "88888888-8888-4888-8888-888888888888",
+        "Name",
+        true,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
+    seed_groups(&home, &[source.clone()]);
+    seed_state(&home, None, None);
+    let backend = GroupApplicationService::for_home(&home)
+        .expect("Given: command backend resolves fake HOME");
+
+    let first = backend
+        .copy_group(source.id)
+        .expect("When: the first group copy saves");
+    let second = backend
+        .copy_group(source.id)
+        .expect("When: the second group copy saves");
+    let third = backend
+        .copy_group(source.id)
+        .expect("When: the third group copy saves");
+
+    assert_eq!(first.group.name, "Name Copy");
+    assert_eq!(second.group.name, "Name Copy 2");
+    assert_eq!(third.group.name, "Name Copy 3");
+
+    remove_temp(&home);
+}
+
+#[test]
+fn commands_when_copying_group_treats_trimmed_ascii_case_insensitive_names_as_conflicts() {
+    let home = temp_home("commands-copy-normalized-conflicts");
+    let source = group(
+        "99999999-9999-4999-8999-999999999999",
+        "Name",
+        true,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
+    let existing_copy = group(
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "  nAmE cOpY  ",
+        true,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
+    let existing_second_copy = group(
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        " NAME COPY 2 ",
+        true,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
+    seed_groups(
+        &home,
+        &[source.clone(), existing_copy, existing_second_copy],
+    );
+    seed_state(&home, None, None);
+    let backend = GroupApplicationService::for_home(&home)
+        .expect("Given: command backend resolves fake HOME");
+
+    let copied = backend
+        .copy_group(source.id)
+        .expect("When: normalized copy-name conflicts exist");
+
+    assert_eq!(copied.group.name, "Name Copy 3");
 
     remove_temp(&home);
 }
@@ -227,11 +314,18 @@ fn commands_when_legacy_server_state_is_loaded_and_group_switched_drops_retired_
 #[test]
 fn commands_when_discovering_opencode_handles_success_missing_and_malformed_config() {
     let missing_home = temp_home("commands-discovery-missing");
-    let backend =
+    let missing_backend =
         GroupApplicationService::for_home(&missing_home).expect("Given: missing backend resolves");
-    let missing = backend.discover_open_code_agents(Vec::new());
+    let missing = discover_open_code_agents_response(&missing_backend, Vec::new());
     assert!(missing.agent_names.is_empty());
     assert_eq!(missing.error.as_deref(), Some("OpenCode config not found."));
+    assert!(missing.presentation.is_read_only);
+    let missing_json = serde_json::to_value(&missing).expect("Then: response serializes as JSON");
+    assert_eq!(missing_json["presentation"]["isReadOnly"], true);
+    assert_eq!(
+        missing_json["presentation"]["allowsCustomAgentCreation"],
+        false
+    );
     remove_temp(&missing_home);
 
     let malformed_home = temp_home("commands-discovery-malformed");
@@ -241,8 +335,10 @@ fn commands_when_discovering_opencode_handles_success_missing_and_malformed_conf
         .expect("Given: malformed config writes");
     let malformed_backend =
         GroupApplicationService::for_home(&malformed_home).expect("Given: backend resolves");
-    let malformed =
-        malformed_backend.discover_open_code_agents(vec![override_row("legacy", "model")]);
+    let malformed = discover_open_code_agents_response(
+        &malformed_backend,
+        vec![override_row("legacy", "model")],
+    );
     assert_eq!(
         malformed.error.as_deref(),
         Some("OpenCode config is malformed.")
@@ -252,17 +348,55 @@ fn commands_when_discovering_opencode_handles_success_missing_and_malformed_conf
         malformed.presentation.preserved_overrides[0].agent_name,
         "legacy"
     );
+    let malformed_json =
+        serde_json::to_value(&malformed).expect("Then: response serializes as JSON");
+    assert_eq!(
+        malformed_json["presentation"]["preservedOverrides"][0]["agentName"],
+        "legacy"
+    );
     remove_temp(&malformed_home);
 
     let success_home = temp_home("commands-discovery-success");
     seed_opencode(&success_home);
     let success_backend =
         GroupApplicationService::for_home(&success_home).expect("Given: backend resolves");
-    let success = success_backend.discover_open_code_agents(Vec::new());
+    let success = discover_open_code_agents_response(&success_backend, Vec::new());
     assert_eq!(success.error, None);
     assert!(success.agent_names.contains(&"Jenny".to_owned()));
     assert!(!success.presentation.is_read_only);
+    assert!(success.presentation.stale_overrides.is_empty());
+    assert!(!success.presentation.allows_custom_agent_creation);
+    assert!(success
+        .presentation
+        .discovered_rows
+        .iter()
+        .all(|row| row.is_editable));
+    let success_json = serde_json::to_value(&success).expect("Then: response serializes as JSON");
+    assert_eq!(success_json["presentation"]["isReadOnly"], false);
+    assert!(success_json["presentation"]["discoveredRows"]
+        .as_array()
+        .expect("Then: discovered rows serialize as an array")
+        .iter()
+        .all(|row| row["isEditable"] == true));
     remove_temp(&success_home);
+}
+
+fn discover_open_code_agents_response(
+    application: &GroupApplicationService,
+    saved_overrides: Vec<omo_switch_tauri::core::models::ModelGroupAgentOverride>,
+) -> command_types::DiscoverOpenCodeAgentsResponse {
+    let discovery = application.discover_open_code_agents();
+    let presentation = command_types::open_code_agent_mapping_presentation(
+        &saved_overrides,
+        &discovery.agent_names,
+        discovery.error.as_deref(),
+    );
+
+    command_types::DiscoverOpenCodeAgentsResponse {
+        agent_names: discovery.agent_names,
+        error: discovery.error,
+        presentation,
+    }
 }
 
 fn dual_target_group() -> ModelGroup {

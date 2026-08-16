@@ -8,32 +8,33 @@ pub use types::{
 };
 
 use crate::application::{
-    GroupMutation, GroupSwitch, GroupSwitchOutcome, LoadedAppState, OpenCodeAgentDiscovery,
+    GroupApplicationService, GroupMutation, GroupSwitch, GroupSwitchOutcome, LoadedAppState,
+    OpenCodeAgentDiscovery,
 };
-use crate::commands::errors::command_error_from_runtime;
-use crate::LiveAppRuntime;
+use crate::commands::errors::command_error_from_application;
+use crate::commands::types::open_code_agent_mapping_presentation;
 use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub fn load_app_state(
-    runtime: State<'_, LiveAppRuntime>,
+    application: State<'_, GroupApplicationService>,
 ) -> Result<AppStateResponse, CommandError> {
-    runtime
+    application
         .load_app_state()
         .map(app_state_response)
-        .map_err(command_error_from_runtime)
+        .map_err(command_error_from_application)
 }
 
 #[tauri::command]
 pub fn save_group(
     app: AppHandle,
-    runtime: State<'_, LiveAppRuntime>,
+    application: State<'_, GroupApplicationService>,
     request: SaveGroupRequest,
 ) -> Result<GroupMutationResponse, CommandError> {
-    let response = runtime
+    let response = application
         .save_group(request.group)
         .map(group_mutation_response)
-        .map_err(command_error_from_runtime)?;
+        .map_err(command_error_from_application)?;
     crate::app_shell::refresh_tray(&app);
     Ok(response)
 }
@@ -41,13 +42,13 @@ pub fn save_group(
 #[tauri::command]
 pub fn copy_group(
     app: AppHandle,
-    runtime: State<'_, LiveAppRuntime>,
+    application: State<'_, GroupApplicationService>,
     request: CopyGroupRequest,
 ) -> Result<GroupMutationResponse, CommandError> {
-    let response = runtime
+    let response = application
         .copy_group(request.id)
         .map(group_mutation_response)
-        .map_err(command_error_from_runtime)?;
+        .map_err(command_error_from_application)?;
     crate::app_shell::refresh_tray(&app);
     Ok(response)
 }
@@ -55,13 +56,13 @@ pub fn copy_group(
 #[tauri::command]
 pub fn delete_group(
     app: AppHandle,
-    runtime: State<'_, LiveAppRuntime>,
+    application: State<'_, GroupApplicationService>,
     request: DeleteGroupRequest,
 ) -> Result<GroupMutationResponse, CommandError> {
-    let response = runtime
+    let response = application
         .delete_group(request.id)
         .map(group_mutation_response)
-        .map_err(command_error_from_runtime)?;
+        .map_err(command_error_from_application)?;
     crate::app_shell::refresh_tray(&app);
     Ok(response)
 }
@@ -69,25 +70,30 @@ pub fn delete_group(
 #[tauri::command]
 pub fn switch_group(
     app: AppHandle,
-    runtime: State<'_, LiveAppRuntime>,
+    application: State<'_, GroupApplicationService>,
     request: SwitchGroupRequest,
 ) -> Result<SwitchGroupResponse, CommandError> {
-    let response = runtime
+    let response = application
         .switch_group(request.id)
         .map(switch_group_response)
-        .map_err(command_error_from_runtime)?;
+        .map_err(command_error_from_application)?;
     crate::app_shell::refresh_tray(&app);
     Ok(response)
 }
 
 #[tauri::command]
 pub fn discover_open_code_agents(
-    runtime: State<'_, LiveAppRuntime>,
+    application: State<'_, GroupApplicationService>,
     request: DiscoverOpenCodeAgentsRequest,
 ) -> Result<DiscoverOpenCodeAgentsResponse, CommandError> {
-    Ok(discover_open_code_agents_response(
-        runtime.discover_open_code_agents(request.saved_overrides),
-    ))
+    let saved_overrides = request.saved_overrides;
+    let discovery = application.discover_open_code_agents();
+    let presentation = open_code_agent_mapping_presentation(
+        &saved_overrides,
+        &discovery.agent_names,
+        discovery.error.as_deref(),
+    );
+    Ok(discover_open_code_agents_response(discovery, presentation))
 }
 
 fn app_state_response(state: LoadedAppState) -> AppStateResponse {
@@ -120,10 +126,11 @@ fn switch_group_response(switch: GroupSwitch) -> SwitchGroupResponse {
 
 fn discover_open_code_agents_response(
     discovery: OpenCodeAgentDiscovery,
+    presentation: types::OpenCodeAgentMappingPresentation,
 ) -> DiscoverOpenCodeAgentsResponse {
     DiscoverOpenCodeAgentsResponse {
         agent_names: discovery.agent_names,
         error: discovery.error,
-        presentation: discovery.presentation,
+        presentation,
     }
 }

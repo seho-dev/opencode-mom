@@ -4,10 +4,7 @@ use std::path::Path;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::core::draft_state::{
-    open_code_agent_mapping_presentation, OpenCodeAgentMappingPresentation, OpenCodeDiscoveryState,
-};
-use crate::core::models::{AppSelectionState, ModelGroup, ModelGroupAgentOverride};
+use crate::core::models::{AppSelectionState, ModelGroup};
 use crate::core::paths::{ConfigPathError, ConfigPaths, HomeEnv};
 use crate::core::repository::{
     AppStateRepository, ModelGroupRepository, OhMyOpenAgentConfigRepository, OpenCodeConfigError,
@@ -79,7 +76,6 @@ pub struct GroupSwitch {
 pub struct OpenCodeAgentDiscovery {
     pub agent_names: Vec<String>,
     pub error: Option<String>,
-    pub presentation: OpenCodeAgentMappingPresentation,
 }
 
 #[derive(Debug, Clone)]
@@ -170,9 +166,10 @@ impl GroupApplicationService {
             .find(|group| group.id == id)
             .cloned()
             .ok_or(ApplicationError::GroupNotFound)?;
+        let copied_name = unique_copy_group_name(&source.name, &groups);
         let copied = ModelGroup {
             id: Uuid::new_v4(),
-            name: format!("{} Copy", source.name),
+            name: copied_name,
             updated_at: OffsetDateTime::now_utc(),
             ..source
         };
@@ -249,26 +246,11 @@ impl GroupApplicationService {
         }
     }
 
-    pub fn discover_open_code_agents(
-        &self,
-        saved_overrides: Vec<ModelGroupAgentOverride>,
-    ) -> OpenCodeAgentDiscovery {
+    pub fn discover_open_code_agents(&self) -> OpenCodeAgentDiscovery {
         let discovery = self.discovered_open_code_agents();
-        let names = discovery
-            .agent_names
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        let discovery_state = match discovery.error.clone() {
-            Some(error) => OpenCodeDiscoveryState::Failure(error),
-            None => OpenCodeDiscoveryState::Success,
-        };
-        let presentation =
-            open_code_agent_mapping_presentation(&saved_overrides, &names, discovery_state);
         OpenCodeAgentDiscovery {
             agent_names: discovery.agent_names,
             error: discovery.error,
-            presentation,
         }
     }
 
@@ -342,6 +324,34 @@ impl GroupApplicationService {
             },
         }
     }
+}
+
+fn unique_copy_group_name(source_name: &str, groups: &[ModelGroup]) -> String {
+    let source_name = source_name.trim();
+    let copy_name = if source_name.is_empty() {
+        "Copy".to_owned()
+    } else {
+        format!("{source_name} Copy")
+    };
+
+    if !group_name_exists(&copy_name, groups) {
+        return copy_name;
+    }
+
+    let mut copy_number = 2;
+    loop {
+        let candidate = format!("{copy_name} {copy_number}");
+        if !group_name_exists(&candidate, groups) {
+            return candidate;
+        }
+        copy_number += 1;
+    }
+}
+
+fn group_name_exists(candidate: &str, groups: &[ModelGroup]) -> bool {
+    groups
+        .iter()
+        .any(|group| group.name.trim().eq_ignore_ascii_case(candidate.trim()))
 }
 
 struct DiscoveredOpenCodeAgentNames {

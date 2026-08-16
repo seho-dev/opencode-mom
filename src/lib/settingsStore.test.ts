@@ -508,7 +508,7 @@ describe('createSettingsStore', () => {
 
   it('Given a dirty persisted group When save before switch fails Then switching is aborted and the draft error remains', async () => {
     const saveGroup = vi.fn<SettingsCommandClient['saveGroup']>()
-      .mockRejectedValue({ code: 'saveGroupsFailed', message: 'Save failed.', detail: 'groups.json is locked' });
+      .mockRejectedValue({ code: 'saveGroupsFailed', message: 'Save failed.', detail: 'config.json is locked' });
     const switchGroup = vi.fn<SettingsCommandClient['switchGroup']>();
     const store = createSettingsStore(fakeSettingsClient({ saveGroup, switchGroup }));
 
@@ -520,23 +520,23 @@ describe('createSettingsStore', () => {
     expect(saveGroup).toHaveBeenCalledTimes(1);
     expect(switchGroup).not.toHaveBeenCalled();
     expect(get(store).draftGroup?.description).toBe('Keep dirty edit');
-    expect(get(store).message).toEqual({ tone: 'error', text: 'groups.json is locked' });
+    expect(get(store).message).toEqual({ tone: 'error', text: 'config.json is locked' });
   });
 
   it('Given command failures When group save and delete run Then the draft and list remain recoverable', async () => {
-    const saveGroup = vi.fn<SettingsCommandClient['saveGroup']>().mockRejectedValue({ code: 'saveGroupsFailed', message: 'Save failed.', detail: 'groups.json is locked' });
-    const deleteGroup = vi.fn<SettingsCommandClient['deleteGroup']>().mockRejectedValue({ code: 'saveGroupsFailed', message: 'Delete failed.', detail: 'groups.json is locked' });
+    const saveGroup = vi.fn<SettingsCommandClient['saveGroup']>().mockRejectedValue({ code: 'saveGroupsFailed', message: 'Save failed.', detail: 'config.json is locked' });
+    const deleteGroup = vi.fn<SettingsCommandClient['deleteGroup']>().mockRejectedValue({ code: 'saveGroupsFailed', message: 'Delete failed.', detail: 'config.json is locked' });
     const store = createSettingsStore(fakeSettingsClient({ saveGroup, deleteGroup }));
 
     await store.load();
     await store.updateDraftGroup({ description: 'Unsaved edit' });
     await store.saveDraftGroup();
     expect(get(store).draftGroup?.description).toBe('Unsaved edit');
-    expect(get(store).message).toEqual({ tone: 'error', text: 'groups.json is locked' });
+    expect(get(store).message).toEqual({ tone: 'error', text: 'config.json is locked' });
 
     await store.deleteSelectedGroup();
     expect(get(store).groups).toHaveLength(2);
-    expect(get(store).message).toEqual({ tone: 'error', text: 'groups.json is locked' });
+    expect(get(store).message).toEqual({ tone: 'error', text: 'config.json is locked' });
   });
 
   it('Given exact model references When replacing Then only exact matches are updated', async () => {
@@ -652,7 +652,7 @@ describe('createSettingsStore', () => {
   });
 
   it('Given unsaved non-OpenCode edits and degraded discovery When saving is denied Then the full draft survives', async () => {
-    const saveGroup = vi.fn<SettingsCommandClient['saveGroup']>().mockRejectedValue({ code: 'saveGroupsFailed', message: 'Save failed.', detail: 'groups.json is read-only' });
+    const saveGroup = vi.fn<SettingsCommandClient['saveGroup']>().mockRejectedValue({ code: 'saveGroupsFailed', message: 'Save failed.', detail: 'config.json is read-only' });
     const store = createSettingsStore(fakeSettingsClient({ discoveryError: 'OpenCode config is malformed.', saveGroup }));
 
     await store.load();

@@ -1,3 +1,3 @@
 fn main() {
-    omo_switch_tauri::run();
+    opencode_mom_tauri::run();
 }

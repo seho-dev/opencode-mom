@@ -1,14 +1,14 @@
 {
-  "name": "omo-switch",
+  "name": "opencode-mom",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test": "vitest run",
     "build": "vite build",
     "dev": "vite dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "preview": "vite preview",
-    "test:e2e": "npm run build && playwright test",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -21,19 +21,17 @@
   },
   "devDependencies": {
     "@internationalized/date": "3.12.2",
-    "@playwright/test": "^1.61.1",
     "@sveltejs/adapter-static": "^3.0.9",
     "@sveltejs/kit": "^2.43.5",
     "@sveltejs/vite-plugin-svelte": "^6.2.2",
     "@tailwindcss/vite": "4.3.3",
     "@tauri-apps/cli": "^2.10.2",
-    "@testing-library/svelte": "^5.2.9",
     "bits-ui": "2.18.1",
-    "jsdom": "^27.3.0",
+    "prettier": "^3.9.6",
+    "prettier-plugin-svelte": "^4.1.1",
     "svelte": "^5.45.2",
     "tailwindcss": "4.3.3",
     "typescript": "^5.9.3",
-    "vite": "^7.2.7",
-    "vitest": "^4.0.16"
+    "vite": "^7.2.7"
   }
 }

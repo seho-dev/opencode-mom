@@ -8,8 +8,8 @@ export default defineConfig({
   server: {
     strictPort: true,
     watch: {
-      ignored: ['**/src-tauri/**', '**/.build/**', '**/.omo/**']
-    }
+      ignored: ['**/src-tauri/**', '**/.build/**', '**/.omo/**'],
+    },
   },
-  envPrefix: ['VITE_', 'TAURI_']
+  envPrefix: ['VITE_', 'TAURI_'],
 });

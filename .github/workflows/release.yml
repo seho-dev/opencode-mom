@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 permissions:
   contents: read
@@ -29,7 +29,7 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "22.23.0"
+          node-version: '22.23.0'
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -50,7 +50,7 @@ jobs:
       - name: Assert exact Windows NSIS artifact
         shell: pwsh
         run: |
-          $artifact = 'src-tauri/target/release/bundle/nsis/omo-switch_0.1.0_x64-setup.exe'
+          $artifact = 'src-tauri/target/release/bundle/nsis/opencode-mom_0.1.0_x64-setup.exe'
           if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
             throw "Expected exact NSIS artifact: $artifact"
           }
@@ -58,8 +58,8 @@ jobs:
       - name: Upload Windows release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: omo-switch-tauri-windows-0.1.0
-          path: src-tauri/target/release/bundle/nsis/omo-switch_0.1.0_x64-setup.exe
+          name: opencode-mom-tauri-windows-0.1.0
+          path: src-tauri/target/release/bundle/nsis/opencode-mom_0.1.0_x64-setup.exe
           if-no-files-found: error
 
   build-macos:
@@ -84,7 +84,7 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "22.23.0"
+          node-version: '22.23.0'
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -106,26 +106,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -d 'src-tauri/target/release/bundle/macos/omo-switch.app'
-          test -f 'src-tauri/target/release/bundle/dmg/omo-switch_0.1.0_aarch64.dmg'
+          test -d 'src-tauri/target/release/bundle/macos/opencode-mom.app'
+          test -f 'src-tauri/target/release/bundle/dmg/opencode-mom_0.1.0_aarch64.dmg'
 
       - name: Package macOS app bundle
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          tar -C 'src-tauri/target/release/bundle/macos' -czf 'release-assets/omo-switch_0.1.0_aarch64.app.tar.gz' 'omo-switch.app'
-          cp 'src-tauri/target/release/bundle/dmg/omo-switch_0.1.0_aarch64.dmg' 'release-assets/omo-switch_0.1.0_aarch64.dmg'
-          test -f 'release-assets/omo-switch_0.1.0_aarch64.app.tar.gz'
-          test -f 'release-assets/omo-switch_0.1.0_aarch64.dmg'
+          tar -C 'src-tauri/target/release/bundle/macos' -czf 'release-assets/opencode-mom_0.1.0_aarch64.app.tar.gz' 'opencode-mom.app'
+          cp 'src-tauri/target/release/bundle/dmg/opencode-mom_0.1.0_aarch64.dmg' 'release-assets/opencode-mom_0.1.0_aarch64.dmg'
+          test -f 'release-assets/opencode-mom_0.1.0_aarch64.app.tar.gz'
+          test -f 'release-assets/opencode-mom_0.1.0_aarch64.dmg'
 
       - name: Upload macOS release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: omo-switch-tauri-macos-0.1.0
+          name: opencode-mom-tauri-macos-0.1.0
           path: |
-            release-assets/omo-switch_0.1.0_aarch64.app.tar.gz
-            release-assets/omo-switch_0.1.0_aarch64.dmg
+            release-assets/opencode-mom_0.1.0_aarch64.app.tar.gz
+            release-assets/opencode-mom_0.1.0_aarch64.dmg
           if-no-files-found: error
 
   publish:
@@ -141,21 +141,21 @@ jobs:
       - name: Download Windows release artifact
         uses: actions/download-artifact@v4
         with:
-          name: omo-switch-tauri-windows-0.1.0
+          name: opencode-mom-tauri-windows-0.1.0
           path: release-assets/windows
 
       - name: Download macOS release artifacts
         uses: actions/download-artifact@v4
         with:
-          name: omo-switch-tauri-macos-0.1.0
+          name: opencode-mom-tauri-macos-0.1.0
           path: release-assets/macos
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release-assets/windows/omo-switch_0.1.0_x64-setup.exe
-            release-assets/macos/omo-switch_0.1.0_aarch64.app.tar.gz
-            release-assets/macos/omo-switch_0.1.0_aarch64.dmg
+            release-assets/windows/opencode-mom_0.1.0_x64-setup.exe
+            release-assets/macos/opencode-mom_0.1.0_aarch64.app.tar.gz
+            release-assets/macos/opencode-mom_0.1.0_aarch64.dmg
           fail_on_unmatched_files: true
           generate_release_notes: true

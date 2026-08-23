@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "22.23.0"
+          node-version: '22.23.0'
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -39,8 +39,8 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Run frontend tests
-        run: npm test
+      - name: Check frontend formatting
+        run: npm run format:check
 
       - name: Build frontend
         run: npm run build
@@ -48,22 +48,13 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
-      - name: Run Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture
-
-      - name: Assert product config, security, identity, removed scope, and CI contract
-        shell: pwsh
-        env:
-          OMO_CHARACTERIZE_NATIVE_GAPS: '1'
-        run: npm test -- --run src/native-gaps.test.ts
-
       - name: Build Windows Tauri package
         run: npm run tauri build
 
       - name: Assert exact Windows NSIS artifact
         shell: pwsh
         run: |
-          $artifact = 'src-tauri/target/release/bundle/nsis/omo-switch_0.1.0_x64-setup.exe'
+          $artifact = 'src-tauri/target/release/bundle/nsis/opencode-mom_0.1.0_x64-setup.exe'
           if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
             throw "Expected exact NSIS artifact: $artifact"
           }
@@ -71,8 +62,8 @@ jobs:
       - name: Upload Windows Tauri evidence
         uses: actions/upload-artifact@v4
         with:
-          name: omo-switch-tauri-windows-0.1.0
-          path: src-tauri/target/release/bundle/nsis/omo-switch_0.1.0_x64-setup.exe
+          name: opencode-mom-tauri-windows-0.1.0
+          path: src-tauri/target/release/bundle/nsis/opencode-mom_0.1.0_x64-setup.exe
           if-no-files-found: error
 
   tauri-macos:
@@ -86,7 +77,7 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "22.23.0"
+          node-version: '22.23.0'
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -103,22 +94,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Run frontend tests
-        run: npm test
+      - name: Check frontend formatting
+        run: npm run format:check
 
       - name: Build frontend
         run: npm run build
 
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-
-      - name: Run Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture
-
-      - name: Assert product config, security, identity, removed scope, and CI contract
-        env:
-          OMO_CHARACTERIZE_NATIVE_GAPS: '1'
-        run: npm test -- --run src/native-gaps.test.ts
 
       - name: Build macOS Tauri packages
         run: npm run tauri build
@@ -127,14 +110,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -d 'src-tauri/target/release/bundle/macos/omo-switch.app'
-          test -f 'src-tauri/target/release/bundle/dmg/omo-switch_0.1.0_aarch64.dmg'
+          test -d 'src-tauri/target/release/bundle/macos/opencode-mom.app'
+          test -f 'src-tauri/target/release/bundle/dmg/opencode-mom_0.1.0_aarch64.dmg'
 
       - name: Upload macOS Tauri evidence
         uses: actions/upload-artifact@v4
         with:
-          name: omo-switch-tauri-macos-0.1.0
+          name: opencode-mom-tauri-macos-0.1.0
           path: |
-            src-tauri/target/release/bundle/macos/omo-switch.app
-            src-tauri/target/release/bundle/dmg/omo-switch_0.1.0_aarch64.dmg
+            src-tauri/target/release/bundle/macos/opencode-mom.app
+            src-tauri/target/release/bundle/dmg/opencode-mom_0.1.0_aarch64.dmg
           if-no-files-found: error

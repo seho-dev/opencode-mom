@@ -1,109 +1,150 @@
 <script lang="ts">
-  import { Pencil, Plus, Trash2 } from '@lucide/svelte';
+  import { Pencil, Plus, Trash2, RefreshCw } from '@lucide/svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import DataTable from '$lib/components/app/DataTable.svelte';
   import EmptyTableRow from '$lib/components/app/EmptyTableRow.svelte';
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
+  import * as Dialog from '$lib/components/ui/dialog/index.js';
+  import { toast } from '$lib/components/app/toast.svelte.js';
   const config = getConfig();
   let query = $state('');
   let deleting = $state<string | null>(null);
-  let replacement = $state('');
-  let renaming = $state<string | null>(null);
-  let newId = $state('');
-  const models = $derived(
-    config.models().filter((model) => `${model.ref} ${model.name ?? ''}`.toLowerCase().includes(query.toLowerCase())),
+  let activeTab = $state<'custom' | 'builtin'>('custom');
+  const pageSize = 5;
+  let page = $state(1);
+  const errorMessage = (error: unknown) =>
+    error && typeof error === 'object' && 'message' in error
+      ? String((error as { message: unknown }).message)
+      : String(error);
+
+  // Surface catalog load failures as error toasts with a Retry action.
+  $effect(() => {
+    const catalogError = config.catalogError;
+    if (!catalogError) return;
+    toast({
+      variant: 'error',
+      description: `Failed to load models via opencode CLI: ${catalogError.message}`,
+      action: { label: 'Retry', onclick: () => retryCatalog() },
+    });
+  });
+
+  const filteredCatalog = $derived(
+    config.catalog.filter((m) =>
+      `${m.ref} ${m.name ?? ''} ${m.providerId}`.toLowerCase().includes(query.toLowerCase()),
+    ),
   );
+  const builtinModels = $derived(filteredCatalog.filter((m) => !m.isCustom));
+  const customModels = $derived(filteredCatalog.filter((m) => m.isCustom));
+  const visibleModels = $derived(activeTab === 'custom' ? customModels : builtinModels);
+  const maxPage = $derived(Math.max(1, Math.ceil(visibleModels.length / pageSize)));
+  const currentPage = $derived(Math.min(page, maxPage));
+  const pagedModels = $derived(visibleModels.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+  $effect(() => {
+    // Reset to the first page whenever the visible row count changes (search, tab switch, or delete).
+    void visibleModels.length;
+    page = 1;
+  });
+
+  async function refreshCatalog() {
+    try {
+      await config.loadCatalog();
+    } catch {
+      // Failures are surfaced as an error toast via the catalogError watcher above.
+    }
+  }
+  async function retryCatalog() {
+    try {
+      await config.loadCatalog();
+    } catch {
+      // Failures are surfaced as an error toast via the catalogError watcher above.
+    }
+  }
   async function remove() {
     if (!deleting) return;
     try {
       await config.deleteModel(deleting as `${string}/${string}`);
       deleting = null;
-    } catch {
-      /* global feedback */
-    }
-  }
-  async function replace() {
-    if (!deleting || !replacement) return;
-    try {
-      await config.replaceReferences(deleting as `${string}/${string}`, replacement as `${string}/${string}`);
-      deleting = null;
-      replacement = '';
-    } catch {
-      /* global feedback */
-    }
-  }
-  async function rename() {
-    if (!renaming || !newId.trim()) return;
-    try {
-      await config.renameModel(renaming as `${string}/${string}`, newId.trim());
-      renaming = null;
-      newId = '';
-    } catch {
-      /* global feedback */
+      await config.loadCatalog();
+    } catch (error) {
+      toast({ variant: 'error', description: errorMessage(error) });
     }
   }
 </script>
 
 <svelte:head><title>Models · opencode-mom</title></svelte:head><PageHead eyebrow="CONFIG / MODELS" title="Models"
-  >{#snippet children()}<Button href="/models/new"><Plus size={14} /> New model</Button>{/snippet}</PageHead
+  >{#snippet children()}<div class="flex items-center gap-2">
+      <Button variant="outline" size="sm" onclick={refreshCatalog} disabled={config.catalogLoading}
+        ><RefreshCw size={14} /> Refresh</Button
+      ><Button href="/models/new"><Plus size={14} /> New model</Button>
+    </div>{/snippet}</PageHead
 >
 <div class="search-toolbar">
-  <input aria-label="Search models" bind:value={query} placeholder="Search full model references" />
+  <input aria-label="Search models" bind:value={query} placeholder="Search provider/model, e.g. anthropic/claude" />
 </div>
-<DataTable label="Model directory"
-  ><thead><tr><th>Full reference</th><th>Provider</th><th>Name</th><th>Context</th><th>Actions</th></tr></thead><tbody
-    >{#if config.loading}<tr><td colspan="5" class="empty-table-row">Loading configuration...</td></tr
-      >{:else if !models.length}<EmptyTableRow
-        colspan={5}
-        message="No models. Create a provider first."
-      />{:else}{#each models as model}<tr
+<div class="flex gap-2 mb-3">
+  <Button variant={activeTab === 'custom' ? 'default' : 'outline'} size="sm" onclick={() => (activeTab = 'custom')}
+    >Custom ({customModels.length})</Button
+  >
+  <Button variant={activeTab === 'builtin' ? 'default' : 'outline'} size="sm" onclick={() => (activeTab = 'builtin')}
+    >Builtin ({builtinModels.length})</Button
+  >
+</div>
+<DataTable label="Model directory" total={visibleModels.length} bind:page {pageSize}
+  ><thead
+    ><tr
+      ><th>Full reference</th><th>Provider</th><th>Name</th><th>Family</th><th>Context</th><th>Source</th><th
+        class="th-actions">Actions</th
+      ></tr
+    ></thead
+  ><tbody
+    >{#if config.catalogLoading}<tr><td colspan="7" class="empty-table-row">Loading models from opencode CLI...</td></tr
+      >{:else if !visibleModels.length}<EmptyTableRow
+        colspan={7}
+        message={activeTab === 'custom'
+          ? 'No custom models. Create a provider and add models.'
+          : 'No builtin models found.'}
+      />{:else}{#each pagedModels as model}<tr
           ><td class="model-name">{model.ref}</td><td>{model.providerId}</td><td>{model.name ?? 'unnamed'}</td><td
-            >{model.limit?.context ?? 'unset'}</td
+            >{model.family ?? '-'}</td
+          ><td>{(model.limit as { context?: number })?.context ?? 'unset'}</td><td
+            >{model.isCustom ? 'custom' : 'builtin'}</td
           ><td class="row-actions"
-            ><Button
-              variant="ghost"
-              size="icon-sm"
-              title="Rename model"
-              aria-label={`Rename ${model.ref}`}
-              onclick={() => {
-                renaming = model.ref;
-                newId = model.id;
-              }}><Pencil size={14} /></Button
-            ><Button
-              href={`/models/${encodeURIComponent(model.ref)}/edit`}
-              variant="ghost"
-              size="icon-sm"
-              title="Edit model"
-              aria-label={`Edit ${model.ref}`}><Pencil size={14} /></Button
-            ><Button
-              variant="ghost"
-              size="icon-sm"
-              title="Delete model"
-              aria-label={`Delete ${model.ref}`}
-              onclick={() => (deleting = model.ref)}><Trash2 size={14} /></Button
-            ></td
+            >{#if model.isCustom}<Button
+                href={`/models/${encodeURIComponent(model.ref)}/edit`}
+                variant="ghost"
+                size="icon-sm"
+                title="Edit model"
+                aria-label={`Edit ${model.ref}`}><Pencil size={14} /></Button
+              ><Button
+                variant="ghost"
+                size="icon-sm"
+                title="Delete model"
+                aria-label={`Delete ${model.ref}`}
+                onclick={() => {
+                  deleting = model.ref;
+                }}><Trash2 size={14} /></Button
+              >{:else}<span class="text-xs text-muted-foreground">read-only</span>{/if}</td
           ></tr
         >{/each}{/if}</tbody
   ></DataTable
 >
-{#if renaming}<div class="confirm-strip" role="alert">
-    New model ID <input aria-label="New model ID" bind:value={newId} /><Button
-      size="sm"
-      variant="outline"
-      onclick={() => (renaming = null)}>Cancel</Button
-    ><Button size="sm" onclick={rename}>Save rename</Button>
-  </div>{/if}
-{#if deleting}<div class="confirm-strip" role="alert">
-    Delete <strong>{deleting}</strong>? Deletion is blocked while references exist.<select
-      aria-label="Replace with model"
-      bind:value={replacement}
-      ><option value="">Do not replace references</option>{#each config
-        .models()
-        .filter((model) => model.ref !== deleting) as model}<option value={model.ref}>{model.ref}</option
-        >{/each}</select
-    ><Button size="sm" variant="outline" onclick={() => (deleting = null)}>Cancel</Button>{#if replacement}<Button
-        size="sm"
-        onclick={replace}>Replace references</Button
-      >{/if}<Button size="sm" variant="destructive" onclick={remove}>Delete</Button>
-  </div>{/if}
+<Dialog.Root
+  open={deleting !== null}
+  onOpenChange={(open) => {
+    if (!open) deleting = null;
+  }}
+>
+  <Dialog.Content>
+    <Dialog.Header>
+      <Dialog.Title>Delete model</Dialog.Title>
+      <Dialog.Description
+        >Delete <strong>{deleting}</strong>? Deletion is blocked while references exist.</Dialog.Description
+      >
+    </Dialog.Header>
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => (deleting = null)}>Cancel</Button>
+      <Button variant="destructive" onclick={remove}>Delete</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>

@@ -6,6 +6,7 @@
   import FormActions from '$lib/components/app/FormActions.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import type { ModelDef } from '$lib/features/config/types.js';
+  import { toast } from '$lib/components/app/toast.svelte.js';
   const config = getConfig();
   const ref = $derived(decodeURIComponent(page.params.id ?? ''));
   const found = $derived(config.models().find((model) => model.ref === ref));
@@ -27,7 +28,6 @@
   let headers = $state('{}');
   let variants = $state('{}');
   let raw = $state('{}');
-  let message = $state('');
   const obj = (value: string, label: string) => {
     const parsed = JSON.parse(value);
     if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object')
@@ -86,7 +86,7 @@
       });
       goto('/models');
     } catch (e) {
-      message = e instanceof Error ? e.message : 'Invalid JSON or save failed';
+      toast({ variant: 'error', description: e instanceof Error ? e.message : 'Invalid JSON or save failed' });
     }
   }
 </script>
@@ -94,7 +94,11 @@
 <svelte:head><title>Edit model · opencode-mom</title></svelte:head><PageHead
   eyebrow="CONFIG / MODELS"
   title="Edit model"
-/>{#if found}<form
+/>
+{#if found}<p class="text-xs text-muted-foreground mb-3">
+    Editing custom model <code>{found.ref}</code> — builtin models are read-only and cannot be edited here.
+  </p>
+  <form
     class="panel form-panel"
     onsubmit={(e) => {
       e.preventDefault();
@@ -150,7 +154,6 @@
       <div class="field full">
         <label for="model-raw">Advanced extra JSON</label><textarea id="model-raw" bind:value={raw}></textarea>
       </div>
-      {#if message}<div class="state-banner error full" role="alert">{message}</div>{/if}
     </div>
     <FormActions
       ><Button href="/models" variant="outline">Cancel</Button><Button type="submit" disabled={config.saving}

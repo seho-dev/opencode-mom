@@ -5,6 +5,8 @@
   import FormActions from './FormActions.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import type { AgentModelBinding, CategoryMapping, Group, GroupType } from '$lib/features/config/types.js';
+  import * as Dialog from '$lib/components/ui/dialog/index.js';
+  import { toast } from './toast.svelte.js';
   type MappingKind = 'native' | 'slim' | 'omo' | 'category';
   const config = getConfig();
   let { group }: { group?: Group } = $props();
@@ -20,7 +22,6 @@
   let seenReset = $state(-1);
   let tab = $state<MappingKind>('native');
   let pending = $state<GroupType | null>(null);
-  let message = $state('');
   function loadGroup() {
     if (!group) return;
     initialized = group.id;
@@ -33,7 +34,6 @@
     categories = group.omoCategoryMappings ?? [];
     isEnabled = group.isEnabled;
     pending = null;
-    message = '';
   }
   $effect(() => {
     if (!group) return;
@@ -98,7 +98,10 @@
     const updatedAt = group?.updatedAt ?? new Date().toISOString();
     if (!id) {
       if (!globalThis.crypto?.randomUUID) {
-        message = 'Cannot generate a group ID in this environment. Refresh and try again.';
+        toast({
+          variant: 'error',
+          description: 'Cannot generate a group ID in this environment. Refresh and try again.',
+        });
         return;
       }
       id = globalThis.crypto.randomUUID();
@@ -206,12 +209,25 @@
   <FormActions
     ><Button href="/groups" variant="outline">Cancel</Button><Button type="submit" disabled={config.saving}
       >Save group</Button
-    ></FormActions
-  >
+    >
+  </FormActions>
 </form>
-{#if pending}<div class="confirm-strip" role="alert">
-    Switching the type affects dedicated mappings.<Button size="sm" variant="outline" onclick={() => resolve('keep')}
-      >Keep draft</Button
-    ><Button size="sm" variant="destructive" onclick={() => resolve('clear')}>Clear incompatible mappings</Button
-    ><Button size="sm" variant="ghost" onclick={() => resolve('cancel')}>Cancel switch</Button>
-  </div>{/if}{#if message}<div class="state-banner error" role="alert">{message}</div>{/if}
+<Dialog.Root
+  open={pending !== null}
+  onOpenChange={(open) => {
+    if (!open) resolve('cancel');
+  }}
+>
+  <Dialog.Content>
+    <Dialog.Header>
+      <Dialog.Title>Switch group type</Dialog.Title>
+      <Dialog.Description>Switching to <strong>{pending}</strong> affects dedicated mappings.</Dialog.Description>
+    </Dialog.Header>
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => resolve('keep')}>Keep draft</Button><Button
+        variant="destructive"
+        onclick={() => resolve('clear')}>Clear incompatible mappings</Button
+      ><Button variant="ghost" onclick={() => resolve('cancel')}>Cancel switch</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>

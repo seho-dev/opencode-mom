@@ -5,6 +5,7 @@
   import FormActions from '$lib/components/app/FormActions.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import type { ModelDef } from '$lib/features/config/types.js';
+  import { toast } from '$lib/components/app/toast.svelte.js';
   const config = getConfig();
   let providerId = $state('');
   let id = $state('');
@@ -25,7 +26,6 @@
   let headers = $state('{}');
   let variants = $state('{}');
   let raw = $state('{}');
-  let message = $state('');
   const obj = (value: string, label: string) => {
     const parsed = JSON.parse(value);
     if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object')
@@ -57,7 +57,7 @@
       });
       goto('/models');
     } catch (e) {
-      message = e instanceof Error ? e.message : 'Invalid JSON or save failed';
+      toast({ variant: 'error', description: e instanceof Error ? e.message : 'Invalid JSON or save failed' });
     }
   }
 </script>
@@ -65,7 +65,12 @@
 <svelte:head><title>New model · opencode-mom</title></svelte:head><PageHead
   eyebrow="CONFIG / MODELS"
   title="New model"
-/>{#if !config.loading && config.providers.length === 0}<div class="state-banner error" role="alert">
+/>
+<p class="text-xs text-muted-foreground mb-3">
+  Models can only be created under custom providers (those defined in opencode.jsonc). Builtin models are read-only and
+  provided by opencode via CLI.
+</p>
+{#if !config.loading && config.providers.length === 0}<div class="state-banner error" role="alert">
     No provider available. Create a provider first.
   </div>{:else}<form
     class="panel form-panel"
@@ -126,7 +131,6 @@
           >For fields that have no dedicated control yet; merged with the structured fields above when saving.</small
         >
       </div>
-      {#if message}<div class="state-banner error full" role="alert">{message}</div>{/if}
     </div>
     <FormActions
       ><Button href="/models" variant="outline">Cancel</Button><Button

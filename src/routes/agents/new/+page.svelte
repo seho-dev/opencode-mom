@@ -5,6 +5,7 @@
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import type { AgentDefinition, AgentSource, AgentStorage, ModelRef } from '$lib/features/config/types.js';
+  import { toast } from '$lib/components/app/toast.svelte.js';
   type OptionRow = { key: string; value: string };
   type AgentMutation = { source: AgentStorage; fields: Record<string, unknown>; clearFields: string[] };
   type AgentWrite = AgentDefinition & { mutation?: AgentMutation };
@@ -25,7 +26,6 @@
   let prompt = $state('');
   let permission = $state('{}');
   let options = $state<OptionRow[]>([]);
-  let message = $state('');
   const object = (value: string, label: string) => {
     const parsed = JSON.parse(value);
     if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object')
@@ -89,7 +89,10 @@
       await config.createAgent(payload);
       goto('/agents');
     } catch (error) {
-      message = error instanceof Error ? error.message : 'Save failed. Check the configuration state.';
+      toast({
+        variant: 'error',
+        description: error instanceof Error ? error.message : 'Save failed. Check the configuration state.',
+      });
     }
   }
 </script>
@@ -192,7 +195,6 @@
       </p>
       <div class="state-banner error">To clear fields after creation, use the danger zone on the edit page.</div>
     </details>
-    {#if message}<div class="state-banner error full" role="alert">{message}</div>{/if}
   </div>
   <FormActions
     ><Button href="/agents" variant="outline">Cancel</Button><Button type="submit" disabled={config.saving}

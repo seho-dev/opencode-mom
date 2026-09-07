@@ -5,10 +5,21 @@
   import EmptyTableRow from '$lib/components/app/EmptyTableRow.svelte';
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
+  import * as Dialog from '$lib/components/ui/dialog/index.js';
   const config = getConfig();
   let query = $state('');
   let deleting = $state<string | null>(null);
+  const pageSize = 5;
+  let page = $state(1);
   const groups = $derived(config.groups.filter((group) => group.name.toLowerCase().includes(query.toLowerCase())));
+  const maxPage = $derived(Math.max(1, Math.ceil(groups.length / pageSize)));
+  const currentPage = $derived(Math.min(page, maxPage));
+  const pagedGroups = $derived(groups.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+  $effect(() => {
+    // Reset to the first page whenever the filtered row count changes (search or delete).
+    void groups.length;
+    page = 1;
+  });
   async function remove() {
     if (!deleting) return;
     try {
@@ -32,10 +43,11 @@
   >{#snippet children()}<Button href="/groups/new"><Plus size={14} /> New group</Button>{/snippet}</PageHead
 >
 <div class="search-toolbar"><input aria-label="Search groups" bind:value={query} placeholder="Search groups" /></div>
-<DataTable label="Group Directory"
-  ><thead><tr><th>Name</th><th>Type</th><th>Mappings</th><th>Status</th><th>Actions</th></tr></thead><tbody
+<DataTable label="Group Directory" total={groups.length} bind:page {pageSize}
+  ><thead><tr><th>Name</th><th>Type</th><th>Mappings</th><th>Status</th><th class="th-actions">Actions</th></tr></thead
+  ><tbody
     >{#if config.loading}<tr><td colspan="5" class="empty-table-row">Loading configuration...</td></tr
-      >{:else if !groups.length}<EmptyTableRow colspan={5} message="No groups." />{:else}{#each groups as group}<tr
+      >{:else if !groups.length}<EmptyTableRow colspan={5} message="No groups." />{:else}{#each pagedGroups as group}<tr
           ><td class="model-name"
             >{group.name}
             <div class="muted">{group.description}</div></td
@@ -64,10 +76,20 @@
         >{/each}{/if}</tbody
   ></DataTable
 >
-{#if deleting}<div class="confirm-strip" role="alert">
-    Confirm deletion?<Button size="sm" variant="outline" onclick={() => (deleting = null)}>Cancel</Button><Button
-      size="sm"
-      variant="destructive"
-      onclick={remove}>Delete</Button
-    >
-  </div>{/if}
+<Dialog.Root
+  open={deleting !== null}
+  onOpenChange={(open) => {
+    if (!open) deleting = null;
+  }}
+>
+  <Dialog.Content>
+    <Dialog.Header>
+      <Dialog.Title>Delete group</Dialog.Title>
+      <Dialog.Description>Delete group <strong>{deleting}</strong>? This cannot be undone.</Dialog.Description>
+    </Dialog.Header>
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => (deleting = null)}>Cancel</Button>
+      <Button variant="destructive" onclick={remove}>Delete</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>

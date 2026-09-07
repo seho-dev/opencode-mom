@@ -6,6 +6,7 @@
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import type { ProviderDef } from '$lib/features/config/types.js';
+  import { toast } from '$lib/components/app/toast.svelte.js';
 
   const config = getConfig();
   let id = $state('');
@@ -16,7 +17,6 @@
   let whitelist = $state('');
   let blacklist = $state('');
   let options = $state<{ key: string; value: string }[]>([]);
-  let message = $state('');
 
   const lines = (value: string) =>
     value
@@ -61,7 +61,10 @@
       await config.createProvider(value);
       goto('/providers');
     } catch (error) {
-      message = error instanceof Error ? error.message : 'Save failed. Check the input and configuration state.';
+      toast({
+        variant: 'error',
+        description: error instanceof Error ? error.message : 'Save failed. Check the input and configuration state.',
+      });
     }
   }
 </script>
@@ -143,9 +146,6 @@
         <p class="muted">No provider options set.</p>
       {/if}
     </fieldset>
-    {#if message}
-      <div class="state-banner error full" role="alert">{message}</div>
-    {/if}
   </div>
   <FormActions>
     <Button href="/providers" variant="outline">Cancel</Button>

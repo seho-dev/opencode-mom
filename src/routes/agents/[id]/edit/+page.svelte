@@ -6,6 +6,7 @@
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import type { AgentDefinition, AgentStorage, ModelRef } from '$lib/features/config/types.js';
+  import { toast } from '$lib/components/app/toast.svelte.js';
   type OptionRow = { key: string; value: string };
   type SourceSnapshot = {
     storage: AgentStorage;
@@ -34,7 +35,6 @@
   let prompt = $state('');
   let permission = $state('{}');
   let options = $state<OptionRow[]>([]);
-  let message = $state('');
   let clearFields = $state<string[]>([]);
   const editableFields = [
     'model',
@@ -118,7 +118,6 @@
     permission = pretty(fields['permission']);
     options = optionRows(fields['options']);
     clearFields = [];
-    message = '';
   }
   $effect(() => {
     if (!agent) return;
@@ -160,7 +159,10 @@
   }
   async function submit() {
     if (!agent || !selectedSource) {
-      message = 'The selected source was not provided in the DTO sources; it cannot be edited safely.';
+      toast({
+        variant: 'error',
+        description: 'The selected source was not provided in the DTO sources; it cannot be edited safely.',
+      });
       return;
     }
     try {
@@ -175,7 +177,10 @@
       await config.updateAgent(payload);
       goto('/agents');
     } catch (error) {
-      message = error instanceof Error ? error.message : 'Save failed. Check the configuration state.';
+      toast({
+        variant: 'error',
+        description: error instanceof Error ? error.message : 'Save failed. Check the configuration state.',
+      });
     }
   }
 </script>
@@ -299,7 +304,6 @@
           </p>
           <pre>{source.raw ?? pretty(source.fields)}</pre>{/each}
       </details>
-      {#if message}<div class="state-banner error full" role="alert">{message}</div>{/if}
     </div>
     <FormActions
       ><Button href="/agents" variant="outline">Cancel</Button><Button

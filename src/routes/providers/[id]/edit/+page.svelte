@@ -7,6 +7,7 @@
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import type { ProviderDef } from '$lib/features/config/types.js';
+  import { toast } from '$lib/components/app/toast.svelte.js';
 
   const config = getConfig();
   const source = $derived(config.providers.find((provider) => provider.id === page.params.id));
@@ -19,7 +20,6 @@
   let options = $state<{ key: string; value: string }[]>([]);
   let rawOptions = $state('{}');
   let loaded = $state('');
-  let message = $state('');
 
   const stringify = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value));
 
@@ -69,7 +69,10 @@
       } as ProviderDef);
       goto('/providers');
     } catch (error) {
-      message = error instanceof Error ? error.message : 'Save failed. Check the input and configuration state.';
+      toast({
+        variant: 'error',
+        description: error instanceof Error ? error.message : 'Save failed. Check the input and configuration state.',
+      });
     }
   }
 </script>
@@ -149,9 +152,6 @@
         <textarea id="provider-options-json" bind:value={rawOptions}></textarea>
         <small class="muted">This JSON is the final saved value; use it to edit nested options.</small>
       </div>
-      {#if message}
-        <div class="state-banner error full" role="alert">{message}</div>
-      {/if}
     </div>
     <FormActions>
       <Button href="/providers" variant="outline">Cancel</Button>

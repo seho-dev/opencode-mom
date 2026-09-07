@@ -2,6 +2,7 @@
   import AppSidebar from './AppSidebar.svelte';
   import AppHeader from './AppHeader.svelte';
   import ConfigFeedback from './ConfigFeedback.svelte';
+  import Toaster from './Toaster.svelte';
   let { children } = $props();
 </script>
 
@@ -9,6 +10,8 @@
   <AppSidebar />
   <div class="workspace">
     <AppHeader />
-    <main class="content"><ConfigFeedback />{@render children()}</main>
+    <main class="content">{@render children()}</main>
   </div>
+  <ConfigFeedback />
+  <Toaster />
 </div>

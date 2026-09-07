@@ -83,6 +83,23 @@ export interface AppState {
   groups: Group[];
   diagnostics?: string[];
 }
+export type ModelSource = 'builtin' | 'custom';
+export interface ModelCatalogEntry {
+  providerId: string;
+  modelId: string;
+  ref: ModelRef;
+  name: string;
+  family: string;
+  source: ModelSource;
+  isCustom: boolean;
+  status?: string;
+  cost?: unknown;
+  limit?: { context?: number; input?: number; output?: number } | null;
+  capabilities?: unknown;
+  variants?: Record<string, unknown> | null;
+  api?: unknown;
+  releaseDate?: string;
+}
 export type CommandErrorCode =
   'not_found' | 'references_blocked' | 'validation_failed' | 'configuration_failed' | 'busy' | 'conflict' | 'ipc_error';
 export interface CommandError {

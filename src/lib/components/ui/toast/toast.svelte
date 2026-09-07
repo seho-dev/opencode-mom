@@ -14,22 +14,53 @@
     defaultVariants: { variant: 'info' },
   });
   export type ToastVariant = VariantProps<typeof toastVariants>['variant'];
+  export type ToastAction = { label: string; onclick: () => void };
 </script>
 
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { X } from '@lucide/svelte';
   import type { HTMLAttributes } from 'svelte/elements';
   import { cn, type WithElementRef } from '$lib/utils.js';
+  import { Button } from '$lib/components/ui/button/index.js';
 
   let {
     ref = $bindable(null),
     class: className,
     variant = 'info',
-    children,
+    title,
+    description,
+    action,
+    actions,
+    onClose,
     ...restProps
-  }: WithElementRef<HTMLAttributes<HTMLDivElement>> & { variant?: ToastVariant; children?: Snippet } = $props();
+  }: WithElementRef<HTMLAttributes<HTMLDivElement>> & {
+    variant?: ToastVariant;
+    title?: string;
+    description?: string;
+    action?: ToastAction;
+    actions?: ToastAction[];
+    onClose?: () => void;
+  } = $props();
+
+  const buttons = $derived(actions ?? (action ? [action] : []));
 </script>
 
-<div bind:this={ref} data-slot="toast" role="status" class={cn(toastVariants({ variant }), className)} {...restProps}>
-  {@render children?.()}
+<div
+  bind:this={ref}
+  data-slot="toast"
+  role={variant === 'error' || variant === 'warning' ? 'alert' : 'status'}
+  class={cn(toastVariants({ variant }), className)}
+  {...restProps}
+>
+  <div class="min-w-0">
+    {#if title}<p class="font-semibold text-[13px] leading-5">{title}</p>{/if}
+    {#if description}<p class="break-words">{description}</p>{/if}
+  </div>
+  <div class="flex items-center gap-1">
+    {#each buttons as button (button.label)}<Button size="sm" variant="outline" onclick={button.onclick}
+        >{button.label}</Button
+      >{/each}{#if onClose}<Button size="icon-sm" variant="ghost" aria-label="Dismiss" onclick={onClose}
+        ><X size={13} /></Button
+      >{/if}
+  </div>
 </div>

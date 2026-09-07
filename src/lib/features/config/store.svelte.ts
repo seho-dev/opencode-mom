@@ -1,5 +1,14 @@
 import type { CommandAdapter } from './adapter.js';
-import type { AgentDefinition, AppState, Group, ModelDef, ProviderDef, ModelRef, CommandError } from './types.js';
+import type {
+  AgentDefinition,
+  AppState,
+  Group,
+  ModelCatalogEntry,
+  ModelDef,
+  ProviderDef,
+  ModelRef,
+  CommandError,
+} from './types.js';
 
 type DraftRecovery = { operation: string; payload: unknown; error: CommandError; conflict: boolean };
 const errorCodes = new Set<CommandError['code']>([
@@ -41,7 +50,6 @@ export function createConfigStore(adapter: CommandAdapter) {
   let providers = $state<ProviderDef[]>([]);
   let agents = $state<AgentDefinition[]>([]);
   let groups = $state<Group[]>([]);
-  let diagnostics = $state<string[]>([]);
   let loading = $state(true);
   let saving = $state(false);
   let switching = $state(false);
@@ -49,11 +57,16 @@ export function createConfigStore(adapter: CommandAdapter) {
   let notice = $state<string | null>(null);
   let draftRecovery = $state<DraftRecovery | null>(null);
   let formResetVersion = $state(0);
+  // New: opencode CLI model catalog (builtin + custom), fetched via wrapper
+  let catalog = $state<ModelCatalogEntry[]>([]);
+  let catalogLoading = $state(false);
+  let catalogError = $state<CommandError | null>(null);
+  // Guards against out-of-order catalog responses when loads overlap (startup prefetch, group switch, manual refresh).
+  let catalogRequestSeq = 0;
   const apply = (state: AppState, resetForms = false) => {
     providers = state.providers;
     agents = state.agents;
     groups = state.groups;
-    diagnostics = state.diagnostics ?? [];
     if (resetForms) formResetVersion += 1;
   };
   const run = async <T>(operation: string, payload: unknown, action: () => Promise<T>) => {
@@ -102,6 +115,22 @@ export function createConfigStore(adapter: CommandAdapter) {
   function continueEditing() {
     error = null;
   }
+  async function loadCatalog(provider?: string) {
+    const seq = ++catalogRequestSeq;
+    catalogLoading = true;
+    catalogError = null;
+    try {
+      const result = await adapter.opencodeListModels(provider);
+      if (seq === catalogRequestSeq) catalog = result;
+      return result;
+    } catch (cause) {
+      const err = serializeError(cause);
+      if (seq === catalogRequestSeq) catalogError = err;
+      throw err;
+    } finally {
+      if (seq === catalogRequestSeq) catalogLoading = false;
+    }
+  }
   refresh();
   return {
     get providers() {
@@ -112,9 +141,6 @@ export function createConfigStore(adapter: CommandAdapter) {
     },
     get groups() {
       return groups;
-    },
-    get diagnostics() {
-      return diagnostics;
     },
     get loading() {
       return loading;
@@ -137,6 +163,15 @@ export function createConfigStore(adapter: CommandAdapter) {
     get formResetVersion() {
       return formResetVersion;
     },
+    get catalog() {
+      return catalog;
+    },
+    get catalogLoading() {
+      return catalogLoading;
+    },
+    get catalogError() {
+      return catalogError;
+    },
     clearNotice() {
       notice = null;
     },
@@ -147,37 +182,32 @@ export function createConfigStore(adapter: CommandAdapter) {
     async createProvider(value: ProviderDef) {
       await run('createProvider', value, () => adapter.createProvider(value));
       await refresh();
+      await loadCatalog();
     },
     async updateProvider(value: ProviderDef) {
       await run('updateProvider', value, () => adapter.updateProvider(value));
       await refresh();
+      await loadCatalog();
     },
     async deleteProvider(id: string) {
       await run('deleteProvider', { id }, () => adapter.deleteProvider(id));
       await refresh();
+      await loadCatalog();
     },
     async createModel(providerId: string, value: ModelDef) {
       await run('createModel', { providerId, value }, () => adapter.createModel(providerId, value));
       await refresh();
+      await loadCatalog();
     },
     async updateModel(providerId: string, value: ModelDef) {
       await run('updateModel', { providerId, value }, () => adapter.updateModel(providerId, value));
       await refresh();
+      await loadCatalog();
     },
     async deleteModel(ref: ModelRef) {
       await run('deleteModel', { ref }, () => adapter.deleteModel(ref));
       await refresh();
-    },
-    async renameModel(ref: ModelRef, id: string) {
-      await run('renameModel', { ref, id }, () => adapter.renameModel(ref, id));
-      await refresh();
-    },
-    async renameProvider(oldId: string, newId: string) {
-      await run('renameProvider', { oldId, newId }, () => adapter.renameProvider(oldId, newId));
-      await refresh();
-    },
-    async revealProviderSecret(providerId: string, key: string) {
-      return run('revealProviderSecret', { providerId, key }, () => adapter.revealProviderSecret(providerId, key));
+      await loadCatalog();
     },
     async createAgent(value: AgentDefinition) {
       await run('createAgent', value, () => adapter.createAgent(value));
@@ -205,24 +235,21 @@ export function createConfigStore(adapter: CommandAdapter) {
         await run('switchGroup', { id }, () => adapter.switchGroup(id));
         notice = 'Group switched and configuration applied.';
         await refresh();
+        try {
+          await loadCatalog();
+        } catch {
+          // Best-effort: the switch already succeeded; catalog failures are surfaced on the Models page.
+        }
       } finally {
         switching = false;
       }
     },
-    async replaceReferences(from: ModelRef, to: ModelRef) {
-      await run('replaceReferences', { from, to }, () => adapter.replaceModelReferences(from, to));
-      notice = `Replaced references from ${from} to ${to}.`;
-      await refresh();
+    loadCatalog,
+    async refreshCatalog(provider?: string) {
+      return loadCatalog(provider);
     },
-    async validate() {
-      const results = await run('validate', {}, () => adapter.validateConfig());
-      diagnostics = results;
-      notice = results.length ? 'Validation finished with diagnostics.' : 'Configuration validation passed.';
-      return results;
-    },
-    async loadDiagnostics() {
-      diagnostics = await run('loadDiagnostics', {}, () => adapter.loadConfigDiagnostics());
-      return diagnostics;
+    clearCatalogError() {
+      catalogError = null;
     },
     models() {
       return providers.flatMap((provider) =>
@@ -232,6 +259,15 @@ export function createConfigStore(adapter: CommandAdapter) {
           providerId: provider.id,
         })),
       );
+    },
+    catalogModels() {
+      return catalog;
+    },
+    builtinModels() {
+      return catalog.filter((m) => !m.isCustom);
+    },
+    customModels() {
+      return catalog.filter((m) => m.isCustom);
     },
   };
 }

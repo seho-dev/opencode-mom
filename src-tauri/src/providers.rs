@@ -94,34 +94,39 @@ pub fn list_providers(opencode_file: &Path) -> Result<Vec<ProviderDef>, AppError
     )
 }
 
+pub fn custom_provider_ids(
+    opencode_file: &Path,
+) -> Result<std::collections::HashSet<String>, AppError> {
+    let doc = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
+    let raw = doc.raw();
+    let mut set = std::collections::HashSet::new();
+    if let Some(Value::Object(providers)) = raw.get("provider") {
+        for key in providers.keys() {
+            set.insert(key.clone());
+        }
+    }
+    Ok(set)
+}
+
+pub fn is_custom_provider(opencode_file: &Path, provider_id: &str) -> Result<bool, AppError> {
+    Ok(custom_provider_ids(opencode_file)?.contains(provider_id))
+}
+
+fn ensure_custom_provider(opencode_file: &Path, provider_id: &str) -> Result<(), AppError> {
+    if !is_custom_provider(opencode_file, provider_id)? {
+        return Err(AppError::validation(format!(
+            "model operations are only allowed for custom providers: {provider_id}"
+        )));
+    }
+    Ok(())
+}
+
 pub fn get_provider(opencode_file: &Path, provider_id: &str) -> Result<ProviderDef, AppError> {
     validate_id(provider_id, IdKind::Provider)?;
     list_providers(opencode_file)?
         .into_iter()
         .find(|provider| provider.id == provider_id)
         .ok_or_else(|| AppError::not_found(format!("provider not found: {provider_id}")))
-}
-
-/// Returns one stored sensitive option after an explicit user-initiated reveal request.
-pub fn reveal_sensitive_option(
-    opencode_file: &Path,
-    provider_id: &str,
-    key: &str,
-) -> Result<Value, AppError> {
-    if !is_sensitive_option_key(key) {
-        return Err(AppError::validation(format!(
-            "provider option is not a sensitive key: {key}"
-        )));
-    }
-    let provider = get_provider(opencode_file, provider_id)?;
-    provider
-        .options
-        .as_ref()
-        .and_then(|options| options.get(key))
-        .cloned()
-        .ok_or_else(|| {
-            AppError::not_found(format!("provider option not found: {provider_id}.{key}"))
-        })
 }
 
 pub fn create_provider(
@@ -187,6 +192,7 @@ pub fn create_model(
 ) -> Result<ModelDef, AppError> {
     validate_id(provider_id, IdKind::Provider)?;
     validate_id(&model.id, IdKind::Model)?;
+    ensure_custom_provider(opencode_file, provider_id)?;
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     let providers = providers_from_root(&document.raw().clone())?;
     let provider = providers
@@ -219,6 +225,7 @@ pub fn update_model(
             model.id
         )));
     }
+    ensure_custom_provider(opencode_file, &model_ref.provider_id)?;
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     ensure_model_exists(&document.raw(), model_ref)?;
     apply_patches(&mut document, model_field_patches(model_ref, &model))?;
@@ -227,6 +234,7 @@ pub fn update_model(
 }
 
 pub fn delete_model(opencode_file: &Path, model_ref: &ModelRef) -> Result<(), AppError> {
+    ensure_custom_provider(opencode_file, &model_ref.provider_id)?;
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     ensure_model_exists(&document.raw(), model_ref)?;
     let path = model_path_vec(model_ref);

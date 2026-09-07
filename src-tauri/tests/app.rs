@@ -157,7 +157,6 @@ fn provider_crud_round_trip() {
     assert_eq!(error.code, ErrorCode::ValidationFailed);
 
     // Sensitive options are redacted on read and preserved on masked update.
-    // Sensitive options are redacted on read and revealed on demand.
     let mut secret = provider("secretco", &[]);
     let mut options = std::collections::BTreeMap::new();
     options.insert("apiKey".to_owned(), serde_json::json!("super-secret"));
@@ -169,8 +168,6 @@ fn provider_crud_round_trip() {
         redacted.options.as_ref().unwrap()["apiKey"],
         providers::masked_secret_value()
     );
-    let revealed = providers::reveal_sensitive_option(&opencode, "secretco", "apiKey").unwrap();
-    assert_eq!(revealed, serde_json::json!("super-secret"));
 }
 
 #[test]
@@ -335,53 +332,6 @@ fn save_group_validates_model_references_and_names() {
     let second = group(GroupType::OpenCode, "DUP");
     let error = groups::save_group(&home.paths, second).unwrap_err();
     assert_eq!(error.code, ErrorCode::ValidationFailed);
-}
-
-#[test]
-fn replace_model_references_across_files() {
-    let home = temp_home("replace");
-    write_opencode(&home);
-
-    // Seed a slim preset and a selected OMO group referencing the old model.
-    let mut slim_group = group(GroupType::Slim, "preset-a");
-    slim_group.slim_agent_overrides = Some(vec![binding("reviewer", "acme/old")]);
-    let (slim_saved, config) = groups::save_group(&home.paths, slim_group).unwrap();
-    drop(config);
-    groups::switch_group(&home.paths, slim_saved.id).unwrap();
-
-    let replacements = opencode_mom_tauri::replacement::replace(
-        &home.paths,
-        &providers::ModelRef::new("acme", "old").unwrap(),
-        &providers::ModelRef::new("acme", "new").unwrap(),
-    )
-    .unwrap();
-
-    assert!(replacements >= 3);
-    let opencode = fs::read_to_string(home.paths.opencode_file()).unwrap();
-    let slim = fs::read_to_string(home.paths.slim_file()).unwrap();
-    assert!(opencode.contains("acme/new"));
-    assert!(!opencode.contains("acme/old"));
-    assert!(slim.contains("acme/new"));
-
-    let config = load_config(&home);
-    assert!(config.groups.iter().all(|candidate| candidate
-        .slim_agent_overrides
-        .iter()
-        .flatten()
-        .all(|entry| entry.model_ref == "acme/new")));
-}
-
-#[test]
-fn rename_provider_updates_keys_everywhere() {
-    let home = temp_home("rename-provider");
-    write_opencode(&home);
-
-    opencode_mom_tauri::replacement::rename_provider(&home.paths, "acme", "acme2").unwrap();
-
-    let opencode = fs::read_to_string(home.paths.opencode_file()).unwrap();
-    assert!(opencode.contains("\"acme2\""));
-    assert!(!opencode.contains("acme/old"));
-    assert!(opencode.contains("acme2/old"));
 }
 
 #[test]

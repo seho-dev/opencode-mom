@@ -2,11 +2,11 @@ pub mod agents;
 pub mod agents_md;
 pub mod commands;
 pub mod document;
-pub mod dto;
 pub mod error;
 pub mod groups;
 pub mod jsonc;
 pub mod models;
+pub mod opencode_cli;
 pub mod paths;
 pub mod projection;
 pub mod providers;
@@ -34,7 +34,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::load_app_state,
             commands::list_providers,
-            commands::reveal_provider_option,
+            commands::list_custom_providers,
+            commands::opencode_list_models,
+            commands::opencode_resolve_binary,
             commands::create_provider,
             commands::update_provider,
             commands::delete_provider,
@@ -42,9 +44,6 @@ pub fn run() {
             commands::create_model,
             commands::update_model,
             commands::delete_model,
-            commands::replace_model_references,
-            commands::rename_model,
-            commands::rename_provider,
             commands::list_agents,
             commands::get_agent,
             commands::create_agent,
@@ -53,9 +52,7 @@ pub fn run() {
             commands::save_group,
             commands::copy_group,
             commands::delete_group,
-            commands::switch_group,
-            commands::load_config_diagnostics,
-            commands::validate_config
+            commands::switch_group
         ])
         .run(tauri::generate_context!())
         .expect("failed to run omo-switch Tauri shell")

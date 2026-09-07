@@ -23,7 +23,10 @@ impl ConfigPaths {
         let config = env::var_os("OPENCODE_CONFIG").map(PathBuf::from);
         let directory = env::var_os("OPENCODE_CONFIG_DIR").map(PathBuf::from);
         let project_root = env::var_os("OPENCODE_PROJECT_ROOT").map(PathBuf::from);
-        let user_config_dir = dirs::config_dir().unwrap_or_else(|| home.join(".config"));
+        // opencode (and this app) always use `<home>/.config/opencode`, on every
+        // platform. Do NOT use dirs::config_dir() here: on Windows it resolves to
+        // %APPDATA%\Roaming, which is a different, often empty, config file.
+        let user_config_dir = home.join(".config");
         let opencode = config.unwrap_or_else(|| {
             directory
                 .unwrap_or_else(|| user_config_dir.join("opencode"))

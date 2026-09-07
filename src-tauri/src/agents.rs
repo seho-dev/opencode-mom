@@ -82,7 +82,7 @@ pub struct AgentDefinition {
     pub overrides: Vec<AgentFieldOverride>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentMutation {
     #[serde(default)]

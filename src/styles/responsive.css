@@ -1,0 +1,90 @@
+/* Responsive behavior for small screens and reduced-motion preference. */
+@media (max-width: 760px) {
+  .app-shell {
+    display: block;
+  }
+  .sidebar {
+    display: none;
+  }
+  .header {
+    height: 52px;
+    padding: 0 16px;
+  }
+  .header-meta {
+    display: none;
+  }
+  .mobile-menu {
+    display: inline-flex;
+  }
+  .content {
+    padding: 20px 16px;
+  }
+  .page-head {
+    align-items: flex-start;
+    margin-bottom: 20px;
+  }
+  .page-head h1 {
+    font-size: 24px;
+  }
+  .search-toolbar {
+    align-items: stretch;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .search-field {
+    max-width: none;
+    width: 100%;
+  }
+  .form-panel {
+    padding: 16px;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .architecture-grid {
+    grid-template-columns: 1fr;
+  }
+  .field.full {
+    grid-column: auto;
+  }
+  .drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: rgb(0 0 0 / 0.6);
+  }
+  .drawer.open {
+    display: block;
+  }
+  .drawer-panel {
+    width: min(280px, calc(100vw - 40px));
+    height: 100%;
+    background: #121212;
+    border-right: 1px solid var(--border-default);
+    padding: 20px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .drawer-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .data-table {
+    min-width: 760px;
+  }
+  .form-actions {
+    justify-content: stretch;
+  }
+  .form-actions > * {
+    flex: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

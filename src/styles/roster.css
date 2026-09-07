@@ -1,0 +1,78 @@
+/* Roster: architecture grid, cards and roster rows. */
+.architecture-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.architecture-card {
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  background: var(--surface-input);
+  color: var(--text-primary);
+  text-align: left;
+}
+.architecture-card:hover,
+.architecture-card:focus-visible {
+  border-color: var(--accent-primary);
+  outline: none;
+}
+.architecture-card.active {
+  border-color: var(--accent-primary);
+  background: #07343b;
+  color: var(--accent-primary);
+}
+.architecture-card span,
+.architecture-card small {
+  display: block;
+}
+.architecture-card span {
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.architecture-card small {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 15px;
+}
+.roster-list {
+  display: grid;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  background: var(--surface-input);
+}
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+.roster-row:last-child {
+  border-bottom: 0;
+}
+.roster-row:hover,
+.roster-row.active {
+  background: #1a2425;
+}
+.roster-row input {
+  accent-color: var(--accent-primary);
+}
+.roster-row strong,
+.roster-row small {
+  display: block;
+}
+.roster-row strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.roster-row small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+}

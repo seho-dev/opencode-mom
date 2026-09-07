@@ -1,0 +1,60 @@
+/* Design tokens: fonts and CSS custom properties. */
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/fonts/space-grotesk-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/fonts/space-grotesk-semibold.woff2') format('woff2');
+  font-weight: 600 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/jetbrains-mono-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --surface-app: #131313;
+  --surface-panel: #1e1e1e;
+  --surface-input: #121212;
+  --surface-hover: #202829;
+  --surface-active: #07343b;
+  --text-primary: #e8eeee;
+  --text-secondary: #9babab;
+  --text-muted: #657171;
+  --text-on-accent: #071113;
+  --border-default: #3b494c;
+  --border-subtle: #1f1f1f;
+  --focus-ring: #00e5ff;
+  --accent-primary: #00e5ff;
+  --accent-hover: #72f2ff;
+  --status-success: #39ff14;
+  --status-error: #ff5c5c;
+  --radius: 4px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --focus-width: 1px;
+  --focus-offset: 2px;
+  --disabled-opacity: 0.45;
+  --font-primary: 'JetBrains Mono', monospace;
+  --font-heading: 'Space Grotesk', sans-serif;
+  --font-caption-weight: 500;
+  --font-caption-size: 12px;
+  --font-caption-line: 16px;
+  --font-body-size: 13px;
+  --font-body-line: 20px;
+  --control-height-compact: 32px;
+  --control-height-small: 28px;
+  --icon-md: 16px;
+  --icon-sm: 12px;
+  --scrollbar-track: #0e0e0e;
+  --scrollbar-track-raised: #121212;
+  --scrollbar-thumb: #3b494c;
+  --scrollbar-thumb-hover: #00e5ff;
+  --scrollbar-thumb-active: #72f2ff;
+}

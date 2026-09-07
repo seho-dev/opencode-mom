@@ -1,0 +1,75 @@
+/* Feedback: status badges, terminal, state banners and diagnostics. */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 14px;
+}
+.status-badge.success {
+  border-color: var(--status-success);
+  color: var(--status-success);
+}
+.status-badge.neutral {
+  color: var(--text-secondary);
+}
+.status-badge.warning {
+  border-color: var(--accent-hover);
+  color: var(--accent-hover);
+}
+.status-badge.error {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+.terminal {
+  border-left: 2px solid var(--accent-primary);
+  padding: 16px 20px;
+  background: #101717;
+  color: var(--text-secondary);
+  line-height: 24px;
+  max-width: 680px;
+}
+.terminal strong {
+  color: var(--status-success);
+  font-weight: 400;
+}
+.state-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  border: 1px solid var(--border-default);
+  border-left: 2px solid var(--accent-primary);
+  padding: 10px 12px;
+  color: var(--text-secondary);
+}
+.state-banner.error {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+.state-banner.success {
+  border-color: var(--status-success);
+  color: var(--status-success);
+}
+.diagnostics {
+  margin: 0 0 16px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-panel);
+  color: var(--text-secondary);
+}
+.diagnostics summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  color: var(--accent-hover);
+}
+.diagnostics ul {
+  margin: 0;
+  padding: 0 28px 12px;
+  line-height: 20px;
+}

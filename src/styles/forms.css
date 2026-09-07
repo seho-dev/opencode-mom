@@ -1,0 +1,142 @@
+/* Forms: panels, grids, fields, key-value rows and fieldset groups. */
+.form-panel {
+  max-width: 860px;
+  padding: 24px;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 16px;
+}
+.field {
+  display: grid;
+  gap: 8px;
+}
+.field.full {
+  grid-column: 1/-1;
+}
+.field label,
+.group-title {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.key-value-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) 32px;
+  gap: 8px;
+  margin-top: 8px;
+}
+.key-value-row input {
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  background: var(--surface-input);
+  color: var(--text-primary);
+  min-height: 32px;
+  padding: 6px 8px;
+}
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  background: var(--surface-input);
+  color: var(--text-primary);
+  min-height: 36px;
+  padding: 8px 10px;
+}
+.field textarea {
+  min-height: 132px;
+}
+.field select {
+  appearance: auto;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+.group-submit {
+  min-height: 32px;
+  border: 1px solid #00c8df;
+  border-radius: 2px;
+  background: #00c8df;
+  color: #020708;
+  padding: 0 16px;
+  font-family: var(--font-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.group-submit:hover {
+  background: var(--accent-primary);
+}
+.group-submit:disabled {
+  cursor: not-allowed;
+  opacity: var(--disabled-opacity);
+}
+.type-note {
+  grid-column: 1/-1;
+  border: 1px solid var(--border-default);
+  border-left: 2px solid var(--accent-primary);
+  padding: 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 20px;
+}
+.dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dialog-field label {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.dialog-field p {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+.dialog-field .dialog-select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  background: var(--surface-input);
+  color: var(--text-primary);
+  min-height: 32px;
+  padding: 6px 8px;
+  appearance: auto;
+}
+.group-fieldset {
+  grid-column: 1/-1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.group-fieldset legend {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.group-fieldset legend span {
+  margin-left: 8px;
+  color: var(--text-muted);
+}

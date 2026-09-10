@@ -67,8 +67,8 @@
   title="New model"
 />
 <p class="text-xs text-muted-foreground mb-3">
-  Models can only be created under custom providers (those defined in opencode.jsonc). Builtin models are read-only and
-  provided by opencode via CLI.
+  Models can only be created under custom providers (those defined in the opencode config file). Builtin models are
+  read-only and provided by opencode via CLI.
 </p>
 {#if !config.loading && config.providers.length === 0}<div class="state-banner error" role="alert">
     No provider available. Create a provider first.

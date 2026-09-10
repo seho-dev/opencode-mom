@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -6,7 +5,6 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::document::{JsoncDoc, OPENCODE_SCHEMA};
 use crate::error::AppError;
 use crate::paths::ConfigPaths;
 
@@ -258,18 +256,6 @@ fn parse_verbose_output(stdout: &str) -> Result<Vec<(String, OpencodeVerboseMode
     Ok(entries)
 }
 
-fn custom_provider_ids(opencode_file: &Path) -> Result<HashSet<String>, AppError> {
-    let doc = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
-    let raw = doc.raw();
-    let mut set = HashSet::new();
-    if let Some(Value::Object(providers)) = raw.get("provider") {
-        for key in providers.keys() {
-            set.insert(key.clone());
-        }
-    }
-    Ok(set)
-}
-
 /// List models via the local opencode binary, tagging each with builtin vs custom.
 ///
 /// - `provider_filter`: optional provider id to filter (`opencode models <provider> --verbose`)
@@ -282,7 +268,7 @@ pub fn list_models_via_cli(
 
     let verbose_entries = parse_verbose_output(&stdout)?;
 
-    let custom_ids = custom_provider_ids(&paths.opencode_file())?;
+    let custom_ids = crate::providers::custom_provider_ids(&paths.opencode_file())?;
 
     let mut catalog = Vec::with_capacity(verbose_entries.len());
     for (ref_line, model) in verbose_entries {
@@ -328,10 +314,4 @@ pub fn list_models_via_cli(
     }
     catalog.sort_by(|a, b| a.model_ref.cmp(&b.model_ref));
     Ok(catalog)
-}
-
-/// Check whether a provider id is custom (exists as key in opencode.jsonc `provider` object).
-pub fn is_custom_provider(opencode_file: &Path, provider_id: &str) -> Result<bool, AppError> {
-    let ids = custom_provider_ids(opencode_file)?;
-    Ok(ids.contains(provider_id))
 }

@@ -27,11 +27,7 @@ impl ConfigPaths {
         // platform. Do NOT use dirs::config_dir() here: on Windows it resolves to
         // %APPDATA%\Roaming, which is a different, often empty, config file.
         let user_config_dir = home.join(".config");
-        let opencode = config.unwrap_or_else(|| {
-            directory
-                .unwrap_or_else(|| user_config_dir.join("opencode"))
-                .join("opencode.jsonc")
-        });
+        let opencode = resolve_opencode_file(config, directory, &user_config_dir);
         Ok(Self {
             home,
             user_config_dir,
@@ -46,11 +42,7 @@ impl ConfigPaths {
 
     pub fn with_parts(home: PathBuf, config: Option<PathBuf>, directory: Option<PathBuf>) -> Self {
         let user_config_dir = home.join(".config");
-        let opencode = config.unwrap_or_else(|| {
-            directory
-                .unwrap_or_else(|| user_config_dir.join("opencode"))
-                .join("opencode.jsonc")
-        });
+        let opencode = resolve_opencode_file(config, directory, &user_config_dir);
         Self {
             home,
             user_config_dir,
@@ -94,5 +86,53 @@ impl ConfigPaths {
         self.project_root
             .as_ref()
             .map(|root| root.join(".opencode").join("agents"))
+    }
+}
+
+/// Resolve the opencode config file the CLI actually uses: explicit `OPENCODE_CONFIG`
+/// wins, otherwise `opencode.jsonc` when present, falling back to `opencode.json`
+/// (opencode reads both; a user may only have `.json`).
+fn resolve_opencode_file(
+    config: Option<PathBuf>,
+    directory: Option<PathBuf>,
+    user_config_dir: &Path,
+) -> PathBuf {
+    if let Some(config) = config {
+        return config;
+    }
+    let dir = directory.unwrap_or_else(|| user_config_dir.join("opencode"));
+    let jsonc = dir.join("opencode.jsonc");
+    if jsonc.exists() {
+        jsonc
+    } else {
+        dir.join("opencode.json")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opencode_file_prefers_jsonc_then_falls_back_to_json() {
+        let tmp = std::env::temp_dir().join(format!("opencode-mom-paths-{}", std::process::id()));
+        let dir = tmp.join(".config").join("opencode");
+        std::fs::create_dir_all(&dir).unwrap();
+        let paths = || ConfigPaths::for_home(&tmp);
+        // No file at all -> fall back to .json (opencode reads it too).
+        assert_eq!(paths().opencode_file(), dir.join("opencode.json"));
+        // Only opencode.json exists -> use it (the bug this guards against).
+        std::fs::write(dir.join("opencode.json"), "{}").unwrap();
+        assert_eq!(paths().opencode_file(), dir.join("opencode.json"));
+        // Both exist -> .jsonc wins (opencode's primary file).
+        std::fs::write(dir.join("opencode.jsonc"), "{}").unwrap();
+        assert_eq!(paths().opencode_file(), dir.join("opencode.jsonc"));
+        // Explicit OPENCODE_CONFIG always wins.
+        let explicit = tmp.join("custom.json");
+        assert_eq!(
+            ConfigPaths::with_parts(tmp.clone(), Some(explicit.clone()), None).opencode_file(),
+            explicit
+        );
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

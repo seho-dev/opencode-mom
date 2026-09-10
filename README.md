@@ -18,7 +18,7 @@ The active application is built with Tauri 2. The Svelte 5 and TypeScript fronte
 - Platform prerequisites required by Tauri 2 for Windows or macOS desktop builds.
 - Oh My OpenAgent config location: `~/.omo/omo.jsonc`.
 - Slim config location: `~/.config/opencode/oh-my-opencode-slim.jsonc`.
-- OpenCode config location: `~/.config/opencode/opencode.jsonc` (`OPENCODE_CONFIG_DIR` can override).
+- OpenCode config location: `~/.config/opencode/opencode.jsonc`, falling back to `opencode.json` when only the latter exists (`OPENCODE_CONFIG_DIR` can override).
 
 ## Download
 
@@ -49,11 +49,11 @@ opencode-mom stores its own groups and selection state in one config file, separ
 | `~/.config/opencode-mom/config.json`           | opencode-mom group definitions, selection, and write metadata.    |
 | `~/.omo/omo.jsonc`                             | Rewritten when switching groups or saving the active group.       |
 | `~/.config/opencode/oh-my-opencode-slim.jsonc` | Rewritten when switching Slim-type groups.                        |
-| `~/.config/opencode/opencode.jsonc`            | Patched only when effective OpenCode agent model overrides exist. |
+| `~/.config/opencode/opencode.jsonc` (or `opencode.json`) | Patched only when effective OpenCode agent model overrides exist. |
 
 Before rewriting target configs, opencode-mom creates backups under its config directory. Only `config.json` is read or written for opencode-mom data; legacy split files are ignored and are not migrated.
 
-When switching groups, opencode-mom rewrites the Oh My OpenAgent projection. Saving the active group reapplies that projection immediately. OpenCode sync is skipped when no effective OpenCode overrides exist, so a missing `opencode.jsonc` only blocks operations that actually require OpenCode changes.
+When switching groups, opencode-mom rewrites the Oh My OpenAgent projection. Saving the active group reapplies that projection immediately. OpenCode sync is skipped when no effective OpenCode overrides exist, so a missing OpenCode config file only blocks operations that actually require OpenCode changes.
 
 For OpenCode, opencode-mom patches only `agent.<name>.model`. Existing fields inside agent objects and unrelated top-level keys such as `$schema`, `plugin`, and `provider` are preserved.
 

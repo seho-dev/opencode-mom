@@ -44,11 +44,11 @@ No signing or notarization is performed by the current release workflow.
 
 opencode-mom stores its own groups and selection state in one config file, separately from target application configs.
 
-| File                                           | Purpose                                                           |
-| ---------------------------------------------- | ----------------------------------------------------------------- |
-| `~/.config/opencode-mom/config.json`           | opencode-mom group definitions, selection, and write metadata.    |
-| `~/.omo/omo.jsonc`                             | Rewritten when switching groups or saving the active group.       |
-| `~/.config/opencode/oh-my-opencode-slim.jsonc` | Rewritten when switching Slim-type groups.                        |
+| File                                                     | Purpose                                                           |
+| -------------------------------------------------------- | ----------------------------------------------------------------- |
+| `~/.config/opencode-mom/config.json`                     | opencode-mom group definitions, selection, and write metadata.    |
+| `~/.omo/omo.jsonc`                                       | Rewritten when switching groups or saving the active group.       |
+| `~/.config/opencode/oh-my-opencode-slim.jsonc`           | Rewritten when switching Slim-type groups.                        |
 | `~/.config/opencode/opencode.jsonc` (or `opencode.json`) | Patched only when effective OpenCode agent model overrides exist. |
 
 Before rewriting target configs, opencode-mom creates backups under its config directory. Only `config.json` is read or written for opencode-mom data; legacy split files are ignored and are not migrated.

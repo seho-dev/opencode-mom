@@ -255,7 +255,7 @@ fn validate_group_drafts(
         })?;
         let exists = providers
             .iter()
-            .find(|provider| provider.id == model_ref.provider_id)
+            .find(|provider| provider.name == model_ref.provider_id)
             .is_some_and(|provider| provider.models.contains_key(&model_ref.model_id));
         if !exists {
             return Err(AppError::validation(format!(

@@ -1,71 +1,52 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { Plus, Trash2 } from '@lucide/svelte';
+  import { Eye, EyeOff } from '@lucide/svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import FormActions from '$lib/components/app/FormActions.svelte';
+  import NpmAdapterInput from '$lib/components/app/NpmAdapterInput.svelte';
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import type { ProviderDef } from '$lib/features/config/types.js';
   import { toast } from '$lib/components/app/toast.svelte.js';
 
   const config = getConfig();
-  const source = $derived(config.providers.find((provider) => provider.id === page.params.id));
-  let name = $state('');
-  let api = $state('');
+  const source = $derived(config.providers.find((provider) => provider.name === page.params.id));
   let npm = $state('');
-  let env = $state('');
-  let whitelist = $state('');
-  let blacklist = $state('');
-  let options = $state<{ key: string; value: string }[]>([]);
-  let rawOptions = $state('{}');
+  let baseURL = $state('');
+  let apiKey = $state('');
+  let headers = $state('');
   let loaded = $state('');
-
-  const stringify = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value));
+  let apiKeyVisible = $state(false);
 
   $effect(() => {
-    if (source && loaded !== source.id) {
-      loaded = source.id;
-      name = source.name ?? '';
-      api = source.api ?? '';
+    if (source && loaded !== source.name) {
+      loaded = source.name;
       npm = source.npm ?? '';
-      env = (source.env ?? []).join('\n');
-      whitelist = (source.whitelist ?? []).join('\n');
-      blacklist = (source.blacklist ?? []).join('\n');
-      options = Object.entries(source.options ?? {}).map(([key, value]) => ({ key, value: stringify(value) }));
-      rawOptions = JSON.stringify(source.options ?? {}, null, 2);
+      baseURL = source.options?.baseURL ?? '';
+      apiKey = source.options?.apiKey ?? '';
+      headers = source.options?.headers ? JSON.stringify(source.options.headers, null, 2) : '';
     }
   });
 
-  const lines = (value: string) =>
-    value
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-  function addOption() {
-    options = [...options, { key: '', value: '' }];
-  }
-  function removeOption(index: number) {
-    options = options.filter((_, i) => i !== index);
-  }
-  function updateOption(index: number, key: 'key' | 'value', value: string) {
-    options = options.map((entry, i) => (i === index ? { ...entry, [key]: value } : entry));
-  }
+  const parseHeaders = (): Record<string, string> | undefined => {
+    if (!headers.trim()) return undefined;
+    const parsed: unknown = JSON.parse(headers);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object')
+      throw new Error('headers must be a JSON object');
+    return parsed as Record<string, string>;
+  };
   async function submit() {
     if (!source) return;
     try {
-      const raw = JSON.parse(rawOptions);
-      if (!raw || Array.isArray(raw) || typeof raw !== 'object')
-        throw new Error('Provider options must be a JSON object');
       await config.updateProvider({
         ...source,
-        name: name || undefined,
-        api: api || undefined,
-        npm: npm || undefined,
-        env: lines(env),
-        whitelist: lines(whitelist),
-        blacklist: lines(blacklist),
-        options: raw as Record<string, unknown>,
+        npm: npm.trim() || undefined,
+        options: {
+          apiKey,
+          baseURL: baseURL || undefined,
+          headers: parseHeaders(),
+        },
       } as ProviderDef);
       goto('/providers');
     } catch (error) {
@@ -89,68 +70,43 @@
   >
     <div class="form-grid">
       <div class="field">
-        <label for="provider-id">Provider ID</label>
-        <input id="provider-id" value={source.id} disabled />
+        <label for="provider-name">Name</label>
+        <input id="provider-name" value={source.name} disabled />
       </div>
       <div class="field">
-        <label for="provider-name">Display name</label>
-        <input id="provider-name" bind:value={name} />
-      </div>
-      <div class="field full">
-        <label for="provider-api">API URL</label>
-        <input id="provider-api" bind:value={api} />
-      </div>
-      <div class="field full">
         <label for="provider-npm">NPM adapter</label>
-        <input id="provider-npm" bind:value={npm} />
-      </div>
-      <div class="field">
-        <label for="provider-env">Environment variables</label>
-        <textarea id="provider-env" bind:value={env}></textarea>
-      </div>
-      <div class="field">
-        <label for="provider-whitelist">Model whitelist</label>
-        <textarea id="provider-whitelist" bind:value={whitelist}></textarea>
+        <NpmAdapterInput bind:value={npm} />
       </div>
       <div class="field full">
-        <label for="provider-blacklist">Model blacklist</label>
-        <textarea id="provider-blacklist" bind:value={blacklist}></textarea>
+        <label for="provider-base-url">Base URL</label>
+        <input id="provider-base-url" bind:value={baseURL} placeholder="https://api.example.com/v1" />
       </div>
-      <fieldset class="field full">
-        <legend class="field-label-row">
-          <span>Provider options</span>
-          <Button type="button" size="sm" variant="outline" onclick={addOption}>
-            <Plus size={13} /> Add option
+      <div class="field full">
+        <label for="provider-api-key">API key</label>
+        <div class="flex gap-2">
+          <input
+            id="provider-api-key"
+            class="min-w-0 flex-1"
+            type={apiKeyVisible ? 'text' : 'password'}
+            bind:value={apiKey}
+            autocomplete="off"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={apiKeyVisible ? 'Hide API key' : 'Show API key'}
+            onclick={() => (apiKeyVisible = !apiKeyVisible)}
+          >
+            {#if apiKeyVisible}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
           </Button>
-        </legend>
-        {#each options as option, index}
-          <div class="key-value-row">
-            <input
-              aria-label={`Option key ${index + 1}`}
-              value={option.key}
-              oninput={(event) => updateOption(index, 'key', event.currentTarget.value)}
-            />
-            <input
-              aria-label={`Option value ${index + 1}`}
-              value={option.value}
-              oninput={(event) => updateOption(index, 'value', event.currentTarget.value)}
-            />
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Remove option"
-              onclick={() => removeOption(index)}
-            >
-              <Trash2 size={14} />
-            </Button>
-          </div>
-        {/each}
-      </fieldset>
+        </div>
+        <small class="muted">Leave empty to keep the currently configured key.</small>
+      </div>
       <div class="field full">
-        <label for="provider-options-json">Options JSON (advanced)</label>
-        <textarea id="provider-options-json" bind:value={rawOptions}></textarea>
-        <small class="muted">This JSON is the final saved value; use it to edit nested options.</small>
+        <label for="provider-headers">Headers</label>
+        <textarea id="provider-headers" bind:value={headers} placeholder={`{ "Authorization": "..." }`}></textarea>
+        <small class="muted">Optional JSON object sent with every request.</small>
       </div>
     </div>
     <FormActions>

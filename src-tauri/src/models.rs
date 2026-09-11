@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -11,15 +11,21 @@ use crate::error::AppError;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProviderOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    #[serde(rename = "baseURL", skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderDef {
-    pub id: String,
-    pub name: Option<String>,
+    pub name: String,
     pub npm: Option<String>,
-    pub api: Option<String>,
-    pub env: Option<Vec<String>>,
-    pub whitelist: Option<Vec<String>>,
-    pub blacklist: Option<Vec<String>>,
-    pub options: Option<BTreeMap<String, Value>>,
+    pub options: Option<ProviderOptions>,
     #[serde(default)]
     pub models: BTreeMap<String, ModelDef>,
 }

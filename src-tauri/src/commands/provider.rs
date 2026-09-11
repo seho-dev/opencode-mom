@@ -14,16 +14,16 @@ fn paths(state: &State<'_, ConfigPaths>) -> ConfigPaths {
 
 #[tauri::command]
 pub fn list_providers(state: State<'_, ConfigPaths>) -> CommandResult<Vec<ProviderDef>> {
-    refs::list_providers_redacted(&paths(&state))
+    providers::list_providers(&paths(&state).opencode_file())
 }
 
 #[tauri::command]
 pub fn list_custom_providers(state: State<'_, ConfigPaths>) -> CommandResult<Vec<ProviderDef>> {
-    let all = refs::list_providers_redacted(&paths(&state))?;
+    let all = providers::list_providers(&paths(&state).opencode_file())?;
     let custom_ids = providers::custom_provider_ids(&paths(&state).opencode_file())?;
     Ok(all
         .into_iter()
-        .filter(|p| custom_ids.contains(&p.id))
+        .filter(|p| custom_ids.contains(&p.name))
         .collect())
 }
 
@@ -33,7 +33,6 @@ pub fn create_provider(
     provider: ProviderDef,
 ) -> CommandResult<ProviderDef> {
     providers::create_provider(&paths(&state).opencode_file(), provider)
-        .map(providers::redact_provider_secrets)
 }
 
 #[tauri::command]
@@ -42,7 +41,6 @@ pub fn update_provider(
     provider: ProviderDef,
 ) -> CommandResult<ProviderDef> {
     providers::update_provider(&paths(&state).opencode_file(), provider)
-        .map(providers::redact_provider_secrets)
 }
 
 #[tauri::command]

@@ -255,8 +255,8 @@ export function createConfigStore(adapter: CommandAdapter) {
       return providers.flatMap((provider) =>
         Object.values(provider.models).map((model) => ({
           ...model,
-          ref: `${provider.id}/${model.id}` as ModelRef,
-          providerId: provider.id,
+          ref: `${provider.name}/${model.id}` as ModelRef,
+          providerId: provider.name,
         })),
       );
     },

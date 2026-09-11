@@ -83,7 +83,7 @@
       <div class="field">
         <label for="provider">Provider</label><select id="provider" bind:value={providerId} required
           ><option value="" disabled>Select a provider</option>{#each config.providers as provider}<option
-              value={provider.id}>{provider.id}</option
+              value={provider.name}>{provider.name}</option
             >{/each}</select
         >
       </div>

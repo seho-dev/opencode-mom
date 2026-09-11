@@ -17,8 +17,6 @@ pub struct OpencodeVerboseModel {
     #[serde(default)]
     pub name: String,
     #[serde(default)]
-    pub family: String,
-    #[serde(default)]
     pub api: Option<Value>,
     #[serde(default)]
     pub status: Option<String>,
@@ -38,7 +36,7 @@ pub struct OpencodeVerboseModel {
     pub variants: Option<Value>,
 }
 
-/// Frontend-facing catalog entry. `source` mirrors `isCustom` for convenience.
+/// Frontend-facing catalog entry.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCatalogEntry {
@@ -47,8 +45,6 @@ pub struct ModelCatalogEntry {
     #[serde(rename = "ref")]
     pub model_ref: String,
     pub name: String,
-    pub family: String,
-    pub source: String, // "builtin" | "custom"
     pub is_custom: bool,
     pub status: Option<String>,
     pub cost: Option<Value>,
@@ -289,7 +285,6 @@ pub fn list_models_via_cli(
             format!("{}/{}", provider_id, model_id)
         };
         let is_custom = custom_ids.contains(&provider_id);
-        let source = if is_custom { "custom" } else { "builtin" }.to_owned();
         let name = if !model.name.is_empty() {
             model.name.clone()
         } else {
@@ -300,8 +295,6 @@ pub fn list_models_via_cli(
             model_id: model_id.clone(),
             model_ref,
             name,
-            family: model.family.clone(),
-            source,
             is_custom,
             status: model.status.clone(),
             cost: model.cost.clone(),

@@ -6,7 +6,7 @@ use crate::commands::agent::AgentDefinitionDto;
 use crate::error::AppError;
 use crate::models;
 use crate::paths::ConfigPaths;
-use crate::refs;
+use crate::providers;
 
 type CommandResult<T> = Result<T, AppError>;
 
@@ -20,7 +20,7 @@ pub fn load_app_state(state: State<'_, ConfigPaths>) -> CommandResult<AppStateRe
     let config = models::load_config(&paths.config_file())?;
     config.validate()?;
     Ok(AppStateResponse {
-        providers: refs::list_providers_redacted(&paths)?,
+        providers: providers::list_providers(&paths.opencode_file())?,
         agents: agents::list(&paths)?
             .into_iter()
             .map(Into::into)

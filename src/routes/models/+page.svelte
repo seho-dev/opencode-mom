@@ -91,24 +91,16 @@
   >
 </div>
 <DataTable label="Model directory" total={visibleModels.length} bind:page {pageSize}
-  ><thead
-    ><tr
-      ><th>Full reference</th><th>Provider</th><th>Name</th><th>Family</th><th>Context</th><th>Source</th><th
-        class="th-actions">Actions</th
-      ></tr
-    ></thead
-  ><tbody
-    >{#if config.catalogLoading}<tr><td colspan="7" class="empty-table-row">Loading models from opencode CLI...</td></tr
+  ><thead><tr><th>Provider</th><th>Name</th><th>Context</th><th class="th-actions">Actions</th></tr></thead><tbody
+    >{#if config.catalogLoading}<tr><td colspan="4" class="empty-table-row">Loading models from opencode CLI...</td></tr
       >{:else if !visibleModels.length}<EmptyTableRow
-        colspan={7}
+        colspan={4}
         message={activeTab === 'custom'
           ? 'No custom models. Create a provider and add models.'
           : 'No builtin models found.'}
       />{:else}{#each pagedModels as model}<tr
-          ><td class="model-name">{model.ref}</td><td>{model.providerId}</td><td>{model.name ?? 'unnamed'}</td><td
-            >{model.family ?? '-'}</td
-          ><td>{(model.limit as { context?: number })?.context ?? 'unset'}</td><td
-            >{model.isCustom ? 'custom' : 'builtin'}</td
+          ><td>{model.providerId}</td><td>{model.name ?? 'unnamed'}</td><td
+            >{(model.limit as { context?: number })?.context ?? 'unset'}</td
           ><td class="row-actions"
             >{#if model.isCustom}<Button
                 href={`/models/${encodeURIComponent(model.ref)}/edit`}

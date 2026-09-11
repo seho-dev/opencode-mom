@@ -3,15 +3,15 @@ export type GroupType = 'opencode' | 'slim' | 'oh-my-openagent';
 export type AgentSource = 'inline' | 'markdown' | 'both';
 export type AgentStorage = 'inline' | 'global_markdown' | 'project_markdown';
 
+export interface ProviderOptions {
+  apiKey?: string;
+  baseURL?: string;
+  headers?: Record<string, string>;
+}
 export interface ProviderDef {
-  id: string;
-  name?: string;
+  name: string;
   npm?: string;
-  api?: string;
-  env?: string[];
-  whitelist?: string[];
-  blacklist?: string[];
-  options?: Record<string, unknown>;
+  options?: ProviderOptions;
   models: Record<string, ModelDef>;
 }
 export interface ModelDef {
@@ -83,14 +83,11 @@ export interface AppState {
   groups: Group[];
   diagnostics?: string[];
 }
-export type ModelSource = 'builtin' | 'custom';
 export interface ModelCatalogEntry {
   providerId: string;
   modelId: string;
   ref: ModelRef;
   name: string;
-  family: string;
-  source: ModelSource;
   isCustom: boolean;
   status?: string;
   cost?: unknown;

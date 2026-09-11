@@ -7,7 +7,7 @@ use opencode_mom_tauri::error::ErrorCode;
 use opencode_mom_tauri::groups;
 use opencode_mom_tauri::models::{
     AgentModelBinding, AppConfig, AppSelectionState, GroupType, ModelDef, ModelGroup,
-    OmoCategoryMapping, ProviderDef,
+    OmoCategoryMapping, ProviderDef, ProviderOptions,
 };
 use opencode_mom_tauri::paths::ConfigPaths;
 use opencode_mom_tauri::providers;
@@ -38,13 +38,8 @@ fn temp_home(name: &str) -> TestHome {
 
 fn provider(id: &str, models: &[&str]) -> ProviderDef {
     ProviderDef {
-        id: id.to_owned(),
-        name: Some(id.to_owned()),
-        npm: None,
-        api: None,
-        env: None,
-        whitelist: None,
-        blacklist: None,
+        name: id.to_owned(),
+        npm: Some("@ai-sdk/openai-compatible".to_owned()),
         options: None,
         models: models
             .iter()
@@ -118,7 +113,7 @@ fn provider_crud_round_trip() {
 
     let created =
         providers::create_provider(&opencode, provider("acme", &["fast", "slow"])).unwrap();
-    assert_eq!(created.id, "acme");
+    assert_eq!(created.name, "acme");
     let listed = providers::list_providers(&opencode).unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].models.len(), 2);
@@ -156,17 +151,34 @@ fn provider_crud_round_trip() {
     let error = providers::delete_provider(&opencode, "acme").unwrap_err();
     assert_eq!(error.code, ErrorCode::ValidationFailed);
 
-    // Sensitive options are redacted on read and preserved on masked update.
+    // apiKey round-trips across IPC as-is (no redaction).
     let mut secret = provider("secretco", &[]);
-    let mut options = std::collections::BTreeMap::new();
-    options.insert("apiKey".to_owned(), serde_json::json!("super-secret"));
-    secret.options = Some(options);
+    secret.options = Some(ProviderOptions {
+        api_key: Some("super-secret".to_owned()),
+        base_url: None,
+        headers: None,
+    });
     providers::create_provider(&opencode, secret).unwrap();
-    let redacted =
-        providers::redact_provider_secrets(providers::get_provider(&opencode, "secretco").unwrap());
     assert_eq!(
-        redacted.options.as_ref().unwrap()["apiKey"],
-        providers::masked_secret_value()
+        providers::get_provider(&opencode, "secretco")
+            .unwrap()
+            .options
+            .unwrap()
+            .api_key
+            .as_deref(),
+        Some("super-secret")
+    );
+    let mut rotated = providers::get_provider(&opencode, "secretco").unwrap();
+    rotated.options.as_mut().unwrap().api_key = Some("new-secret".to_owned());
+    providers::update_provider(&opencode, rotated).unwrap();
+    assert_eq!(
+        providers::get_provider(&opencode, "secretco")
+            .unwrap()
+            .options
+            .unwrap()
+            .api_key
+            .as_deref(),
+        Some("new-secret")
     );
 }
 

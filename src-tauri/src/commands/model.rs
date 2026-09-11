@@ -14,7 +14,7 @@ fn paths(state: &State<'_, ConfigPaths>) -> ConfigPaths {
 
 #[tauri::command]
 pub fn list_models(state: State<'_, ConfigPaths>) -> CommandResult<Vec<ProviderDef>> {
-    refs::list_providers_redacted(&paths(&state))
+    providers::list_providers(&paths(&state).opencode_file())
 }
 
 #[tauri::command]

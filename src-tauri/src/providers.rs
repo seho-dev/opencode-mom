@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 use crate::document::{JsoncDoc, OPENCODE_SCHEMA};
 use crate::error::AppError;
-use crate::models::{ModelDef, ProviderDef};
+use crate::models::{ModelDef, ProviderDef, ProviderOptions};
 
 /// A stable OpenCode model reference. Only `provider/model` is valid.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -54,38 +54,6 @@ fn invalid_model_ref(value: &str) -> AppError {
     AppError::validation(format!("invalid model reference: {value}"))
 }
 
-/// The public read projection for an option containing a credential. The value is
-/// deliberately structural rather than a magic string, so a user cannot accidentally submit
-/// it as a secret.
-pub fn masked_secret_value() -> Value {
-    Value::Object(Map::from_iter([(
-        "configured".to_owned(),
-        Value::Bool(true),
-    )]))
-}
-
-pub fn redact_provider_secrets(mut provider: ProviderDef) -> ProviderDef {
-    if let Some(options) = provider.options.as_mut() {
-        for (key, value) in options {
-            if is_sensitive_option_key(key) {
-                *value = masked_secret_value();
-            }
-        }
-    }
-    provider
-}
-
-pub fn is_sensitive_option_key(key: &str) -> bool {
-    let key = key.to_ascii_lowercase();
-    ["apikey", "key", "token", "secret", "password"]
-        .into_iter()
-        .any(|needle| key.contains(needle))
-}
-
-fn is_masked_secret_value(value: &Value) -> bool {
-    value == &masked_secret_value()
-}
-
 pub fn list_providers(opencode_file: &Path) -> Result<Vec<ProviderDef>, AppError> {
     providers_from_root(
         &JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?
@@ -125,7 +93,7 @@ pub fn get_provider(opencode_file: &Path, provider_id: &str) -> Result<ProviderD
     validate_id(provider_id, IdKind::Provider)?;
     list_providers(opencode_file)?
         .into_iter()
-        .find(|provider| provider.id == provider_id)
+        .find(|provider| provider.name == provider_id)
         .ok_or_else(|| AppError::not_found(format!("provider not found: {provider_id}")))
 }
 
@@ -134,38 +102,46 @@ pub fn create_provider(
     provider: ProviderDef,
 ) -> Result<ProviderDef, AppError> {
     validate_provider(&provider)?;
-    reject_masked_secrets(&provider)?;
+    if provider
+        .npm
+        .as_deref()
+        .map_or(true, |npm| npm.trim().is_empty())
+    {
+        return Err(AppError::validation("provider npm adapter is required"));
+    }
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     let providers = providers_from_root(&document.raw().clone())?;
-    if providers.iter().any(|item| item.id == provider.id) {
+    if providers.iter().any(|item| item.name == provider.name) {
         return Err(AppError::validation(format!(
             "provider already exists: {}",
-            provider.id
+            provider.name
         )));
     }
-    document.patch(&["provider", &provider.id], Some(provider_value(&provider)))?;
+    document.patch(
+        &["provider", &provider.name],
+        Some(provider_value(&provider)),
+    )?;
     document.save(opencode_file)?;
     Ok(provider)
 }
 
 pub fn update_provider(
     opencode_file: &Path,
-    mut provider: ProviderDef,
+    provider: ProviderDef,
 ) -> Result<ProviderDef, AppError> {
     validate_provider(&provider)?;
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     let providers = providers_from_root(&document.raw().clone())?;
     let current = providers
         .iter()
-        .find(|item| item.id == provider.id)
-        .ok_or_else(|| AppError::not_found(format!("provider not found: {}", provider.id)))?;
+        .find(|item| item.name == provider.name)
+        .ok_or_else(|| AppError::not_found(format!("provider not found: {}", provider.name)))?;
     if current.models != provider.models {
         return Err(AppError::validation(format!(
             "provider updates cannot change models directly: provider.{}.models",
-            provider.id
+            provider.name
         )));
     }
-    preserve_masked_secrets(&mut provider, current)?;
     apply_patches(&mut document, provider_field_patches(&provider))?;
     document.save(opencode_file)?;
     Ok(provider)
@@ -197,7 +173,7 @@ pub fn create_model(
     let providers = providers_from_root(&document.raw().clone())?;
     let provider = providers
         .iter()
-        .find(|item| item.id == provider_id)
+        .find(|item| item.name == provider_id)
         .ok_or_else(|| AppError::not_found(format!("provider not found: {provider_id}")))?;
     if provider.models.contains_key(&model.id) {
         return Err(AppError::validation(format!(
@@ -255,52 +231,11 @@ fn apply_patches(
     Ok(())
 }
 
-fn preserve_masked_secrets(
-    provider: &mut ProviderDef,
-    current: &ProviderDef,
-) -> Result<(), AppError> {
-    let Some(options) = provider.options.as_mut() else {
-        return Ok(());
-    };
-    let existing = current.options.as_ref();
-    for (key, value) in options {
-        if !is_sensitive_option_key(key) || !is_masked_secret_value(value) {
-            continue;
-        }
-        let Some(original) = existing.and_then(|options| options.get(key)) else {
-            return Err(AppError::validation(format!(
-                "masked secret value is not valid for option: {key}"
-            )));
-        };
-        *value = original.clone();
-    }
-    Ok(())
-}
-
-fn reject_masked_secrets(provider: &ProviderDef) -> Result<(), AppError> {
-    if let Some(options) = &provider.options {
-        if let Some((key, _)) = options
-            .iter()
-            .find(|(key, value)| is_sensitive_option_key(key) && is_masked_secret_value(value))
-        {
-            return Err(AppError::validation(format!(
-                "masked secret value is not valid for option: {key}"
-            )));
-        }
-    }
-    Ok(())
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProviderPayload {
-    name: Option<String>,
     npm: Option<String>,
-    api: Option<String>,
-    env: Option<Vec<String>>,
-    whitelist: Option<Vec<String>>,
-    blacklist: Option<Vec<String>>,
-    options: Option<BTreeMap<String, Value>>,
+    options: Option<ProviderOptions>,
     #[serde(default)]
     models: BTreeMap<String, Value>,
 }
@@ -317,9 +252,9 @@ fn providers_from_root(root: &Map<String, Value>) -> Result<Vec<ProviderDef>, Ap
     };
     let mut parsed = providers
         .iter()
-        .map(|(id, value)| provider_from_value(id, value))
+        .map(|(name, value)| provider_from_value(name, value))
         .collect::<Result<Vec<_>, _>>()?;
-    parsed.sort_by(|left, right| left.id.cmp(&right.id));
+    parsed.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(parsed)
 }
 
@@ -334,10 +269,12 @@ pub fn provider_from_root_value(
         .and_then(|value| provider_from_value(provider_id, value))
 }
 
-fn provider_from_value(id: &str, value: &Value) -> Result<ProviderDef, AppError> {
-    validate_id(id, IdKind::Provider)?;
+fn provider_from_value(name: &str, value: &Value) -> Result<ProviderDef, AppError> {
+    validate_id(name, IdKind::Provider)?;
     let payload: ProviderPayload = serde_json::from_value(value.clone()).map_err(|_| {
-        AppError::validation(format!("invalid OpenCode provider shape at: provider.{id}"))
+        AppError::validation(format!(
+            "invalid OpenCode provider shape at: provider.{name}"
+        ))
     })?;
     let mut models = BTreeMap::new();
     for (model_id, model_value) in payload.models {
@@ -345,13 +282,8 @@ fn provider_from_value(id: &str, value: &Value) -> Result<ProviderDef, AppError>
         models.insert(model_id, model);
     }
     Ok(ProviderDef {
-        id: id.to_owned(),
-        name: payload.name,
+        name: name.to_owned(),
         npm: payload.npm,
-        api: payload.api,
-        env: payload.env,
-        whitelist: payload.whitelist,
-        blacklist: payload.blacklist,
         options: payload.options,
         models,
     })
@@ -407,20 +339,7 @@ pub fn model_from_value(id: &str, value: Value) -> Result<ModelDef, AppError> {
 
 fn provider_value(provider: &ProviderDef) -> Value {
     let mut value = Map::new();
-    put_optional(&mut value, "name", provider.name.clone().map(Value::String));
     put_optional(&mut value, "npm", provider.npm.clone().map(Value::String));
-    put_optional(&mut value, "api", provider.api.clone().map(Value::String));
-    put_optional(&mut value, "env", provider.env.clone().and_then(to_value));
-    put_optional(
-        &mut value,
-        "whitelist",
-        provider.whitelist.clone().and_then(to_value),
-    );
-    put_optional(
-        &mut value,
-        "blacklist",
-        provider.blacklist.clone().and_then(to_value),
-    );
     put_optional(
         &mut value,
         "options",
@@ -495,14 +414,9 @@ pub fn model_value(model: &ModelDef) -> Value {
 }
 
 fn provider_field_patches(provider: &ProviderDef) -> Vec<(Vec<String>, Option<Value>)> {
-    let base = vec!["provider".to_owned(), provider.id.clone()];
+    let base = vec!["provider".to_owned(), provider.name.clone()];
     [
-        ("name", provider.name.clone().map(Value::String)),
         ("npm", provider.npm.clone().map(Value::String)),
-        ("api", provider.api.clone().map(Value::String)),
-        ("env", provider.env.clone().and_then(to_value)),
-        ("whitelist", provider.whitelist.clone().and_then(to_value)),
-        ("blacklist", provider.blacklist.clone().and_then(to_value)),
         ("options", provider.options.clone().and_then(to_value)),
     ]
     .into_iter()
@@ -582,7 +496,7 @@ fn to_value<T: serde::Serialize>(value: T) -> Option<Value> {
 }
 
 fn validate_provider(provider: &ProviderDef) -> Result<(), AppError> {
-    validate_id(&provider.id, IdKind::Provider)?;
+    validate_id(&provider.name, IdKind::Provider)?;
     for (id, model) in &provider.models {
         if id != &model.id {
             return Err(AppError::validation(format!(

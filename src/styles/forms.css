@@ -140,3 +140,7 @@
   margin-left: 8px;
   color: var(--text-muted);
 }
+.field select option {
+  background: var(--surface-input);
+  color: var(--text-primary);
+}

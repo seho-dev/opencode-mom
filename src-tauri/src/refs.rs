@@ -4,7 +4,7 @@ use crate::agents::{self, AgentReference, AgentReferenceIndex, AgentReferenceKin
 use crate::error::AppError;
 use crate::models::AppConfig;
 use crate::paths::ConfigPaths;
-use crate::providers::{list_providers, ModelRef};
+use crate::providers::ModelRef;
 
 /// Where a model reference was found. Displayed to users when deletions are blocked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -309,14 +309,4 @@ pub fn model_is_referenced(
     model_ref: &ModelRef,
 ) -> Result<Vec<ModelReference>, AppError> {
     Ok(collect_model_references(paths)?.for_model(model_ref))
-}
-
-/// Lists providers without exposing stored secrets.
-pub fn list_providers_redacted(
-    paths: &ConfigPaths,
-) -> Result<Vec<crate::models::ProviderDef>, AppError> {
-    Ok(list_providers(&paths.opencode_file())?
-        .into_iter()
-        .map(crate::providers::redact_provider_secrets)
-        .collect())
 }

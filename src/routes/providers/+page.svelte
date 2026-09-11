@@ -14,9 +14,7 @@
   const pageSize = 5;
   let page = $state(1);
   const filtered = $derived(
-    config.providers.filter((provider) =>
-      `${provider.id} ${provider.name ?? ''}`.toLowerCase().includes(query.toLowerCase()),
-    ),
+    config.providers.filter((provider) => provider.name.toLowerCase().includes(query.toLowerCase())),
   );
   const maxPage = $derived(Math.max(1, Math.ceil(filtered.length / pageSize)));
   const currentPage = $derived(Math.min(page, maxPage));
@@ -26,7 +24,6 @@
     void filtered.length;
     page = 1;
   });
-  const isSensitive = (key: string) => /(api.?key|token|secret|password|credential)/i.test(key);
   async function remove() {
     if (!deleting) return;
     try {
@@ -43,11 +40,11 @@
   >{#snippet children()}<Button href="/providers/new"><Plus size={14} /> New provider</Button>{/snippet}</PageHead
 >
 <div class="search-toolbar">
-  <input aria-label="Search providers" bind:value={query} placeholder="Search provider ID / name" />
+  <input aria-label="Search providers" bind:value={query} placeholder="Search provider name" />
 </div>
 <DataTable label="Provider Registry" total={filtered.length} bind:page {pageSize}
   ><thead
-    ><tr><th>ID</th><th>Name</th><th>Models</th><th>Options</th><th>Status</th><th class="th-actions">Actions</th></tr
+    ><tr><th>Name</th><th>NPM</th><th>Base URL</th><th>Models</th><th>Status</th><th class="th-actions">Actions</th></tr
     ></thead
   ><tbody>
     {#if config.loading}<tr><td colspan="6" class="empty-table-row">Loading configuration...</td></tr>
@@ -56,23 +53,20 @@
         message="No providers. Models must be attached to a provider first."
       />
     {:else}{#each pagedProviders as provider}<tr
-          ><td class="model-name">{provider.id}</td><td>{provider.name ?? 'unnamed'}</td><td
-            >{Object.keys(provider.models).length}</td
-          ><td
-            >{#each Object.entries(provider.options ?? {}) as [key, value]}<div>
-                {key}: <code>{isSensitive(key) ? '••••' : String(value)}</code>
-              </div>{/each}</td
-          ><td><StatusBadge variant="success">Loaded</StatusBadge></td><td class="row-actions"
+          ><td class="model-name">{provider.name}</td><td>{provider.npm ?? '—'}</td><td
+            >{provider.options?.baseURL || '—'}</td
+          ><td>{Object.keys(provider.models).length}</td><td><StatusBadge variant="success">Loaded</StatusBadge></td><td
+            class="row-actions"
             ><Button
-              href={`/providers/${provider.id}/edit`}
+              href={`/providers/${provider.name}/edit`}
               variant="ghost"
               size="icon-sm"
-              aria-label={`Edit ${provider.id}`}><Pencil size={14} /></Button
+              aria-label={`Edit ${provider.name}`}><Pencil size={14} /></Button
             ><Button
               variant="ghost"
               size="icon-sm"
-              aria-label={`Delete ${provider.id}`}
-              onclick={() => (deleting = provider.id)}><Trash2 size={14} /></Button
+              aria-label={`Delete ${provider.name}`}
+              onclick={() => (deleting = provider.name)}><Trash2 size={14} /></Button
             ></td
           ></tr
         >{/each}{/if}

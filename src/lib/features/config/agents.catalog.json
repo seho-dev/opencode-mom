@@ -1,0 +1,154 @@
+{
+  "agents": [
+    {
+      "id": "build",
+      "system": "native",
+      "type": "primary",
+      "description": "Default primary agent with all tools enabled for development work."
+    },
+    {
+      "id": "plan",
+      "system": "native",
+      "type": "primary",
+      "description": "Read-only planning and analysis agent that prevents accidental changes."
+    },
+    {
+      "id": "general",
+      "system": "native",
+      "type": "subagent",
+      "description": "General-purpose agent for complex research and multi-step tasks."
+    },
+    {
+      "id": "explore",
+      "system": "native",
+      "type": "subagent",
+      "description": "Fast read-only agent for searching files and answering codebase questions."
+    },
+    {
+      "id": "scout",
+      "system": "native",
+      "type": "subagent",
+      "description": "Read-only agent for external documentation and dependency research."
+    },
+    {
+      "id": "orchestrator",
+      "system": "slim",
+      "type": "primary",
+      "description": "Main orchestrator that dispatches all subagents."
+    },
+    {
+      "id": "explorer",
+      "system": "slim",
+      "type": "subagent",
+      "description": "Explores the codebase to locate files and symbols."
+    },
+    {
+      "id": "librarian",
+      "system": "slim",
+      "type": "subagent",
+      "description": "Retrieves research and documentation."
+    },
+    {
+      "id": "oracle",
+      "system": "slim",
+      "type": "subagent",
+      "description": "Consultant for high-level advice."
+    },
+    {
+      "id": "designer",
+      "system": "slim",
+      "type": "subagent",
+      "description": "Handles UI and UX design work."
+    },
+    {
+      "id": "fixer",
+      "system": "slim",
+      "type": "subagent",
+      "description": "Fixes bugs and debugs failing behavior."
+    },
+    {
+      "id": "observer",
+      "system": "slim",
+      "type": "subagent",
+      "description": "Read-only monitoring of running work."
+    },
+    {
+      "id": "council",
+      "system": "slim",
+      "type": "subagent",
+      "description": "Coordinates multi-agent council sessions."
+    },
+    {
+      "id": "councillor",
+      "system": "slim",
+      "type": "subagent",
+      "description": "Participates as a council member."
+    },
+    {
+      "id": "sisyphus",
+      "system": "omo",
+      "type": "primary",
+      "description": "Main orchestrator for the OMO system."
+    },
+    {
+      "id": "hephaestus",
+      "system": "omo",
+      "type": "primary",
+      "description": "Deep worker reserved for GPT models."
+    },
+    {
+      "id": "atlas",
+      "system": "omo",
+      "type": "primary",
+      "description": "Orchestrates tasks across the system."
+    },
+    {
+      "id": "sisyphus-junior",
+      "system": "omo",
+      "type": "subagent",
+      "description": "Lightweight variant of sisyphus for smaller tasks."
+    },
+    {
+      "id": "oracle",
+      "system": "omo",
+      "type": "subagent",
+      "description": "Consultant for high-level advice."
+    },
+    {
+      "id": "librarian",
+      "system": "omo",
+      "type": "subagent",
+      "description": "Retrieves research and documentation."
+    },
+    {
+      "id": "explore",
+      "system": "omo",
+      "type": "subagent",
+      "description": "Explores the codebase to locate files and symbols."
+    },
+    {
+      "id": "multimodal-looker",
+      "system": "omo",
+      "type": "subagent",
+      "description": "Inspects images and other multimodal inputs."
+    },
+    {
+      "id": "metis",
+      "system": "omo",
+      "type": "subagent",
+      "description": "Advises on plans before execution."
+    },
+    {
+      "id": "momus",
+      "system": "omo",
+      "type": "subagent",
+      "description": "Critiques plans and surfaces risks."
+    },
+    {
+      "id": "prometheus",
+      "system": "omo",
+      "type": "internal",
+      "description": "Builds plans and orchestrates subagents."
+    }
+  ]
+}

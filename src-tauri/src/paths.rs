@@ -9,7 +9,6 @@ pub struct ConfigPaths {
     home: PathBuf,
     user_config_dir: PathBuf,
     opencode: PathBuf,
-    project_root: Option<PathBuf>,
 }
 
 impl ConfigPaths {
@@ -22,7 +21,6 @@ impl ConfigPaths {
             })?;
         let config = env::var_os("OPENCODE_CONFIG").map(PathBuf::from);
         let directory = env::var_os("OPENCODE_CONFIG_DIR").map(PathBuf::from);
-        let project_root = env::var_os("OPENCODE_PROJECT_ROOT").map(PathBuf::from);
         // opencode (and this app) always use `<home>/.config/opencode`, on every
         // platform. Do NOT use dirs::config_dir() here: on Windows it resolves to
         // %APPDATA%\Roaming, which is a different, often empty, config file.
@@ -32,7 +30,6 @@ impl ConfigPaths {
             home,
             user_config_dir,
             opencode,
-            project_root,
         })
     }
 
@@ -47,13 +44,7 @@ impl ConfigPaths {
             home,
             user_config_dir,
             opencode,
-            project_root: None,
         }
-    }
-
-    pub fn with_project_root(mut self, project_root: impl Into<PathBuf>) -> Self {
-        self.project_root = Some(project_root.into());
-        self
     }
 
     pub fn app_config_dir(&self) -> PathBuf {
@@ -80,12 +71,6 @@ impl ConfigPaths {
 
     pub fn global_agents_dir(&self) -> PathBuf {
         self.user_config_dir.join("opencode").join("agents")
-    }
-
-    pub fn project_agents_dir(&self) -> Option<PathBuf> {
-        self.project_root
-            .as_ref()
-            .map(|root| root.join(".opencode").join("agents"))
     }
 }
 

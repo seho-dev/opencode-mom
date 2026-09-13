@@ -72,7 +72,6 @@ pub struct AgentDefinitionDto {
 pub enum AgentStorageDto {
     Inline,
     GlobalMarkdown,
-    ProjectMarkdown,
 }
 
 impl From<AgentStorageDto> for AgentStorage {
@@ -80,7 +79,6 @@ impl From<AgentStorageDto> for AgentStorage {
         match storage {
             AgentStorageDto::Inline => Self::Inline,
             AgentStorageDto::GlobalMarkdown => Self::GlobalMarkdown,
-            AgentStorageDto::ProjectMarkdown => Self::ProjectMarkdown,
         }
     }
 }
@@ -90,7 +88,6 @@ impl From<AgentStorage> for AgentStorageDto {
         match storage {
             AgentStorage::Inline => Self::Inline,
             AgentStorage::GlobalMarkdown => Self::GlobalMarkdown,
-            AgentStorage::ProjectMarkdown => Self::ProjectMarkdown,
         }
     }
 }

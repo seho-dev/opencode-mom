@@ -107,7 +107,9 @@
   overflow-y: auto;
 }
 .mobile-menu {
-  display: none;
+  /* The Button primitive always carries `inline-flex`; keep it hidden on
+     desktop after custom sheets moved into the base cascade layer. */
+  display: none !important;
 }
 .drawer {
   display: none;

@@ -13,11 +13,6 @@
   .header-meta {
     gap: 10px;
   }
-  /* Keep the appearance controls reachable at every width; only the
-     READY / Local config readouts collapse on narrow screens. */
-  .header-readout {
-    display: none;
-  }
   .mobile-menu {
     display: inline-flex !important;
   }

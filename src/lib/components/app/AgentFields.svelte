@@ -116,7 +116,7 @@
         placeholder={i18n.t('agents.colorPlaceholder')}
       /><datalist id="agent-color-options"
         >{#each COLOR_THEMES as theme}<option value={theme}></option>{/each}</datalist
-      ><small class="muted">{i18n.t('agents.colorHint')}</small>
+      >
     </div>
     <div class="field">
       <label class="check-row"><input type="checkbox" bind:checked={values.hidden} /> {i18n.t('agents.hidden')}</label

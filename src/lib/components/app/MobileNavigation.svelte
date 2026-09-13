@@ -88,8 +88,6 @@
             onclick={(event) => navigateFromDrawer(event, item.href)}><item.icon size={16} />{i18n.t(item.labelKey)}</a
           >{/each}
       </nav>
-      <div class="system-status">
-        <span class="online">● {i18n.t('header.systemOnline')}</span><br />{i18n.t('header.version')}
-      </div>
+      <div class="system-status">{i18n.t('header.version')}</div>
     </aside>
   </div>{/if}

@@ -55,9 +55,6 @@
   font-size: 10px;
   line-height: 18px;
 }
-.online {
-  color: var(--status-success);
-}
 .workspace {
   min-width: 0;
   display: flex;

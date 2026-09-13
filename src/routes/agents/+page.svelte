@@ -7,12 +7,18 @@
   import Select from '$lib/components/app/Select.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import { getI18n } from '$lib/features/i18n/context.js';
-  import { BUILTIN_AGENTS } from '$lib/features/config/builtinAgents.js';
-  import { STORAGE_OPTIONS } from '$lib/features/config/constants.js';
+  import { BUILTIN_AGENTS, isBuiltinAgentId, type BuiltinAgent } from '$lib/features/config/builtinAgents.js';
+  import {
+    GROUP_TYPE_NATIVE,
+    GROUP_TYPE_OMO,
+    GROUP_TYPE_SLIM,
+    STORAGE_OPTIONS,
+  } from '$lib/features/config/constants.js';
   import type { AgentStorage } from '$lib/features/config/types.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
-  type AgentTab = 'custom' | 'builtin';
-  const tabOrder: AgentTab[] = ['custom', 'builtin'];
+
+  type AgentTab = 'custom' | 'native' | 'slim' | 'omo';
+  const tabOrder: AgentTab[] = ['custom', 'native', 'slim', 'omo'];
   const config = getConfig();
   const i18n = getI18n();
   let query = $state('');
@@ -20,16 +26,21 @@
   let storage = $state<AgentStorage>('inline');
   let activeTab = $state<AgentTab>('custom');
   let customTabEl = $state<HTMLButtonElement | null>(null);
-  let builtinTabEl = $state<HTMLButtonElement | null>(null);
+  let nativeTabEl = $state<HTMLButtonElement | null>(null);
+  let slimTabEl = $state<HTMLButtonElement | null>(null);
+  let omoTabEl = $state<HTMLButtonElement | null>(null);
   const pageSize = 5;
   let page = $state(1);
+  // Only truly custom agents (not catalog ids) are editable or deletable.
+  const customAgents = $derived(config.agents.filter((agent) => !isBuiltinAgentId(agent.id)));
   const agents = $derived(
-    config.agents.filter((agent) =>
+    customAgents.filter((agent) =>
       `${agent.id} ${agent.description ?? ''}`.toLowerCase().includes(query.toLowerCase()),
     ),
   );
-  const slimAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === 'slim'));
-  const omoAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === 'oh-my-openagent'));
+  const nativeAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === GROUP_TYPE_NATIVE));
+  const slimAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === GROUP_TYPE_SLIM));
+  const omoAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === GROUP_TYPE_OMO));
   const maxPage = $derived(Math.max(1, Math.ceil(agents.length / pageSize)));
   const currentPage = $derived(Math.min(page, maxPage));
   const pagedAgents = $derived(agents.slice((currentPage - 1) * pageSize, currentPage * pageSize));
@@ -43,6 +54,9 @@
     query = '';
     page = 1;
   }
+  function tabElement(tab: AgentTab) {
+    return tab === 'custom' ? customTabEl : tab === 'native' ? nativeTabEl : tab === 'slim' ? slimTabEl : omoTabEl;
+  }
   function onTabKeys(event: KeyboardEvent) {
     const index = tabOrder.indexOf(activeTab);
     let next: AgentTab;
@@ -53,7 +67,7 @@
     else return;
     event.preventDefault();
     selectTab(next);
-    (next === 'custom' ? customTabEl : builtinTabEl)?.focus();
+    tabElement(next)?.focus();
   }
   const canSelect = $derived(!!deleting && config.agents.find((agent) => agent.id === deleting)?.source === 'both');
   async function remove() {
@@ -73,6 +87,20 @@
         ><Plus size={14} /> {i18n.t('agents.new')}</Button
       >{/if}{/snippet}</PageHead
 >
+
+{#snippet builtinTable(label: string, list: BuiltinAgent[])}
+  <DataTable {label} total={list.length} pageSize={list.length}
+    ><thead
+      ><tr><th>{i18n.t('agents.colId')}</th><th>{i18n.t('common.type')}</th><th>{i18n.t('common.description')}</th></tr
+      ></thead
+    ><tbody
+      >{#if !list.length}<EmptyTableRow colspan={3} message={i18n.t('empty.agents')} />{:else}{#each list as agent}<tr
+            ><td class="model-name">{agent.id}</td><td>{agent.type}</td><td>{agent.description}</td></tr
+          >{/each}{/if}</tbody
+    ></DataTable
+  >
+{/snippet}
+
 <div class="flex gap-2 mb-3" role="tablist" aria-label={i18n.t('agents.sourceTabLabel')}>
   <Button
     bind:ref={customTabEl}
@@ -84,19 +112,43 @@
     aria-controls="agents-tabpanel-custom"
     tabindex={activeTab === 'custom' ? 0 : -1}
     onclick={() => selectTab('custom')}
-    onkeydown={onTabKeys}>{i18n.t('agents.tabCustom', { count: config.agents.length })}</Button
+    onkeydown={onTabKeys}>{i18n.t('agents.tabCustom', { count: customAgents.length })}</Button
   >
   <Button
-    bind:ref={builtinTabEl}
-    id="agents-tab-builtin"
+    bind:ref={nativeTabEl}
+    id="agents-tab-native"
     role="tab"
-    variant={activeTab === 'builtin' ? 'default' : 'outline'}
+    variant={activeTab === 'native' ? 'default' : 'outline'}
     size="sm"
-    aria-selected={activeTab === 'builtin'}
-    aria-controls="agents-tabpanel-builtin"
-    tabindex={activeTab === 'builtin' ? 0 : -1}
-    onclick={() => selectTab('builtin')}
-    onkeydown={onTabKeys}>{i18n.t('agents.tabBuiltin', { count: BUILTIN_AGENTS.length })}</Button
+    aria-selected={activeTab === 'native'}
+    aria-controls="agents-tabpanel-native"
+    tabindex={activeTab === 'native' ? 0 : -1}
+    onclick={() => selectTab('native')}
+    onkeydown={onTabKeys}>{i18n.t('agents.tabNative', { count: nativeAgents.length })}</Button
+  >
+  <Button
+    bind:ref={slimTabEl}
+    id="agents-tab-slim"
+    role="tab"
+    variant={activeTab === 'slim' ? 'default' : 'outline'}
+    size="sm"
+    aria-selected={activeTab === 'slim'}
+    aria-controls="agents-tabpanel-slim"
+    tabindex={activeTab === 'slim' ? 0 : -1}
+    onclick={() => selectTab('slim')}
+    onkeydown={onTabKeys}>{i18n.t('agents.tabSlim', { count: slimAgents.length })}</Button
+  >
+  <Button
+    bind:ref={omoTabEl}
+    id="agents-tab-omo"
+    role="tab"
+    variant={activeTab === 'omo' ? 'default' : 'outline'}
+    size="sm"
+    aria-selected={activeTab === 'omo'}
+    aria-controls="agents-tabpanel-omo"
+    tabindex={activeTab === 'omo' ? 0 : -1}
+    onclick={() => selectTab('omo')}
+    onkeydown={onTabKeys}>{i18n.t('agents.tabOmo', { count: omoAgents.length })}</Button
   >
 </div>
 {#if activeTab === 'custom'}
@@ -140,44 +192,17 @@
       ></DataTable
     >
   </div>
+{:else if activeTab === 'native'}
+  <div id="agents-tabpanel-native" role="tabpanel" aria-labelledby="agents-tab-native" tabindex="0">
+    {@render builtinTable(i18n.t('agents.nativeBuiltin'), nativeAgents)}
+  </div>
+{:else if activeTab === 'slim'}
+  <div id="agents-tabpanel-slim" role="tabpanel" aria-labelledby="agents-tab-slim" tabindex="0">
+    {@render builtinTable(i18n.t('agents.slimBuiltin'), slimAgents)}
+  </div>
 {:else}
-  <div
-    id="agents-tabpanel-builtin"
-    role="tabpanel"
-    aria-labelledby="agents-tab-builtin"
-    tabindex="0"
-    class="flex flex-col gap-6"
-  >
-    <section aria-label={i18n.t('agents.slimBuiltin')}>
-      <p class="group-title mb-2">{i18n.t('groupForm.typeSlim')}</p>
-      <DataTable label={i18n.t('agents.slimBuiltin')} total={slimAgents.length} pageSize={slimAgents.length}
-        ><thead
-          ><tr
-            ><th>{i18n.t('agents.colId')}</th><th>{i18n.t('common.type')}</th><th>{i18n.t('common.description')}</th
-            ></tr
-          ></thead
-        ><tbody
-          >{#each slimAgents as agent}<tr
-              ><td class="model-name">{agent.id}</td><td>{agent.type}</td><td>{agent.description}</td></tr
-            >{/each}</tbody
-        ></DataTable
-      >
-    </section>
-    <section aria-label={i18n.t('agents.omoBuiltin')}>
-      <p class="group-title mb-2">{i18n.t('groupForm.typeOmo')}</p>
-      <DataTable label={i18n.t('agents.omoBuiltin')} total={omoAgents.length} pageSize={omoAgents.length}
-        ><thead
-          ><tr
-            ><th>{i18n.t('agents.colId')}</th><th>{i18n.t('common.type')}</th><th>{i18n.t('common.description')}</th
-            ></tr
-          ></thead
-        ><tbody
-          >{#each omoAgents as agent}<tr
-              ><td class="model-name">{agent.id}</td><td>{agent.type}</td><td>{agent.description}</td></tr
-            >{/each}</tbody
-        ></DataTable
-      >
-    </section>
+  <div id="agents-tabpanel-omo" role="tabpanel" aria-labelledby="agents-tab-omo" tabindex="0">
+    {@render builtinTable(i18n.t('agents.omoBuiltin'), omoAgents)}
   </div>
 {/if}
 <Dialog.Root

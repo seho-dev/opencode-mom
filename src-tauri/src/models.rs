@@ -112,12 +112,14 @@ pub struct OmoCategoryMapping {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GroupType {
+    // Variant names use the canonical native/slim/omo vocabulary. The serde
+    // strings are frozen persisted values required for config compatibility.
     #[serde(rename = "opencode")]
-    OpenCode,
+    Native,
     #[serde(rename = "slim")]
     Slim,
     #[serde(rename = "oh-my-openagent")]
-    OhMyOpenagent,
+    Omo,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

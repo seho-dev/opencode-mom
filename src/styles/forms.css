@@ -42,8 +42,7 @@
   padding: 6px 8px;
 }
 .field input,
-.field textarea,
-.field select {
+.field textarea {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--border-default);
@@ -55,9 +54,6 @@
 }
 .field textarea {
   min-height: 132px;
-}
-.field select {
-  appearance: auto;
 }
 .check-row {
   display: flex;
@@ -113,17 +109,6 @@
   font-size: 11px;
   line-height: 16px;
 }
-.dialog-field .dialog-select {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--border-default);
-  border-radius: 2px;
-  background: var(--surface-input);
-  color: var(--text-primary);
-  min-height: 32px;
-  padding: 6px 8px;
-  appearance: auto;
-}
 .group-fieldset {
   grid-column: 1/-1;
   min-width: 0;
@@ -139,10 +124,6 @@
 .group-fieldset legend span {
   margin-left: 8px;
   color: var(--text-muted);
-}
-.field select option {
-  background: var(--surface-input);
-  color: var(--text-primary);
 }
 /* Model form: numeric sub-fields, variant rows and inline errors. */
 .field textarea.small {
@@ -189,6 +170,17 @@
   align-items: start;
   margin-top: 8px;
 }
+.mapping-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.6fr) 32px;
+  gap: 8px;
+  align-items: start;
+  margin-top: 8px;
+}
+.mapping-row .combo,
+.mapping-row .select {
+  min-width: 0;
+}
 .variant-row input,
 .variant-row textarea {
   width: 100%;
@@ -222,4 +214,65 @@
 }
 .variants-actions {
   margin-top: 12px;
+}
+/* Agent form: sectioned fieldsets, compact limits grid and permission rows. */
+.form-section {
+  grid-column: 1/-1;
+  min-width: 0;
+  margin: 0;
+  padding-top: 16px;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.form-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.form-section > legend {
+  margin: 0 0 14px;
+  padding: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.form-section .form-grid {
+  gap: 16px;
+}
+.limits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px 16px;
+  align-items: start;
+}
+.field-required {
+  margin-left: 4px;
+  color: var(--status-error);
+}
+.permission-rows {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.permission-row {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+.permission-row label {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.advanced-section > summary {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
 }

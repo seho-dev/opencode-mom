@@ -1,8 +1,8 @@
 export type ModelRef = `${string}/${string}`;
 // Model config mirrors provider.<id>.models.<model_id> in the opencode JSON schema.
-export type GroupType = 'opencode' | 'slim' | 'oh-my-openagent';
-export type AgentSource = 'inline' | 'markdown' | 'both';
-export type AgentStorage = 'inline' | 'global_markdown' | 'project_markdown';
+// String unions are derived from their constant arrays in constants.ts to avoid duplicate literals.
+import type { AgentSource, AgentStorage, GroupType, AgentMode, MappingKind } from './constants.js';
+export type { AgentSource, AgentStorage, GroupType, AgentMode, MappingKind };
 
 export interface ProviderOptions {
   apiKey?: string;
@@ -71,6 +71,13 @@ export interface AgentDefinition {
   tools?: Record<string, boolean>;
   options?: Record<string, unknown>;
 }
+// Payload for agent create/update. `clearFields` requests explicit removal of previously set keys.
+export type AgentMutation = { fields: Record<string, unknown>; clearFields?: string[] };
+export type AgentWrite = AgentDefinition & { mutation?: AgentMutation };
+
+export type OptionRow = { key: string; value: string };
+export type PermissionParse = { ok: true; object: Record<string, unknown> } | { ok: false };
+export type PermissionView = { mode: 'rows'; values: Record<string, string> } | { mode: 'json' } | { mode: 'invalid' };
 export interface AgentModelBinding {
   agentName: string;
   modelRef: ModelRef;

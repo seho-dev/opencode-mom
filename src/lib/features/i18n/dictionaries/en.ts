@@ -46,7 +46,6 @@ export const en = {
   'common.pagination': 'Pagination',
   'common.previousPage': 'Previous page',
   'common.readOnly': 'read-only',
-  'common.refresh': 'Refresh',
   'common.remove': 'Remove',
   'common.rowCountMany': '{count} rows',
   'common.rowCountOne': '{count} row',
@@ -56,6 +55,14 @@ export const en = {
   'common.type': 'Type',
   'common.unnamed': 'unnamed',
   'common.unset': 'unset',
+  'common.loadingConfiguration': 'Loading configuration...',
+  'common.noMatches': 'No matches',
+  'common.optionUnknown': '{name} (unknown)',
+  'common.optionUnavailable': '{name} (unavailable)',
+  'common.searchOptions': 'Search options',
+  'common.searchOptionsEmpty': 'No matches',
+  'common.searchOptionsPlaceholder': 'Search...',
+  'common.selectPlaceholder': 'Select...',
 
   // dashboard
   'dashboard.metaTitle': 'Dashboard · opencode-mom',
@@ -108,7 +115,6 @@ export const en = {
   'models.metaTitle': 'Models · opencode-mom',
   'models.eyebrow': 'CONFIG / MODELS',
   'models.title': 'Models',
-  'models.refresh': 'Refresh',
   'models.new': 'New model',
   'models.searchLabel': 'Search models',
   'models.searchPlaceholder': 'Search provider/model, e.g. anthropic/claude',
@@ -120,6 +126,7 @@ export const en = {
   'models.colContext': 'Context',
   'models.colActions': 'Actions',
   'models.loading': 'Loading models from opencode CLI...',
+  'models.loadingConfiguration': 'Loading configuration...',
   'models.editTitle': 'Edit model',
   'models.deleteTitle': 'Delete model',
   'models.editAria': 'Edit {ref}',
@@ -270,6 +277,40 @@ export const en = {
   'agents.rawNotProvided': 'The DTO provides no raw content; the following is the field snapshot of this source only.',
   'agents.notFound': 'The agent does not exist or has not been loaded yet.',
   'agents.saveChanges': 'Save changes',
+  'agents.identity': 'Identity',
+  'agents.legendBasics': 'Basics',
+  'agents.legendLimits': 'Limits',
+  'agents.legendStatus': 'Status',
+  'agents.legendPrompt': 'Prompt',
+  'agents.advanced': 'Advanced',
+  'agents.inheritAll': 'Inherit (all)',
+  'agents.optionNone': 'None',
+  'agents.optionUnknown': '{name} (unknown)',
+  'agents.optionUnavailable': '{name} (unavailable)',
+  'agents.descriptionRequired': 'Required by opencode.',
+  'agents.colorPlaceholder': '#RRGGBB or theme name',
+  'agents.colorHint': 'Hex #RRGGBB or a theme: primary, secondary, accent, success, warning, error, info.',
+  'agents.hiddenHint': 'Only applies when Mode is subagent.',
+  'agents.disableHint': 'Disabled agents are kept in config but not loaded by opencode.',
+  'agents.storage': 'Storage',
+  'agents.sourceTabLabel': 'Agent source',
+  'agents.tabCustom': 'Custom ({count})',
+  'agents.tabBuiltin': 'Builtin ({count})',
+  'agents.slimBuiltin': 'Slim builtin agents',
+  'agents.omoBuiltin': 'oh-my-openagent builtin agents',
+  'agents.variantSelectModel': 'Select a model to choose a variant.',
+  'agents.variantNoVariants': 'This model reports no variants.',
+  'agents.variantFromModel': 'Variants are read from the selected model.',
+  'agents.promptHintMarkdown': 'For markdown agents the file body is the system prompt.',
+  'agents.promptHintInline':
+    'Inline agents support {file:path/to/prompt.md} and {env:VARIABLE_NAME} references, resolved at runtime.',
+  'agents.permissions': 'Permissions',
+  'agents.permissionsJson': 'Permissions JSON',
+  'agents.permissionsGlobHint':
+    'Some permission values are glob rules. Edit them with the JSON below so those rules are preserved.',
+  'agents.permissionsInvalid': 'Permissions must be a valid JSON object.',
+  'agents.permissionsHint':
+    'Values are allow, ask or deny. A key may map to a glob-to-action object; the last matching rule wins.',
 
   // groups
   'groups.metaTitle': 'Groups · opencode-mom',
@@ -300,6 +341,7 @@ export const en = {
 
   // groupForm
   'groupForm.groupName': 'Group name',
+  'groupForm.nameRequired': 'Group name is required.',
   'groupForm.description': 'Description',
   'groupForm.enable': 'Enable this group',
   'groupForm.groupType': 'Group type',
@@ -325,6 +367,9 @@ export const en = {
   'groupForm.clearMappings': 'Clear incompatible mappings',
   'groupForm.cancelSwitch': 'Cancel switch',
   'groupForm.noRandomUuid': 'Cannot generate a group ID in this environment. Refresh and try again.',
+  'groupForm.selectCategory': 'Select category',
+  'groupForm.selectAgent': 'Select agent',
+  'groupForm.noModelCatalog': 'No model is available in the catalog. Add a provider model before mapping.',
 
   // feedback
   'feedback.conflictDescription': 'The local draft is kept in the current form and was not overwritten.',
@@ -363,8 +408,11 @@ export const en = {
 
   // empty
   'empty.providers': 'No providers. Models must be attached to a provider first.',
+  'empty.providersShort': 'No providers.',
   'empty.modelsCustom': 'No custom models. Create a provider and add models.',
+  'empty.modelsCustomShort': 'No custom models.',
   'empty.modelsBuiltin': 'No builtin models found.',
+  'empty.modelsBuiltinShort': 'No builtin models.',
   'empty.agents': 'No agents.',
   'empty.groups': 'No groups.',
 } as const;

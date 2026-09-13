@@ -1,6 +1,5 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { Button } from '$lib/components/ui/button/index.js';
   import GroupForm from '$lib/components/app/GroupForm.svelte';
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
@@ -16,6 +15,4 @@
 </script>
 
 <svelte:head><title>{i18n.t('groups.editMetaTitle')}</title></svelte:head>
-{#if group}<PageHead eyebrow={i18n.t('groups.eyebrow')} title={i18n.t('groups.editTitle')}
-    ><Button href="/groups" variant="ghost" size="sm">{i18n.t('groups.directoryButton')}</Button></PageHead
-  ><GroupForm {group} />{/if}
+{#if group}<PageHead eyebrow={i18n.t('groups.eyebrow')} title={i18n.t('groups.editTitle')} /><GroupForm {group} />{/if}

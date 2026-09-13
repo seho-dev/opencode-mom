@@ -4,7 +4,6 @@
   import PageHead from '$lib/components/app/PageHead.svelte';
   import DataTable from '$lib/components/app/DataTable.svelte';
   import EmptyTableRow from '$lib/components/app/EmptyTableRow.svelte';
-  import StatusBadge from '$lib/components/app/StatusBadge.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import { getI18n } from '$lib/features/i18n/context.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
@@ -59,14 +58,12 @@
       ></tr
     ></thead
   ><tbody>
-    {#if config.loading}<tr><td colspan="6" class="empty-table-row">{i18n.t('providers.loading')}</td></tr>
-    {:else if !filtered.length}<EmptyTableRow colspan={6} message={i18n.t('empty.providers')} />
+    {#if config.loading}<tr><td colspan="5" class="empty-table-row">{i18n.t('providers.loading')}</td></tr>
+    {:else if !filtered.length}<EmptyTableRow colspan={5} message={i18n.t('empty.providersShort')} />
     {:else}{#each pagedProviders as provider}<tr
           ><td class="model-name">{provider.name}</td><td>{provider.npm ?? '—'}</td><td
             >{provider.options?.baseURL || '—'}</td
-          ><td>{Object.keys(provider.models).length}</td><td
-            ><StatusBadge variant="success">{i18n.t('providers.loaded')}</StatusBadge></td
-          ><td class="row-actions"
+          ><td>{Object.keys(provider.models).length}</td><td class="row-actions"
             ><Button
               href={`/providers/${provider.name}/edit`}
               variant="ghost"

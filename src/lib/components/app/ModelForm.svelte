@@ -4,6 +4,7 @@
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
   import { Switch } from '$lib/components/ui/switch/index.js';
   import FormActions from './FormActions.svelte';
+  import Select from './Select.svelte';
   import { toast } from './toast.svelte.js';
   import { getI18n } from '$lib/features/i18n/context.js';
   import type { ModelDef, ModelModality, ProviderDef } from '$lib/features/config/types.js';
@@ -269,10 +270,13 @@
         {#if mode === 'new'}
           <div class="field">
             <label for="model-provider">{i18n.t('modelForm.provider')}</label>
-            <select id="model-provider" bind:value={providerId} required disabled={saving}>
-              <option value="" disabled>{i18n.t('modelForm.selectProvider')}</option>
-              {#each providers as provider}<option value={provider.name}>{provider.name}</option>{/each}
-            </select>
+            <Select
+              id="model-provider"
+              bind:value={providerId}
+              disabled={saving}
+              placeholder={i18n.t('modelForm.selectProvider')}
+              options={providers.map((provider) => ({ value: provider.name }))}
+            />
           </div>
           <div class="field">
             <label for="model-id">{i18n.t('modelForm.modelId')}</label>
@@ -309,12 +313,12 @@
         </div>
         <div class="field">
           <label for="model-status">{i18n.t('modelForm.status')}</label>
-          <select id="model-status" bind:value={status} disabled={saving}>
-            <option value="active">active</option>
-            <option value="alpha">alpha</option>
-            <option value="beta">beta</option>
-            <option value="deprecated">deprecated</option>
-          </select>
+          <Select
+            id="model-status"
+            bind:value={status}
+            disabled={saving}
+            options={['active', 'alpha', 'beta', 'deprecated'].map((value) => ({ value }))}
+          />
         </div>
       </div>
     </fieldset>
@@ -349,24 +353,30 @@
         </div>
         <div class="field">
           <label for="model-temperature">{i18n.t('modelForm.temperature')}</label>
-          <select id="model-temperature" bind:value={temperature} disabled={saving}>
-            <option value="">{i18n.t('modelForm.unset')}</option>
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
+          <Select
+            id="model-temperature"
+            bind:value={temperature}
+            disabled={saving}
+            options={[{ value: '', label: i18n.t('modelForm.unset') }, { value: 'true' }, { value: 'false' }]}
+          />
           <small class="muted">{i18n.t('modelForm.temperatureHint')}</small>
         </div>
         <div class="field">
           <label for="model-interleaved">{i18n.t('modelForm.interleaved')}</label>
-          <select id="model-interleaved" bind:value={interleaved} disabled={saving}>
-            <option value="unset">{i18n.t('modelForm.unset')}</option>
-            <option value="true">true</option>
-            <option value="false">false</option>
-            <option value="reasoning">reasoning</option>
-            <option value="reasoning_content">reasoning_content</option>
-            <option value="reasoning_text">reasoning_text</option>
-            <option value="custom">{i18n.t('modelForm.interleavedCustom')}</option>
-          </select>
+          <Select
+            id="model-interleaved"
+            bind:value={interleaved}
+            disabled={saving}
+            options={[
+              { value: 'unset', label: i18n.t('modelForm.unset') },
+              { value: 'true' },
+              { value: 'false' },
+              { value: 'reasoning' },
+              { value: 'reasoning_content' },
+              { value: 'reasoning_text' },
+              { value: 'custom', label: i18n.t('modelForm.interleavedCustom') },
+            ]}
+          />
           <small class="muted">{i18n.t('modelForm.interleavedHint')}</small>
         </div>
         {#if interleaved === 'custom'}<div class="field full">

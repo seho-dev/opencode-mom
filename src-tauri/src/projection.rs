@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use crate::document::JsoncDoc;
 use crate::models::{AgentModelBinding, GroupType, ModelGroup, OmoCategoryMapping};
 
-/// Projects the active Slim group: replaces the preset and activates it.
+/// Projects the active Slim group: merges its preset entries and activates the preset.
 pub fn project_slim_active(
     group: &ModelGroup,
     source: &JsoncDoc,
@@ -12,7 +12,7 @@ pub fn project_slim_active(
     if group.group_type != GroupType::Slim {
         return Ok(document);
     }
-    replace_slim_preset(
+    merge_slim_preset(
         &mut document,
         &group.name,
         group.slim_agent_overrides.as_deref(),
@@ -21,13 +21,14 @@ pub fn project_slim_active(
     Ok(document)
 }
 
+/// Merges the group's Slim overrides into its named preset, preserving residual entries.
 pub fn update_slim_preset(
     source: &JsoncDoc,
     name: &str,
     overrides: Option<&[AgentModelBinding]>,
 ) -> Result<JsoncDoc, crate::error::AppError> {
     let mut document = source.clone();
-    replace_slim_preset(&mut document, name, overrides);
+    merge_slim_preset(&mut document, name, overrides);
     Ok(document)
 }
 
@@ -37,9 +38,12 @@ pub fn rename_slim_preset(
     new_name: &str,
 ) -> Result<JsoncDoc, crate::error::AppError> {
     let mut document = source.clone();
-    if slim_preset(source, old_name).is_some() {
-        let preset = slim_preset(source, old_name).expect("preset existence checked above");
-        document.patch(&["presets", new_name], Some(Value::Object(preset.clone())))?;
+    if let Some(preset) = slim_preset(source, old_name) {
+        let entries: Vec<(String, Value)> =
+            preset.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        for (key, value) in entries {
+            document.patch(&["presets", new_name, key.as_str()], Some(value))?;
+        }
         document.patch(&["presets", old_name], None)?;
     }
     if active_slim_preset(source) == Some(old_name) {
@@ -73,51 +77,66 @@ fn active_slim_preset(document: &JsoncDoc) -> Option<&str> {
     document.raw().get("preset").and_then(Value::as_str)
 }
 
-fn replace_slim_preset(
-    document: &mut JsoncDoc,
-    name: &str,
-    overrides: Option<&[AgentModelBinding]>,
-) {
-    let agents = overrides
+fn merge_slim_preset(document: &mut JsoncDoc, name: &str, overrides: Option<&[AgentModelBinding]>) {
+    let bindings: Vec<(&str, Value)> = overrides
         .unwrap_or_default()
         .iter()
         .filter(|binding| {
             !binding.agent_name.trim().is_empty() && !binding.model_ref.trim().is_empty()
         })
-        .map(|binding| (binding.agent_name.clone(), binding_value(binding)))
+        .map(|binding| (binding.agent_name.as_str(), binding_value(binding)))
         .collect();
-    document
-        .patch(&["presets", name], Some(Value::Object(agents)))
-        .expect("a parsed JSONC document accepts a preset replacement");
+    if bindings.is_empty() {
+        if slim_preset(document, name).is_none() {
+            document
+                .patch(&["presets", name], Some(Value::Object(Map::new())))
+                .expect("a parsed JSONC document accepts a preset creation");
+        }
+        return;
+    }
+    for (agent, value) in bindings {
+        document
+            .patch(&["presets", name, agent], Some(value))
+            .expect("a parsed JSONC document accepts a preset patch");
+    }
 }
 
 fn binding_value(binding: &AgentModelBinding) -> Value {
     model_value(&binding.model_ref, binding.variant.as_deref())
 }
 
-/// Replaces the freeform `opencode` agent/category mappings of an active OMO group.
-/// Existing entries not represented by the group are deliberately removed.
+/// Patches the freeform `opencode` agent/category mappings of an active OMO group.
+/// Existing entries not represented by the group are residual and left untouched.
 pub fn project_omo(
     group: &ModelGroup,
     source: &JsoncDoc,
 ) -> Result<JsoncDoc, crate::error::AppError> {
     let mut document = source.clone();
-    if group.group_type != GroupType::OhMyOpenagent {
+    if group.group_type != GroupType::Omo {
         return Ok(document);
     }
-    let agents = mapping_values(group.omo_agent_overrides.as_deref().unwrap_or_default());
-    let categories = category_values(group.omo_category_mappings.as_deref().unwrap_or_default());
-    document.patch(&["opencode", "agents"], Some(Value::Object(agents)))?;
-    document.patch(&["opencode", "categories"], Some(Value::Object(categories)))?;
+    for (name, value) in mapping_values(group.omo_agent_overrides.as_deref().unwrap_or_default()) {
+        document.patch(&["opencode", "agents", name.as_str()], Some(value))?;
+    }
+    for (name, value) in category_values(group.omo_category_mappings.as_deref().unwrap_or_default())
+    {
+        document.patch(&["opencode", "categories", name.as_str()], Some(value))?;
+    }
     Ok(document)
 }
 
-/// Removes mappings owned by the currently selected OMO group while preserving all other
-/// OMO configuration.
-pub fn clear_omo(source: &JsoncDoc) -> Result<JsoncDoc, crate::error::AppError> {
+/// Removes only the OMO mappings owned by the group; residual entries are preserved.
+pub fn remove_omo_mappings(
+    group: &ModelGroup,
+    source: &JsoncDoc,
+) -> Result<JsoncDoc, crate::error::AppError> {
     let mut document = source.clone();
-    document.patch(&["opencode", "agents"], Some(Value::Object(Map::new())))?;
-    document.patch(&["opencode", "categories"], Some(Value::Object(Map::new())))?;
+    for (name, _) in mapping_values(group.omo_agent_overrides.as_deref().unwrap_or_default()) {
+        document.patch(&["opencode", "agents", name.as_str()], None)?;
+    }
+    for (name, _) in category_values(group.omo_category_mappings.as_deref().unwrap_or_default()) {
+        document.patch(&["opencode", "categories", name.as_str()], None)?;
+    }
     Ok(document)
 }
 
@@ -136,6 +155,9 @@ pub fn project_opencode(
 ) -> Result<(JsoncDoc, Vec<String>), crate::error::AppError> {
     let mut document = source.clone();
     let mut warnings = Vec::new();
+    if group.group_type != GroupType::Native {
+        return Ok((document, warnings));
+    }
     if !document.raw().get("agent").is_some_and(Value::is_object) {
         for binding in group
             .open_code_agent_overrides
@@ -176,6 +198,24 @@ pub fn project_opencode(
         document.patch(&variant_path, variant)?;
     }
     Ok((document, warnings))
+}
+
+/// Removes only the OpenCode model/variant keys owned by the group; unrelated agent
+/// fields are preserved.
+pub fn remove_opencode_overrides(
+    group: &ModelGroup,
+    source: &JsoncDoc,
+) -> Result<JsoncDoc, crate::error::AppError> {
+    let mut document = source.clone();
+    for binding in group
+        .open_code_agent_overrides
+        .iter()
+        .filter(|binding| is_effective_binding(binding))
+    {
+        document.patch(&["agent", binding.agent_name.as_str(), "model"], None)?;
+        document.patch(&["agent", binding.agent_name.as_str(), "variant"], None)?;
+    }
+    Ok(document)
 }
 
 fn is_effective_binding(binding: &AgentModelBinding) -> bool {

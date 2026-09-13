@@ -44,16 +44,16 @@ No signing or notarization is performed by the current release workflow.
 
 opencode-mom stores its own groups and selection state in one config file, separately from target application configs.
 
-| File                                                     | Purpose                                                           |
-| -------------------------------------------------------- | ----------------------------------------------------------------- |
-| `~/.config/opencode-mom/config.json`                     | opencode-mom group definitions, selection, and write metadata.    |
-| `~/.omo/omo.jsonc`                                       | Rewritten when switching groups or saving the active group.       |
-| `~/.config/opencode/oh-my-opencode-slim.jsonc`           | Rewritten when switching Slim-type groups.                        |
-| `~/.config/opencode/opencode.jsonc` (or `opencode.json`) | Patched only when effective OpenCode agent model overrides exist. |
+| File                                                     | Purpose                                                                            |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `~/.config/opencode-mom/config.json`                     | opencode-mom group definitions, selection, and write metadata.                     |
+| `~/.omo/omo.jsonc`                                       | Merged when switching groups or saving the active group.                           |
+| `~/.config/opencode/oh-my-opencode-slim.jsonc`           | Merged when switching Slim-type groups.                                            |
+| `~/.config/opencode/opencode.jsonc` (or `opencode.json`) | Patched only for Native-type groups with effective OpenCode agent model overrides. |
 
 Before rewriting target configs, opencode-mom creates backups under its config directory. Only `config.json` is read or written for opencode-mom data; legacy split files are ignored and are not migrated.
 
-When switching groups, opencode-mom rewrites the Oh My OpenAgent projection. Saving the active group reapplies that projection immediately. OpenCode sync is skipped when no effective OpenCode overrides exist, so a missing OpenCode config file only blocks operations that actually require OpenCode changes.
+When switching groups, opencode-mom merges the Oh My OpenAgent projection into the existing file. Saving the active group reapplies that projection immediately. Both the Oh My OpenAgent and Slim projections are one-to-one key patches: entries not defined by the group are preserved as residual configuration. Changing a group's type removes only the keys that group owned, while selecting a different group or deleting a group leaves the target files untouched. OpenCode sync is skipped when no effective OpenCode overrides exist, so a missing OpenCode config file only blocks operations that actually require OpenCode changes.
 
 For OpenCode, opencode-mom patches only `agent.<name>.model`. Existing fields inside agent objects and unrelated top-level keys such as `$schema`, `plugin`, and `provider` are preserved.
 

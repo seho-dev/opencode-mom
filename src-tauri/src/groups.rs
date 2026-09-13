@@ -108,6 +108,8 @@ pub fn copy_group(
     Ok((copied, config))
 }
 
+/// Removes a group from opencode-mom's own config only. Target config files are left
+/// untouched, so their mappings stay behind as residual configuration.
 pub fn delete_group(paths: &ConfigPaths, id: Uuid) -> Result<AppConfig, AppError> {
     let mut config = load(paths)?;
     let index = config
@@ -116,24 +118,10 @@ pub fn delete_group(paths: &ConfigPaths, id: Uuid) -> Result<AppConfig, AppError
         .position(|item| item.id == id)
         .ok_or_else(|| AppError::not_found("group not found"))?;
     let deleted = config.groups.remove(index);
-    let selected = config.state.selected_group_id == Some(deleted.id);
-    if selected {
+    if config.state.selected_group_id == Some(deleted.id) {
         config.state = AppSelectionState::default();
     }
     config.validate()?;
-    if deleted.group_type == GroupType::Slim {
-        let slim_file = paths.slim_file();
-        let source = JsoncDoc::read(&slim_file, SLIM_SCHEMA)?;
-        let document = projection::delete_slim_preset(&source, &deleted.name)?;
-        document.save(&slim_file)?;
-    }
-    if selected && deleted.group_type == GroupType::OhMyOpenagent {
-        let omo_file = paths.omo_file();
-        let source = JsoncDoc::read(&omo_file, OMO_SCHEMA)?;
-        let document = projection::clear_omo(&source)?;
-        document.save(&omo_file)?;
-    }
-
     models::save_config(&paths.config_file(), &config)?;
     Ok(config)
 }
@@ -153,13 +141,14 @@ pub fn switch_group(paths: &ConfigPaths, group_id: Uuid) -> Result<(), AppError>
         let document = projection::project_slim_active(&group, &source)?;
         document.save(&slim_file)?;
     }
-    if group.group_type == GroupType::OhMyOpenagent {
+    if group.group_type == GroupType::Omo {
         let omo_file = paths.omo_file();
         let source = JsoncDoc::read(&omo_file, OMO_SCHEMA)?;
         let document = projection::project_omo(&group, &source)?;
         document.save(&omo_file)?;
     }
-    if projection::has_effective_opencode_overrides(&group) {
+    if group.group_type == GroupType::Native && projection::has_effective_opencode_overrides(&group)
+    {
         let opencode_file = paths.opencode_file();
         let source = JsoncDoc::read(&opencode_file, OPENCODE_SCHEMA)?;
         let (document, warnings) = projection::project_opencode(&group, &source)?;
@@ -213,24 +202,41 @@ fn persist_group_lifecycle(
     }
 
     let switched_from_omo = selected
-        && previous.is_some_and(|item| item.group_type == GroupType::OhMyOpenagent)
-        && group.group_type != GroupType::OhMyOpenagent;
-    if (group.group_type == GroupType::OhMyOpenagent && selected) || switched_from_omo {
+        && previous.is_some_and(|item| item.group_type == GroupType::Omo)
+        && group.group_type != GroupType::Omo;
+    if (group.group_type == GroupType::Omo && selected) || switched_from_omo {
         let omo_file = paths.omo_file();
         let source = JsoncDoc::read(&omo_file, OMO_SCHEMA)?;
-        let document = if group.group_type == GroupType::OhMyOpenagent && selected {
+        let document = if group.group_type == GroupType::Omo && selected {
             projection::project_omo(group, &source)?
+        } else if let Some(previous) = previous {
+            projection::remove_omo_mappings(previous, &source)?
         } else {
-            projection::clear_omo(&source)?
+            source.clone()
         };
         document.save(&omo_file)?;
     }
 
-    if selected && projection::has_effective_opencode_overrides(group) {
+    let switched_from_native = selected
+        && previous.is_some_and(|item| item.group_type == GroupType::Native)
+        && group.group_type != GroupType::Native;
+    if selected
+        && group.group_type == GroupType::Native
+        && projection::has_effective_opencode_overrides(group)
+    {
         let opencode_file = paths.opencode_file();
         let source = JsoncDoc::read(&opencode_file, OPENCODE_SCHEMA)?;
         let (document, _) = projection::project_opencode(group, &source)?;
         document.save(&opencode_file)?;
+    } else if switched_from_native {
+        if let Some(previous) =
+            previous.filter(|item| projection::has_effective_opencode_overrides(item))
+        {
+            let opencode_file = paths.opencode_file();
+            let source = JsoncDoc::read(&opencode_file, OPENCODE_SCHEMA)?;
+            let document = projection::remove_opencode_overrides(previous, &source)?;
+            document.save(&opencode_file)?;
+        }
     }
 
     models::save_config(&paths.config_file(), &config)

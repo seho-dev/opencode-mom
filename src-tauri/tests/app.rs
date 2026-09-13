@@ -299,11 +299,48 @@ fn group_switch_projects_targets_and_state() {
 }
 
 #[test]
-fn group_delete_clears_selected_omo_mappings() {
+fn native_overrides_are_ignored_for_non_native_groups() {
+    let home = temp_home("native-gate");
+    write_opencode(&home);
+
+    let mut slim_group = group(GroupType::Slim, "slim-with-native");
+    slim_group.open_code_agent_overrides = vec![binding("reviewer", "acme/new")];
+    slim_group.slim_agent_overrides = Some(vec![binding("reviewer", "acme/slow")]);
+    let (saved, _) = groups::save_group(&home.paths, slim_group).unwrap();
+    groups::switch_group(&home.paths, saved.id).unwrap();
+
+    let content = fs::read_to_string(home.paths.opencode_file()).unwrap();
+    assert!(content.contains("acme/old"));
+    assert!(!content.contains("acme/new"));
+}
+
+#[test]
+fn switching_type_away_from_native_removes_owned_overrides() {
+    let home = temp_home("native-remove");
+    write_opencode(&home);
+
+    let mut native_group = group(GroupType::Native, "switch-me");
+    native_group.open_code_agent_overrides = vec![binding("reviewer", "acme/new")];
+    let (saved, _) = groups::save_group(&home.paths, native_group).unwrap();
+    groups::switch_group(&home.paths, saved.id).unwrap();
+    assert!(fs::read_to_string(home.paths.opencode_file())
+        .unwrap()
+        .contains("acme/new"));
+
+    let mut changed = saved;
+    changed.group_type = GroupType::Slim;
+    groups::save_group(&home.paths, changed).unwrap();
+
+    let content = fs::read_to_string(home.paths.opencode_file()).unwrap();
+    assert!(!content.contains("acme/new"));
+}
+
+#[test]
+fn group_delete_keeps_target_file_untouched() {
     let home = temp_home("delete-omo");
     write_opencode(&home);
 
-    let mut omo_group = group(GroupType::OhMyOpenagent, "omo-main");
+    let mut omo_group = group(GroupType::Omo, "omo-main");
     omo_group.omo_agent_overrides = Some(vec![binding("planner", "acme/slow")]);
     omo_group.omo_category_mappings = Some(vec![OmoCategoryMapping {
         category_name: "coding".to_owned(),
@@ -326,8 +363,114 @@ fn group_delete_clears_selected_omo_mappings() {
         .groups
         .iter()
         .any(|candidate| candidate.id == saved.id));
+    // Deleting a group only touches opencode-mom's own config; target files are left as-is.
     let content = fs::read_to_string(&omo_path).unwrap();
-    assert!(!content.contains("acme/slow"));
+    assert!(content.contains("acme/slow"));
+}
+
+#[test]
+fn omo_switch_merges_and_preserves_residual_mappings() {
+    let home = temp_home("omo-merge");
+    write_opencode(&home);
+
+    let omo_path = home.paths.omo_file();
+    write_file(
+        &omo_path,
+        br#"{"$schema":"x","opencode":{"agents":{"existing":{"model":"acme/old"}},"categories":{"existing-cat":{"model":"acme/old"}}}}"#,
+    )
+    .unwrap();
+
+    let mut omo_group = group(GroupType::Omo, "omo-main");
+    omo_group.omo_agent_overrides = Some(vec![binding("planner", "acme/slow")]);
+    omo_group.omo_category_mappings = Some(vec![OmoCategoryMapping {
+        category_name: "coding".to_owned(),
+        model_ref: "acme/fast".to_owned(),
+        variant: None,
+    }]);
+    let (saved, _) = groups::save_group(&home.paths, omo_group).unwrap();
+    groups::switch_group(&home.paths, saved.id).unwrap();
+
+    let content = fs::read_to_string(&omo_path).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let agents = value["opencode"]["agents"].as_object().unwrap();
+    assert_eq!(agents["existing"]["model"], "acme/old");
+    assert_eq!(agents["planner"]["model"], "acme/slow");
+    let categories = value["opencode"]["categories"].as_object().unwrap();
+    assert_eq!(categories["existing-cat"]["model"], "acme/old");
+    assert_eq!(categories["coding"]["model"], "acme/fast");
+}
+
+#[test]
+fn slim_switch_merges_and_preserves_residual_entries() {
+    let home = temp_home("slim-merge");
+    write_opencode(&home);
+
+    let slim_path = home.paths.slim_file();
+    write_file(
+        &slim_path,
+        br#"{"$schema":"x","presets":{"work":{"other":{"model":"acme/old"}}}}"#,
+    )
+    .unwrap();
+
+    let mut slim_group = group(GroupType::Slim, "work");
+    slim_group.slim_agent_overrides = Some(vec![binding("reviewer", "acme/slow")]);
+    let (saved, _) = groups::save_group(&home.paths, slim_group).unwrap();
+    groups::switch_group(&home.paths, saved.id).unwrap();
+
+    let content = fs::read_to_string(&slim_path).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(value["preset"], "work");
+    let preset = value["presets"]["work"].as_object().unwrap();
+    assert_eq!(preset["other"]["model"], "acme/old");
+    assert_eq!(preset["reviewer"]["model"], "acme/slow");
+}
+
+#[test]
+fn omo_delete_leaves_target_file_untouched() {
+    let home = temp_home("omo-delete-residual");
+    write_opencode(&home);
+
+    let omo_path = home.paths.omo_file();
+    write_file(
+        &omo_path,
+        br#"{"$schema":"x","opencode":{"agents":{"existing":{"model":"acme/old"}}}}"#,
+    )
+    .unwrap();
+
+    let mut omo_group = group(GroupType::Omo, "omo-main");
+    omo_group.omo_agent_overrides = Some(vec![binding("planner", "acme/slow")]);
+    let (saved, _) = groups::save_group(&home.paths, omo_group).unwrap();
+    groups::switch_group(&home.paths, saved.id).unwrap();
+
+    groups::delete_group(&home.paths, saved.id).unwrap();
+
+    let content = fs::read_to_string(&omo_path).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let agents = value["opencode"]["agents"].as_object().unwrap();
+    assert_eq!(agents["existing"]["model"], "acme/old");
+    assert_eq!(agents["planner"]["model"], "acme/slow");
+}
+
+#[test]
+fn slim_delete_leaves_preset_untouched() {
+    let home = temp_home("slim-delete");
+    write_opencode(&home);
+
+    let mut slim_group = group(GroupType::Slim, "work");
+    slim_group.slim_agent_overrides = Some(vec![binding("reviewer", "acme/slow")]);
+    let (saved, _) = groups::save_group(&home.paths, slim_group).unwrap();
+    groups::switch_group(&home.paths, saved.id).unwrap();
+
+    let slim_path = home.paths.slim_file();
+    assert!(fs::read_to_string(&slim_path)
+        .unwrap()
+        .contains("acme/slow"));
+
+    groups::delete_group(&home.paths, saved.id).unwrap();
+
+    let content = fs::read_to_string(&slim_path).unwrap();
+    assert!(content.contains("\"preset\": \"work\""));
+    assert!(content.contains("acme/slow"));
 }
 
 #[test]
@@ -335,14 +478,14 @@ fn save_group_validates_model_references_and_names() {
     let home = temp_home("group-validation");
     write_opencode(&home);
 
-    let mut invalid = group(GroupType::OpenCode, "bad-refs");
+    let mut invalid = group(GroupType::Native, "bad-refs");
     invalid.open_code_agent_overrides = vec![binding("ghost", "missing/model")];
     let error = groups::save_group(&home.paths, invalid).unwrap_err();
     assert_eq!(error.code, ErrorCode::ValidationFailed);
 
-    let first = group(GroupType::OpenCode, "dup");
+    let first = group(GroupType::Native, "dup");
     groups::save_group(&home.paths, first).unwrap();
-    let second = group(GroupType::OpenCode, "DUP");
+    let second = group(GroupType::Native, "DUP");
     let error = groups::save_group(&home.paths, second).unwrap_err();
     assert_eq!(error.code, ErrorCode::ValidationFailed);
 }
@@ -350,7 +493,7 @@ fn save_group_validates_model_references_and_names() {
 #[test]
 fn selection_state_survives_save_of_unselected_group() {
     let home = temp_home("state");
-    let selected = group(GroupType::OpenCode, "selected");
+    let selected = group(GroupType::Native, "selected");
     let (selected_saved, _) = groups::save_group(&home.paths, selected).unwrap();
     groups::switch_group(&home.paths, selected_saved.id).unwrap();
 

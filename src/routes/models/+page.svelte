@@ -5,9 +5,11 @@
   import EmptyTableRow from '$lib/components/app/EmptyTableRow.svelte';
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
+  import { getI18n } from '$lib/features/i18n/context.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import { toast } from '$lib/components/app/toast.svelte.js';
   const config = getConfig();
+  const i18n = getI18n();
   let query = $state('');
   let deleting = $state<string | null>(null);
   let activeTab = $state<'custom' | 'builtin'>('custom');
@@ -24,8 +26,8 @@
     if (!catalogError) return;
     toast({
       variant: 'error',
-      description: `Failed to load models via opencode CLI: ${catalogError.message}`,
-      action: { label: 'Retry', onclick: () => retryCatalog() },
+      description: i18n.t('models.catalogFailed', { message: catalogError.message }),
+      action: { label: i18n.t('models.retry'), onclick: () => retryCatalog() },
     });
   });
 
@@ -72,51 +74,60 @@
   }
 </script>
 
-<svelte:head><title>Models · opencode-mom</title></svelte:head><PageHead eyebrow="CONFIG / MODELS" title="Models"
+<svelte:head><title>{i18n.t('models.metaTitle')}</title></svelte:head><PageHead
+  eyebrow={i18n.t('models.eyebrow')}
+  title={i18n.t('models.title')}
   >{#snippet children()}<div class="flex items-center gap-2">
       <Button variant="outline" size="sm" onclick={refreshCatalog} disabled={config.catalogLoading}
-        ><RefreshCw size={14} /> Refresh</Button
-      ><Button href="/models/new"><Plus size={14} /> New model</Button>
+        ><RefreshCw size={14} /> {i18n.t('models.refresh')}</Button
+      ><Button href="/models/new"><Plus size={14} /> {i18n.t('models.new')}</Button>
     </div>{/snippet}</PageHead
 >
 <div class="search-toolbar">
-  <input aria-label="Search models" bind:value={query} placeholder="Search provider/model, e.g. anthropic/claude" />
+  <input
+    aria-label={i18n.t('models.searchLabel')}
+    bind:value={query}
+    placeholder={i18n.t('models.searchPlaceholder')}
+  />
 </div>
 <div class="flex gap-2 mb-3">
   <Button variant={activeTab === 'custom' ? 'default' : 'outline'} size="sm" onclick={() => (activeTab = 'custom')}
-    >Custom ({customModels.length})</Button
+    >{i18n.t('models.tabCustom', { count: customModels.length })}</Button
   >
   <Button variant={activeTab === 'builtin' ? 'default' : 'outline'} size="sm" onclick={() => (activeTab = 'builtin')}
-    >Builtin ({builtinModels.length})</Button
+    >{i18n.t('models.tabBuiltin', { count: builtinModels.length })}</Button
   >
 </div>
-<DataTable label="Model directory" total={visibleModels.length} bind:page {pageSize}
-  ><thead><tr><th>Provider</th><th>Name</th><th>Context</th><th class="th-actions">Actions</th></tr></thead><tbody
-    >{#if config.catalogLoading}<tr><td colspan="4" class="empty-table-row">Loading models from opencode CLI...</td></tr
+<DataTable label={i18n.t('models.tableLabel')} total={visibleModels.length} bind:page {pageSize}
+  ><thead
+    ><tr
+      ><th>{i18n.t('models.colProvider')}</th><th>{i18n.t('models.colName')}</th><th>{i18n.t('models.colContext')}</th
+      ><th class="th-actions">{i18n.t('models.colActions')}</th></tr
+    ></thead
+  ><tbody
+    >{#if config.catalogLoading}<tr><td colspan="4" class="empty-table-row">{i18n.t('models.loading')}</td></tr
       >{:else if !visibleModels.length}<EmptyTableRow
         colspan={4}
-        message={activeTab === 'custom'
-          ? 'No custom models. Create a provider and add models.'
-          : 'No builtin models found.'}
+        message={activeTab === 'custom' ? i18n.t('empty.modelsCustom') : i18n.t('empty.modelsBuiltin')}
       />{:else}{#each pagedModels as model}<tr
-          ><td>{model.providerId}</td><td>{model.name ?? 'unnamed'}</td><td
-            >{(model.limit as { context?: number })?.context ?? 'unset'}</td
+          ><td>{model.providerId}</td><td>{model.name ?? i18n.t('common.unnamed')}</td><td
+            >{(model.limit as { context?: number })?.context ?? i18n.t('common.unset')}</td
           ><td class="row-actions"
             >{#if model.isCustom}<Button
                 href={`/models/${encodeURIComponent(model.ref)}/edit`}
                 variant="ghost"
                 size="icon-sm"
-                title="Edit model"
-                aria-label={`Edit ${model.ref}`}><Pencil size={14} /></Button
+                title={i18n.t('models.editTitle')}
+                aria-label={i18n.t('models.editAria', { ref: model.ref })}><Pencil size={14} /></Button
               ><Button
                 variant="ghost"
                 size="icon-sm"
-                title="Delete model"
-                aria-label={`Delete ${model.ref}`}
+                title={i18n.t('models.deleteTitle')}
+                aria-label={i18n.t('models.deleteAria', { ref: model.ref })}
                 onclick={() => {
                   deleting = model.ref;
                 }}><Trash2 size={14} /></Button
-              >{:else}<span class="text-xs text-muted-foreground">read-only</span>{/if}</td
+              >{:else}<span class="text-xs text-muted-foreground">{i18n.t('common.readOnly')}</span>{/if}</td
           ></tr
         >{/each}{/if}</tbody
   ></DataTable
@@ -129,14 +140,12 @@
 >
   <Dialog.Content>
     <Dialog.Header>
-      <Dialog.Title>Delete model</Dialog.Title>
-      <Dialog.Description
-        >Delete <strong>{deleting}</strong>? Deletion is blocked while references exist.</Dialog.Description
-      >
+      <Dialog.Title>{i18n.t('models.deleteTitle')}</Dialog.Title>
+      <Dialog.Description>{i18n.t('models.deleteConfirm', { name: deleting ?? '' })}</Dialog.Description>
     </Dialog.Header>
     <Dialog.Footer>
-      <Button variant="outline" onclick={() => (deleting = null)}>Cancel</Button>
-      <Button variant="destructive" onclick={remove}>Delete</Button>
+      <Button variant="outline" onclick={() => (deleting = null)}>{i18n.t('common.cancel')}</Button>
+      <Button variant="destructive" onclick={remove}>{i18n.t('common.delete')}</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

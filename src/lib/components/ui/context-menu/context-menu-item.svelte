@@ -19,7 +19,7 @@
   role="menuitem"
   {type}
   class={cn(
-    'flex h-8 w-full items-center rounded-[2px] px-2 text-left outline-none transition-colors hover:bg-[#1e1e1e] focus-visible:bg-[#1e1e1e] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-[var(--disabled-opacity)]',
+    'flex h-8 w-full items-center rounded-[2px] px-2 text-left outline-none transition-colors hover:bg-[var(--surface-panel)] focus-visible:bg-[var(--surface-panel)] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-[var(--disabled-opacity)]',
     variant === 'destructive' &&
       'text-[var(--status-error)] hover:bg-[var(--status-error)]/10 focus-visible:bg-[var(--status-error)]/10',
     className,

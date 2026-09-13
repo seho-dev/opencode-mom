@@ -29,7 +29,7 @@ button {
 :focus-visible {
   outline: 1px solid var(--focus-ring);
   outline-offset: 2px;
-  box-shadow: 0 0 12px rgb(0 229 255 / 0.2);
+  box-shadow: var(--focus-glow);
 }
 a {
   color: inherit;

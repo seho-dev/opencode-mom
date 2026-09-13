@@ -5,9 +5,11 @@
   import { createCommandAdapter } from '$lib/features/config/adapter.js';
   import { createConfigStore } from '$lib/features/config/store.svelte.js';
   import { getConfig, setConfig } from '$lib/features/config/context.js';
+  import { createI18n } from '$lib/features/i18n/i18n.svelte.js';
+  import { setI18n } from '$lib/features/i18n/context.js';
   setConfig(createConfigStore(createCommandAdapter()));
   const config = getConfig()!;
-  // Prefetch the opencode model catalog at startup so list pages can render from the shared store directly.
+  setI18n(createI18n(() => config.preferences.locale));
   void config.loadCatalog().catch(() => {});
 </script>
 

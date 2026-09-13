@@ -1,11 +1,14 @@
 import { Bot, Boxes, LayoutDashboard, Network, Server } from '@lucide/svelte';
+import type { MessageKey } from '$lib/features/i18n/dictionaries/en.js';
 
-export const navigationItems = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/providers', label: 'Providers', icon: Server },
-  { href: '/models', label: 'Models', icon: Boxes },
-  { href: '/agents', label: 'Agents', icon: Bot },
-  { href: '/groups', label: 'Groups', icon: Network },
+type NavigationItem = { href: string; labelKey: MessageKey; icon: typeof LayoutDashboard };
+
+export const navigationItems: NavigationItem[] = [
+  { href: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
+  { href: '/providers', labelKey: 'nav.providers', icon: Server },
+  { href: '/models', labelKey: 'nav.models', icon: Boxes },
+  { href: '/agents', labelKey: 'nav.agents', icon: Bot },
+  { href: '/groups', labelKey: 'nav.groups', icon: Network },
 ];
 
 export function isNavigationItemActive(pathname: string, href: string) {

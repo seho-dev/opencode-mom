@@ -3,22 +3,23 @@
   import PageHead from '$lib/components/app/PageHead.svelte';
   import ModelForm from '$lib/components/app/ModelForm.svelte';
   import { getConfig } from '$lib/features/config/context.js';
+  import { getI18n } from '$lib/features/i18n/context.js';
   import type { ModelDef } from '$lib/features/config/types.js';
   const config = getConfig();
+  const i18n = getI18n();
   async function create(providerId: string, value: ModelDef) {
     await config.createModel(providerId, value);
     await goto('/models');
   }
 </script>
 
-<svelte:head><title>New model · opencode-mom</title></svelte:head><PageHead
-  eyebrow="CONFIG / MODELS"
-  title="New model"
+<svelte:head><title>{i18n.t('models.newMetaTitle')}</title></svelte:head><PageHead
+  eyebrow={i18n.t('models.eyebrow')}
+  title={i18n.t('models.newTitle')}
 />
 <p class="text-xs text-muted-foreground mb-3">
-  Models can only be created under custom providers (those defined in the opencode config file). Builtin models are
-  read-only and provided by opencode via CLI.
+  {i18n.t('models.newNotice')}
 </p>
 {#if !config.loading && config.providers.length === 0}<div class="state-banner error" role="alert">
-    No provider available. Create a provider first.
+    {i18n.t('models.noProvider')}
   </div>{:else}<ModelForm mode="new" providers={config.providers} saving={config.saving} onSave={create} />{/if}

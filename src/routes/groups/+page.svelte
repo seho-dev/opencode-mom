@@ -5,8 +5,10 @@
   import EmptyTableRow from '$lib/components/app/EmptyTableRow.svelte';
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
+  import { getI18n } from '$lib/features/i18n/context.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   const config = getConfig();
+  const i18n = getI18n();
   let query = $state('');
   let deleting = $state<string | null>(null);
   const pageSize = 5;
@@ -38,16 +40,31 @@
   }
 </script>
 
-<svelte:head><title>Groups · opencode-mom</title></svelte:head>
-<PageHead eyebrow="CONTROL PLANE / GROUPS" title="Groups"
-  >{#snippet children()}<Button href="/groups/new"><Plus size={14} /> New group</Button>{/snippet}</PageHead
+<svelte:head><title>{i18n.t('groups.metaTitle')}</title></svelte:head>
+<PageHead eyebrow={i18n.t('groups.eyebrow')} title={i18n.t('groups.title')}
+  >{#snippet children()}<Button href="/groups/new"><Plus size={14} /> {i18n.t('groups.new')}</Button
+    >{/snippet}</PageHead
 >
-<div class="search-toolbar"><input aria-label="Search groups" bind:value={query} placeholder="Search groups" /></div>
-<DataTable label="Group Directory" total={groups.length} bind:page {pageSize}
-  ><thead><tr><th>Name</th><th>Type</th><th>Mappings</th><th>Status</th><th class="th-actions">Actions</th></tr></thead
+<div class="search-toolbar">
+  <input
+    aria-label={i18n.t('groups.searchLabel')}
+    bind:value={query}
+    placeholder={i18n.t('groups.searchPlaceholder')}
+  />
+</div>
+<DataTable label={i18n.t('groups.tableLabel')} total={groups.length} bind:page {pageSize}
+  ><thead
+    ><tr
+      ><th>{i18n.t('groups.colName')}</th><th>{i18n.t('groups.colType')}</th><th>{i18n.t('groups.colMappings')}</th><th
+        >{i18n.t('groups.colStatus')}</th
+      ><th class="th-actions">{i18n.t('groups.colActions')}</th></tr
+    ></thead
   ><tbody
-    >{#if config.loading}<tr><td colspan="5" class="empty-table-row">Loading configuration...</td></tr
-      >{:else if !groups.length}<EmptyTableRow colspan={5} message="No groups." />{:else}{#each pagedGroups as group}<tr
+    >{#if config.loading}<tr><td colspan="5" class="empty-table-row">{i18n.t('groups.loading')}</td></tr
+      >{:else if !groups.length}<EmptyTableRow
+        colspan={5}
+        message={i18n.t('empty.groups')}
+      />{:else}{#each pagedGroups as group}<tr
           ><td class="model-name"
             >{group.name}
             <div class="muted">{group.description}</div></td
@@ -56,20 +73,23 @@
               (group.slimAgentOverrides?.length ?? 0) +
               (group.omoAgentOverrides?.length ?? 0) +
               (group.omoCategoryMappings?.length ?? 0)}</td
-          ><td>{group.isEnabled ? 'Enabled' : 'Disabled'}</td><td class="row-actions"
+          ><td>{group.isEnabled ? i18n.t('groups.enabled') : i18n.t('groups.disabled')}</td><td class="row-actions"
             ><Button
               variant="ghost"
               size="icon-sm"
-              aria-label={`Switch to ${group.name}`}
-              title="Switch group"
+              aria-label={i18n.t('groups.switchTo', { name: group.name })}
+              title={i18n.t('groups.switchTitle')}
               onclick={() => activate(group.id)}
               disabled={config.switching}><Play size={14} /></Button
-            ><Button href={`/groups/${group.id}/edit`} variant="ghost" size="icon-sm" aria-label={`Edit ${group.name}`}
-              ><Pencil size={14} /></Button
+            ><Button
+              href={`/groups/${group.id}/edit`}
+              variant="ghost"
+              size="icon-sm"
+              aria-label={i18n.t('groups.editAria', { name: group.name })}><Pencil size={14} /></Button
             ><Button
               variant="ghost"
               size="icon-sm"
-              aria-label={`Delete ${group.name}`}
+              aria-label={i18n.t('groups.deleteAria', { name: group.name })}
               onclick={() => (deleting = group.id)}><Trash2 size={14} /></Button
             ></td
           ></tr
@@ -84,12 +104,12 @@
 >
   <Dialog.Content>
     <Dialog.Header>
-      <Dialog.Title>Delete group</Dialog.Title>
-      <Dialog.Description>Delete group <strong>{deleting}</strong>? This cannot be undone.</Dialog.Description>
+      <Dialog.Title>{i18n.t('groups.deleteTitle')}</Dialog.Title>
+      <Dialog.Description>{i18n.t('groups.deleteConfirm', { name: deleting ?? '' })}</Dialog.Description>
     </Dialog.Header>
     <Dialog.Footer>
-      <Button variant="outline" onclick={() => (deleting = null)}>Cancel</Button>
-      <Button variant="destructive" onclick={remove}>Delete</Button>
+      <Button variant="outline" onclick={() => (deleting = null)}>{i18n.t('common.cancel')}</Button>
+      <Button variant="destructive" onclick={remove}>{i18n.t('common.delete')}</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

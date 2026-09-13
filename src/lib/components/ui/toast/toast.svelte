@@ -2,12 +2,12 @@
   import { type VariantProps, tv } from 'tailwind-variants';
 
   export const toastVariants = tv({
-    base: 'grid w-full max-w-sm grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-[2px] border bg-[#121212] p-3 text-[12px] leading-5',
+    base: 'grid w-full max-w-sm grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-[2px] border bg-[var(--surface-input)] p-3 text-[12px] leading-5',
     variants: {
       variant: {
-        info: 'border-[#00e5ff]/45 text-[#00e5ff]',
-        success: 'border-[#39ff14]/45 text-[#39ff14]',
-        warning: 'border-[#f0b429]/45 text-[#f0b429]',
+        info: 'border-[var(--accent-primary)]/45 text-[var(--accent-primary)]',
+        success: 'border-[var(--status-success)]/45 text-[var(--status-success)]',
+        warning: 'border-[var(--status-warning)]/45 text-[var(--status-warning)]',
         error: 'border-[var(--status-error)]/50 text-[var(--status-error)]',
       },
     },

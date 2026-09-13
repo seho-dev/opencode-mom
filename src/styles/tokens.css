@@ -19,11 +19,15 @@
 }
 
 :root {
+  color-scheme: dark;
   --surface-app: #131313;
   --surface-panel: #1e1e1e;
   --surface-input: #121212;
+  --surface-tooltip: #0e0e0e;
   --surface-hover: #202829;
   --surface-active: #07343b;
+  --overlay-scrim: rgb(0 0 0 / 0.7);
+  --overlay-scrim-soft: rgb(0 0 0 / 0.6);
   --text-primary: #e8eeee;
   --text-secondary: #9babab;
   --text-muted: #657171;
@@ -31,9 +35,14 @@
   --border-default: #3b494c;
   --border-subtle: #1f1f1f;
   --focus-ring: #00e5ff;
+  --focus-glow: 0 0 12px rgb(0 229 255 / 0.2);
+  --focus-glow-strong: 0 0 12px rgb(0 229 255 / 0.35);
   --accent-primary: #00e5ff;
   --accent-hover: #72f2ff;
+  --accent-solid: #00c8df;
+  --accent-solid-hover: #00e5ff;
   --status-success: #39ff14;
+  --status-warning: #f0b429;
   --status-error: #ff5c5c;
   --radius: 4px;
   --radius-sm: 2px;
@@ -57,4 +66,38 @@
   --scrollbar-thumb: #3b494c;
   --scrollbar-thumb-hover: #00e5ff;
   --scrollbar-thumb-active: #72f2ff;
+}
+
+/* Light theme: every color-bearing token is overridden so the whole app flips coherently. */
+[data-theme='light'] {
+  color-scheme: light;
+  --surface-app: #f4f6f6;
+  --surface-panel: #ffffff;
+  --surface-input: #ffffff;
+  --surface-tooltip: #ffffff;
+  --surface-hover: #e7eeee;
+  --surface-active: #d6f0f6;
+  --overlay-scrim: rgb(12 25 26 / 0.5);
+  --overlay-scrim-soft: rgb(12 25 26 / 0.4);
+  --text-primary: #12191a;
+  --text-secondary: #4a5859;
+  --text-muted: #5a6868;
+  --text-on-accent: #ffffff;
+  --border-default: #a9b8b8;
+  --border-subtle: #dfe5e5;
+  --focus-ring: #007a99;
+  --focus-glow: 0 0 12px rgb(0 122 153 / 0.18);
+  --focus-glow-strong: 0 0 12px rgb(0 122 153 / 0.3);
+  --accent-primary: #007a99;
+  --accent-hover: #006880;
+  --accent-solid: #007a99;
+  --accent-solid-hover: #006880;
+  --status-success: #1a7f37;
+  --status-warning: #8a5a00;
+  --status-error: #b3261e;
+  --scrollbar-track: #e8eded;
+  --scrollbar-track-raised: #f0f4f4;
+  --scrollbar-thumb: #b0bfbf;
+  --scrollbar-thumb-hover: #007a99;
+  --scrollbar-thumb-active: #006880;
 }

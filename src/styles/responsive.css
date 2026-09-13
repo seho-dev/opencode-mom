@@ -11,6 +11,11 @@
     padding: 0 16px;
   }
   .header-meta {
+    gap: 10px;
+  }
+  /* Keep the appearance controls reachable at every width; only the
+     READY / Local config readouts collapse on narrow screens. */
+  .header-readout {
     display: none;
   }
   .mobile-menu {
@@ -52,7 +57,7 @@
     position: fixed;
     inset: 0;
     z-index: 20;
-    background: rgb(0 0 0 / 0.6);
+    background: var(--overlay-scrim-soft);
   }
   .drawer.open {
     display: block;
@@ -60,7 +65,7 @@
   .drawer-panel {
     width: min(280px, calc(100vw - 40px));
     height: 100%;
-    background: #121212;
+    background: var(--surface-input);
     border-right: 1px solid var(--border-default);
     padding: 20px 12px;
     display: flex;

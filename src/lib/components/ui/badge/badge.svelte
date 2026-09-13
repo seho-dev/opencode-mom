@@ -5,12 +5,12 @@
     base: 'inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-[2px] border px-2 text-[11px] font-medium leading-4 [&>svg]:size-3 [&>svg]:shrink-0',
     variants: {
       variant: {
-        active: 'border-[#00c8df] bg-[#00c8df]/15 text-[#00e5ff]',
-        neutral: 'border-[var(--border-default)] bg-[#121212] text-[var(--text-secondary)]',
-        success: 'border-[#39ff14]/35 bg-[#39ff14]/10 text-[#39ff14]',
-        warning: 'border-[#f0b429]/40 bg-[#f0b429]/10 text-[#f0b429]',
+        active: 'border-[var(--accent-solid)] bg-[var(--accent-solid)]/15 text-[var(--accent-primary)]',
+        neutral: 'border-[var(--border-default)] bg-[var(--surface-input)] text-[var(--text-secondary)]',
+        success: 'border-[var(--status-success)]/35 bg-[var(--status-success)]/10 text-[var(--status-success)]',
+        warning: 'border-[var(--status-warning)]/40 bg-[var(--status-warning)]/10 text-[var(--status-warning)]',
         error: 'border-[var(--status-error)]/45 bg-[var(--status-error)]/10 text-[var(--status-error)]',
-        secondary: 'border-[var(--border-default)] bg-[#121212] text-[var(--text-secondary)]',
+        secondary: 'border-[var(--border-default)] bg-[var(--surface-input)] text-[var(--text-secondary)]',
         destructive: 'border-[var(--status-error)]/45 bg-[var(--status-error)]/10 text-[var(--status-error)]',
         outline: 'border-[var(--border-default)] bg-transparent text-[var(--text-primary)]',
       },

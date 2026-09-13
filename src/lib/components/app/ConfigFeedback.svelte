@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { getI18n } from '$lib/features/i18n/context.js';
   import { toast } from './toast.svelte.js';
   import { getConfig } from '$lib/features/config/context.js';
+
+  const i18n = getI18n();
   const config = getConfig();
 
   // Watch for command errors and surface them as error toasts, carrying the
@@ -12,33 +15,32 @@
     if (err.code === 'conflict') {
       toast({
         ...base,
-        description: 'The local draft is kept in the current form and was not overwritten.',
+        description: i18n.t('feedback.conflictDescription'),
         actions: [
-          { label: 'Keep draft and reload', onclick: () => config.reloadKeepingDraft() },
-          { label: 'Review and merge manually', onclick: () => config.continueEditing() },
-          { label: 'Discard draft and refresh', onclick: () => config.discardDraftAndRefresh() },
+          { label: i18n.t('feedback.keepDraftReload'), onclick: () => config.reloadKeepingDraft() },
+          { label: i18n.t('feedback.reviewMerge'), onclick: () => config.continueEditing() },
+          { label: i18n.t('feedback.discardRefresh'), onclick: () => config.discardDraftAndRefresh() },
         ],
       });
     } else if (err.code === 'busy') {
       toast({
         ...base,
-        description:
-          'Another configuration operation is still running. The local draft is kept; retry in the original form later.',
-        action: { label: 'Continue editing', onclick: () => config.continueEditing() },
+        description: i18n.t('feedback.busyDescription'),
+        action: { label: i18n.t('feedback.continueEditing'), onclick: () => config.continueEditing() },
       });
     } else if (err.code === 'references_blocked') {
       toast({
         ...base,
-        description: 'Remove the references first.',
-        action: { label: 'Back to draft', onclick: () => config.continueEditing() },
+        description: i18n.t('feedback.referencesDescription'),
+        action: { label: i18n.t('feedback.backToDraft'), onclick: () => config.continueEditing() },
       });
     } else {
       toast({
         ...base,
         description: config.draftRecovery
-          ? 'The request content is preserved; no automatic merge was performed. Review it in the original form and retry.'
-          : 'Review the current page and retry.',
-        action: { label: 'Continue editing', onclick: () => config.continueEditing() },
+          ? i18n.t('feedback.preservedDescription')
+          : i18n.t('feedback.retryDescription'),
+        action: { label: i18n.t('feedback.continueEditing'), onclick: () => config.continueEditing() },
       });
     }
   });
@@ -47,7 +49,8 @@
   $effect(() => {
     const notice = config.notice;
     if (!notice) return;
-    toast({ variant: 'success', description: notice });
+    // ponytail: config.notice is currently only set by the group-switch flow; revisit if other notices appear.
+    toast({ variant: 'success', description: i18n.t('toast.groupSwitched') });
     config.clearNotice();
   });
 </script>

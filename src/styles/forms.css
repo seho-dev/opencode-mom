@@ -74,10 +74,10 @@
 }
 .group-submit {
   min-height: 32px;
-  border: 1px solid #00c8df;
+  border: 1px solid var(--accent-solid);
   border-radius: 2px;
-  background: #00c8df;
-  color: #020708;
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
   padding: 0 16px;
   font-family: var(--font-primary);
   font-size: 11px;

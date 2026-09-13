@@ -52,7 +52,8 @@ pub fn run() {
             commands::save_group,
             commands::copy_group,
             commands::delete_group,
-            commands::switch_group
+            commands::switch_group,
+            commands::save_preferences
         ])
         .run(tauri::generate_context!())
         .expect("failed to run omo-switch Tauri shell")

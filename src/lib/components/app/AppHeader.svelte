@@ -9,8 +9,5 @@
   <div class="header-main">
     <MobileNavigation /><span class="header-title">CONTROL PLANE</span>
   </div>
-  <div class="header-meta">
-    <span class="online header-readout">● READY</span><span class="header-readout">Local config</span
-    ><AppearanceControls />
-  </div>
+  <div class="header-meta"><AppearanceControls /></div>
 </header>

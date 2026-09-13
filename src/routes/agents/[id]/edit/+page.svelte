@@ -9,6 +9,7 @@
   import { getConfig } from '$lib/features/config/context.js';
   import { getI18n } from '$lib/features/i18n/context.js';
   import { AGENT_MODES, STORAGE_LABELS } from '$lib/features/config/constants.js';
+  import { isBuiltinAgentId } from '$lib/features/config/builtinAgents.js';
   import type { AgentDefinition, AgentStorage, AgentWrite, ModelRef, OptionRow } from '$lib/features/config/types.js';
   import {
     buildModelOptions,
@@ -29,7 +30,10 @@
   };
   const config = getConfig();
   const i18n = getI18n();
-  const agent = $derived(config.agents.find((entry) => entry.id === decodeURIComponent(page.params.id ?? '')));
+  const routeId = $derived(decodeURIComponent(page.params.id ?? ''));
+  // Built-in catalog agents (native/slim/omo) are read-only; never expose their edit form.
+  const builtin = $derived(isBuiltinAgentId(routeId));
+  const agent = $derived(builtin ? undefined : config.agents.find((entry) => entry.id === routeId));
   let initialized = $state('');
   let seenReset = $state(-1);
   let storage = $state<AgentStorage>('inline');
@@ -169,7 +173,11 @@
 <svelte:head><title>{i18n.t('agents.editMetaTitle')}</title></svelte:head><PageHead
   eyebrow={i18n.t('agents.eyebrow')}
   title={i18n.t('agents.editTitle')}
-/>{#if agent}<p class="muted">{i18n.t('agents.editNotice')}</p>
+/>{#if builtin}<div class="state-banner" role="status">{i18n.t('agents.builtinReadOnly')}</div>{:else if agent}<p
+    class="muted"
+  >
+    {i18n.t('agents.editNotice')}
+  </p>
   <form
     class="panel form-panel"
     onsubmit={(event) => {

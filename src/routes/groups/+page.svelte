@@ -6,6 +6,7 @@
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import { getI18n } from '$lib/features/i18n/context.js';
+  import { GROUP_TYPE_LABELS } from '$lib/features/config/constants.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   const config = getConfig();
   const i18n = getI18n();
@@ -68,7 +69,7 @@
           ><td class="model-name"
             >{group.name}
             <div class="muted">{group.description}</div></td
-          ><td>{group.type}</td><td
+          ><td>{i18n.t(GROUP_TYPE_LABELS[group.type])}</td><td
             >{group.openCodeAgentOverrides.length +
               (group.slimAgentOverrides?.length ?? 0) +
               (group.omoAgentOverrides?.length ?? 0) +

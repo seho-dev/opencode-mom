@@ -1,4 +1,4 @@
-// Static catalog of categories shipped by the oh-my-openagent preset.
+// Static catalog of categories shipped by the OMO preset.
 // Read-only reference data; verified against the upstream oh-my-openagent repo.
 export const BUILTIN_CATEGORIES = [
   'visual-engineering',

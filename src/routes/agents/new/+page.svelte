@@ -4,10 +4,10 @@
   import AgentFields from '$lib/components/app/AgentFields.svelte';
   import FormActions from '$lib/components/app/FormActions.svelte';
   import PageHead from '$lib/components/app/PageHead.svelte';
-  import Select from '$lib/components/app/Select.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import { getI18n } from '$lib/features/i18n/context.js';
-  import { AGENT_MODES, MARKDOWN_STORAGE_OPTIONS } from '$lib/features/config/constants.js';
+  import { AGENT_MODES } from '$lib/features/config/constants.js';
+  import { isBuiltinAgentId } from '$lib/features/config/builtinAgents.js';
   import type { AgentSource, AgentStorage, AgentWrite, ModelRef, OptionRow } from '$lib/features/config/types.js';
   import {
     buildModelOptions,
@@ -21,8 +21,8 @@
   const config = getConfig();
   const i18n = getI18n();
   let id = $state('');
+  let idError = $state('');
   let source = $state<Exclude<AgentSource, 'both'>>('markdown');
-  let markdownStorage = $state<AgentStorage>('global_markdown');
   let values = $state<AgentFieldValues>({
     model: '',
     mode: '',
@@ -58,6 +58,12 @@
   );
 
   async function submit() {
+    const agentId = id.trim();
+    if (isBuiltinAgentId(agentId)) {
+      idError = i18n.t('agents.idReserved');
+      return;
+    }
+    idError = '';
     try {
       const fields = {
         model: values.model ? (values.model as ModelRef) : undefined,
@@ -74,9 +80,9 @@
         permission: permissionObject(permission),
         options: optionObject(options),
       };
-      const storage: AgentStorage = source === 'inline' ? 'inline' : markdownStorage;
+      const storage: AgentStorage = source === 'inline' ? 'inline' : 'global_markdown';
       const payload = {
-        id: id.trim(),
+        id: agentId,
         source,
         storage,
         mutation: { fields },
@@ -108,11 +114,23 @@
       <legend>{i18n.t('agents.identity')}</legend>
       <div class="form-grid">
         <div class="field">
-          <label for="agent-id">{i18n.t('agents.agentId')}</label><input id="agent-id" bind:value={id} required />
+          <label for="agent-id"
+            >{i18n.t('agents.agentId')}<span class="field-required" aria-hidden="true">*</span></label
+          ><input
+            id="agent-id"
+            bind:value={id}
+            required
+            aria-invalid={idError ? 'true' : undefined}
+            aria-describedby={idError ? 'agent-id-error' : undefined}
+            oninput={() => {
+              if (idError) idError = '';
+            }}
+          />
+          {#if idError}<p id="agent-id-error" class="field-error" role="alert">{idError}</p>{/if}
         </div>
         <fieldset class="group-fieldset">
           <legend>{i18n.t('agents.storageSource')}</legend>
-          <div class="check-row">
+          <div class="check-row source-options">
             <label
               ><input type="radio" name="source" value="markdown" bind:group={source} />
               {i18n.t('agents.markdown')}</label
@@ -122,15 +140,6 @@
             >
           </div>
         </fieldset>
-        {#if source === 'markdown'}
-          <div class="field">
-            <label for="agent-storage">{i18n.t('agents.storage')}</label><Select
-              id="agent-storage"
-              bind:value={markdownStorage}
-              options={MARKDOWN_STORAGE_OPTIONS.map((option) => ({ value: option.value, label: i18n.t(option.label) }))}
-            />
-          </div>
-        {/if}
       </div>
     </fieldset>
     <AgentFields

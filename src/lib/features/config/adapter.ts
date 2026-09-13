@@ -1,9 +1,11 @@
+import { groupTypeFromWire, groupTypeToWire } from './constants.js';
 import type {
   AgentDefinition,
   AppPreferences,
   AppState,
   CommandError,
   Group,
+  GroupType,
   ModelCatalogEntry,
   ModelDef,
   ModelRef,
@@ -37,9 +39,15 @@ export interface CommandAdapter {
 }
 
 export type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+// Persisted group.type uses frozen wire values; canonicalize at the IPC boundary only.
+const readGroup = (group: Group): Group => ({ ...group, type: groupTypeFromWire(group.type) });
+const writeGroup = (group: Group): Group => ({ ...group, type: groupTypeToWire(group.type) as GroupType });
 export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
   return {
-    loadAppState: () => invoke('load_app_state'),
+    loadAppState: async () => {
+      const state = await invoke<AppState>('load_app_state');
+      return { ...state, groups: state.groups.map(readGroup) };
+    },
     listProviders: () => invoke('list_providers'),
     listCustomProviders: () => invoke('list_custom_providers'),
     opencodeListModels: (provider) => invoke('opencode_list_models', { provider }),
@@ -56,8 +64,8 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     createAgent: (value) => invoke('create_agent', { agent: value }),
     updateAgent: (value) => invoke('update_agent', { agent: value }),
     deleteAgent: (id, storage) => invoke('delete_agent', { id, storage }),
-    saveGroup: (value) => invoke('save_group', { group: value }),
-    copyGroup: (id, name) => invoke('copy_group', { id, name }),
+    saveGroup: async (value) => readGroup(await invoke<Group>('save_group', { group: writeGroup(value) })),
+    copyGroup: async (id, name) => readGroup(await invoke<Group>('copy_group', { id, name })),
     deleteGroup: (id) => invoke('delete_group', { id }),
     switchGroup: (id) => invoke('switch_group', { id }),
     savePreferences: (preferences) => invoke('save_preferences', { preferences }),

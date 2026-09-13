@@ -41,7 +41,7 @@
   min-height: 32px;
   padding: 6px 8px;
 }
-.field input,
+.field input:not([type='checkbox']):not([type='radio']),
 .field textarea {
   width: 100%;
   min-width: 0;
@@ -59,6 +59,24 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+/* Agent storage-source radios: size the raw control to the compact form scale. */
+.check-row.source-options {
+  gap: 16px;
+}
+.check-row.source-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.check-row.source-options input[type='radio'] {
+  flex: none;
+  inline-size: 14px;
+  block-size: 14px;
+  margin: 0;
+  accent-color: var(--accent-primary);
 }
 .form-actions {
   display: flex;

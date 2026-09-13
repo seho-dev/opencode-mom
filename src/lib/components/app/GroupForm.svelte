@@ -10,9 +10,9 @@
   import { BUILTIN_AGENTS } from '$lib/features/config/builtinAgents.js';
   import { BUILTIN_CATEGORIES } from '$lib/features/config/builtinCategories.js';
   import {
-    BUILTIN_SYSTEMS,
+    GROUP_TYPE_LABELS,
+    GROUP_TYPE_NATIVE,
     GROUP_TYPE_OMO,
-    GROUP_TYPE_OPENCODE,
     GROUP_TYPE_OPTIONS,
     GROUP_TYPE_SLIM,
     MAPPING_KINDS,
@@ -27,7 +27,7 @@
   let name = $state('');
   let nameError = $state('');
   let description = $state('');
-  let type = $state<GroupType>(GROUP_TYPE_OPENCODE);
+  let type = $state<GroupType>(GROUP_TYPE_NATIVE);
   let native = $state<AgentModelBinding[]>([]);
   let slim = $state<AgentModelBinding[]>([]);
   let omo = $state<AgentModelBinding[]>([]);
@@ -37,11 +37,11 @@
   let seenReset = $state(-1);
   let tab = $state<MappingKind>(MAPPING_KINDS[0]);
   let pending = $state<GroupType | null>(null);
-  const builtinSystem = $derived(tab === GROUP_TYPE_SLIM ? GROUP_TYPE_SLIM : tab === 'omo' ? GROUP_TYPE_OMO : null);
+  const builtinSystem = $derived(tab === GROUP_TYPE_SLIM || tab === GROUP_TYPE_OMO ? tab : null);
   const mappingOptions = $derived(
-    tab === 'native'
+    tab === GROUP_TYPE_NATIVE
       ? config.agents.map((agent) => ({ value: agent.id, hint: agent.description ?? agent.mode }))
-      : builtinSystem && BUILTIN_SYSTEMS.includes(builtinSystem)
+      : builtinSystem
         ? BUILTIN_AGENTS.filter((agent) => agent.system === builtinSystem).map((agent) => ({
             value: agent.id,
             hint: agent.description,
@@ -65,8 +65,8 @@
   });
   function defaultTab(value: GroupType): MappingKind {
     if (value === GROUP_TYPE_SLIM) return GROUP_TYPE_SLIM;
-    if (value === GROUP_TYPE_OMO) return 'omo';
-    return 'native';
+    if (value === GROUP_TYPE_OMO) return GROUP_TYPE_OMO;
+    return GROUP_TYPE_NATIVE;
   }
   function loadGroup() {
     if (!group) return;
@@ -94,7 +94,9 @@
   });
   function changeType(next: GroupType) {
     const has =
-      (type === GROUP_TYPE_SLIM && slim.length > 0) || (type === GROUP_TYPE_OMO && omo.length + categories.length > 0);
+      (type === GROUP_TYPE_NATIVE && native.length > 0) ||
+      (type === GROUP_TYPE_SLIM && slim.length > 0) ||
+      (type === GROUP_TYPE_OMO && omo.length + categories.length > 0);
     if (next !== type && has) {
       pending = next;
       return;
@@ -102,22 +104,12 @@
     type = next;
     tab = defaultTab(next);
   }
-  function resolve(choice: 'keep' | 'clear' | 'cancel') {
-    if (!pending || choice === 'cancel') {
-      pending = null;
-      return;
+  function resolve(choice: 'confirm' | 'cancel') {
+    if (choice === 'confirm' && pending) {
+      type = pending;
+      tab = defaultTab(pending);
     }
-    if (choice === 'clear') {
-      if (type === GROUP_TYPE_SLIM) slim = [];
-      if (type === GROUP_TYPE_OMO) {
-        omo = [];
-        categories = [];
-      }
-    }
-    const next = pending;
-    type = next;
     pending = null;
-    tab = defaultTab(next);
   }
   function add(kind: MappingKind) {
     const model = config.catalogModels()[0]?.ref;
@@ -128,23 +120,30 @@
       });
       return;
     }
-    if (kind === 'native') native = [...native, { agentName: '', modelRef: model }];
+    if (kind === GROUP_TYPE_NATIVE) native = [...native, { agentName: '', modelRef: model }];
     if (kind === GROUP_TYPE_SLIM) slim = [...slim, { agentName: '', modelRef: model }];
-    if (kind === 'omo') omo = [...omo, { agentName: '', modelRef: model }];
+    if (kind === GROUP_TYPE_OMO) omo = [...omo, { agentName: '', modelRef: model }];
     if (kind === 'category') categories = [...categories, { categoryName: '', modelRef: model }];
   }
   function update(kind: MappingKind, index: number, field: string, value: string) {
-    const list = kind === 'native' ? native : kind === GROUP_TYPE_SLIM ? slim : kind === 'omo' ? omo : categories;
+    const list =
+      kind === GROUP_TYPE_NATIVE
+        ? native
+        : kind === GROUP_TYPE_SLIM
+          ? slim
+          : kind === GROUP_TYPE_OMO
+            ? omo
+            : categories;
     const next = list.map((entry, i) => (i === index ? { ...entry, [field]: value } : entry));
-    if (kind === 'native') native = next as AgentModelBinding[];
+    if (kind === GROUP_TYPE_NATIVE) native = next as AgentModelBinding[];
     if (kind === GROUP_TYPE_SLIM) slim = next as AgentModelBinding[];
-    if (kind === 'omo') omo = next as AgentModelBinding[];
+    if (kind === GROUP_TYPE_OMO) omo = next as AgentModelBinding[];
     if (kind === 'category') categories = next as CategoryMapping[];
   }
   function remove(kind: MappingKind, index: number) {
-    if (kind === 'native') native = native.filter((_, i) => i !== index);
+    if (kind === GROUP_TYPE_NATIVE) native = native.filter((_, i) => i !== index);
     if (kind === GROUP_TYPE_SLIM) slim = slim.filter((_, i) => i !== index);
-    if (kind === 'omo') omo = omo.filter((_, i) => i !== index);
+    if (kind === GROUP_TYPE_OMO) omo = omo.filter((_, i) => i !== index);
     if (kind === 'category') categories = categories.filter((_, i) => i !== index);
   }
   async function submit() {
@@ -194,7 +193,9 @@
 >
   <div class="form-grid">
     <div class="field">
-      <label for="group-name">{i18n.t('groupForm.groupName')}</label><input
+      <label for="group-name"
+        >{i18n.t('groupForm.groupName')}<span class="field-required" aria-hidden="true">*</span></label
+      ><input
         id="group-name"
         bind:value={name}
         required
@@ -223,7 +224,15 @@
               name="group-type"
               value={option.value}
               checked={type === option.value}
-              onchange={() => changeType(option.value)}
+              onchange={(event) => {
+                changeType(option.value);
+                // Native radios toggle before the type switch is confirmed; re-assert the
+                // controlled state so the checked input always matches `type`.
+                for (const input of event.currentTarget.closest('.architecture-grid')?.querySelectorAll('input') ??
+                  []) {
+                  input.checked = input.value === type;
+                }
+              }}
             /><span>{i18n.t(option.label)}</span></label
           >{/each}
       </div>
@@ -232,9 +241,12 @@
         {i18n.t('groupForm.noModels')}
       </div>{:else}<div class="field full">
         <div class="tabs" role="tablist" aria-label={i18n.t('groupForm.mappings')}>
-          <button type="button" role="tab" aria-selected={tab === 'native'} onclick={() => (tab = 'native')}
-            >{i18n.t('groupForm.tabNative')}</button
-          >{#if type === GROUP_TYPE_SLIM}<button
+          {#if type === GROUP_TYPE_NATIVE}<button
+              type="button"
+              role="tab"
+              aria-selected={tab === GROUP_TYPE_NATIVE}
+              onclick={() => (tab = GROUP_TYPE_NATIVE)}>{i18n.t('groupForm.tabNative')}</button
+            >{/if}{#if type === GROUP_TYPE_SLIM}<button
               type="button"
               role="tab"
               aria-selected={tab === GROUP_TYPE_SLIM}
@@ -242,13 +254,13 @@
             >{/if}{#if type === GROUP_TYPE_OMO}<button
               type="button"
               role="tab"
-              aria-selected={tab === 'omo'}
-              onclick={() => (tab = 'omo')}>{i18n.t('groupForm.tabOmo')}</button
+              aria-selected={tab === GROUP_TYPE_OMO}
+              onclick={() => (tab = GROUP_TYPE_OMO)}>{i18n.t('groupForm.tabOmo')}</button
             ><button type="button" role="tab" aria-selected={tab === 'category'} onclick={() => (tab = 'category')}
               >{i18n.t('groupForm.tabCategories')}</button
             >{/if}
         </div>
-        {#each tab === 'native' ? native : tab === GROUP_TYPE_SLIM ? slim : tab === 'omo' ? omo : categories as entry, index (tab + ':' + index)}<div
+        {#each tab === GROUP_TYPE_NATIVE ? native : tab === GROUP_TYPE_SLIM ? slim : tab === GROUP_TYPE_OMO ? omo : categories as entry, index (tab + ':' + index)}<div
             class="mapping-row"
           >
             <Combobox
@@ -295,13 +307,16 @@
   <Dialog.Content class="max-h-[calc(100vh-64px)] max-w-[560px] overflow-y-auto">
     <Dialog.Header>
       <Dialog.Title>{i18n.t('groupForm.switchTitle')}</Dialog.Title>
-      <Dialog.Description>{i18n.t('groupForm.switchDescription', { type: pending ?? '' })}</Dialog.Description>
+      <Dialog.Description
+        >{i18n.t('groupForm.switchDescription', {
+          type: pending ? i18n.t(GROUP_TYPE_LABELS[pending]) : '',
+        })}</Dialog.Description
+      >
     </Dialog.Header>
     <Dialog.Footer>
-      <Button variant="outline" onclick={() => resolve('keep')}>{i18n.t('groupForm.keepDraft')}</Button><Button
-        variant="destructive"
-        onclick={() => resolve('clear')}>{i18n.t('groupForm.clearMappings')}</Button
-      ><Button variant="ghost" onclick={() => resolve('cancel')}>{i18n.t('groupForm.cancelSwitch')}</Button>
+      <Button variant="outline" onclick={() => resolve('cancel')}>{i18n.t('common.cancel')}</Button><Button
+        onclick={() => resolve('confirm')}>{i18n.t('common.confirm')}</Button
+      >
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

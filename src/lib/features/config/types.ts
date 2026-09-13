@@ -93,10 +93,17 @@ export interface Group {
   isEnabled: boolean;
   updatedAt: string;
 }
+export type ThemePreference = 'light' | 'dark';
+export type LocalePreference = 'en' | 'zh';
+export interface AppPreferences {
+  theme: ThemePreference;
+  locale: LocalePreference;
+}
 export interface AppState {
   providers: ProviderDef[];
   agents: AgentDefinition[];
   groups: Group[];
+  preferences: AppPreferences;
   diagnostics?: string[];
 }
 export interface ModelCatalogEntry {

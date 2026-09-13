@@ -1,12 +1,15 @@
 import type { CommandAdapter } from './adapter.js';
 import type {
   AgentDefinition,
+  AppPreferences,
   AppState,
   Group,
+  LocalePreference,
   ModelCatalogEntry,
   ModelDef,
   ProviderDef,
   ModelRef,
+  ThemePreference,
   CommandError,
 } from './types.js';
 
@@ -63,12 +66,32 @@ export function createConfigStore(adapter: CommandAdapter) {
   let catalogError = $state<CommandError | null>(null);
   // Guards against out-of-order catalog responses when loads overlap (startup prefetch, group switch, manual refresh).
   let catalogRequestSeq = 0;
+  let preferences = $state<AppPreferences>({ theme: 'dark', locale: 'en' });
+  function syncPreferencesToDom() {
+    if (typeof document === 'undefined') return;
+    document.documentElement.dataset['theme'] = preferences.theme;
+    document.documentElement.lang = preferences.locale;
+  }
   const apply = (state: AppState, resetForms = false) => {
     providers = state.providers;
     agents = state.agents;
     groups = state.groups;
+    preferences = state.preferences;
+    syncPreferencesToDom();
     if (resetForms) formResetVersion += 1;
   };
+  async function persistPreferences(next: AppPreferences) {
+    const previous = preferences;
+    preferences = next;
+    syncPreferencesToDom();
+    try {
+      await adapter.savePreferences(next);
+    } catch (cause) {
+      preferences = previous;
+      syncPreferencesToDom();
+      error = serializeError(cause);
+    }
+  }
   const run = async <T>(operation: string, payload: unknown, action: () => Promise<T>) => {
     error = null;
     saving = true;
@@ -142,6 +165,9 @@ export function createConfigStore(adapter: CommandAdapter) {
     get groups() {
       return groups;
     },
+    get preferences() {
+      return preferences;
+    },
     get loading() {
       return loading;
     },
@@ -174,6 +200,12 @@ export function createConfigStore(adapter: CommandAdapter) {
     },
     clearNotice() {
       notice = null;
+    },
+    setTheme(theme: ThemePreference) {
+      return persistPreferences({ ...preferences, theme });
+    },
+    setLocale(locale: LocalePreference) {
+      return persistPreferences({ ...preferences, locale });
     },
     refresh,
     reloadKeepingDraft,

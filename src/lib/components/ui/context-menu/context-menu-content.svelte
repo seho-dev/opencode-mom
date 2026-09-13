@@ -17,7 +17,7 @@
   role="menu"
   tabindex="-1"
   class={cn(
-    'min-w-40 rounded-[2px] border border-[var(--border-default)] bg-[#121212] p-1 text-[12px] text-[var(--text-primary)]',
+    'min-w-40 rounded-[2px] border border-[var(--border-default)] bg-[var(--surface-input)] p-1 text-[12px] text-[var(--text-primary)]',
     className,
   )}
   {...restProps}

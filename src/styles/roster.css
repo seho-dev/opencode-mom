@@ -20,7 +20,7 @@
 }
 .architecture-card.active {
   border-color: var(--accent-primary);
-  background: #07343b;
+  background: var(--surface-active);
   color: var(--accent-primary);
 }
 .architecture-card span,
@@ -58,7 +58,7 @@
 }
 .roster-row:hover,
 .roster-row.active {
-  background: #1a2425;
+  background: var(--surface-hover);
 }
 .roster-row input {
   accent-color: var(--accent-primary);

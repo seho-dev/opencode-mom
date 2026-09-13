@@ -24,9 +24,9 @@
 >
   <input {id} type="checkbox" class="peer sr-only" bind:checked {disabled} {...restProps} />
   <span
-    class="absolute inset-0 rounded-[2px] border border-[var(--border-default)] bg-[var(--surface-input)] transition-colors peer-checked:border-[#00c8df] peer-checked:bg-[#07343b]"
+    class="absolute inset-0 rounded-[2px] border border-[var(--border-default)] bg-[var(--surface-input)] transition-colors peer-checked:border-[var(--accent-solid)] peer-checked:bg-[var(--surface-active)]"
   ></span>
   <span
-    class="relative ml-0.5 size-4 rounded-[2px] bg-[var(--text-muted)] transition-transform peer-checked:translate-x-5 peer-checked:bg-[#00c8df]"
+    class="relative ml-0.5 size-4 rounded-[2px] bg-[var(--text-muted)] transition-transform peer-checked:translate-x-5 peer-checked:bg-[var(--accent-solid)]"
   ></span>
 </label>

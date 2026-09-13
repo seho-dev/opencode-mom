@@ -7,8 +7,10 @@
   import type { AgentModelBinding, CategoryMapping, Group, GroupType } from '$lib/features/config/types.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import { toast } from './toast.svelte.js';
+  import { getI18n } from '$lib/features/i18n/context.js';
   type MappingKind = 'native' | 'slim' | 'omo' | 'category';
   const config = getConfig();
+  const i18n = getI18n();
   let { group }: { group?: Group } = $props();
   let name = $state('');
   let description = $state('');
@@ -100,7 +102,7 @@
       if (!globalThis.crypto?.randomUUID) {
         toast({
           variant: 'error',
-          description: 'Cannot generate a group ID in this environment. Refresh and try again.',
+          description: i18n.t('groupForm.noRandomUuid'),
         });
         return;
       }
@@ -136,16 +138,24 @@
 >
   <div class="form-grid">
     <div class="field">
-      <label for="group-name">Group name</label><input id="group-name" bind:value={name} required />
+      <label for="group-name">{i18n.t('groupForm.groupName')}</label><input
+        id="group-name"
+        bind:value={name}
+        required
+      />
     </div>
     <div class="field">
-      <label for="group-description">Description</label><input id="group-description" bind:value={description} />
+      <label for="group-description">{i18n.t('groupForm.description')}</label><input
+        id="group-description"
+        bind:value={description}
+      />
     </div>
-    <label class="check-row full"><input type="checkbox" bind:checked={isEnabled} /> Enable this group</label>
+    <label class="check-row full"><input type="checkbox" bind:checked={isEnabled} /> {i18n.t('groupForm.enable')}</label
+    >
     <fieldset class="group-fieldset full">
-      <legend>Group type</legend>
-      <div class="architecture-grid" role="radiogroup" aria-label="Group type">
-        {#each [['opencode', 'OpenCode'], ['slim', 'Slim'], ['oh-my-openagent', 'OhMyOpenAgent']] as option}<label
+      <legend>{i18n.t('groupForm.groupType')}</legend>
+      <div class="architecture-grid" role="radiogroup" aria-label={i18n.t('groupForm.groupType')}>
+        {#each [['opencode', i18n.t('groupForm.typeOpencode')], ['slim', i18n.t('groupForm.typeSlim')], ['oh-my-openagent', i18n.t('groupForm.typeOmo')]] as option}<label
             class:active={type === option[0]}
             class="architecture-card"
             ><input
@@ -159,56 +169,59 @@
       </div>
     </fieldset>
     {#if config.providers.length === 0}<div class="state-banner error full" role="alert">
-        No real models available; mappings cannot be added.
+        {i18n.t('groupForm.noModels')}
       </div>{:else}<div class="field full">
-        <div class="tabs" role="tablist" aria-label="Group mappings">
+        <div class="tabs" role="tablist" aria-label={i18n.t('groupForm.mappings')}>
           <button type="button" role="tab" aria-selected={tab === 'native'} onclick={() => (tab = 'native')}
-            >OpenCode Agents</button
+            >{i18n.t('groupForm.tabNative')}</button
           >{#if type === 'slim'}<button
               type="button"
               role="tab"
               aria-selected={tab === 'slim'}
-              onclick={() => (tab = 'slim')}>Slim preset</button
+              onclick={() => (tab = 'slim')}>{i18n.t('groupForm.tabSlim')}</button
             >{/if}{#if type === 'oh-my-openagent'}<button
               type="button"
               role="tab"
               aria-selected={tab === 'omo'}
-              onclick={() => (tab = 'omo')}>OMO Agents</button
+              onclick={() => (tab = 'omo')}>{i18n.t('groupForm.tabOmo')}</button
             ><button type="button" role="tab" aria-selected={tab === 'category'} onclick={() => (tab = 'category')}
-              >OMO Categories</button
+              >{i18n.t('groupForm.tabCategories')}</button
             >{/if}
         </div>
         {#each tab === 'native' ? native : tab === 'slim' ? slim : tab === 'omo' ? omo : categories as entry, index}<div
             class="mapping-row"
           >
             <input
-              aria-label="Mapping name"
+              aria-label={i18n.t('groupForm.mappingName')}
               value={'agentName' in entry ? entry.agentName : entry.categoryName}
               oninput={(event) =>
                 update(tab, index, 'agentName' in entry ? 'agentName' : 'categoryName', event.currentTarget.value)}
             /><select
-              aria-label="Model reference"
+              aria-label={i18n.t('groupForm.modelRef')}
               value={entry.modelRef}
               onchange={(event) => update(tab, index, 'modelRef', event.currentTarget.value)}
               >{#each config.models() as model}<option value={model.ref}>{model.ref}</option>{/each}</select
             ><input
-              aria-label="Mapping variant"
+              aria-label={i18n.t('groupForm.mappingVariant')}
               value={entry.variant ?? ''}
-              placeholder="Variant"
+              placeholder={i18n.t('groupForm.variantPlaceholder')}
               oninput={(event) => update(tab, index, 'variant', event.currentTarget.value)}
             /><Button
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Remove mapping"
+              aria-label={i18n.t('groupForm.removeMapping')}
               onclick={() => remove(tab, index)}><Trash2 size={14} /></Button
             >
-          </div>{/each}<Button type="button" size="sm" variant="outline" onclick={() => add(tab)}>Add mapping</Button>
+          </div>{/each}<Button type="button" size="sm" variant="outline" onclick={() => add(tab)}
+          >{i18n.t('groupForm.addMapping')}</Button
+        >
       </div>{/if}
   </div>
   <FormActions
-    ><Button href="/groups" variant="outline">Cancel</Button><Button type="submit" disabled={config.saving}
-      >Save group</Button
+    ><Button href="/groups" variant="outline">{i18n.t('common.cancel')}</Button><Button
+      type="submit"
+      disabled={config.saving}>{i18n.t('groupForm.save')}</Button
     >
   </FormActions>
 </form>
@@ -220,14 +233,14 @@
 >
   <Dialog.Content>
     <Dialog.Header>
-      <Dialog.Title>Switch group type</Dialog.Title>
-      <Dialog.Description>Switching to <strong>{pending}</strong> affects dedicated mappings.</Dialog.Description>
+      <Dialog.Title>{i18n.t('groupForm.switchTitle')}</Dialog.Title>
+      <Dialog.Description>{i18n.t('groupForm.switchDescription', { type: pending ?? '' })}</Dialog.Description>
     </Dialog.Header>
     <Dialog.Footer>
-      <Button variant="outline" onclick={() => resolve('keep')}>Keep draft</Button><Button
+      <Button variant="outline" onclick={() => resolve('keep')}>{i18n.t('groupForm.keepDraft')}</Button><Button
         variant="destructive"
-        onclick={() => resolve('clear')}>Clear incompatible mappings</Button
-      ><Button variant="ghost" onclick={() => resolve('cancel')}>Cancel switch</Button>
+        onclick={() => resolve('clear')}>{i18n.t('groupForm.clearMappings')}</Button
+      ><Button variant="ghost" onclick={() => resolve('cancel')}>{i18n.t('groupForm.cancelSwitch')}</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

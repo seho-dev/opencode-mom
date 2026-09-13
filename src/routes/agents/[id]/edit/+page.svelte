@@ -5,6 +5,7 @@
   import FormActions from '$lib/components/app/FormActions.svelte';
   import PageHead from '$lib/components/app/PageHead.svelte';
   import { getConfig } from '$lib/features/config/context.js';
+  import { getI18n } from '$lib/features/i18n/context.js';
   import type { AgentDefinition, AgentStorage, ModelRef } from '$lib/features/config/types.js';
   import { toast } from '$lib/components/app/toast.svelte.js';
   type OptionRow = { key: string; value: string };
@@ -18,6 +19,7 @@
   type AgentMutation = { source: AgentStorage; fields: Record<string, unknown>; clearFields: string[] };
   type AgentWrite = AgentDefinition & { mutation?: AgentMutation };
   const config = getConfig();
+  const i18n = getI18n();
   const agent = $derived(config.agents.find((entry) => entry.id === decodeURIComponent(page.params.id ?? '')));
   let initialized = $state('');
   let seenReset = $state(-1);
@@ -54,7 +56,7 @@
   const object = (value: string, label: string) => {
     const parsed = JSON.parse(value);
     if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object')
-      throw new Error(`${label} must be a JSON object`);
+      throw new Error(i18n.t('validation.mustBeJsonObject', { label }));
     return parsed as Record<string, unknown>;
   };
   const pretty = (value: unknown) => JSON.stringify(value ?? {}, null, 2);
@@ -76,9 +78,7 @@
         }),
     );
   const promptHint = (value: string) =>
-    /\{(?:file|env):[^}]+\}/.test(value)
-      ? 'File or environment references are used; they are resolved at runtime.'
-      : 'Supports {file:path/to/prompt.md} and {env:VARIABLE_NAME}.';
+    /\{(?:file|env):[^}]+\}/.test(value) ? i18n.t('agents.promptHintResolved') : i18n.t('agents.promptHintSupport');
   const snapshots = (value: AgentDefinition | undefined) => {
     const raw = (value as (AgentDefinition & Record<string, unknown>) | undefined)?.['sources'];
     if (!Array.isArray(raw)) return [] as SourceSnapshot[];
@@ -161,7 +161,7 @@
     if (!agent || !selectedSource) {
       toast({
         variant: 'error',
-        description: 'The selected source was not provided in the DTO sources; it cannot be edited safely.',
+        description: i18n.t('agents.sourceCannotEdit'),
       });
       return;
     }
@@ -179,16 +179,16 @@
     } catch (error) {
       toast({
         variant: 'error',
-        description: error instanceof Error ? error.message : 'Save failed. Check the configuration state.',
+        description: error instanceof Error ? error.message : i18n.t('toast.saveFailedAgent'),
       });
     }
   }
 </script>
 
-<svelte:head><title>Edit agent · opencode-mom</title></svelte:head><PageHead
-  eyebrow="CONFIG / AGENTS"
-  title="Edit agent"
-/>{#if agent}<p class="muted">Editing writes only to the selected source; the effective view is never written back.</p>
+<svelte:head><title>{i18n.t('agents.editMetaTitle')}</title></svelte:head><PageHead
+  eyebrow={i18n.t('agents.eyebrow')}
+  title={i18n.t('agents.editTitle')}
+/>{#if agent}<p class="muted">{i18n.t('agents.editNotice')}</p>
   <form
     class="panel form-panel"
     onsubmit={(event) => {
@@ -198,36 +198,45 @@
   >
     <div class="form-grid">
       <div class="field full">
-        <label for="storage">Edit source</label><select id="storage" bind:value={storage} onchange={loadSource}
+        <label for="storage">{i18n.t('agents.editSource')}</label><select
+          id="storage"
+          bind:value={storage}
+          onchange={loadSource}
           >{#each snapshots(agent) as source}<option value={source.storage}
               >{source.storage === 'inline'
-                ? 'Inline'
+                ? i18n.t('agents.sourceInline')
                 : source.storage === 'global_markdown'
-                  ? 'Global Markdown'
-                  : 'Project Markdown'}</option
+                  ? i18n.t('agents.sourceGlobalMarkdown')
+                  : i18n.t('agents.sourceProjectMarkdown')}</option
             >{/each}</select
-        >{#if selectedSource}<small class="muted">Path: {selectedSource.path ?? 'no path provided by the DTO'}.</small
-          >{:else}<small class="muted"
-            >The selected source is not provided by the DTO; it cannot be written safely.</small
-          >{/if}{#if agent.source === 'both'}<small class="muted"
-            >Effective overrides: the effective view is read-only and never saved.</small
+        >{#if selectedSource}<small class="muted"
+            >{i18n.t('agents.pathLabel', { path: selectedSource.path ?? i18n.t('agents.noPath') })}</small
+          >{:else}<small class="muted">{i18n.t('agents.sourceMissing')}</small>{/if}{#if agent.source === 'both'}<small
+            class="muted">{i18n.t('agents.effectiveOverrides')}</small
           >{/if}
       </div>
-      <div class="field"><label for="mode">Mode</label><input id="mode" bind:value={mode} /></div>
+      <div class="field"><label for="mode">{i18n.t('common.mode')}</label><input id="mode" bind:value={mode} /></div>
       <div class="field">
-        <label for="model">Model</label><select id="model" bind:value={model}
-          ><option value="">Clear / inherit</option>{#each config.models() as entry}<option value={entry.ref}
-              >{entry.ref}</option
+        <label for="model">{i18n.t('common.model')}</label><select id="model" bind:value={model}
+          ><option value="">{i18n.t('agents.clearInherit')}</option>{#each config.models() as entry}<option
+              value={entry.ref}>{entry.ref}</option
             >{/each}</select
         >
       </div>
       <div class="field full">
-        <label for="description">Description</label><input id="description" bind:value={description} />
+        <label for="description">{i18n.t('common.description')}</label><input
+          id="description"
+          bind:value={description}
+        />
       </div>
-      <div class="field"><label for="variant">Variant</label><input id="variant" bind:value={variant} /></div>
-      <div class="field"><label for="color">Color</label><input id="color" bind:value={color} /></div>
       <div class="field">
-        <label for="temperature">Temperature</label><input
+        <label for="variant">{i18n.t('agents.variant')}</label><input id="variant" bind:value={variant} />
+      </div>
+      <div class="field">
+        <label for="color">{i18n.t('agents.color')}</label><input id="color" bind:value={color} />
+      </div>
+      <div class="field">
+        <label for="temperature">{i18n.t('agents.temperature')}</label><input
           id="temperature"
           type="number"
           step="0.01"
@@ -235,50 +244,62 @@
         />
       </div>
       <div class="field">
-        <label for="top-p">Top P</label><input id="top-p" type="number" min="0" step="0.01" bind:value={topP} />
+        <label for="top-p">{i18n.t('agents.topP')}</label><input
+          id="top-p"
+          type="number"
+          min="0"
+          step="0.01"
+          bind:value={topP}
+        />
       </div>
       <div class="field">
-        <label for="steps">Steps</label><input id="steps" type="number" min="1" step="1" bind:value={steps} />
+        <label for="steps">{i18n.t('agents.steps')}</label><input
+          id="steps"
+          type="number"
+          min="1"
+          step="1"
+          bind:value={steps}
+        />
       </div>
-      <label class="check-row"><input type="checkbox" bind:checked={disable} /> Disable</label><label class="check-row"
-        ><input type="checkbox" bind:checked={hidden} /> Hidden</label
+      <label class="check-row"><input type="checkbox" bind:checked={disable} /> {i18n.t('agents.disable')}</label><label
+        class="check-row"><input type="checkbox" bind:checked={hidden} /> {i18n.t('agents.hidden')}</label
       >
       <div class="field full">
-        <label for="prompt">Prompt</label><textarea id="prompt" bind:value={prompt}></textarea><small class="muted"
-          >{promptHint(prompt)}</small
+        <label for="prompt">{i18n.t('agents.prompt')}</label><textarea id="prompt" bind:value={prompt}></textarea><small
+          class="muted">{promptHint(prompt)}</small
         >
       </div>
       <div class="field full">
-        <label for="permission">Permission JSON</label><textarea id="permission" bind:value={permission}></textarea>
+        <label for="permission">{i18n.t('agents.permissionJson')}</label><textarea
+          id="permission"
+          bind:value={permission}></textarea>
       </div>
       <fieldset class="field full">
-        <legend>Options key/value pairs</legend>{#each options as row, index}<div class="key-value-row">
+        <legend>{i18n.t('agents.optionsKv')}</legend>{#each options as row, index}<div class="key-value-row">
             <input
-              aria-label={`Option key ${index + 1}`}
+              aria-label={i18n.t('agents.optionKey', { index: index + 1 })}
               value={row.key}
               oninput={(event) => updateOption(index, 'key', event.currentTarget.value)}
             /><input
-              aria-label={`Option value ${index + 1}`}
+              aria-label={i18n.t('agents.optionValue', { index: index + 1 })}
               value={row.value}
               oninput={(event) => updateOption(index, 'value', event.currentTarget.value)}
             /><Button
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Remove option"
-              onclick={() => removeOption(index)}>Remove</Button
+              aria-label={i18n.t('agents.removeOption')}
+              onclick={() => removeOption(index)}>{i18n.t('common.remove')}</Button
             >
-          </div>{/each}<Button type="button" size="sm" variant="outline" onclick={addOption}>Add option</Button>
-        <pre>{pretty(optionObject())}</pre>
-        <small class="muted"
-          >Key/value rows are the only editing entry point; the JSON is a synchronized preview only.</small
+          </div>{/each}<Button type="button" size="sm" variant="outline" onclick={addOption}
+          >{i18n.t('agents.addOption')}</Button
         >
+        <pre>{pretty(optionObject())}</pre>
+        <small class="muted">{i18n.t('agents.kvHintEdit')}</small>
       </fieldset>
       <details class="diagnostics full">
-        <summary>Danger zone: clear fields of the selected source</summary>
-        <p class="muted">
-          Checked fields are embedded into mutation.clearFields; effective values are never copied back into the source.
-        </p>
+        <summary>{i18n.t('agents.dangerClearTitle')}</summary>
+        <p class="muted">{i18n.t('agents.dangerClearHint')}</p>
         {#each editableFields as field}<label class="check-row"
             ><input
               type="checkbox"
@@ -289,28 +310,27 @@
                   : clearFields.filter((item) => item !== field);
               }}
             />
-            Clear {field}</label
+            {i18n.t('agents.clearField', { field })}</label
           >{/each}
       </details>
       <details class="diagnostics full">
-        <summary>Source preview</summary>
-        <h3>Effective configuration (read-only)</h3>
+        <summary>{i18n.t('agents.sourcePreview')}</summary>
+        <h3>{i18n.t('agents.effectiveConfig')}</h3>
         <pre>{pretty(agent.effective)}</pre>
         {#each snapshots(agent) as source}<h3>{source.storage}</h3>
           <p class="muted">
-            Path: {source.path ?? 'not provided by the DTO'}; {source.raw
-              ? 'The following is the real raw content provided by the DTO.'
-              : 'The DTO provides no raw content; the following is the field snapshot of this source only.'}
+            {i18n.t('agents.pathLabel', { path: source.path ?? i18n.t('agents.pathNotProvided') })}
+            {source.raw ? i18n.t('agents.rawProvided') : i18n.t('agents.rawNotProvided')}
           </p>
           <pre>{source.raw ?? pretty(source.fields)}</pre>{/each}
       </details>
     </div>
     <FormActions
-      ><Button href="/agents" variant="outline">Cancel</Button><Button
+      ><Button href="/agents" variant="outline">{i18n.t('common.cancel')}</Button><Button
         type="submit"
-        disabled={config.saving || !selectedSource}>Save changes</Button
+        disabled={config.saving || !selectedSource}>{i18n.t('agents.saveChanges')}</Button
       ></FormActions
     >
   </form>{:else if !config.loading}<div class="state-banner error" role="alert">
-    The agent does not exist or has not been loaded yet.
+    {i18n.t('agents.notFound')}
   </div>{/if}

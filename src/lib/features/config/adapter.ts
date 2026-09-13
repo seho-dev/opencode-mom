@@ -1,5 +1,6 @@
 import type {
   AgentDefinition,
+  AppPreferences,
   AppState,
   CommandError,
   Group,
@@ -32,6 +33,7 @@ export interface CommandAdapter {
   copyGroup(id: string, name: string): Result<Group>;
   deleteGroup(id: string): Result<void>;
   switchGroup(id: string): Result<void>;
+  savePreferences(preferences: AppPreferences): Result<void>;
 }
 
 export type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
@@ -58,6 +60,7 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     copyGroup: (id, name) => invoke('copy_group', { id, name }),
     deleteGroup: (id) => invoke('delete_group', { id }),
     switchGroup: (id) => invoke('switch_group', { id }),
+    savePreferences: (preferences) => invoke('save_preferences', { preferences }),
   };
 }
 export function createCommandAdapter(): CommandAdapter {

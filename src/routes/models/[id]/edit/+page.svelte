@@ -4,8 +4,10 @@
   import PageHead from '$lib/components/app/PageHead.svelte';
   import ModelForm from '$lib/components/app/ModelForm.svelte';
   import { getConfig } from '$lib/features/config/context.js';
+  import { getI18n } from '$lib/features/i18n/context.js';
   import type { ModelDef } from '$lib/features/config/types.js';
   const config = getConfig();
+  const i18n = getI18n();
   const ref = $derived(decodeURIComponent(page.params.id ?? ''));
   const found = $derived(config.models().find((model) => model.ref === ref));
   async function update(providerId: string, value: ModelDef) {
@@ -14,17 +16,17 @@
   }
 </script>
 
-<svelte:head><title>Edit model · opencode-mom</title></svelte:head><PageHead
-  eyebrow="CONFIG / MODELS"
-  title="Edit model"
+<svelte:head><title>{i18n.t('models.editMetaTitle')}</title></svelte:head><PageHead
+  eyebrow={i18n.t('models.eyebrow')}
+  title={i18n.t('models.editTitle')}
 />
 {#if found}<ModelForm
     mode="edit"
     initial={found}
     defaultProviderId={found.providerId}
     saving={config.saving}
-    submitLabel="Save changes"
+    submitLabel={i18n.t('modelForm.saveChanges')}
     onSave={update}
   />{:else if !config.loading}<div class="state-banner error" role="alert">
-    The model does not exist or has not been loaded yet.
+    {i18n.t('models.notFound')}
   </div>{/if}

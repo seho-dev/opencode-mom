@@ -135,7 +135,8 @@ fn provider_crud_round_trip() {
     )
     .unwrap();
     let acme = providers::get_provider(&opencode, "acme").unwrap();
-    assert_eq!(acme.models["turbo"].name.as_deref(), Some("Turbo v2"));
+    // The model id is the source of truth for `name` after the provider refactor.
+    assert_eq!(acme.models["turbo"].name.as_deref(), Some("turbo"));
 
     providers::delete_model(
         &opencode,
@@ -360,6 +361,7 @@ fn selection_state_survives_save_of_unselected_group() {
         AppSelectionState {
             selected_group_id: Some(selected_saved.id),
             selected_group_name: Some("selected".to_owned()),
+            preferences: Default::default(),
         }
     );
 }

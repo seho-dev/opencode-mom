@@ -17,7 +17,7 @@
   bind:ref
   data-slot="checkbox"
   class={cn(
-    'relative flex size-4 shrink-0 items-center justify-center rounded-[2px] border border-[var(--border-default)] bg-[var(--surface-input)] text-[#020708] outline-none transition-[background-color,border-color,box-shadow] duration-100 data-[state=checked]:border-[#00c8df] data-[state=checked]:bg-[#00c8df] data-[state=indeterminate]:border-[#00c8df] data-[state=indeterminate]:bg-[#00c8df] hover:bg-[var(--surface-hover)] focus-visible:border-[var(--accent-primary)] focus-visible:outline-none focus-visible:shadow-[0_0_12px_rgba(0,229,255,.2)] disabled:cursor-not-allowed disabled:opacity-[var(--disabled-opacity)] motion-reduce:transition-none',
+    'relative flex size-4 shrink-0 items-center justify-center rounded-[2px] border border-[var(--border-default)] bg-[var(--surface-input)] text-[var(--text-on-accent)] outline-none transition-[background-color,border-color,box-shadow] duration-100 data-[state=checked]:border-[var(--accent-solid)] data-[state=checked]:bg-[var(--accent-solid)] data-[state=indeterminate]:border-[var(--accent-solid)] data-[state=indeterminate]:bg-[var(--accent-solid)] hover:bg-[var(--surface-hover)] focus-visible:border-[var(--accent-primary)] focus-visible:outline-none focus-visible:shadow-[var(--focus-glow)] disabled:cursor-not-allowed disabled:opacity-[var(--disabled-opacity)] motion-reduce:transition-none',
     className,
   )}
   bind:checked

@@ -6,7 +6,7 @@
   overflow: hidden;
 }
 .sidebar {
-  background: #121212;
+  background: var(--surface-input);
   border-right: 1px solid var(--border-subtle);
   padding: 20px 12px;
   display: flex;
@@ -44,7 +44,7 @@
 }
 .nav a[aria-current='page'] {
   border-left-color: var(--accent-primary);
-  background: #06282d;
+  background: var(--surface-active);
   color: var(--accent-primary);
 }
 .system-status {
@@ -80,10 +80,22 @@
   color: var(--text-primary);
   font-weight: 600;
 }
+.header-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.header-main .header-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .header-meta {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex-shrink: 0;
 }
 .content {
   padding: 32px;

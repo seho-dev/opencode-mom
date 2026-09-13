@@ -172,6 +172,7 @@ pub fn switch_group(paths: &ConfigPaths, group_id: Uuid) -> Result<(), AppError>
     config.state = AppSelectionState {
         selected_group_id: Some(group.id),
         selected_group_name: Some(group.name.clone()),
+        preferences: config.state.preferences,
     };
     models::save_config(&paths.config_file(), &config)
 }

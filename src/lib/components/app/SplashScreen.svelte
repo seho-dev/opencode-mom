@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { getI18n } from '$lib/features/i18n/context.js';
+
+  const i18n = getI18n();
+  const brand = i18n.t('splash.brand');
   let { visible = true }: { visible?: boolean } = $props();
 
   let root: HTMLElement | null = null;
@@ -38,7 +42,7 @@
 
 <div class="splash-root" bind:this={root} aria-hidden="true">
   <div class="splash-stage">
-    <h1 class="splash-title"><span class="splash-title-accent">O</span>PENCODE-MOM</h1>
+    <h1 class="splash-title"><span class="splash-title-accent">{brand.slice(0, 1)}</span>{brand.slice(1)}</h1>
   </div>
 </div>
 

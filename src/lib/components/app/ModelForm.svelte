@@ -5,6 +5,7 @@
   import { Switch } from '$lib/components/ui/switch/index.js';
   import FormActions from './FormActions.svelte';
   import { toast } from './toast.svelte.js';
+  import { getI18n } from '$lib/features/i18n/context.js';
   import type { ModelDef, ModelModality, ProviderDef } from '$lib/features/config/types.js';
 
   type InterleavedChoice = 'unset' | 'true' | 'false' | 'reasoning' | 'reasoning_content' | 'reasoning_text' | 'custom';
@@ -26,13 +27,15 @@
     return selected;
   };
 
+  const i18n = getI18n();
+
   let {
     mode,
     providers = [],
     defaultProviderId = '',
     initial,
     saving = false,
-    submitLabel = 'Save model',
+    submitLabel = i18n.t('modelForm.save'),
     onSave,
   }: {
     mode: 'new' | 'edit';
@@ -138,7 +141,7 @@
         if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error('not an object');
         return parsed as Record<string, unknown>;
       } catch {
-        errors[field] = 'Must be a valid JSON object, not an array or scalar.';
+        errors[field] = i18n.t('validation.jsonObject');
         return undefined;
       }
     };
@@ -148,13 +151,13 @@
     const optionsValue = parseObject(options, 'options');
     const headersValue = parseObject(headers, 'headers');
     if (headersValue && Object.entries(headersValue).some(([, header]) => typeof header !== 'string'))
-      errors['headers'] = 'Header values must be strings.';
+      errors['headers'] = i18n.t('validation.headersStrings');
     const interleavedValue = interleaved === 'custom' ? parseObject(interleavedCustom, 'interleaved') : undefined;
     if (
       interleavedValue &&
       (typeof interleavedValue['field'] !== 'string' || !String(interleavedValue['field']).trim())
     )
-      errors['interleaved'] = 'Must be an object with a non-empty string "field", e.g. { "field": "reasoning" }.';
+      errors['interleaved'] = i18n.t('validation.interleavedField');
 
     const variantEntries: { key: string; entry: Record<string, unknown> }[] = [];
     for (const row of variants) {
@@ -172,14 +175,14 @@
     const limitUsed = anyFilled(limitContext, limitOutput, limitInput);
     // context_over_200k sits inside cost, so base input/output are required whenever either block is used.
     if ((costUsed || ctxUsed) && (!costInput.trim() || !costOutput.trim()))
-      errors['cost'] = 'Input and output are required.';
+      errors['cost'] = i18n.t('validation.costRequired');
     if (ctxUsed && (!costCtxInput.trim() || !costCtxOutput.trim()))
-      errors['costCtx'] = 'context_over_200k needs input and output.';
+      errors['costCtx'] = i18n.t('validation.contextOver200k');
     if (limitUsed && (!limitContext.trim() || !limitOutput.trim()))
-      errors['limit'] = 'Context and output are required.';
+      errors['limit'] = i18n.t('validation.limitRequired');
 
     if (Object.keys(errors).length) {
-      toast({ variant: 'error', description: 'Fix the highlighted fields before saving.' });
+      toast({ variant: 'error', description: i18n.t('toast.fixFields') });
       return;
     }
 
@@ -247,7 +250,7 @@
       // The owning provider is fixed when editing; only a new model chooses one.
       await onSave(mode === 'edit' ? defaultProviderId : providerId, value);
     } catch (error) {
-      toast({ variant: 'error', description: error instanceof Error ? error.message : 'Save failed.' });
+      toast({ variant: 'error', description: error instanceof Error ? error.message : i18n.t('toast.saveFailed') });
     }
   }
 </script>
@@ -261,40 +264,51 @@
 >
   <div class="form-grid">
     <fieldset class="group-fieldset">
-      <legend>Identity</legend>
+      <legend>{i18n.t('modelForm.identity')}</legend>
       <div class="form-grid">
         {#if mode === 'new'}
           <div class="field">
-            <label for="model-provider">Provider</label>
+            <label for="model-provider">{i18n.t('modelForm.provider')}</label>
             <select id="model-provider" bind:value={providerId} required disabled={saving}>
-              <option value="" disabled>Select a provider</option>
+              <option value="" disabled>{i18n.t('modelForm.selectProvider')}</option>
               {#each providers as provider}<option value={provider.name}>{provider.name}</option>{/each}
             </select>
           </div>
           <div class="field">
-            <label for="model-id">Model ID</label>
-            <input id="model-id" bind:value={id} required disabled={saving} placeholder="claude-sonnet-4" />
+            <label for="model-id">{i18n.t('modelForm.modelId')}</label>
+            <input
+              id="model-id"
+              bind:value={id}
+              required
+              disabled={saving}
+              placeholder={i18n.t('modelForm.modelIdPlaceholder')}
+            />
           </div>
         {:else}
           <div class="field">
-            <label for="model-provider">Provider</label>
+            <label for="model-provider">{i18n.t('modelForm.provider')}</label>
             <input id="model-provider" value={defaultProviderId} disabled />
           </div>
           <div class="field">
-            <label for="model-id">Model ID</label>
+            <label for="model-id">{i18n.t('modelForm.modelId')}</label>
             <input id="model-id" value={id} disabled />
           </div>
         {/if}
         <div class="field">
-          <label for="model-family">Family</label>
-          <input id="model-family" bind:value={family} disabled={saving} placeholder="claude" />
+          <label for="model-family">{i18n.t('modelForm.family')}</label>
+          <input
+            id="model-family"
+            bind:value={family}
+            disabled={saving}
+            placeholder={i18n.t('modelForm.familyPlaceholder')}
+          />
         </div>
         <div class="field">
-          <label for="model-release-date">Release date</label>
+          <label for="model-release-date">{i18n.t('modelForm.releaseDate')}</label>
           <input id="model-release-date" type="date" bind:value={releaseDate} disabled={saving} />
         </div>
         <div class="field">
-          <label for="model-status">Status</label>
+          <label for="model-status">{i18n.t('modelForm.status')}</label>
           <select id="model-status" bind:value={status} disabled={saving}>
             <option value="active">active</option>
             <option value="alpha">alpha</option>
@@ -306,66 +320,66 @@
     </fieldset>
 
     <fieldset class="group-fieldset">
-      <legend>Capabilities</legend>
+      <legend>{i18n.t('modelForm.capabilities')}</legend>
       <div class="form-grid">
         <div class="field full">
           <div class="grid grid-cols-2 gap-x-6 gap-y-3">
             <div class="check-row">
               <Switch id="model-reasoning" bind:checked={reasoning} disabled={saving} /><label for="model-reasoning"
-                >Reasoning</label
+                >{i18n.t('modelForm.reasoning')}</label
               >
             </div>
             <div class="check-row">
               <Switch id="model-tool-call" bind:checked={toolCall} disabled={saving} /><label for="model-tool-call"
-                >Tool call</label
+                >{i18n.t('modelForm.toolCall')}</label
               >
             </div>
             <div class="check-row">
               <Switch id="model-attachment" bind:checked={attachment} disabled={saving} /><label for="model-attachment"
-                >Attachment</label
+                >{i18n.t('modelForm.attachment')}</label
               >
             </div>
             <div class="check-row">
               <Switch id="model-experimental" bind:checked={experimental} disabled={saving} /><label
-                for="model-experimental">Experimental</label
+                for="model-experimental">{i18n.t('modelForm.experimental')}</label
               >
             </div>
           </div>
-          <small class="muted">Unticked capabilities stay unset and inherit the provider or opencode defaults.</small>
+          <small class="muted">{i18n.t('modelForm.capabilitiesHint')}</small>
         </div>
         <div class="field">
-          <label for="model-temperature">Temperature</label>
+          <label for="model-temperature">{i18n.t('modelForm.temperature')}</label>
           <select id="model-temperature" bind:value={temperature} disabled={saving}>
-            <option value="">Unset</option>
+            <option value="">{i18n.t('modelForm.unset')}</option>
             <option value="true">true</option>
             <option value="false">false</option>
           </select>
-          <small class="muted">Whether the model accepts a temperature setting.</small>
+          <small class="muted">{i18n.t('modelForm.temperatureHint')}</small>
         </div>
         <div class="field">
-          <label for="model-interleaved">Interleaved</label>
+          <label for="model-interleaved">{i18n.t('modelForm.interleaved')}</label>
           <select id="model-interleaved" bind:value={interleaved} disabled={saving}>
-            <option value="unset">Unset</option>
+            <option value="unset">{i18n.t('modelForm.unset')}</option>
             <option value="true">true</option>
             <option value="false">false</option>
             <option value="reasoning">reasoning</option>
             <option value="reasoning_content">reasoning_content</option>
             <option value="reasoning_text">reasoning_text</option>
-            <option value="custom">custom (JSON)</option>
+            <option value="custom">{i18n.t('modelForm.interleavedCustom')}</option>
           </select>
-          <small class="muted">Where reasoning content is placed in the response when present.</small>
+          <small class="muted">{i18n.t('modelForm.interleavedHint')}</small>
         </div>
         {#if interleaved === 'custom'}<div class="field full">
-            <label for="model-interleaved-custom">Interleaved object</label>
+            <label for="model-interleaved-custom">{i18n.t('modelForm.interleavedObject')}</label>
             <textarea id="model-interleaved-custom" class="small" bind:value={interleavedCustom} disabled={saving}
             ></textarea>
-            <small class="muted">JSON object of the form {'{ "field": "reasoning" }'}.</small>
+            <small class="muted">{i18n.t('modelForm.interleavedObjectHint')}</small>
             {#if errors['interleaved']}<p class="field-error">{errors['interleaved']}</p>{/if}
           </div>{/if}
         <div class="field full">
           <div class="grid grid-cols-2 gap-x-8">
             <div>
-              <p class="group-title">Input modalities</p>
+              <p class="group-title">{i18n.t('modelForm.inputModalities')}</p>
               <div class="grid gap-y-2">
                 {#each MODALITIES as modality}<div class="check-row">
                     <Checkbox id="model-input-{modality}" bind:checked={modalityInput[modality]} disabled={saving} />
@@ -374,7 +388,7 @@
               </div>
             </div>
             <div>
-              <p class="group-title">Output modalities</p>
+              <p class="group-title">{i18n.t('modelForm.outputModalities')}</p>
               <div class="grid gap-y-2">
                 {#each MODALITIES as modality}<div class="check-row">
                     <Checkbox id="model-output-{modality}" bind:checked={modalityOutput[modality]} disabled={saving} />
@@ -388,40 +402,40 @@
     </fieldset>
 
     <fieldset class="group-fieldset">
-      <legend>Limits &amp; cost</legend>
+      <legend>{i18n.t('modelForm.limitsCost')}</legend>
       <div class="form-grid">
         <div class="field full">
-          <p class="group-title">Cost</p>
+          <p class="group-title">{i18n.t('modelForm.cost')}</p>
           <div class="num-grid">
             <div class="sub-field">
-              <label for="cost-input">Input *</label>
+              <label for="cost-input">{i18n.t('modelForm.inputRequired')}</label>
               <input id="cost-input" type="number" step="any" bind:value={costInput} disabled={saving} />
             </div>
             <div class="sub-field">
-              <label for="cost-output">Output *</label>
+              <label for="cost-output">{i18n.t('modelForm.outputRequired')}</label>
               <input id="cost-output" type="number" step="any" bind:value={costOutput} disabled={saving} />
             </div>
             <div class="sub-field">
-              <label for="cost-cache-read">Cache read</label>
+              <label for="cost-cache-read">{i18n.t('modelForm.cacheRead')}</label>
               <input id="cost-cache-read" type="number" step="any" bind:value={costCacheRead} disabled={saving} />
             </div>
             <div class="sub-field">
-              <label for="cost-cache-write">Cache write</label>
+              <label for="cost-cache-write">{i18n.t('modelForm.cacheWrite')}</label>
               <input id="cost-cache-write" type="number" step="any" bind:value={costCacheWrite} disabled={saving} />
             </div>
           </div>
           <p class="num-section-label">context_over_200k</p>
           <div class="num-grid">
             <div class="sub-field">
-              <label for="cost-ctx-input">Input</label>
+              <label for="cost-ctx-input">{i18n.t('modelForm.input')}</label>
               <input id="cost-ctx-input" type="number" step="any" bind:value={costCtxInput} disabled={saving} />
             </div>
             <div class="sub-field">
-              <label for="cost-ctx-output">Output</label>
+              <label for="cost-ctx-output">{i18n.t('modelForm.output')}</label>
               <input id="cost-ctx-output" type="number" step="any" bind:value={costCtxOutput} disabled={saving} />
             </div>
             <div class="sub-field">
-              <label for="cost-ctx-cache-read">Cache read</label>
+              <label for="cost-ctx-cache-read">{i18n.t('modelForm.cacheRead')}</label>
               <input
                 id="cost-ctx-cache-read"
                 type="number"
@@ -431,7 +445,7 @@
               />
             </div>
             <div class="sub-field">
-              <label for="cost-ctx-cache-write">Cache write</label>
+              <label for="cost-ctx-cache-write">{i18n.t('modelForm.cacheWrite')}</label>
               <input
                 id="cost-ctx-cache-write"
                 type="number"
@@ -441,70 +455,76 @@
               />
             </div>
           </div>
-          <small class="muted">Price in USD per 1M tokens; cache rates sit on top of the base input price.</small>
+          <small class="muted">{i18n.t('modelForm.costHint')}</small>
           {#if errors['cost']}<p class="field-error">{errors['cost']}</p>{/if}
           {#if errors['costCtx']}<p class="field-error">{errors['costCtx']}</p>{/if}
         </div>
         <div class="field full">
-          <p class="group-title">Limits</p>
+          <p class="group-title">{i18n.t('modelForm.limits')}</p>
           <div class="num-grid">
             <div class="sub-field">
-              <label for="limit-context">Context *</label>
+              <label for="limit-context">{i18n.t('modelForm.contextRequired')}</label>
               <input id="limit-context" type="number" min="0" step="1" bind:value={limitContext} disabled={saving} />
             </div>
             <div class="sub-field">
-              <label for="limit-output">Output *</label>
+              <label for="limit-output">{i18n.t('modelForm.outputRequired')}</label>
               <input id="limit-output" type="number" min="0" step="1" bind:value={limitOutput} disabled={saving} />
             </div>
             <div class="sub-field">
-              <label for="limit-input">Input</label>
+              <label for="limit-input">{i18n.t('modelForm.input')}</label>
               <input id="limit-input" type="number" min="0" step="1" bind:value={limitInput} disabled={saving} />
             </div>
           </div>
-          <small class="muted"
-            >Token counts: context is the full window, output caps generation, input optionally caps the prompt.</small
-          >
+          <small class="muted">{i18n.t('modelForm.limitsHint')}</small>
           {#if errors['limit']}<p class="field-error">{errors['limit']}</p>{/if}
         </div>
       </div>
     </fieldset>
 
     <fieldset class="group-fieldset">
-      <legend>Runtime</legend>
+      <legend>{i18n.t('modelForm.runtime')}</legend>
       <div class="form-grid">
         <div class="field">
-          <p class="group-title">Options</p>
+          <p class="group-title">{i18n.t('modelForm.options')}</p>
           <textarea id="model-options" bind:value={options} disabled={saving}></textarea>
-          <small class="muted">Arbitrary provider options passed to the model client.</small>
+          <small class="muted">{i18n.t('modelForm.optionsHint')}</small>
           {#if errors['options']}<p class="field-error">{errors['options']}</p>{/if}
         </div>
         <div class="field">
-          <p class="group-title">Headers</p>
+          <p class="group-title">{i18n.t('modelForm.headers')}</p>
           <textarea id="model-headers" bind:value={headers} disabled={saving}></textarea>
-          <small class="muted">Extra HTTP headers, e.g. {'{ "x-api-key": "..." }'}.</small>
+          <small class="muted">{i18n.t('modelForm.headersHint')}</small>
           {#if errors['headers']}<p class="field-error">{errors['headers']}</p>{/if}
         </div>
         <div class="field full">
-          <p class="group-title">Variants</p>
+          <p class="group-title">{i18n.t('modelForm.variants')}</p>
           {#each variants as variant, index}
             <div class="variant-row">
-              <input aria-label="Variant name" placeholder="variant-name" bind:value={variant.key} disabled={saving} />
-              <textarea aria-label="Variant options JSON" placeholder={'{}'} bind:value={variant.json} disabled={saving}
-              ></textarea>
+              <input
+                aria-label={i18n.t('modelForm.variantName')}
+                placeholder={i18n.t('modelForm.variantNamePlaceholder')}
+                bind:value={variant.key}
+                disabled={saving}
+              />
+              <textarea
+                aria-label={i18n.t('modelForm.variantOptionsJson')}
+                placeholder={'{}'}
+                bind:value={variant.json}
+                disabled={saving}></textarea>
               <div class="variant-toggle">
                 <Switch
                   id="variant-disabled-{index}"
-                  aria-label="Disable variant {index + 1}"
+                  aria-label={i18n.t('modelForm.disableVariant', { index: index + 1 })}
                   bind:checked={variant.disabled}
                   disabled={saving}
                 />
-                <span>disabled</span>
+                <span>{i18n.t('modelForm.disabled')}</span>
               </div>
               <Button
                 type="button"
                 size="icon-sm"
                 variant="ghost"
-                aria-label="Remove variant"
+                aria-label={i18n.t('modelForm.removeVariant')}
                 disabled={saving}
                 onclick={() => removeVariant(index)}><Trash2 size={14} /></Button
               >
@@ -513,19 +533,16 @@
           {#if errors['variants']}<p class="field-error">{errors['variants']}</p>{/if}
           <div class="variants-actions">
             <Button type="button" size="sm" variant="outline" disabled={saving} onclick={addVariant}
-              ><Plus size={14} /> Add variant</Button
+              ><Plus size={14} /> {i18n.t('modelForm.addVariant')}</Button
             >
           </div>
-          <small class="muted"
-            >Variant name → options expected by opencode, e.g. {'{ "reasoningEffort": "high" }'}. Use the toggle to
-            disable a variant.</small
-          >
+          <small class="muted">{i18n.t('modelForm.variantsHint')}</small>
         </div>
       </div>
     </fieldset>
   </div>
   <FormActions
-    ><Button href="/models" variant="outline" disabled={saving}>Cancel</Button><Button
+    ><Button href="/models" variant="outline" disabled={saving}>{i18n.t('common.cancel')}</Button><Button
       type="submit"
       disabled={saving || (mode === 'new' && !providerId)}>{submitLabel}</Button
     ></FormActions

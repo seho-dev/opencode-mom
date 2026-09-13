@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Pencil, Plus, Trash2, RefreshCw } from '@lucide/svelte';
+  import { Pencil, Plus, Trash2 } from '@lucide/svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import DataTable from '$lib/components/app/DataTable.svelte';
   import EmptyTableRow from '$lib/components/app/EmptyTableRow.svelte';
@@ -48,13 +48,6 @@
     page = 1;
   });
 
-  async function refreshCatalog() {
-    try {
-      await config.loadCatalog();
-    } catch {
-      // Failures are surfaced as an error toast via the catalogError watcher above.
-    }
-  }
   async function retryCatalog() {
     try {
       await config.loadCatalog();
@@ -78,9 +71,7 @@
   eyebrow={i18n.t('models.eyebrow')}
   title={i18n.t('models.title')}
   >{#snippet children()}<div class="flex items-center gap-2">
-      <Button variant="outline" size="sm" onclick={refreshCatalog} disabled={config.catalogLoading}
-        ><RefreshCw size={14} /> {i18n.t('models.refresh')}</Button
-      ><Button href="/models/new"><Plus size={14} /> {i18n.t('models.new')}</Button>
+      <Button href="/models/new"><Plus size={14} /> {i18n.t('models.new')}</Button>
     </div>{/snippet}</PageHead
 >
 <div class="search-toolbar">
@@ -105,10 +96,11 @@
       ><th class="th-actions">{i18n.t('models.colActions')}</th></tr
     ></thead
   ><tbody
-    >{#if config.catalogLoading}<tr><td colspan="4" class="empty-table-row">{i18n.t('models.loading')}</td></tr
+    >{#if config.catalogLoading}<tr
+        ><td colspan="4" class="empty-table-row">{i18n.t('models.loadingConfiguration')}</td></tr
       >{:else if !visibleModels.length}<EmptyTableRow
         colspan={4}
-        message={activeTab === 'custom' ? i18n.t('empty.modelsCustom') : i18n.t('empty.modelsBuiltin')}
+        message={activeTab === 'custom' ? i18n.t('empty.modelsCustomShort') : i18n.t('empty.modelsBuiltinShort')}
       />{:else}{#each pagedModels as model}<tr
           ><td>{model.providerId}</td><td>{model.name ?? i18n.t('common.unnamed')}</td><td
             >{(model.limit as { context?: number })?.context ?? i18n.t('common.unset')}</td

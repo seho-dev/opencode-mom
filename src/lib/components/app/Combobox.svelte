@@ -1,35 +1,128 @@
 <script lang="ts">
+  import type { HTMLInputAttributes } from 'svelte/elements';
+  import { getI18n } from '$lib/features/i18n/context.js';
+
+  const i18n = getI18n();
+
   type ComboboxOption = { value: string; label?: string; hint?: string };
 
-  let { value = $bindable(''), options = [] as ComboboxOption[], placeholder = '', disabled = false } = $props();
+  interface ComboboxProps extends Omit<
+    HTMLInputAttributes,
+    'value' | 'oninput' | 'onchange' | 'onfocus' | 'onblur' | 'onkeydown'
+  > {
+    value?: string;
+    options?: ComboboxOption[];
+    placeholder?: string;
+    disabled?: boolean;
+    onchange?: (value: string) => void;
+  }
+
+  let {
+    value = $bindable(''),
+    options = [],
+    placeholder = '',
+    disabled = false,
+    onchange,
+    ...rest
+  }: ComboboxProps = $props();
+
+  const inputId = $props.id();
+  const listId = `${inputId}-list`;
+  const optionId = (index: number) => `${inputId}-option-${index}`;
+
   let open = $state(false);
+  // Filtering uses the typed query, not the committed value, so reopening shows all options.
+  let query = $state('');
+  let activeIndex = $state(-1);
+
+  const filtered = $derived(
+    query.trim()
+      ? options.filter((option) =>
+          `${option.label ?? ''} ${option.value}`.toLowerCase().includes(query.trim().toLowerCase()),
+        )
+      : options,
+  );
+
+  function close() {
+    open = false;
+    query = '';
+    activeIndex = -1;
+  }
 
   function pick(option: ComboboxOption) {
     value = option.value;
-    open = false;
+    onchange?.(value);
+    close();
+  }
+
+  function onkeydown(event: KeyboardEvent) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (!open) {
+        open = true;
+        return;
+      }
+      activeIndex = Math.min(activeIndex + 1, filtered.length - 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+    } else if (event.key === 'Enter') {
+      const option = filtered[activeIndex];
+      if (open && activeIndex >= 0 && option) {
+        event.preventDefault();
+        pick(option);
+      }
+    } else if (event.key === 'Escape') {
+      close();
+    }
   }
 </script>
 
 <div class="combo">
   <input
-    bind:value
+    {...rest}
+    id={inputId}
+    type="text"
+    role="combobox"
+    aria-expanded={open}
+    aria-controls={listId}
+    aria-autocomplete="list"
+    aria-activedescendant={open && activeIndex >= 0 ? optionId(activeIndex) : undefined}
     {placeholder}
     {disabled}
     autocomplete="off"
-    onfocus={() => (open = true)}
-    onblur={() => setTimeout(() => (open = false), 100)}
-    onkeydown={(event) => {
-      if (event.key === 'Escape') open = false;
+    {value}
+    oninput={(event) => {
+      value = event.currentTarget.value;
+      query = value;
+      open = true;
+      activeIndex = -1;
+      onchange?.(value);
     }}
+    onfocus={() => (open = true)}
+    onblur={() => setTimeout(close, 100)}
+    {onkeydown}
   />
   {#if open}
-    <div class="combo-list" role="listbox">
-      {#each options as option (option.value)}
-        <button type="button" role="option" onclick={() => pick(option)}>
-          <span>{option.label ?? option.value}</span>
-          {#if option.hint}<small>{option.hint}</small>{/if}
-        </button>
-      {/each}
+    <div class="combo-list" role="listbox" id={listId}>
+      {#if filtered.length === 0}
+        <div class="combo-empty">{i18n.t('common.noMatches')}</div>
+      {:else}
+        {#each filtered as option, index (option.value)}
+          <button
+            type="button"
+            id={optionId(index)}
+            role="option"
+            aria-selected={index === activeIndex}
+            class:active={index === activeIndex}
+            onmouseenter={() => (activeIndex = index)}
+            onclick={() => pick(option)}
+          >
+            <span>{option.label ?? option.value}</span>
+            {#if option.hint}<small>{option.hint}</small>{/if}
+          </button>
+        {/each}
+      {/if}
     </div>
   {/if}
 </div>
@@ -58,10 +151,12 @@
     left: 0;
     right: 0;
     z-index: 50;
+    max-height: 264px;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: var(--surface-panel);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
-    overflow: hidden;
   }
   .combo-list button {
     display: flex;
@@ -78,12 +173,19 @@
     font-family: var(--font-primary);
     font-size: 12px;
   }
-  .combo-list button:hover {
+  .combo-list button:hover,
+  .combo-list button.active {
     background: var(--surface-hover);
   }
   .combo-list small {
     margin-left: auto;
     color: var(--text-muted);
     font-size: 11px;
+  }
+  .combo-empty {
+    padding: 8px 10px;
+    color: var(--text-muted);
+    font-family: var(--font-primary);
+    font-size: 12px;
   }
 </style>

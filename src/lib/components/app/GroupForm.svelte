@@ -3,16 +3,28 @@
   import { Trash2 } from '@lucide/svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import FormActions from './FormActions.svelte';
+  import Select from './Select.svelte';
+  import Combobox from './Combobox.svelte';
   import { getConfig } from '$lib/features/config/context.js';
+  import { BUILTIN_AGENTS } from '$lib/features/config/builtinAgents.js';
+  import { BUILTIN_CATEGORIES } from '$lib/features/config/builtinCategories.js';
+  import {
+    BUILTIN_SYSTEMS,
+    GROUP_TYPE_OMO,
+    GROUP_TYPE_OPENCODE,
+    GROUP_TYPE_OPTIONS,
+    GROUP_TYPE_SLIM,
+    MAPPING_KINDS,
+    type MappingKind,
+  } from '$lib/features/config/constants.js';
   import type { AgentModelBinding, CategoryMapping, Group, GroupType } from '$lib/features/config/types.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import { toast } from './toast.svelte.js';
-  type MappingKind = 'native' | 'slim' | 'omo' | 'category';
   const config = getConfig();
   let { group }: { group?: Group } = $props();
   let name = $state('');
   let description = $state('');
-  let type = $state<GroupType>('opencode');
+  let type = $state<GroupType>(GROUP_TYPE_OPENCODE);
   let native = $state<AgentModelBinding[]>([]);
   let slim = $state<AgentModelBinding[]>([]);
   let omo = $state<AgentModelBinding[]>([]);
@@ -20,14 +32,44 @@
   let isEnabled = $state(false);
   let initialized = $state('');
   let seenReset = $state(-1);
-  let tab = $state<MappingKind>('native');
+  let tab = $state<MappingKind>(MAPPING_KINDS[0]);
   let pending = $state<GroupType | null>(null);
+  const builtinSystem = $derived(tab === GROUP_TYPE_SLIM ? GROUP_TYPE_SLIM : tab === 'omo' ? GROUP_TYPE_OMO : null);
+  const mappingOptions = $derived(
+    tab === 'native'
+      ? config.agents.map((agent) => ({ value: agent.id, hint: agent.description ?? agent.mode }))
+      : builtinSystem && BUILTIN_SYSTEMS.includes(builtinSystem)
+        ? BUILTIN_AGENTS.filter((agent) => agent.system === builtinSystem).map((agent) => ({
+            value: agent.id,
+            hint: agent.description,
+          }))
+        : BUILTIN_CATEGORIES.map((category) => ({ value: category })),
+  );
+  const mappingPlaceholder = $derived(tab === 'category' ? 'Select category' : 'Select agent');
+  // Model refs come from the CLI catalog plus already-bound refs missing from a stale catalog.
+  const modelOptions = $derived.by(() => {
+    const options: { value: string; label?: string }[] = config.catalogModels().map((entry) => ({ value: entry.ref }));
+    const known = new Set(options.map((option) => option.value));
+    for (const entry of [...native, ...slim, ...omo, ...categories]) {
+      if (entry.modelRef && !known.has(entry.modelRef)) {
+        known.add(entry.modelRef);
+        options.push({ value: entry.modelRef, label: `${entry.modelRef} (unavailable)` });
+      }
+    }
+    return options;
+  });
+  function defaultTab(value: GroupType): MappingKind {
+    if (value === GROUP_TYPE_SLIM) return GROUP_TYPE_SLIM;
+    if (value === GROUP_TYPE_OMO) return 'omo';
+    return 'native';
+  }
   function loadGroup() {
     if (!group) return;
     initialized = group.id;
     name = group.name;
     description = group.description;
     type = group.type;
+    tab = defaultTab(group.type);
     native = group.openCodeAgentOverrides;
     slim = group.slimAgentOverrides ?? [];
     omo = group.omoAgentOverrides ?? [];
@@ -47,13 +89,13 @@
   });
   function changeType(next: GroupType) {
     const has =
-      (type === 'slim' && slim.length > 0) || (type === 'oh-my-openagent' && omo.length + categories.length > 0);
+      (type === GROUP_TYPE_SLIM && slim.length > 0) || (type === GROUP_TYPE_OMO && omo.length + categories.length > 0);
     if (next !== type && has) {
       pending = next;
       return;
     }
     type = next;
-    tab = 'native';
+    tab = defaultTab(next);
   }
   function resolve(choice: 'keep' | 'clear' | 'cancel') {
     if (!pending || choice === 'cancel') {
@@ -61,35 +103,42 @@
       return;
     }
     if (choice === 'clear') {
-      if (type === 'slim') slim = [];
-      if (type === 'oh-my-openagent') {
+      if (type === GROUP_TYPE_SLIM) slim = [];
+      if (type === GROUP_TYPE_OMO) {
         omo = [];
         categories = [];
       }
     }
-    type = pending;
+    const next = pending;
+    type = next;
     pending = null;
-    tab = 'native';
+    tab = defaultTab(next);
   }
-  function add(kind: 'native' | 'slim' | 'omo' | 'category') {
-    const model = config.models()[0]?.ref;
-    if (!model) return;
-    if (kind === 'native') native = [...native, { agentName: 'build', modelRef: model }];
-    if (kind === 'slim') slim = [...slim, { agentName: 'orchestrator', modelRef: model }];
-    if (kind === 'omo') omo = [...omo, { agentName: 'sisyphus', modelRef: model }];
-    if (kind === 'category') categories = [...categories, { categoryName: 'quick', modelRef: model }];
+  function add(kind: MappingKind) {
+    const model = config.catalogModels()[0]?.ref;
+    if (!model) {
+      toast({
+        variant: 'error',
+        description: 'No model is available in the catalog. Add a provider model before mapping.',
+      });
+      return;
+    }
+    if (kind === 'native') native = [...native, { agentName: '', modelRef: model }];
+    if (kind === GROUP_TYPE_SLIM) slim = [...slim, { agentName: '', modelRef: model }];
+    if (kind === 'omo') omo = [...omo, { agentName: '', modelRef: model }];
+    if (kind === 'category') categories = [...categories, { categoryName: '', modelRef: model }];
   }
   function update(kind: MappingKind, index: number, field: string, value: string) {
-    const list = kind === 'native' ? native : kind === 'slim' ? slim : kind === 'omo' ? omo : categories;
+    const list = kind === 'native' ? native : kind === GROUP_TYPE_SLIM ? slim : kind === 'omo' ? omo : categories;
     const next = list.map((entry, i) => (i === index ? { ...entry, [field]: value } : entry));
     if (kind === 'native') native = next as AgentModelBinding[];
-    if (kind === 'slim') slim = next as AgentModelBinding[];
+    if (kind === GROUP_TYPE_SLIM) slim = next as AgentModelBinding[];
     if (kind === 'omo') omo = next as AgentModelBinding[];
     if (kind === 'category') categories = next as CategoryMapping[];
   }
   function remove(kind: MappingKind, index: number) {
     if (kind === 'native') native = native.filter((_, i) => i !== index);
-    if (kind === 'slim') slim = slim.filter((_, i) => i !== index);
+    if (kind === GROUP_TYPE_SLIM) slim = slim.filter((_, i) => i !== index);
     if (kind === 'omo') omo = omo.filter((_, i) => i !== index);
     if (kind === 'category') categories = categories.filter((_, i) => i !== index);
   }
@@ -145,16 +194,14 @@
     <fieldset class="group-fieldset full">
       <legend>Group type</legend>
       <div class="architecture-grid" role="radiogroup" aria-label="Group type">
-        {#each [['opencode', 'OpenCode'], ['slim', 'Slim'], ['oh-my-openagent', 'OhMyOpenAgent']] as option}<label
-            class:active={type === option[0]}
-            class="architecture-card"
+        {#each GROUP_TYPE_OPTIONS as option}<label class:active={type === option.value} class="architecture-card"
             ><input
               type="radio"
               name="group-type"
-              value={option[0]}
-              checked={type === option[0]}
-              onchange={() => changeType(option[0] as GroupType)}
-            /><span>{option[1]}</span></label
+              value={option.value}
+              checked={type === option.value}
+              onchange={() => changeType(option.value)}
+            /><span>{option.label}</span></label
           >{/each}
       </div>
     </fieldset>
@@ -164,12 +211,12 @@
         <div class="tabs" role="tablist" aria-label="Group mappings">
           <button type="button" role="tab" aria-selected={tab === 'native'} onclick={() => (tab = 'native')}
             >OpenCode Agents</button
-          >{#if type === 'slim'}<button
+          >{#if type === GROUP_TYPE_SLIM}<button
               type="button"
               role="tab"
-              aria-selected={tab === 'slim'}
-              onclick={() => (tab = 'slim')}>Slim preset</button
-            >{/if}{#if type === 'oh-my-openagent'}<button
+              aria-selected={tab === GROUP_TYPE_SLIM}
+              onclick={() => (tab = GROUP_TYPE_SLIM)}>Slim preset</button
+            >{/if}{#if type === GROUP_TYPE_OMO}<button
               type="button"
               role="tab"
               aria-selected={tab === 'omo'}
@@ -178,20 +225,21 @@
               >OMO Categories</button
             >{/if}
         </div>
-        {#each tab === 'native' ? native : tab === 'slim' ? slim : tab === 'omo' ? omo : categories as entry, index}<div
+        {#each tab === 'native' ? native : tab === GROUP_TYPE_SLIM ? slim : tab === 'omo' ? omo : categories as entry, index (tab + ':' + index)}<div
             class="mapping-row"
           >
-            <input
+            <Combobox
               aria-label="Mapping name"
               value={'agentName' in entry ? entry.agentName : entry.categoryName}
-              oninput={(event) =>
-                update(tab, index, 'agentName' in entry ? 'agentName' : 'categoryName', event.currentTarget.value)}
-            /><select
-              aria-label="Model reference"
+              options={mappingOptions}
+              placeholder={mappingPlaceholder}
+              onchange={(value) => update(tab, index, 'agentName' in entry ? 'agentName' : 'categoryName', value)}
+            /><Select
+              ariaLabel="Model reference"
               value={entry.modelRef}
-              onchange={(event) => update(tab, index, 'modelRef', event.currentTarget.value)}
-              >{#each config.models() as model}<option value={model.ref}>{model.ref}</option>{/each}</select
-            ><input
+              onchange={(value) => update(tab, index, 'modelRef', value)}
+              options={modelOptions}
+            /><input
               aria-label="Mapping variant"
               value={entry.variant ?? ''}
               placeholder="Variant"
@@ -218,7 +266,7 @@
     if (!open) resolve('cancel');
   }}
 >
-  <Dialog.Content>
+  <Dialog.Content class="max-h-[calc(100vh-64px)] max-w-[560px] overflow-y-auto">
     <Dialog.Header>
       <Dialog.Title>Switch group type</Dialog.Title>
       <Dialog.Description>Switching to <strong>{pending}</strong> affects dedicated mappings.</Dialog.Description>

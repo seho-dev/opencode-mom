@@ -31,10 +31,6 @@
     flex-wrap: wrap;
     justify-content: flex-end;
   }
-  .search-field {
-    max-width: none;
-    width: 100%;
-  }
   .form-panel {
     padding: 16px;
   }

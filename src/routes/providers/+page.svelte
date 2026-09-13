@@ -4,7 +4,6 @@
   import PageHead from '$lib/components/app/PageHead.svelte';
   import DataTable from '$lib/components/app/DataTable.svelte';
   import EmptyTableRow from '$lib/components/app/EmptyTableRow.svelte';
-  import StatusBadge from '$lib/components/app/StatusBadge.svelte';
   import { getConfig } from '$lib/features/config/context.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
 
@@ -43,20 +42,14 @@
   <input aria-label="Search providers" bind:value={query} placeholder="Search provider name" />
 </div>
 <DataTable label="Provider Registry" total={filtered.length} bind:page {pageSize}
-  ><thead
-    ><tr><th>Name</th><th>NPM</th><th>Base URL</th><th>Models</th><th>Status</th><th class="th-actions">Actions</th></tr
-    ></thead
+  ><thead><tr><th>Name</th><th>NPM</th><th>Base URL</th><th>Models</th><th class="th-actions">Actions</th></tr></thead
   ><tbody>
-    {#if config.loading}<tr><td colspan="6" class="empty-table-row">Loading configuration...</td></tr>
-    {:else if !filtered.length}<EmptyTableRow
-        colspan={6}
-        message="No providers. Models must be attached to a provider first."
-      />
+    {#if config.loading}<tr><td colspan="5" class="empty-table-row">Loading configuration...</td></tr>
+    {:else if !filtered.length}<EmptyTableRow colspan={5} message="No providers." />
     {:else}{#each pagedProviders as provider}<tr
           ><td class="model-name">{provider.name}</td><td>{provider.npm ?? '—'}</td><td
             >{provider.options?.baseURL || '—'}</td
-          ><td>{Object.keys(provider.models).length}</td><td><StatusBadge variant="success">Loaded</StatusBadge></td><td
-            class="row-actions"
+          ><td>{Object.keys(provider.models).length}</td><td class="row-actions"
             ><Button
               href={`/providers/${provider.name}/edit`}
               variant="ghost"

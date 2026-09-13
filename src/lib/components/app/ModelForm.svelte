@@ -4,6 +4,7 @@
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
   import { Switch } from '$lib/components/ui/switch/index.js';
   import FormActions from './FormActions.svelte';
+  import Select from './Select.svelte';
   import { toast } from './toast.svelte.js';
   import type { ModelDef, ModelModality, ProviderDef } from '$lib/features/config/types.js';
 
@@ -266,10 +267,13 @@
         {#if mode === 'new'}
           <div class="field">
             <label for="model-provider">Provider</label>
-            <select id="model-provider" bind:value={providerId} required disabled={saving}>
-              <option value="" disabled>Select a provider</option>
-              {#each providers as provider}<option value={provider.name}>{provider.name}</option>{/each}
-            </select>
+            <Select
+              id="model-provider"
+              bind:value={providerId}
+              disabled={saving}
+              placeholder="Select a provider"
+              options={providers.map((provider) => ({ value: provider.name }))}
+            />
           </div>
           <div class="field">
             <label for="model-id">Model ID</label>
@@ -295,12 +299,12 @@
         </div>
         <div class="field">
           <label for="model-status">Status</label>
-          <select id="model-status" bind:value={status} disabled={saving}>
-            <option value="active">active</option>
-            <option value="alpha">alpha</option>
-            <option value="beta">beta</option>
-            <option value="deprecated">deprecated</option>
-          </select>
+          <Select
+            id="model-status"
+            bind:value={status}
+            disabled={saving}
+            options={['active', 'alpha', 'beta', 'deprecated'].map((value) => ({ value }))}
+          />
         </div>
       </div>
     </fieldset>
@@ -335,24 +339,30 @@
         </div>
         <div class="field">
           <label for="model-temperature">Temperature</label>
-          <select id="model-temperature" bind:value={temperature} disabled={saving}>
-            <option value="">Unset</option>
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
+          <Select
+            id="model-temperature"
+            bind:value={temperature}
+            disabled={saving}
+            options={[{ value: '', label: 'Unset' }, { value: 'true' }, { value: 'false' }]}
+          />
           <small class="muted">Whether the model accepts a temperature setting.</small>
         </div>
         <div class="field">
           <label for="model-interleaved">Interleaved</label>
-          <select id="model-interleaved" bind:value={interleaved} disabled={saving}>
-            <option value="unset">Unset</option>
-            <option value="true">true</option>
-            <option value="false">false</option>
-            <option value="reasoning">reasoning</option>
-            <option value="reasoning_content">reasoning_content</option>
-            <option value="reasoning_text">reasoning_text</option>
-            <option value="custom">custom (JSON)</option>
-          </select>
+          <Select
+            id="model-interleaved"
+            bind:value={interleaved}
+            disabled={saving}
+            options={[
+              { value: 'unset', label: 'Unset' },
+              { value: 'true' },
+              { value: 'false' },
+              { value: 'reasoning' },
+              { value: 'reasoning_content' },
+              { value: 'reasoning_text' },
+              { value: 'custom', label: 'custom (JSON)' },
+            ]}
+          />
           <small class="muted">Where reasoning content is placed in the response when present.</small>
         </div>
         {#if interleaved === 'custom'}<div class="field full">

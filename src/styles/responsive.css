@@ -19,7 +19,7 @@
     display: none;
   }
   .mobile-menu {
-    display: inline-flex;
+    display: inline-flex !important;
   }
   .content {
     padding: 20px 16px;

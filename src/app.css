@@ -1,13 +1,17 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
-@import './styles/tokens.css';
-@import './styles/base.css';
-@import './styles/layout.css';
-@import './styles/head.css';
-@import './styles/table.css';
-@import './styles/feedback.css';
-@import './styles/search.css';
-@import './styles/forms.css';
-@import './styles/roster.css';
-@import './styles/scrollbar.css';
-@import './styles/responsive.css';
+/* Custom sheets go in the base layer so Tailwind utilities can override them.
+   Without this, unlayered rules beat every layered utility (e.g. `a { color: inherit }`
+   forced all link-buttons to text-primary). tokens.css stays first to preserve the
+   `:root` -> `[data-theme='light']` cascade order. */
+@import './styles/tokens.css' layer(base);
+@import './styles/base.css' layer(base);
+@import './styles/layout.css' layer(base);
+@import './styles/head.css' layer(base);
+@import './styles/table.css' layer(base);
+@import './styles/feedback.css' layer(base);
+@import './styles/search.css' layer(base);
+@import './styles/forms.css' layer(base);
+@import './styles/roster.css' layer(base);
+@import './styles/scrollbar.css' layer(base);
+@import './styles/responsive.css' layer(base);

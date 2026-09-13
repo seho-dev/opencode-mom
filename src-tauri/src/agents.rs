@@ -10,14 +10,32 @@ use crate::document::{read_text, write_file, JsoncDoc, OPENCODE_SCHEMA};
 use crate::error::{AppError, ErrorCode};
 use crate::providers::ModelRef;
 
-const BUILT_IN_AGENT_IDS: &[&str] = &["build", "plan", "general", "explore"];
+const AGENT_CATALOG_JSON: &str = include_str!("../../src/lib/features/config/agents.catalog.json");
+
+#[derive(Deserialize)]
+struct AgentCatalogEntry {
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct AgentCatalog {
+    agents: Vec<AgentCatalogEntry>,
+}
+
+fn built_in_agent_ids() -> &'static BTreeSet<String> {
+    static IDS: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    IDS.get_or_init(|| {
+        let catalog: AgentCatalog = serde_json::from_str(AGENT_CATALOG_JSON)
+            .expect("shared agents.catalog.json must be valid JSON");
+        catalog.agents.into_iter().map(|entry| entry.id).collect()
+    })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AgentStorage {
     Inline,
     GlobalMarkdown,
-    ProjectMarkdown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -194,7 +212,7 @@ pub fn create(
 
     match request.storage {
         AgentStorage::Inline => create_inline(paths, &request.id, fields, prompt)?,
-        AgentStorage::GlobalMarkdown | AgentStorage::ProjectMarkdown => {
+        AgentStorage::GlobalMarkdown => {
             let path = markdown_path(paths, request.storage, &request.id)?;
             if path.exists() {
                 return Err(invalid(format!(
@@ -224,7 +242,7 @@ pub fn update(
 
     match storage {
         AgentStorage::Inline => update_inline(paths, id, fields, prompt, clear_fields)?,
-        AgentStorage::GlobalMarkdown | AgentStorage::ProjectMarkdown => {
+        AgentStorage::GlobalMarkdown => {
             let path = markdown_path(paths, storage, id)?;
             if !path.exists() {
                 return Err(not_found(id));
@@ -257,7 +275,7 @@ pub fn delete(
     references: &AgentReferenceIndex,
 ) -> Result<AgentDeleteResult, AppError> {
     validate_agent_id(id)?;
-    if BUILT_IN_AGENT_IDS.contains(&id) {
+    if built_in_agent_ids().contains(id) {
         return Err(AppError::references(
             format!(
                 "built-in agent '{id}' cannot be physically deleted; use an overlay or disable it"
@@ -281,7 +299,7 @@ pub fn delete(
 
     match storage {
         AgentStorage::Inline => delete_inline(paths, id)?,
-        AgentStorage::GlobalMarkdown | AgentStorage::ProjectMarkdown => {
+        AgentStorage::GlobalMarkdown => {
             let path = markdown_path(paths, storage, id)?;
             if !path.exists() {
                 return Err(not_found(id));
@@ -388,13 +406,6 @@ fn scan_markdown(
         &paths.global_agents_dir(),
         &mut results,
     )?;
-    if let Some(project_agents_dir) = paths.project_agents_dir() {
-        scan_markdown_root(
-            AgentStorage::ProjectMarkdown,
-            &project_agents_dir,
-            &mut results,
-        )?;
-    }
     Ok(results)
 }
 
@@ -437,9 +448,6 @@ fn markdown_path(
             return Err(invalid("inline storage does not have a Markdown path"))
         }
         AgentStorage::GlobalMarkdown => paths.global_agents_dir(),
-        AgentStorage::ProjectMarkdown => paths
-            .project_agents_dir()
-            .ok_or_else(|| invalid("project Markdown agents directory was not configured"))?,
     };
     Ok(root.join(id).with_extension("md"))
 }
@@ -450,9 +458,6 @@ pub fn collect_markdown_files_in_roots(
 ) -> Result<Vec<PathBuf>, AppError> {
     let mut files = Vec::new();
     collect_markdown_files(&paths.global_agents_dir(), &mut files)?;
-    if let Some(project_agents_dir) = paths.project_agents_dir() {
-        collect_markdown_files(&project_agents_dir, &mut files)?;
-    }
     files.sort();
     Ok(files)
 }

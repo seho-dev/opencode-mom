@@ -81,6 +81,9 @@
   .form-actions > * {
     flex: 1;
   }
+  .variant-row {
+    grid-template-columns: 1fr;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   * {

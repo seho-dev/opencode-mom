@@ -1,4 +1,5 @@
 export type ModelRef = `${string}/${string}`;
+// Model config mirrors provider.<id>.models.<model_id> in the opencode JSON schema.
 export type GroupType = 'opencode' | 'slim' | 'oh-my-openagent';
 export type AgentSource = 'inline' | 'markdown' | 'both';
 export type AgentStorage = 'inline' | 'global_markdown' | 'project_markdown';
@@ -14,24 +15,39 @@ export interface ProviderDef {
   options?: ProviderOptions;
   models: Record<string, ModelDef>;
 }
+export type ModelModality = 'text' | 'audio' | 'image' | 'video' | 'pdf';
+export type ModelStatus = 'alpha' | 'beta' | 'deprecated' | 'active';
+export type ModelInterleaved = boolean | 'reasoning' | 'reasoning_content' | 'reasoning_text' | { field: string };
+export interface ModelCost {
+  input: number;
+  output: number;
+  cache_read?: number;
+  cache_write?: number;
+  context_over_200k?: { input: number; output: number; cache_read?: number; cache_write?: number };
+}
+export interface ModelLimit {
+  context: number;
+  output: number;
+  input?: number;
+}
 export interface ModelDef {
   id: string;
   name?: string;
   family?: string;
   release_date?: string;
-  status?: 'alpha' | 'beta' | 'deprecated' | 'active';
+  status?: ModelStatus;
   reasoning?: boolean;
-  temperature?: number;
+  temperature?: boolean;
   tool_call?: boolean;
   attachment?: boolean;
-  interleaved?: boolean;
-  cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number; context_over_200k?: number };
-  limit?: { context?: number; input?: number; output?: number };
-  modalities?: { input?: string[]; output?: string[] };
   experimental?: boolean;
+  interleaved?: ModelInterleaved;
+  cost?: ModelCost;
+  limit?: ModelLimit;
+  modalities?: { input?: ModelModality[]; output?: ModelModality[] };
   options?: Record<string, unknown>;
   headers?: Record<string, string>;
-  variants?: Record<string, { disabled?: boolean; options?: Record<string, unknown> }>;
+  variants?: Record<string, Record<string, unknown>>;
 }
 export interface AgentDefinition {
   id: string;

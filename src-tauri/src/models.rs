@@ -39,17 +39,17 @@ pub struct ModelDef {
     pub release_date: Option<String>,
     pub status: Option<ModelStatus>,
     pub reasoning: Option<bool>,
-    pub temperature: Option<f64>,
+    pub temperature: Option<bool>,
     pub tool_call: Option<bool>,
     pub attachment: Option<bool>,
-    pub interleaved: Option<bool>,
+    pub interleaved: Option<Value>,
     pub cost: Option<ModelCost>,
     pub limit: Option<ModelLimit>,
     pub modalities: Option<ModelModalities>,
     pub experimental: Option<bool>,
     pub options: Option<BTreeMap<String, Value>>,
     pub headers: Option<BTreeMap<String, String>>,
-    pub variants: Option<BTreeMap<String, ModelVariant>>,
+    pub variants: Option<BTreeMap<String, Value>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,7 +68,16 @@ pub struct ModelCost {
     pub output: Option<f64>,
     pub cache_read: Option<f64>,
     pub cache_write: Option<f64>,
-    pub context_over_200k: Option<f64>,
+    pub context_over_200k: Option<ContextOver200k>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ContextOver200k {
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: Option<f64>,
+    pub cache_write: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,13 +92,6 @@ pub struct ModelLimit {
 pub struct ModelModalities {
     pub input: Option<Vec<String>>,
     pub output: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ModelVariant {
-    pub disabled: Option<bool>,
-    pub options: Option<BTreeMap<String, Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

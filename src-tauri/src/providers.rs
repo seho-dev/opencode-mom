@@ -168,6 +168,7 @@ pub fn create_model(
 ) -> Result<ModelDef, AppError> {
     validate_id(provider_id, IdKind::Provider)?;
     validate_id(&model.id, IdKind::Model)?;
+    let model = with_model_name(model);
     ensure_custom_provider(opencode_file, provider_id)?;
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     let providers = providers_from_root(&document.raw().clone())?;
@@ -202,6 +203,7 @@ pub fn update_model(
         )));
     }
     ensure_custom_provider(opencode_file, &model_ref.provider_id)?;
+    let model = with_model_name(model);
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     ensure_model_exists(&document.raw(), model_ref)?;
     apply_patches(&mut document, model_field_patches(model_ref, &model))?;
@@ -299,17 +301,17 @@ pub fn model_from_value(id: &str, value: Value) -> Result<ModelDef, AppError> {
         release_date: Option<String>,
         status: Option<crate::models::ModelStatus>,
         reasoning: Option<bool>,
-        temperature: Option<f64>,
+        temperature: Option<bool>,
         tool_call: Option<bool>,
         attachment: Option<bool>,
-        interleaved: Option<bool>,
+        interleaved: Option<Value>,
         cost: Option<crate::models::ModelCost>,
         limit: Option<crate::models::ModelLimit>,
         modalities: Option<crate::models::ModelModalities>,
         experimental: Option<bool>,
         options: Option<BTreeMap<String, Value>>,
         headers: Option<BTreeMap<String, String>>,
-        variants: Option<BTreeMap<String, crate::models::ModelVariant>>,
+        variants: Option<BTreeMap<String, Value>>,
     }
     let payload: ModelPayload = serde_json::from_value(value).map_err(|_| {
         AppError::validation(format!(
@@ -354,6 +356,12 @@ fn provider_value(provider: &ProviderDef) -> Value {
     Value::Object(value)
 }
 
+/// The model id is stored both as the map key and as the `name` field, so the UI only collects it once.
+fn with_model_name(mut model: ModelDef) -> ModelDef {
+    model.name = Some(model.id.clone());
+    model
+}
+
 pub fn model_value(model: &ModelDef) -> Value {
     let mut value = Map::new();
     put_optional(&mut value, "name", model.name.clone().map(Value::String));
@@ -372,17 +380,11 @@ pub fn model_value(model: &ModelDef) -> Value {
     put_optional(
         &mut value,
         "temperature",
-        model
-            .temperature
-            .and_then(|number| serde_json::Number::from_f64(number).map(Value::Number)),
+        model.temperature.map(Value::Bool),
     );
     put_optional(&mut value, "tool_call", model.tool_call.map(Value::Bool));
     put_optional(&mut value, "attachment", model.attachment.map(Value::Bool));
-    put_optional(
-        &mut value,
-        "interleaved",
-        model.interleaved.map(Value::Bool),
-    );
+    put_optional(&mut value, "interleaved", model.interleaved.clone());
     put_optional(&mut value, "cost", model.cost.clone().and_then(to_value));
     put_optional(&mut value, "limit", model.limit.clone().and_then(to_value));
     put_optional(

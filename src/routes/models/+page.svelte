@@ -92,12 +92,10 @@
 </div>
 <DataTable label="Model directory" total={visibleModels.length} bind:page {pageSize}
   ><thead><tr><th>Provider</th><th>Name</th><th>Context</th><th class="th-actions">Actions</th></tr></thead><tbody
-    >{#if config.catalogLoading}<tr><td colspan="4" class="empty-table-row">Loading models from opencode CLI...</td></tr
+    >{#if config.catalogLoading}<tr><td colspan="4" class="empty-table-row">Loading configuration...</td></tr
       >{:else if !visibleModels.length}<EmptyTableRow
         colspan={4}
-        message={activeTab === 'custom'
-          ? 'No custom models. Create a provider and add models.'
-          : 'No builtin models found.'}
+        message={activeTab === 'custom' ? 'No custom models.' : 'No builtin models.'}
       />{:else}{#each pagedModels as model}<tr
           ><td>{model.providerId}</td><td>{model.name ?? 'unnamed'}</td><td
             >{(model.limit as { context?: number })?.context ?? 'unset'}</td

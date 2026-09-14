@@ -101,6 +101,15 @@
   >
 {/snippet}
 
+{#if activeTab === 'custom'}
+  <div class="search-toolbar">
+    <input
+      aria-label={i18n.t('agents.searchLabel')}
+      bind:value={query}
+      placeholder={i18n.t('agents.searchPlaceholder')}
+    />
+  </div>
+{/if}
 <div class="flex gap-2 mb-3" role="tablist" aria-label={i18n.t('agents.sourceTabLabel')}>
   <Button
     bind:ref={customTabEl}
@@ -153,13 +162,6 @@
 </div>
 {#if activeTab === 'custom'}
   <div id="agents-tabpanel-custom" role="tabpanel" aria-labelledby="agents-tab-custom" tabindex="0">
-    <div class="search-toolbar">
-      <input
-        aria-label={i18n.t('agents.searchLabel')}
-        bind:value={query}
-        placeholder={i18n.t('agents.searchPlaceholder')}
-      />
-    </div>
     <DataTable label={i18n.t('agents.tableLabel')} total={agents.length} bind:page {pageSize}
       ><thead
         ><tr

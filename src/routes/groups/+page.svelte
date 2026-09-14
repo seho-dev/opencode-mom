@@ -81,6 +81,13 @@
   >{#snippet children()}<Button href="/groups/new"><Plus size={14} /> {i18n.t('groups.new')}</Button
     >{/snippet}</PageHead
 >
+<div class="search-toolbar">
+  <input
+    aria-label={i18n.t('groups.searchLabel')}
+    bind:value={query}
+    placeholder={i18n.t('groups.searchPlaceholder')}
+  />
+</div>
 <div class="flex gap-2 mb-3" role="tablist" aria-label={i18n.t('groups.title')}>
   <Button
     bind:ref={nativeTabEl}
@@ -120,13 +127,6 @@
   >
 </div>
 <div id={`groups-tabpanel-${activeTab}`} role="tabpanel" aria-labelledby={`groups-tab-${activeTab}`} tabindex="0">
-  <div class="search-toolbar">
-    <input
-      aria-label={i18n.t('groups.searchLabel')}
-      bind:value={query}
-      placeholder={i18n.t('groups.searchPlaceholder')}
-    />
-  </div>
   <DataTable label={i18n.t('groups.tableLabel')} total={groups.length} bind:page {pageSize}
     ><thead
       ><tr

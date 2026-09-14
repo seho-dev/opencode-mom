@@ -116,6 +116,7 @@
             aria-selected={index === activeIndex}
             class:active={index === activeIndex}
             onmouseenter={() => (activeIndex = index)}
+            onmousedown={(event) => event.preventDefault()}
             onclick={() => pick(option)}
           >
             <span>{option.label ?? option.value}</span>

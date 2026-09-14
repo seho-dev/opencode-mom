@@ -6,37 +6,40 @@
   let { visible = true }: { visible?: boolean } = $props();
 
   let root: HTMLElement | null = null;
-  let removalTimer: ReturnType<typeof setTimeout> | undefined;
-  let exitStarted = false;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  let shownAt = 0;
+  const MIN_VISIBLE_MS = 3000;
 
+  // Toggle the exit state via classList instead of unmounting: the overlay must
+  // stay mounted so it can show again on later `loading` cycles (refresh, group
+  // switch). `.splash-exit` sets `pointer-events: none`, so it never intercepts
+  // clicks while hidden. Keep the overlay up for at least MIN_VISIBLE_MS so a
+  // fast config load still shows the brand instead of a single-frame flash.
   $effect(() => {
-    if (visible) {
-      // Show again: cancel any pending removal and drop the exit state.
-      if (removalTimer !== undefined) {
-        clearTimeout(removalTimer);
-        removalTimer = undefined;
-      }
-      exitStarted = false;
-      root?.classList.remove('splash-exit');
-      return;
-    }
-
-    // Fade out, pause the internal animations, then drop the overlay from the
-    // DOM once the fade has finished so it never intercepts pointer events.
-    if (exitStarted) return;
-    exitStarted = true;
-    root?.classList.add('splash-exit');
-    removalTimer = setTimeout(() => {
-      root?.remove();
-      removalTimer = undefined;
-    }, 520);
-
-    return () => {
-      if (removalTimer !== undefined) {
-        clearTimeout(removalTimer);
-        removalTimer = undefined;
+    const clearHideTimer = () => {
+      if (hideTimer !== undefined) {
+        clearTimeout(hideTimer);
+        hideTimer = undefined;
       }
     };
+
+    if (visible) {
+      clearHideTimer();
+      shownAt = Date.now();
+      root?.classList.remove('splash-exit');
+      return clearHideTimer;
+    }
+
+    const remaining = MIN_VISIBLE_MS - (Date.now() - shownAt);
+    if (remaining <= 0) {
+      root?.classList.add('splash-exit');
+      return;
+    }
+    hideTimer = setTimeout(() => {
+      hideTimer = undefined;
+      root?.classList.add('splash-exit');
+    }, remaining);
+    return clearHideTimer;
   });
 </script>
 
@@ -75,33 +78,16 @@
     justify-content: center;
     text-align: center;
     padding: 32px;
-    animation: splash-enter 0.9s ease 0.2s both;
+    animation: splash-enter 0.6s ease both;
   }
   @keyframes splash-enter {
     from {
-      opacity: 0;
+      opacity: 0.35;
       transform: translateY(10px);
     }
     to {
       opacity: 1;
       transform: none;
-    }
-  }
-
-  @keyframes splash-breathe {
-    from {
-      transform: scale(1);
-    }
-    to {
-      transform: scale(1.05);
-    }
-  }
-  @keyframes splash-glow {
-    from {
-      opacity: 0.45;
-    }
-    to {
-      opacity: 0.85;
     }
   }
 
@@ -125,9 +111,6 @@
     opacity: 0;
     transition: opacity 460ms ease;
     pointer-events: none;
-  }
-  :global(.splash-root.splash-exit *) {
-    animation-play-state: paused;
   }
 
   @media (prefers-reduced-motion: reduce) {

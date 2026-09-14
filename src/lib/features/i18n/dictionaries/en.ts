@@ -132,8 +132,6 @@ export const en = {
   'models.deleteConfirm': 'Delete {name}? Deletion is blocked while references exist.',
   'models.newMetaTitle': 'New model · opencode-mom',
   'models.newTitle': 'New model',
-  'models.newNotice':
-    'Models can only be created under custom providers (those defined in the opencode config file). Builtin models are read-only and provided by opencode via CLI.',
   'models.noProvider': 'No provider available. Create a provider first.',
   'models.editMetaTitle': 'Edit model · opencode-mom',
   'models.notFound': 'The model does not exist or has not been loaded yet.',
@@ -387,6 +385,8 @@ export const en = {
 
   // toast
   'toast.groupSwitched': 'Group switched and configuration applied.',
+  'toast.saved': 'Saved successfully.',
+  'toast.deleted': 'Deleted successfully.',
   'toast.saveFailedProvider': 'Save failed. Check the input and configuration state.',
   'toast.saveFailedAgent': 'Save failed. Check the configuration state.',
   'toast.saveFailed': 'Save failed.',

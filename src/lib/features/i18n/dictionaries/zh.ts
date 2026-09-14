@@ -133,8 +133,6 @@ export const zh: Record<MessageKey, string> = {
   'models.deleteConfirm': '删除 {name}？存在引用时会阻止删除。',
   'models.newMetaTitle': '新建模型 · opencode-mom',
   'models.newTitle': '新建模型',
-  'models.newNotice':
-    '模型只能在自定义服务商（在 opencode 配置文件中定义的服务商）下创建。内置模型为只读，由 opencode 通过 CLI 提供。',
   'models.noProvider': '没有可用的服务商。请先创建服务商。',
   'models.editMetaTitle': '编辑模型 · opencode-mom',
   'models.notFound': '该模型不存在或尚未加载。',
@@ -379,6 +377,8 @@ export const zh: Record<MessageKey, string> = {
 
   // toast
   'toast.groupSwitched': '分组已切换并应用配置。',
+  'toast.saved': '保存成功。',
+  'toast.deleted': '删除成功。',
   'toast.saveFailedProvider': '保存失败。请检查输入和配置状态。',
   'toast.saveFailedAgent': '保存失败。请检查配置状态。',
   'toast.saveFailed': '保存失败。',

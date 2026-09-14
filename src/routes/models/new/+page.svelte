@@ -17,9 +17,6 @@
   eyebrow={i18n.t('models.eyebrow')}
   title={i18n.t('models.newTitle')}
 />
-<p class="text-xs text-muted-foreground mb-3">
-  {i18n.t('models.newNotice')}
-</p>
 {#if !config.loading && config.providers.length === 0}<div class="state-banner error" role="alert">
     {i18n.t('models.noProvider')}
   </div>{:else}<ModelForm mode="new" providers={config.providers} saving={config.saving} onSave={create} />{/if}

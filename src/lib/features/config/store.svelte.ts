@@ -98,6 +98,7 @@ export function createConfigStore(adapter: CommandAdapter) {
     try {
       const result = await action();
       draftRecovery = null;
+      notice = operation;
       return result;
     } catch (cause) {
       const normalized = serializeError(cause);
@@ -265,7 +266,6 @@ export function createConfigStore(adapter: CommandAdapter) {
       switching = true;
       try {
         await run('switchGroup', { id }, () => adapter.switchGroup(id));
-        notice = 'Group switched and configuration applied.';
         await refresh();
         try {
           await loadCatalog();

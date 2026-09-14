@@ -9,6 +9,7 @@
   import { getI18n } from '$lib/features/i18n/context.js';
   import { BUILTIN_AGENTS } from '$lib/features/config/builtinAgents.js';
   import { BUILTIN_CATEGORIES } from '$lib/features/config/builtinCategories.js';
+  import { buildModelVariants } from '$lib/features/config/agentForm.js';
   import {
     GROUP_TYPE_LABELS,
     GROUP_TYPE_NATIVE,
@@ -63,6 +64,35 @@
     }
     return options;
   });
+
+  // Variant choices come from the selected model's catalog entry; keep an out-of-catalog value selectable-but-flagged.
+  function variantOptions(ref: string, current?: string): { value: string; label: string; disabled?: boolean }[] {
+    const names = buildModelVariants(config.catalogModels(), config.models(), ref);
+    const options: { value: string; label: string; disabled?: boolean }[] = [
+      { value: '', label: i18n.t('agents.optionNone') },
+      ...names.map((name) => ({ value: name, label: name })),
+    ];
+    if (current && !names.includes(current)) {
+      options.push({ value: current, label: i18n.t('agents.optionUnavailable', { name: current }), disabled: true });
+    }
+    return options;
+  }
+
+  function selectModel(index: number, value: string) {
+    update(tab, index, 'modelRef', value);
+    const current = listFor(tab)[index];
+    if (
+      current?.variant &&
+      !buildModelVariants(config.catalogModels(), config.models(), value).includes(current.variant)
+    ) {
+      update(tab, index, 'variant', '');
+    }
+  }
+
+  function listFor(kind: MappingKind): (AgentModelBinding | CategoryMapping)[] {
+    return { [GROUP_TYPE_NATIVE]: native, [GROUP_TYPE_SLIM]: slim, [GROUP_TYPE_OMO]: omo, category: categories }[kind];
+  }
+
   function defaultTab(value: GroupType): MappingKind {
     if (value === GROUP_TYPE_SLIM) return GROUP_TYPE_SLIM;
     if (value === GROUP_TYPE_OMO) return GROUP_TYPE_OMO;
@@ -272,13 +302,14 @@
             /><Select
               ariaLabel={i18n.t('groupForm.modelRef')}
               value={entry.modelRef}
-              onchange={(value) => update(tab, index, 'modelRef', value)}
+              onchange={(value) => selectModel(index, value)}
               options={modelOptions}
-            /><input
-              aria-label={i18n.t('groupForm.mappingVariant')}
+            /><Select
+              ariaLabel={i18n.t('groupForm.mappingVariant')}
               value={entry.variant ?? ''}
-              placeholder={i18n.t('groupForm.variantPlaceholder')}
-              oninput={(event) => update(tab, index, 'variant', event.currentTarget.value)}
+              disabled={!entry.modelRef || config.catalogLoading}
+              options={variantOptions(entry.modelRef, entry.variant)}
+              onchange={(value) => update(tab, index, 'variant', value)}
             /><Button
               type="button"
               size="icon-sm"

@@ -86,6 +86,32 @@
   padding-top: 20px;
   border-top: 1px solid var(--border-subtle);
 }
+/* Form pages: keep the panel in the viewport and scroll only the field area,
+   leaving the `.form-actions` footer pinned. `:has(> .form-panel)` scopes this
+   to pages whose form panel is a direct child, so the PageHead and any notice
+   banners above the form stay outside the scroll region and remain visible. */
+.content:has(> .form-panel) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.content:has(> .form-panel) > .form-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.content:has(> .form-panel) > .form-panel > .form-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Breathing room so focus outlines on edge fields are not clipped and the
+     last field clears the pinned footer. */
+  padding: 4px 4px 8px;
+}
+.content:has(> .form-panel) > .form-panel > .form-actions {
+  flex: 0 0 auto;
+}
 .group-submit {
   min-height: 32px;
   border: 1px solid var(--accent-solid);

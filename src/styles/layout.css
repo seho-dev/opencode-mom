@@ -42,7 +42,7 @@
   background: var(--surface-hover);
   color: var(--text-primary);
 }
-.nav a[aria-current='page'] {
+.nav a[aria-current="page"] {
   border-left-color: var(--accent-primary);
   background: var(--surface-active);
   color: var(--accent-primary);

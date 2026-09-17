@@ -1,16 +1,16 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
-  import type { HTMLButtonAttributes } from 'svelte/elements';
-  import { cn, type WithElementRef } from '$lib/utils.js';
+import type { Snippet } from 'svelte';
+import type { HTMLButtonAttributes } from 'svelte/elements';
+import { cn, type WithElementRef } from '$lib/utils.js';
 
-  let {
-    ref = $bindable(null),
-    children,
-    class: className,
-    variant = 'default',
-    type = 'button',
-    ...restProps
-  }: WithElementRef<HTMLButtonAttributes> & { children?: Snippet; variant?: 'default' | 'destructive' } = $props();
+let {
+  ref = $bindable(null),
+  children,
+  class: className,
+  variant = 'default',
+  type = 'button',
+  ...restProps
+}: WithElementRef<HTMLButtonAttributes> & { children?: Snippet; variant?: 'default' | 'destructive' } = $props();
 </script>
 
 <button

@@ -3,14 +3,14 @@ import type {
   AgentDefinition,
   AppPreferences,
   AppState,
+  CommandError,
   Group,
   LocalePreference,
   ModelCatalogEntry,
   ModelDef,
-  ProviderDef,
   ModelRef,
+  ProviderDef,
   ThemePreference,
-  CommandError,
 } from './types.js';
 
 type DraftRecovery = { operation: string; payload: unknown; error: CommandError; conflict: boolean };

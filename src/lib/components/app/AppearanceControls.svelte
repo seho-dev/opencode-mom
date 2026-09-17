@@ -14,6 +14,7 @@ function toggleTheme() {
 }
 </script>
 
+<!-- biome-ignore lint/a11y/useSemanticElements: labeled button group; a fieldset's default border/margin/padding would alter the layout -->
 <div class="appearance" role="group" aria-label={i18n.t('appearance.group')}>
   <button type="button" class="appearance-button" aria-label={themeLabel} title={themeLabel} onclick={toggleTheme}>
     {#if theme === 'dark'}
@@ -22,6 +23,7 @@ function toggleTheme() {
       <Moon size={14} aria-hidden="true" />
     {/if}
   </button>
+  <!-- biome-ignore lint/a11y/useSemanticElements: labeled button group; a fieldset's default border/margin/padding would alter the layout -->
   <div class="language" role="group" aria-label={i18n.t('appearance.language')}>
     <button
       type="button"

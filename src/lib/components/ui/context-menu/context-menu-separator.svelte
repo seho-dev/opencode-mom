@@ -9,6 +9,7 @@ let {
 }: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
 </script>
 
+<!-- biome-ignore lint/a11y/useSemanticElements: styled div with an explicit separator role keeps the headless primitive's div ref type and attribute contract stable -->
 <div
   bind:this={ref}
   data-slot="context-menu-separator"

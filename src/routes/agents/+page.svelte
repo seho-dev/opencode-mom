@@ -172,7 +172,7 @@ async function remove() {
   >
 </div>
 {#if activeTab === 'custom'}
-  <div id="agents-tabpanel-custom" role="tabpanel" aria-labelledby="agents-tab-custom" tabindex="0">
+  <div id="agents-tabpanel-custom" role="tabpanel" aria-labelledby="agents-tab-custom">
     <DataTable label={i18n.t('agents.tableLabel')} total={agents.length} bind:page {pageSize}
       ><thead>
         <tr>
@@ -219,15 +219,15 @@ async function remove() {
     >
   </div>
 {:else if activeTab === 'native'}
-  <div id="agents-tabpanel-native" role="tabpanel" aria-labelledby="agents-tab-native" tabindex="0">
+  <div id="agents-tabpanel-native" role="tabpanel" aria-labelledby="agents-tab-native">
     {@render builtinTable(i18n.t('agents.nativeBuiltin'), nativeAgents)}
   </div>
 {:else if activeTab === 'slim'}
-  <div id="agents-tabpanel-slim" role="tabpanel" aria-labelledby="agents-tab-slim" tabindex="0">
+  <div id="agents-tabpanel-slim" role="tabpanel" aria-labelledby="agents-tab-slim">
     {@render builtinTable(i18n.t('agents.slimBuiltin'), slimAgents)}
   </div>
 {:else}
-  <div id="agents-tabpanel-omo" role="tabpanel" aria-labelledby="agents-tab-omo" tabindex="0">
+  <div id="agents-tabpanel-omo" role="tabpanel" aria-labelledby="agents-tab-omo">
     {@render builtinTable(i18n.t('agents.omoBuiltin'), omoAgents)}
   </div>
 {/if}

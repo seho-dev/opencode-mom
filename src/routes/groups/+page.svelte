@@ -127,7 +127,7 @@ async function activate(id: string) {
     >{i18n.t('groups.tabOmo', { count: omoCount })}</Button
   >
 </div>
-<div id={`groups-tabpanel-${activeTab}`} role="tabpanel" aria-labelledby={`groups-tab-${activeTab}`} tabindex="0">
+<div id={`groups-tabpanel-${activeTab}`} role="tabpanel" aria-labelledby={`groups-tab-${activeTab}`}>
   <DataTable label={i18n.t('groups.tableLabel')} total={groups.length} bind:page {pageSize}
     ><thead>
       <tr>

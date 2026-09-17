@@ -58,7 +58,7 @@
   text-align: right;
   font-size: 0;
 }
-.data-table td.row-actions [data-slot='button'] + [data-slot='button'] {
+.data-table td.row-actions [data-slot="button"] + [data-slot="button"] {
   margin-left: 4px;
 }
 .pagination {

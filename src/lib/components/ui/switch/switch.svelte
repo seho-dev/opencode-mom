@@ -1,19 +1,19 @@
 <script lang="ts">
-  import type { HTMLInputAttributes } from 'svelte/elements';
-  import { cn } from '$lib/utils.js';
+import type { HTMLInputAttributes } from 'svelte/elements';
+import { cn } from '$lib/utils.js';
 
-  let {
-    checked = $bindable(false),
-    class: className,
-    id,
-    disabled = false,
-    ...restProps
-  }: Omit<HTMLInputAttributes, 'type' | 'checked' | 'class' | 'id' | 'disabled'> & {
-    checked?: boolean;
-    class?: string;
-    id?: string;
-    disabled?: boolean;
-  } = $props();
+let {
+  checked = $bindable(false),
+  class: className,
+  id,
+  disabled = false,
+  ...restProps
+}: Omit<HTMLInputAttributes, 'type' | 'checked' | 'class' | 'id' | 'disabled'> & {
+  checked?: boolean;
+  class?: string;
+  id?: string;
+  disabled?: boolean;
+} = $props();
 </script>
 
 <label
@@ -22,7 +22,7 @@
     className,
   )}
 >
-  <input {id} type="checkbox" class="peer sr-only" bind:checked {disabled} {...restProps} />
+  <input {id} type="checkbox" class="peer sr-only" bind:checked {disabled} {...restProps}>
   <span
     class="absolute inset-0 rounded-[2px] border border-[var(--border-default)] bg-[var(--surface-input)] transition-colors peer-checked:border-[var(--accent-solid)] peer-checked:bg-[var(--surface-active)]"
   ></span>

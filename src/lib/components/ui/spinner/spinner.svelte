@@ -1,21 +1,21 @@
 <script lang="ts">
-  import { cn } from '$lib/utils.js';
-  import Loader2Icon from '@lucide/svelte/icons/loader-2';
-  import type { SVGAttributes } from 'svelte/elements';
+import Loader2Icon from '@lucide/svelte/icons/loader-2';
+import type { SVGAttributes } from 'svelte/elements';
+import { cn } from '$lib/utils.js';
 
-  type SpinnerSize = 'sm' | 'default' | 'lg';
+type SpinnerSize = 'sm' | 'default' | 'lg';
 
-  const spinnerSizes: Readonly<Record<SpinnerSize, string>> = {
-    sm: 'size-[var(--icon-sm)]',
-    default: 'size-[var(--icon-md)]',
-    lg: 'size-6',
-  };
+const spinnerSizes: Readonly<Record<SpinnerSize, string>> = {
+  sm: 'size-[var(--icon-sm)]',
+  default: 'size-[var(--icon-md)]',
+  lg: 'size-6',
+};
 
-  let {
-    class: className,
-    size = 'default',
-    ...restProps
-  }: SVGAttributes<SVGSVGElement> & { size?: SpinnerSize } = $props();
+let {
+  class: className,
+  size = 'default',
+  ...restProps
+}: SVGAttributes<SVGSVGElement> & { size?: SpinnerSize } = $props();
 </script>
 
 <Loader2Icon

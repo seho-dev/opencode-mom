@@ -1,9 +1,10 @@
 <script lang="ts">
-  import AppSidebar from './AppSidebar.svelte';
-  import AppHeader from './AppHeader.svelte';
-  import ConfigFeedback from './ConfigFeedback.svelte';
-  import Toaster from './Toaster.svelte';
-  let { children } = $props();
+import AppHeader from './AppHeader.svelte';
+import AppSidebar from './AppSidebar.svelte';
+import ConfigFeedback from './ConfigFeedback.svelte';
+import Toaster from './Toaster.svelte';
+
+let { children } = $props();
 </script>
 
 <div class="app-shell">

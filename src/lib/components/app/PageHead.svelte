@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+import type { Snippet } from 'svelte';
 
-  let { eyebrow, title, actions, children }: { eyebrow: string; title: string; actions?: Snippet; children?: Snippet } =
-    $props();
+let { eyebrow, title, actions, children }: { eyebrow: string; title: string; actions?: Snippet; children?: Snippet } =
+  $props();
 </script>
 
 <div class="page-head">

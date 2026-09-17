@@ -1,8 +1,10 @@
 export type ModelRef = `${string}/${string}`;
+
 // Model config mirrors provider.<id>.models.<model_id> in the opencode JSON schema.
 // String unions are derived from their constant arrays in constants.ts to avoid duplicate literals.
-import type { AgentSource, AgentStorage, GroupType, AgentMode, MappingKind } from './constants.js';
-export type { AgentSource, AgentStorage, GroupType, AgentMode, MappingKind };
+import type { AgentMode, AgentSource, AgentStorage, GroupType, MappingKind } from './constants.js';
+
+export type { AgentMode, AgentSource, AgentStorage, GroupType, MappingKind };
 
 export interface ProviderOptions {
   apiKey?: string;
@@ -128,7 +130,13 @@ export interface ModelCatalogEntry {
   releaseDate?: string;
 }
 export type CommandErrorCode =
-  'not_found' | 'references_blocked' | 'validation_failed' | 'configuration_failed' | 'busy' | 'conflict' | 'ipc_error';
+  | 'not_found'
+  | 'references_blocked'
+  | 'validation_failed'
+  | 'configuration_failed'
+  | 'busy'
+  | 'conflict'
+  | 'ipc_error';
 export interface CommandError {
   code: CommandErrorCode;
   message: string;

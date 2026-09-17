@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { getConfig } from '$lib/features/config/context.js';
-  import AppearanceControls from './AppearanceControls.svelte';
-  import MobileNavigation from './MobileNavigation.svelte';
-  const config = getConfig();
+import { getConfig } from '$lib/features/config/context.js';
+import AppearanceControls from './AppearanceControls.svelte';
+import MobileNavigation from './MobileNavigation.svelte';
+
+const config = getConfig();
 </script>
 
 <header class="header">

@@ -9,8 +9,10 @@
 
 - `npm run dev` - start the Vite development server.
 - `npm run build` - create a production web build.
-- `npm run format` - format frontend code with Prettier.
+- `npm run format` - format frontend code with Biome.
 - `npm run format:check` - verify frontend formatting.
+- `npm run lint` - lint frontend code with Biome.
+- `npm run check` - run Biome formatter and linter together.
 - `cargo check --manifest-path src-tauri/Cargo.toml` - type-check the Rust backend.
 - `npm run tauri` - run Tauri CLI commands.
 
@@ -18,7 +20,7 @@
 
 - Follow existing Svelte, TypeScript, and Tailwind patterns in the files you edit.
 - Keep changes scoped to the requested behavior; avoid unrelated refactors.
-- Run Prettier (`npm run format`) on changed frontend files; keep all UI text and code comments in English.
+- Run Biome (`npm run check:fix`) on changed frontend files; keep all UI text and code comments in English.
 - Use accessible, semantic controls and preserve keyboard interaction where applicable.
 - Do not commit secrets, API keys, generated artifacts, or local environment files.
 

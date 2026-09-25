@@ -62,7 +62,7 @@ impl ConfigPaths {
     pub fn slim_file(&self) -> PathBuf {
         self.user_config_dir
             .join("opencode")
-            .join("oh-my-opencode-slim.jsonc")
+            .join("oh-my-opencode-slim.json")
     }
 
     pub fn omo_file(&self) -> PathBuf {
@@ -112,6 +112,8 @@ mod tests {
         // Both exist -> .jsonc wins (opencode's primary file).
         std::fs::write(dir.join("opencode.jsonc"), "{}").unwrap();
         assert_eq!(paths().opencode_file(), dir.join("opencode.jsonc"));
+        std::fs::write(dir.join("oh-my-opencode-slim.jsonc"), "{}").unwrap();
+        assert_eq!(paths().slim_file(), dir.join("oh-my-opencode-slim.json"));
         // Explicit OPENCODE_CONFIG always wins.
         let explicit = tmp.join("custom.json");
         assert_eq!(

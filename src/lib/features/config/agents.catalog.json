@@ -25,12 +25,6 @@
       "description": "Fast read-only agent for searching files and answering codebase questions."
     },
     {
-      "id": "scout",
-      "system": "native",
-      "type": "subagent",
-      "description": "Read-only agent for external documentation and dependency research."
-    },
-    {
       "id": "orchestrator",
       "system": "slim",
       "type": "primary",

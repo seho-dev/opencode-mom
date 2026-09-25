@@ -9,13 +9,13 @@ import {
   type AgentFieldValues,
   buildModelOptions,
   buildModelVariants,
-  optionObject,
-  permissionObject,
+  joinModelSelector,
+  permissionRules,
 } from '$lib/features/config/agentForm.js';
 import { isBuiltinAgentId } from '$lib/features/config/builtinAgents.js';
 import { AGENT_MODES } from '$lib/features/config/constants.js';
 import { getConfig } from '$lib/features/config/context.js';
-import type { AgentSource, AgentStorage, AgentWrite, ModelRef, OptionRow } from '$lib/features/config/types.js';
+import type { AgentSource, AgentStorage, AgentWrite } from '$lib/features/config/types.js';
 import { getI18n } from '$lib/features/i18n/context.js';
 
 const config = getConfig();
@@ -27,17 +27,14 @@ let values = $state<AgentFieldValues>({
   model: '',
   mode: '',
   description: '',
-  disable: false,
+  disabled: false,
   hidden: false,
   color: '',
   variant: '',
-  temperature: '',
-  topP: '',
   steps: '',
   prompt: '',
 });
-let permission = $state('{}');
-let options = $state<OptionRow[]>([]);
+let permission = $state('[]');
 
 const knownMode = $derived((AGENT_MODES as readonly string[]).includes(values.mode));
 const storeModels = $derived(config.models());
@@ -65,20 +62,17 @@ async function submit() {
   }
   idError = '';
   try {
+    const rules = permissionRules(permission);
     const fields = {
-      model: values.model ? (values.model as ModelRef) : undefined,
+      model: values.model ? joinModelSelector(values.model, values.variant) : undefined,
       mode: values.mode || undefined,
       description: values.description || undefined,
-      disable: values.disable,
+      disabled: values.disabled,
       hidden: values.hidden,
       color: values.color || undefined,
-      variant: values.variant || undefined,
-      temperature: values.temperature ? Number(values.temperature) : undefined,
-      top_p: values.topP ? Number(values.topP) : undefined,
       steps: values.steps ? Number(values.steps) : undefined,
       prompt: values.prompt || undefined,
-      permission: permissionObject(permission),
-      options: optionObject(options),
+      ...(rules.length ? { permissions: rules } : {}),
     };
     const storage: AgentStorage = source === 'inline' ? 'inline' : 'global_markdown';
     const payload = {
@@ -144,7 +138,6 @@ async function submit() {
     </fieldset>
     <AgentFields
       bind:values
-      bind:options
       bind:permission
       {modelOptions}
       {modelVariants}

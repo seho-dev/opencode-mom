@@ -3,17 +3,16 @@ import { Plus, Trash2 } from '@lucide/svelte';
 import { Button } from '$lib/components/ui/button/index.js';
 import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 import { Switch } from '$lib/components/ui/switch/index.js';
-import type { ModelDef, ModelModality, ProviderDef } from '$lib/features/config/types.js';
+import type { ModelDef, ModelModality, ModelVariant, ProviderDef } from '$lib/features/config/types.js';
 import { getI18n } from '$lib/features/i18n/context.js';
 import FormActions from './FormActions.svelte';
 import Select from './Select.svelte';
 import { toast } from './toast.svelte.js';
 
-type InterleavedChoice = 'unset' | 'true' | 'false' | 'reasoning' | 'reasoning_content' | 'reasoning_text' | 'custom';
-type VariantRow = { key: string; json: string; disabled: boolean };
+type VariantRow = { key: string; json: string };
 
 const MODALITIES: ModelModality[] = ['text', 'audio', 'image', 'video', 'pdf']; // fixed schema enum
-const emptyVariant = (): VariantRow => ({ key: '', json: '{}', disabled: false });
+const emptyVariant = (): VariantRow => ({ key: '', json: '{}' });
 const pretty = (value: unknown) => JSON.stringify(value ?? {}, null, 2);
 const numStr = (value: number | undefined) => (value === undefined ? '' : String(value));
 const initMods = (values?: ModelModality[]) => {
@@ -51,29 +50,20 @@ let {
 let providerId = $state('');
 let id = $state('');
 let family = $state('');
-let releaseDate = $state('');
-let status = $state<ModelDef['status']>('active');
-let temperature = $state(''); // '' | 'true' | 'false'
-let reasoning = $state(true);
-let toolCall = $state(true);
-let attachment = $state(false);
-let experimental = $state(false);
-let interleaved = $state<InterleavedChoice>('unset');
-let interleavedCustom = $state('{}');
+let disabled = $state(false);
+let tools = $state(false);
+// Whether the stored model already carries a capabilities block (edit mode only).
+let capabilitiesPresent = $state(false);
 let costInput = $state('');
 let costOutput = $state('');
 let costCacheRead = $state('');
 let costCacheWrite = $state('');
-let costCtxInput = $state('');
-let costCtxOutput = $state('');
-let costCtxCacheRead = $state('');
-let costCtxCacheWrite = $state('');
 let limitContext = $state('');
 let limitOutput = $state('');
 let limitInput = $state('');
-let modalityInput = $state<Record<ModelModality, boolean>>(initMods(['text']));
-let modalityOutput = $state<Record<ModelModality, boolean>>(initMods(['text']));
-let options = $state('{}');
+let modalityInput = $state<Record<ModelModality, boolean>>(initMods());
+let modalityOutput = $state<Record<ModelModality, boolean>>(initMods());
+let settings = $state('{}');
 let headers = $state('{}');
 let variants = $state<VariantRow[]>([emptyVariant()]);
 let errors = $state<Record<string, string>>({});
@@ -86,41 +76,25 @@ $effect(() => {
   providerId = defaultProviderId;
   id = initial.id;
   family = initial.family ?? '';
-  releaseDate = initial.release_date ?? '';
-  status = initial.status ?? 'active';
-  temperature = initial.temperature === undefined ? '' : String(initial.temperature);
-  reasoning = initial.reasoning ?? false;
-  toolCall = initial.tool_call ?? false;
-  attachment = initial.attachment ?? false;
-  experimental = initial.experimental ?? false;
-  const value = initial.interleaved;
-  if (value === undefined) interleaved = 'unset';
-  else if (typeof value === 'boolean') interleaved = String(value) as InterleavedChoice;
-  else if (typeof value === 'string') interleaved = value as InterleavedChoice;
-  else {
-    interleaved = 'custom';
-    interleavedCustom = pretty(value);
-  }
+  disabled = initial.disabled === true;
+  capabilitiesPresent = initial.capabilities !== undefined;
+  tools = initial.capabilities?.tools ?? false;
   costInput = numStr(initial.cost?.input);
   costOutput = numStr(initial.cost?.output);
-  costCacheRead = numStr(initial.cost?.cache_read);
-  costCacheWrite = numStr(initial.cost?.cache_write);
-  costCtxInput = numStr(initial.cost?.context_over_200k?.input);
-  costCtxOutput = numStr(initial.cost?.context_over_200k?.output);
-  costCtxCacheRead = numStr(initial.cost?.context_over_200k?.cache_read);
-  costCtxCacheWrite = numStr(initial.cost?.context_over_200k?.cache_write);
+  costCacheRead = numStr(initial.cost?.cache?.read);
+  costCacheWrite = numStr(initial.cost?.cache?.write);
   limitContext = numStr(initial.limit?.context);
   limitOutput = numStr(initial.limit?.output);
   limitInput = numStr(initial.limit?.input);
-  modalityInput = initMods(initial.modalities?.input);
-  modalityOutput = initMods(initial.modalities?.output);
-  options = pretty(initial.options);
+  modalityInput = initMods(initial.capabilities?.input);
+  modalityOutput = initMods(initial.capabilities?.output);
+  settings = pretty(initial.settings);
   headers = pretty(initial.headers);
-  const rows = Object.entries(initial.variants ?? {});
+  const rows = initial.variants ?? [];
   variants = rows.length
-    ? rows.map(([variantKey, entry]) => {
-        const { disabled, ...rest } = (entry ?? {}) as { disabled?: boolean } & Record<string, unknown>;
-        return { key: variantKey, json: pretty(rest), disabled: disabled === true };
+    ? rows.map((entry) => {
+        const { id: variantId, ...rest } = entry ?? {};
+        return { key: variantId ?? '', json: pretty(rest) };
       })
     : [emptyVariant()];
 });
@@ -149,33 +123,22 @@ async function submit() {
   const num = (value: string) => (value.trim() === '' ? undefined : Number(value));
   const anyFilled = (...values: string[]) => values.some((value) => value.trim() !== '');
 
-  const optionsValue = parseObject(options, 'options');
+  const settingsValue = parseObject(settings, 'settings');
   const headersValue = parseObject(headers, 'headers');
   if (headersValue && Object.entries(headersValue).some(([, header]) => typeof header !== 'string'))
     errors['headers'] = i18n.t('validation.headersStrings');
-  const interleavedValue = interleaved === 'custom' ? parseObject(interleavedCustom, 'interleaved') : undefined;
-  if (interleavedValue && (typeof interleavedValue['field'] !== 'string' || !String(interleavedValue['field']).trim()))
-    errors['interleaved'] = i18n.t('validation.interleavedField');
 
   const variantEntries: { key: string; entry: Record<string, unknown> }[] = [];
   for (const row of variants) {
     if (!row.key.trim()) continue;
     const parsed = parseObject(row.json, 'variants');
     if (parsed === undefined) continue;
-    variantEntries.push({
-      key: row.key.trim(),
-      entry: { ...parsed, ...(row.disabled ? { disabled: true } : {}) },
-    });
+    variantEntries.push({ key: row.key.trim(), entry: parsed });
   }
 
   const costUsed = anyFilled(costInput, costOutput, costCacheRead, costCacheWrite);
-  const ctxUsed = anyFilled(costCtxInput, costCtxOutput, costCtxCacheRead, costCtxCacheWrite);
   const limitUsed = anyFilled(limitContext, limitOutput, limitInput);
-  // context_over_200k sits inside cost, so base input/output are required whenever either block is used.
-  if ((costUsed || ctxUsed) && (!costInput.trim() || !costOutput.trim()))
-    errors['cost'] = i18n.t('validation.costRequired');
-  if (ctxUsed && (!costCtxInput.trim() || !costCtxOutput.trim()))
-    errors['costCtx'] = i18n.t('validation.contextOver200k');
+  if (costUsed && (!costInput.trim() || !costOutput.trim())) errors['cost'] = i18n.t('validation.costRequired');
   if (limitUsed && (!limitContext.trim() || !limitOutput.trim())) errors['limit'] = i18n.t('validation.limitRequired');
 
   if (Object.keys(errors).length) {
@@ -185,38 +148,29 @@ async function submit() {
 
   const inputModalities = MODALITIES.filter((modality) => modalityInput[modality]);
   const outputModalities = MODALITIES.filter((modality) => modalityOutput[modality]);
+  const cacheUsed = anyFilled(costCacheRead, costCacheWrite);
+  // Only touch capabilities when the stored model has them or the user set something.
+  const capabilitiesNeeded = capabilitiesPresent || tools || inputModalities.length > 0 || outputModalities.length > 0;
   const value: ModelDef = {
     id: id.trim(),
     ...(family.trim() && { family: family.trim() }),
-    ...(releaseDate && { release_date: releaseDate }),
-    status,
-    ...(temperature !== '' && { temperature: temperature === 'true' }),
-    ...(reasoning && { reasoning: true }),
-    ...(toolCall && { tool_call: true }),
-    ...(attachment && { attachment: true }),
-    ...(experimental && { experimental: true }),
-    ...(interleaved !== 'unset' && {
-      interleaved:
-        interleaved === 'custom'
-          ? { field: String(interleavedValue?.['field']) }
-          : interleaved === 'true'
-            ? true
-            : interleaved === 'false'
-              ? false
-              : interleaved,
+    // An explicit disable is written; an existing disable can only be undone explicitly.
+    ...((disabled || (mode === 'edit' && initial?.disabled === true)) && { disabled }),
+    ...(capabilitiesNeeded && {
+      capabilities: {
+        tools,
+        ...(inputModalities.length && { input: inputModalities }),
+        ...(outputModalities.length && { output: outputModalities }),
+      },
     }),
-    ...((costUsed || ctxUsed) && {
+    ...(costUsed && {
       cost: {
         input: num(costInput) as number,
         output: num(costOutput) as number,
-        ...(costCacheRead.trim() && { cache_read: num(costCacheRead) as number }),
-        ...(costCacheWrite.trim() && { cache_write: num(costCacheWrite) as number }),
-        ...(ctxUsed && {
-          context_over_200k: {
-            input: num(costCtxInput) as number,
-            output: num(costCtxOutput) as number,
-            ...(costCtxCacheRead.trim() && { cache_read: num(costCtxCacheRead) as number }),
-            ...(costCtxCacheWrite.trim() && { cache_write: num(costCtxCacheWrite) as number }),
+        ...(cacheUsed && {
+          cache: {
+            ...(costCacheRead.trim() && { read: num(costCacheRead) as number }),
+            ...(costCacheWrite.trim() && { write: num(costCacheWrite) as number }),
           },
         }),
       },
@@ -228,18 +182,10 @@ async function submit() {
         ...(limitInput.trim() && { input: num(limitInput) as number }),
       },
     }),
-    ...(inputModalities.length || outputModalities.length
-      ? {
-          modalities: {
-            ...(inputModalities.length && { input: inputModalities }),
-            ...(outputModalities.length && { output: outputModalities }),
-          },
-        }
-      : {}),
-    ...(optionsValue && Object.keys(optionsValue).length && { options: optionsValue }),
+    ...(settingsValue && Object.keys(settingsValue).length && { settings: settingsValue }),
     ...(headersValue && Object.keys(headersValue).length && { headers: headersValue as Record<string, string> }),
     ...(variantEntries.length && {
-      variants: Object.fromEntries(variantEntries.map(({ key, entry }) => [key, entry])),
+      variants: variantEntries.map(({ key, entry }) => ({ id: key, ...entry }) as ModelVariant),
     }),
   };
 
@@ -304,17 +250,10 @@ async function submit() {
           >
         </div>
         <div class="field">
-          <label for="model-release-date">{i18n.t('modelForm.releaseDate')}</label>
-          <input id="model-release-date" type="date" bind:value={releaseDate} disabled={saving}>
-        </div>
-        <div class="field">
-          <label for="model-status">{i18n.t('modelForm.status')}</label>
-          <Select
-            id="model-status"
-            bind:value={status}
-            disabled={saving}
-            options={['active', 'alpha', 'beta', 'deprecated'].map((value) => ({ value }))}
-          />
+          <div class="check-row">
+            <Switch id="model-disabled" bind:checked={disabled} disabled={saving} />
+            <label for="model-disabled">{i18n.t('common.disabled')}</label>
+          </div>
         </div>
       </div>
     </fieldset>
@@ -323,69 +262,12 @@ async function submit() {
       <legend>{i18n.t('modelForm.capabilities')}</legend>
       <div class="form-grid">
         <div class="field full">
-          <div class="grid grid-cols-2 gap-x-6 gap-y-3">
-            <div class="check-row">
-              <Switch id="model-reasoning" bind:checked={reasoning} disabled={saving} />
-              <label for="model-reasoning">{i18n.t('modelForm.reasoning')}</label>
-            </div>
-            <div class="check-row">
-              <Switch id="model-tool-call" bind:checked={toolCall} disabled={saving} />
-              <label for="model-tool-call">{i18n.t('modelForm.toolCall')}</label>
-            </div>
-            <div class="check-row">
-              <Switch id="model-attachment" bind:checked={attachment} disabled={saving} />
-              <label for="model-attachment">{i18n.t('modelForm.attachment')}</label>
-            </div>
-            <div class="check-row">
-              <Switch id="model-experimental" bind:checked={experimental} disabled={saving} />
-              <label for="model-experimental">{i18n.t('modelForm.experimental')}</label>
-            </div>
+          <div class="check-row">
+            <Switch id="model-tools" bind:checked={tools} disabled={saving} />
+            <label for="model-tools">{i18n.t('modelForm.toolCall')}</label>
           </div>
           <small class="muted">{i18n.t('modelForm.capabilitiesHint')}</small>
         </div>
-        <div class="field">
-          <label for="model-temperature">{i18n.t('modelForm.temperature')}</label>
-          <Select
-            id="model-temperature"
-            bind:value={temperature}
-            disabled={saving}
-            options={[{ value: '', label: i18n.t('modelForm.unset') }, { value: 'true' }, { value: 'false' }]}
-          />
-          <small class="muted">{i18n.t('modelForm.temperatureHint')}</small>
-        </div>
-        <div class="field">
-          <label for="model-interleaved">{i18n.t('modelForm.interleaved')}</label>
-          <Select
-            id="model-interleaved"
-            bind:value={interleaved}
-            disabled={saving}
-            options={[
-              { value: 'unset', label: i18n.t('modelForm.unset') },
-              { value: 'true' },
-              { value: 'false' },
-              { value: 'reasoning' },
-              { value: 'reasoning_content' },
-              { value: 'reasoning_text' },
-              { value: 'custom', label: i18n.t('modelForm.interleavedCustom') },
-            ]}
-          />
-          <small class="muted">{i18n.t('modelForm.interleavedHint')}</small>
-        </div>
-        {#if interleaved === 'custom'}
-          <div class="field full">
-            <label for="model-interleaved-custom">{i18n.t('modelForm.interleavedObject')}</label>
-            <textarea
-              id="model-interleaved-custom"
-              class="small"
-              bind:value={interleavedCustom}
-              disabled={saving}
-            ></textarea>
-            <small class="muted">{i18n.t('modelForm.interleavedObjectHint')}</small>
-            {#if errors['interleaved']}
-              <p class="field-error">{errors['interleaved']}</p>
-            {/if}
-          </div>
-        {/if}
         <div class="field full">
           <div class="grid grid-cols-2 gap-x-8">
             <div>
@@ -438,37 +320,9 @@ async function submit() {
               <input id="cost-cache-write" type="number" step="any" bind:value={costCacheWrite} disabled={saving}>
             </div>
           </div>
-          <p class="num-section-label">context_over_200k</p>
-          <div class="num-grid">
-            <div class="sub-field">
-              <label for="cost-ctx-input">{i18n.t('modelForm.input')}</label>
-              <input id="cost-ctx-input" type="number" step="any" bind:value={costCtxInput} disabled={saving}>
-            </div>
-            <div class="sub-field">
-              <label for="cost-ctx-output">{i18n.t('modelForm.output')}</label>
-              <input id="cost-ctx-output" type="number" step="any" bind:value={costCtxOutput} disabled={saving}>
-            </div>
-            <div class="sub-field">
-              <label for="cost-ctx-cache-read">{i18n.t('modelForm.cacheRead')}</label>
-              <input id="cost-ctx-cache-read" type="number" step="any" bind:value={costCtxCacheRead} disabled={saving}>
-            </div>
-            <div class="sub-field">
-              <label for="cost-ctx-cache-write">{i18n.t('modelForm.cacheWrite')}</label>
-              <input
-                id="cost-ctx-cache-write"
-                type="number"
-                step="any"
-                bind:value={costCtxCacheWrite}
-                disabled={saving}
-              >
-            </div>
-          </div>
           <small class="muted">{i18n.t('modelForm.costHint')}</small>
           {#if errors['cost']}
             <p class="field-error">{errors['cost']}</p>
-          {/if}
-          {#if errors['costCtx']}
-            <p class="field-error">{errors['costCtx']}</p>
           {/if}
         </div>
         <div class="field full">
@@ -500,10 +354,10 @@ async function submit() {
       <div class="form-grid">
         <div class="field">
           <p class="group-title">{i18n.t('modelForm.options')}</p>
-          <textarea id="model-options" bind:value={options} disabled={saving}></textarea>
+          <textarea id="model-settings" bind:value={settings} disabled={saving}></textarea>
           <small class="muted">{i18n.t('modelForm.optionsHint')}</small>
-          {#if errors['options']}
-            <p class="field-error">{errors['options']}</p>
+          {#if errors['settings']}
+            <p class="field-error">{errors['settings']}</p>
           {/if}
         </div>
         <div class="field">
@@ -530,15 +384,6 @@ async function submit() {
                 bind:value={variant.json}
                 disabled={saving}
               ></textarea>
-              <div class="variant-toggle">
-                <Switch
-                  id="variant-disabled-{index}"
-                  aria-label={i18n.t('modelForm.disableVariant', { index: index + 1 })}
-                  bind:checked={variant.disabled}
-                  disabled={saving}
-                />
-                <span>{i18n.t('modelForm.disabled')}</span>
-              </div>
               <Button
                 type="button"
                 size="icon-sm"

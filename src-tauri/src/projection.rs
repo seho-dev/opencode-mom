@@ -158,14 +158,14 @@ pub fn project_opencode(
     if group.group_type != GroupType::Native {
         return Ok((document, warnings));
     }
-    if !document.raw().get("agent").is_some_and(Value::is_object) {
+    if !document.raw().get("agents").is_some_and(Value::is_object) {
         for binding in group
             .open_code_agent_overrides
             .iter()
             .filter(|binding| is_effective_binding(binding))
         {
             warnings.push(format!(
-                "OpenCode config has no valid top-level 'agent' object; skipped model override for '{}'.",
+                "OpenCode config has no valid top-level 'agents' object; skipped model override for '{}'.",
                 binding.agent_name
             ));
         }
@@ -176,7 +176,7 @@ pub fn project_opencode(
         .iter()
         .filter(|binding| is_effective_binding(binding))
     {
-        let agents = document.raw().get("agent").and_then(Value::as_object);
+        let agents = document.raw().get("agents").and_then(Value::as_object);
         if !agents
             .and_then(|agents| agents.get(&binding.agent_name))
             .is_some_and(Value::is_object)
@@ -187,15 +187,17 @@ pub fn project_opencode(
             ));
             continue;
         }
-        let path = ["agent", binding.agent_name.as_str(), "model"];
-        document.patch(&path, Some(Value::String(binding.model_ref.clone())))?;
-        let variant_path = ["agent", binding.agent_name.as_str(), "variant"];
-        let variant = binding
+        // V2 joins the variant onto the selector: provider/model#variant.
+        let selector = match binding
             .variant
             .as_deref()
             .filter(|value| !value.trim().is_empty())
-            .map(|value| Value::String(value.to_owned()));
-        document.patch(&variant_path, variant)?;
+        {
+            Some(variant) => format!("{}#{}", binding.model_ref, variant),
+            None => binding.model_ref.clone(),
+        };
+        let path = ["agents", binding.agent_name.as_str(), "model"];
+        document.patch(&path, Some(Value::String(selector)))?;
     }
     Ok((document, warnings))
 }
@@ -212,8 +214,7 @@ pub fn remove_opencode_overrides(
         .iter()
         .filter(|binding| is_effective_binding(binding))
     {
-        document.patch(&["agent", binding.agent_name.as_str(), "model"], None)?;
-        document.patch(&["agent", binding.agent_name.as_str(), "variant"], None)?;
+        document.patch(&["agents", binding.agent_name.as_str(), "model"], None)?;
     }
     Ok(document)
 }

@@ -1,19 +1,17 @@
 // Pure, framework-free helpers shared by the agent create/edit pages.
-import type { OptionRow, PermissionParse, PermissionView } from './types.js';
+import type { PermissionParse, PermissionRule, PermissionView } from './types.js';
 
 // Minimal shape accepted from both the CLI catalog and the provider store; only these fields are read.
-export type ModelOptionEntry = { ref: string; name?: string; variants?: Record<string, unknown> | null };
+export type ModelOptionEntry = { ref: string; name?: string; variants?: readonly { id: string }[] | null };
 
 export type AgentFieldValues = {
   model: string;
   mode: string;
   description: string;
-  disable: boolean;
+  disabled: boolean;
   hidden: boolean;
   color: string;
   variant: string;
-  temperature: string;
-  topP: string;
   steps: string;
   prompt: string;
 };
@@ -22,34 +20,34 @@ export function pretty(value: unknown): string {
   return JSON.stringify(value ?? {}, null, 2);
 }
 
-export function optionRows(value: unknown): OptionRow[] {
-  return Object.entries(value && typeof value === 'object' && !Array.isArray(value) ? value : {}).map(
-    ([key, item]) => ({
-      key,
-      value: typeof item === 'string' ? item : JSON.stringify(item),
-    }),
-  );
+// Splits a V2 `provider/model#variant` selector into its form pieces.
+export function splitModelSelector(selector: string): { model: string; variant: string } {
+  const hash = selector.lastIndexOf('#');
+  if (hash <= 0) return { model: selector, variant: '' };
+  return { model: selector.slice(0, hash), variant: selector.slice(hash + 1) };
 }
 
-export function optionObject(rows: OptionRow[]): Record<string, unknown> {
-  return Object.fromEntries(
-    rows
-      .filter((row) => row.key.trim())
-      .map((row) => {
-        try {
-          return [row.key.trim(), JSON.parse(row.value)];
-        } catch {
-          return [row.key.trim(), row.value];
-        }
-      }),
-  );
+// Joins the form pieces back into one V2 selector; a variant without a model is dropped.
+export function joinModelSelector(model: string, variant: string): string {
+  if (!model) return '';
+  return variant ? `${model}#${variant}` : model;
 }
 
+const isRule = (value: unknown): value is PermissionRule => {
+  if (!value || Array.isArray(value) || typeof value !== 'object') return false;
+  const rule = value as Record<string, unknown>;
+  return (
+    typeof rule['action'] === 'string' && typeof rule['resource'] === 'string' && typeof rule['effect'] === 'string'
+  );
+};
+
+// Parses the V2 `permissions` array: `{action, resource, effect}` entries in order.
 export function parsePermission(value: string): PermissionParse {
   try {
-    const parsed = JSON.parse(value || '{}');
-    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') return { ok: false };
-    return { ok: true, object: parsed as Record<string, unknown> };
+    const parsed: unknown = JSON.parse(value || '[]');
+    if (!Array.isArray(parsed)) return { ok: false };
+    if (!parsed.every(isRule)) return { ok: false };
+    return { ok: true, rules: parsed };
   } catch {
     return { ok: false };
   }
@@ -57,29 +55,24 @@ export function parsePermission(value: string): PermissionParse {
 
 export function permissionView(permission: string): PermissionView {
   const parsed = parsePermission(permission);
-  if (!parsed.ok) return { mode: 'invalid' };
-  const values: Record<string, string> = {};
-  for (const [key, value] of Object.entries(parsed.object)) {
-    if (typeof value !== 'string') return { mode: 'json' };
-    values[key] = value;
+  if (parsed.ok) return { mode: 'rules', rules: parsed.rules };
+  // Distinguish malformed JSON from a valid array with non-rule entries.
+  try {
+    return Array.isArray(JSON.parse(permission || '[]')) ? { mode: 'json' } : { mode: 'invalid' };
+  } catch {
+    return permission.trim() === '' ? { mode: 'rules', rules: [] } : { mode: 'invalid' };
   }
-  return { mode: 'rows', values };
 }
 
-// Returns the updated JSON string; invalid input is returned unchanged so the textarea keeps the user's text.
-export function setPermissionAction(permission: string, key: string, action: string): string {
-  const parsed = parsePermission(permission);
-  if (!parsed.ok) return permission;
-  const next = { ...parsed.object };
-  if (action) next[key] = action;
-  else delete next[key];
-  return JSON.stringify(next, null, 2);
+export function serializePermissionRules(rules: PermissionRule[]): string {
+  return JSON.stringify(rules, null, 2);
 }
 
-export function permissionObject(permission: string): Record<string, unknown> {
+// Returns the parsed rules, or throws so callers surface the textarea's error state.
+export function permissionRules(permission: string): PermissionRule[] {
   const parsed = parsePermission(permission);
-  if (!parsed.ok) throw new Error('Permissions must be a valid JSON object');
-  return parsed.object;
+  if (!parsed.ok) throw new Error('Permissions must be an array of {action, resource, effect} rules');
+  return parsed.rules;
 }
 
 // Catalog covers builtin + custom; `models` adds custom-only refs. Catalog label wins.
@@ -103,7 +96,6 @@ export function buildModelOptions(
 }
 
 export function buildModelVariants(catalog: ModelOptionEntry[], models: ModelOptionEntry[], current: string): string[] {
-  const value =
-    catalog.find((entry) => entry.ref === current)?.variants ?? models.find((entry) => entry.ref === current)?.variants;
-  return value && typeof value === 'object' ? Object.keys(value) : [];
+  const entry = catalog.find((entry) => entry.ref === current) ?? models.find((entry) => entry.ref === current);
+  return entry?.variants?.map((variant) => variant.id) ?? [];
 }

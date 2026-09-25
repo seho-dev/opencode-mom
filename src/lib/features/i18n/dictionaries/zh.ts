@@ -407,4 +407,12 @@ export const zh: Record<MessageKey, string> = {
   'empty.modelsBuiltinShort': '暂无内置模型。',
   'empty.agents': '暂无智能体。',
   'empty.groups': '暂无分组。',
+
+  // V2 permission rule editor (new UI)
+  'agents.permissionAction': '动作',
+  'agents.permissionResource': '资源',
+  'agents.permissionEffect': '效果',
+  'agents.addPermissionRule': '添加规则',
+  'agents.moveRuleUp': '上移规则',
+  'agents.moveRuleDown': '下移规则',
 };

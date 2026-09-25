@@ -7,7 +7,7 @@ use opencode_mom_tauri::error::ErrorCode;
 use opencode_mom_tauri::groups;
 use opencode_mom_tauri::models::{
     AgentModelBinding, AppConfig, AppSelectionState, GroupType, ModelDef, ModelGroup,
-    OmoCategoryMapping, ProviderDef, ProviderOptions,
+    OmoCategoryMapping, ProviderDef, ProviderSettings,
 };
 use opencode_mom_tauri::paths::ConfigPaths;
 use opencode_mom_tauri::providers;
@@ -39,8 +39,9 @@ fn temp_home(name: &str) -> TestHome {
 fn provider(id: &str, models: &[&str]) -> ProviderDef {
     ProviderDef {
         name: id.to_owned(),
-        npm: Some("@ai-sdk/openai-compatible".to_owned()),
-        options: None,
+        package: Some("aisdk:@ai-sdk/openai-compatible".to_owned()),
+        settings: None,
+        headers: None,
         models: models
             .iter()
             .map(|model_id| ((*model_id).to_owned(), model_def(model_id)))
@@ -86,10 +87,10 @@ fn write_opencode(home: &TestHome) {
         &path,
         br#"{
   "$schema": "https://opencode.ai/config.json",
-  "agent": {
+  "agents": {
     "reviewer": { "model": "acme/old" }
   },
-  "provider": {
+  "providers": {
     "acme": {
       "name": "Acme",
       "models": {
@@ -154,28 +155,27 @@ fn provider_crud_round_trip() {
 
     // apiKey round-trips across IPC as-is (no redaction).
     let mut secret = provider("secretco", &[]);
-    secret.options = Some(ProviderOptions {
+    secret.settings = Some(ProviderSettings {
         api_key: Some("super-secret".to_owned()),
         base_url: None,
-        headers: None,
     });
     providers::create_provider(&opencode, secret).unwrap();
     assert_eq!(
         providers::get_provider(&opencode, "secretco")
             .unwrap()
-            .options
+            .settings
             .unwrap()
             .api_key
             .as_deref(),
         Some("super-secret")
     );
     let mut rotated = providers::get_provider(&opencode, "secretco").unwrap();
-    rotated.options.as_mut().unwrap().api_key = Some("new-secret".to_owned());
+    rotated.settings.as_mut().unwrap().api_key = Some("new-secret".to_owned());
     providers::update_provider(&opencode, rotated).unwrap();
     assert_eq!(
         providers::get_provider(&opencode, "secretco")
             .unwrap()
-            .options
+            .settings
             .unwrap()
             .api_key
             .as_deref(),
@@ -488,6 +488,44 @@ fn save_group_validates_model_references_and_names() {
     let second = group(GroupType::Native, "DUP");
     let error = groups::save_group(&home.paths, second).unwrap_err();
     assert_eq!(error.code, ErrorCode::ValidationFailed);
+}
+
+#[test]
+fn native_overrides_join_variant_into_selector() {
+    let home = temp_home("native-variant");
+    write_opencode(&home);
+
+    let mut native = group(GroupType::Native, "variant-group");
+    let mut binding = binding("reviewer", "acme/new");
+    binding.variant = Some("high".to_owned());
+    native.open_code_agent_overrides = vec![binding];
+    let (saved, _) = groups::save_group(&home.paths, native).unwrap();
+    groups::switch_group(&home.paths, saved.id).unwrap();
+
+    let content = fs::read_to_string(home.paths.opencode_file()).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(value["agents"]["reviewer"]["model"], "acme/new#high");
+    assert!(value["agents"]["reviewer"].get("variant").is_none());
+}
+
+/// Read-only smoke test: parses the machine's real native V2 config when present.
+/// Skipped on machines without `~/.config/opencode/opencode.json`.
+#[test]
+fn readonly_smoke_against_real_v2_config() {
+    let Ok(home) = std::env::var("HOME") else {
+        return;
+    };
+    let paths = ConfigPaths::for_home(std::path::Path::new(&home));
+    let opencode = paths.opencode_file();
+    if !opencode.exists() {
+        return;
+    }
+    let providers = providers::list_providers(&opencode).expect("real V2 providers parse");
+    assert!(!providers.is_empty());
+    let agents = opencode_mom_tauri::agents::list(&paths).expect("real V2 agents parse");
+    let references = opencode_mom_tauri::refs::collect_model_references(&paths)
+        .expect("real V2 model references parse");
+    let _ = (agents, references);
 }
 
 #[test]

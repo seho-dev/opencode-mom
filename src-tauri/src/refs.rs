@@ -158,14 +158,14 @@ pub fn collect_agent_references(paths: &ConfigPaths) -> Result<AgentReferenceInd
     let mut references = AgentReferenceIndex::new();
     for definition in agents::list(paths)? {
         if let Some(inline) = definition.inline {
-            scan_permission_task_references(
+            scan_permission_references(
                 &mut references,
                 &inline.raw,
-                &format!("agent.{}.inline", definition.id),
+                &format!("agents.{}.inline", definition.id),
             );
         }
         for markdown in definition.markdown {
-            scan_permission_task_references(
+            scan_permission_references(
                 &mut references,
                 &Value::Object(markdown.frontmatter),
                 &format!("{}:{}", markdown.path.display(), definition.id),
@@ -207,7 +207,7 @@ pub fn collect_agent_references(paths: &ConfigPaths) -> Result<AgentReferenceInd
             "default_agent".to_owned(),
         );
     }
-    if let Some(commands) = opencode.get("command").and_then(Value::as_object) {
+    if let Some(commands) = opencode.get("commands").and_then(Value::as_object) {
         for (name, command) in commands {
             if let Some(agent) = command
                 .as_object()
@@ -218,12 +218,12 @@ pub fn collect_agent_references(paths: &ConfigPaths) -> Result<AgentReferenceInd
                     &mut references,
                     agent,
                     AgentReferenceKind::Command,
-                    format!("command.{name}.agent"),
+                    format!("commands.{name}.agent"),
                 );
             }
         }
     }
-    scan_permission_task_references(&mut references, &Value::Object(document.raw().clone()), "");
+    scan_permission_references(&mut references, &Value::Object(document.raw().clone()), "");
     Ok(references)
 }
 
@@ -257,7 +257,9 @@ fn add_agent_reference(
         .push(AgentReference { kind, owner });
 }
 
-fn scan_permission_task_references(
+/// Walks a config subtree for V2 `permissions` arrays. Each `subagent` rule with a
+/// concrete (wildcard-free) resource references that agent ID.
+fn scan_permission_references(
     references: &mut AgentReferenceIndex,
     value: &Value,
     owner_prefix: &str,
@@ -265,22 +267,29 @@ fn scan_permission_task_references(
     let Some(object) = value.as_object() else {
         if let Some(values) = value.as_array() {
             for nested in values {
-                scan_permission_task_references(references, nested, owner_prefix);
+                scan_permission_references(references, nested, owner_prefix);
             }
         }
         return;
     };
-    if let Some(tasks) = object
-        .get("permission")
-        .and_then(Value::as_object)
-        .and_then(|permission| permission.get("task"))
-        .and_then(Value::as_object)
-    {
-        for agent in tasks.keys() {
+    if let Some(rules) = object.get("permissions").and_then(Value::as_array) {
+        for (index, rule) in rules.iter().enumerate() {
+            let Some(rule) = rule.as_object() else {
+                continue;
+            };
+            if rule.get("action").and_then(Value::as_str) != Some("subagent") {
+                continue;
+            }
+            let Some(agent) = rule.get("resource").and_then(Value::as_str) else {
+                continue;
+            };
+            if agent.is_empty() || agent.contains(['*', '?']) {
+                continue;
+            }
             let owner = if owner_prefix.is_empty() {
-                format!("permission.task.{agent}")
+                format!("permissions[{index}]")
             } else {
-                format!("{owner_prefix}.permission.task.{agent}")
+                format!("{owner_prefix}.permissions[{index}]")
             };
             add_agent_reference(references, agent, AgentReferenceKind::PermissionTask, owner);
         }
@@ -291,7 +300,7 @@ fn scan_permission_task_references(
         } else {
             format!("{owner_prefix}.{key}")
         };
-        scan_permission_task_references(references, nested, &nested_prefix);
+        scan_permission_references(references, nested, &nested_prefix);
     }
 }
 

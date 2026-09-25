@@ -70,13 +70,9 @@ impl MarkdownAgentDocument {
         &mut self,
         fields: &Map<String, Value>,
         prompt: Option<String>,
-        allow_existing_tools: bool,
     ) -> Result<(), crate::error::AppError> {
         for (key, value) in fields {
             if key == "prompt" {
-                continue;
-            }
-            if key == "tools" && !allow_existing_tools && !self.frontmatter.contains_key(key) {
                 continue;
             }
             if !self.frontmatter.contains_key(key) {
@@ -91,10 +87,11 @@ impl MarkdownAgentDocument {
         Ok(())
     }
 
-    pub fn remove_fields(&mut self, fields: &[String]) {
+    pub fn remove_fields(&mut self, fields: &[impl AsRef<str>]) {
         for field in fields {
-            if field != "prompt" && self.frontmatter.remove(field).is_some() {
-                self.changed_fields.insert(field.clone());
+            let field = field.as_ref();
+            if self.frontmatter.remove(field).is_some() {
+                self.changed_fields.insert(field.to_owned());
             }
         }
     }

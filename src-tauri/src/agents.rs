@@ -177,7 +177,7 @@ pub fn model_references(
         {
             references.push(crate::refs::ModelReference {
                 source: crate::refs::ReferenceSource::OpenCodeInlineAgent,
-                location: format!("agent.{id}.model"),
+                location: format!("agents.{id}.model"),
                 model_ref: ModelRef::parse(model).map_err(|_| invalid_model_ref(model))?,
             });
         }
@@ -222,7 +222,7 @@ pub fn create(
                 )));
             }
             let mut document = MarkdownAgentDocument::empty();
-            document.apply_fields(&fields, prompt, false)?;
+            document.apply_fields(&fields, prompt)?;
             write_file(&path, document.serialize().as_bytes())?;
         }
     }
@@ -250,7 +250,7 @@ pub fn update(
             let content =
                 read_text(&path)?.ok_or_else(|| AppError::io("read", &path, fs_not_found()))?;
             let mut document = MarkdownAgentDocument::parse(&content)?;
-            document.apply_fields(&fields, prompt, false)?;
+            document.apply_fields(&fields, prompt)?;
             document.remove_fields(&clear_fields);
             if clear_fields.iter().any(|field| field == "prompt") {
                 document.prompt.clear();
@@ -334,11 +334,10 @@ fn create_inline(
         return Err(invalid(format!("inline agent '{id}' already exists")));
     }
     let mut value = fields;
-    value.remove("tools");
     if let Some(prompt) = prompt {
-        value.insert("prompt".to_owned(), Value::String(prompt));
+        value.insert("system".to_owned(), Value::String(prompt));
     }
-    document.patch(&["agent", id], Some(Value::Object(value)))?;
+    document.patch(&["agents", id], Some(Value::Object(value)))?;
     document.save(&opencode_file)
 }
 
@@ -359,17 +358,22 @@ fn update_inline(
     let mut values = fields;
     let prompt_is_set = prompt.is_some();
     if let Some(prompt) = prompt {
-        values.insert("prompt".to_owned(), Value::String(prompt));
+        values.insert("system".to_owned(), Value::String(prompt));
     }
-    values.remove("tools");
     for (key, value) in values {
-        document.patch(&["agent", id, &key], Some(value))?;
+        document.patch(&["agents", id, &key], Some(value))?;
     }
     for key in clear_fields {
-        if key == "prompt" && prompt_is_set {
+        // The V2 inline prompt field is `system`; `prompt` is the DTO-level name.
+        let key = if key == "prompt" {
+            "system"
+        } else {
+            key.as_str()
+        };
+        if key == "system" && prompt_is_set {
             continue;
         }
-        document.patch(&["agent", id, &key], None)?;
+        document.patch(&["agents", id, key], None)?;
     }
     document.save(&opencode_file)
 }
@@ -380,15 +384,15 @@ fn delete_inline(paths: &crate::paths::ConfigPaths, id: &str) -> Result<(), AppE
     if !inline_agents(document.raw())?.contains_key(id) {
         return Err(not_found(id));
     }
-    document.patch(&["agent", id], None)?;
+    document.patch(&["agents", id], None)?;
     document.save(&opencode_file)
 }
 
 fn inline_agents(document: &Map<String, Value>) -> Result<&Map<String, Value>, AppError> {
-    match document.get("agent") {
+    match document.get("agents") {
         None => Ok(empty_object()),
         Some(Value::Object(agents)) => Ok(agents),
-        Some(_) => Err(invalid("top-level 'agent' must be an object")),
+        Some(_) => Err(invalid("top-level 'agents' must be an object")),
     }
 }
 
@@ -514,7 +518,8 @@ fn definition_from_sources(
 
 fn markdown_effective_fields(source: &MarkdownAgentSource) -> Value {
     let mut fields = source.frontmatter.clone();
-    fields.insert("prompt".to_owned(), Value::String(source.prompt.clone()));
+    // The V2 system prompt of a Markdown agent lives in the body.
+    fields.insert("system".to_owned(), Value::String(source.prompt.clone()));
     Value::Object(fields)
 }
 
@@ -601,14 +606,19 @@ fn validate_model(fields: &Map<String, Value>) -> Result<(), AppError> {
         return Ok(());
     };
     let valid = model.as_str().is_some_and(|model| {
-        model.is_empty()
-            || (model.matches('/').count() == 1
-                && model.split_once('/').is_some_and(|(provider, name)| {
-                    !provider.is_empty()
-                        && !name.is_empty()
-                        && !provider.contains(char::is_whitespace)
-                        && !name.contains(char::is_whitespace)
-                }))
+        // V2 selectors: provider/model with an optional #variant suffix.
+        let base = model.split('#').next().unwrap_or("");
+        let variant = model.split('#').nth(1);
+        let variant_ok = variant.is_none() || variant.is_some_and(|value| !value.is_empty());
+        variant_ok
+            && model.matches('#').count() <= 1
+            && base.matches('/').count() == 1
+            && base.split_once('/').is_some_and(|(provider, name)| {
+                !provider.is_empty()
+                    && !name.is_empty()
+                    && !provider.contains(char::is_whitespace)
+                    && !name.contains(char::is_whitespace)
+            })
     });
     if valid {
         Ok(())
@@ -632,7 +642,6 @@ fn normalize_mutation(
 ) -> Result<(Map<String, Value>, Option<String>, Vec<String>), AppError> {
     let mut fields = fields.clone();
     let frontmatter_prompt = fields.remove("prompt");
-    fields.remove("tools");
     let prompt = match (prompt, frontmatter_prompt) {
         (Some(prompt), _) => Some(prompt),
         (None, Some(Value::String(prompt))) => Some(prompt),

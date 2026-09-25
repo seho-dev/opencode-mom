@@ -26,21 +26,6 @@
   justify-content: space-between;
   gap: 12px;
 }
-.key-value-row {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) 32px;
-  gap: 8px;
-  margin-top: 8px;
-}
-.key-value-row input {
-  min-width: 0;
-  border: 1px solid var(--border-default);
-  border-radius: 2px;
-  background: var(--surface-input);
-  color: var(--text-primary);
-  min-height: 32px;
-  padding: 6px 8px;
-}
 .field input:not([type="checkbox"]):not([type="radio"]),
 .field textarea {
   width: 100%;
@@ -209,7 +194,7 @@
 }
 .variant-row {
   display: grid;
-  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr) auto 32px;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr) 32px;
   gap: 8px;
   align-items: start;
   margin-top: 8px;
@@ -244,22 +229,10 @@
   min-height: 64px;
   resize: vertical;
 }
-.variant-toggle {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
-.variant-toggle span {
-  color: var(--text-muted);
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
 .variants-actions {
   margin-top: 12px;
 }
-/* Agent form: sectioned fieldsets, compact limits grid and permission rows. */
+/* Agent form: sectioned fieldsets, compact limits grid and permission rule rows. */
 .form-section {
   grid-column: 1 / -1;
   min-width: 0;
@@ -295,28 +268,36 @@
   margin-left: 4px;
   color: var(--status-error);
 }
-.permission-rows {
+.permission-rule-head,
+.permission-rule-row {
   display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr) 130px 96px;
   gap: 8px;
-  margin-bottom: 14px;
-}
-.permission-row {
-  display: grid;
-  grid-template-columns: 170px minmax(0, 1fr);
-  gap: 10px;
   align-items: center;
 }
-.permission-row label {
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-.advanced-section > summary {
-  margin: 0 0 14px;
-  color: var(--text-secondary);
-  font-family: var(--font-heading);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+.permission-rule-head {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  cursor: pointer;
+}
+.permission-rule-row {
+  margin-bottom: 8px;
+}
+.permission-rule-row input {
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  background: var(--surface-input);
+  color: var(--text-primary);
+  padding: 6px 8px;
+}
+.permission-rule-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.permission-add {
+  margin-bottom: 14px;
 }

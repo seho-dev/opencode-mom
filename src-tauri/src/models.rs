@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -11,21 +11,20 @@ use crate::error::AppError;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderOptions {
+pub struct ProviderSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     #[serde(rename = "baseURL", skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub headers: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderDef {
     pub name: String,
-    pub npm: Option<String>,
-    pub options: Option<ProviderOptions>,
+    pub package: Option<String>,
+    pub settings: Option<ProviderSettings>,
+    pub headers: Option<BTreeMap<String, String>>,
     #[serde(default)]
     pub models: BTreeMap<String, ModelDef>,
 }
@@ -36,48 +35,38 @@ pub struct ModelDef {
     pub id: String,
     pub name: Option<String>,
     pub family: Option<String>,
-    pub release_date: Option<String>,
-    pub status: Option<ModelStatus>,
-    pub reasoning: Option<bool>,
-    pub temperature: Option<bool>,
-    pub tool_call: Option<bool>,
-    pub attachment: Option<bool>,
-    pub interleaved: Option<Value>,
+    pub disabled: Option<bool>,
+    pub capabilities: Option<ModelCapabilities>,
     pub cost: Option<ModelCost>,
     pub limit: Option<ModelLimit>,
-    pub modalities: Option<ModelModalities>,
-    pub experimental: Option<bool>,
-    pub options: Option<BTreeMap<String, Value>>,
+    pub settings: Option<BTreeMap<String, Value>>,
     pub headers: Option<BTreeMap<String, String>>,
-    pub variants: Option<BTreeMap<String, Value>>,
+    pub variants: Option<Vec<ModelVariant>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ModelStatus {
-    Alpha,
-    Beta,
-    Deprecated,
-    Active,
+/// V2 model capabilities: tool support plus accepted input/output media types.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ModelCapabilities {
+    pub tools: Option<bool>,
+    pub input: Option<Vec<String>>,
+    pub output: Option<Vec<String>>,
 }
 
+/// V2 cost per million tokens; cache pricing nests under `cache.read` / `cache.write`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ModelCost {
     pub input: Option<f64>,
     pub output: Option<f64>,
-    pub cache_read: Option<f64>,
-    pub cache_write: Option<f64>,
-    pub context_over_200k: Option<ContextOver200k>,
+    pub cache: Option<ModelCacheCost>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct ContextOver200k {
-    pub input: f64,
-    pub output: f64,
-    pub cache_read: Option<f64>,
-    pub cache_write: Option<f64>,
+pub struct ModelCacheCost {
+    pub read: Option<f64>,
+    pub write: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,10 +77,17 @@ pub struct ModelLimit {
     pub output: Option<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ModelModalities {
-    pub input: Option<Vec<String>>,
-    pub output: Option<Vec<String>>,
+/// One V2 variant entry: `{ "id", "settings"?, "headers"?, "body"? }`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ModelVariant {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings: Option<BTreeMap<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

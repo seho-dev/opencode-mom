@@ -71,8 +71,8 @@ async function remove() {
       {#each pagedProviders as provider}
         <tr>
           <td class="model-name">{provider.name}</td>
-          <td>{provider.npm ?? '—'}</td>
-          <td>{provider.options?.baseURL || '—'}</td>
+          <td>{provider.package ?? '—'}</td>
+          <td>{provider.settings?.baseURL || '—'}</td>
           <td>{Object.keys(provider.models).length}</td>
           <td class="row-actions">
             <Button

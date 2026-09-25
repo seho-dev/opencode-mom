@@ -11,15 +11,14 @@ import {
   type AgentFieldValues,
   buildModelOptions,
   buildModelVariants,
-  optionObject,
-  optionRows,
-  permissionObject,
-  pretty,
+  joinModelSelector,
+  permissionRules,
+  splitModelSelector,
 } from '$lib/features/config/agentForm.js';
 import { isBuiltinAgentId } from '$lib/features/config/builtinAgents.js';
 import { AGENT_MODES, STORAGE_LABELS } from '$lib/features/config/constants.js';
 import { getConfig } from '$lib/features/config/context.js';
-import type { AgentDefinition, AgentStorage, AgentWrite, ModelRef, OptionRow } from '$lib/features/config/types.js';
+import type { AgentDefinition, AgentStorage, AgentWrite } from '$lib/features/config/types.js';
 import { getI18n } from '$lib/features/i18n/context.js';
 
 type SourceSnapshot = {
@@ -42,17 +41,14 @@ let values = $state<AgentFieldValues>({
   model: '',
   mode: '',
   description: '',
-  disable: false,
+  disabled: false,
   hidden: false,
   color: '',
   variant: '',
-  temperature: '',
-  topP: '',
   steps: '',
   prompt: '',
 });
-let permission = $state('{}');
-let options = $state<OptionRow[]>([]);
+let permission = $state('[]');
 
 const snapshots = (value: AgentDefinition | undefined) => {
   const raw = (value as (AgentDefinition & Record<string, unknown>) | undefined)?.['sources'];
@@ -96,19 +92,19 @@ const promptHint = $derived(
 );
 function loadSource() {
   const fields = selectedSource?.fields ?? {};
-  values.model = typeof fields['model'] === 'string' ? fields['model'] : '';
+  const selector =
+    typeof fields['model'] === 'string' ? splitModelSelector(fields['model']) : { model: '', variant: '' };
+  values.model = selector.model;
+  values.variant = selector.variant;
   values.mode = typeof fields['mode'] === 'string' ? fields['mode'] : '';
   values.description = typeof fields['description'] === 'string' ? fields['description'] : '';
-  values.disable = fields['disable'] === true;
+  values.disabled = fields['disabled'] === true;
   values.hidden = fields['hidden'] === true;
   values.color = typeof fields['color'] === 'string' ? fields['color'] : '';
-  values.variant = typeof fields['variant'] === 'string' ? fields['variant'] : '';
-  values.temperature = typeof fields['temperature'] === 'number' ? String(fields['temperature']) : '';
-  values.topP = typeof fields['top_p'] === 'number' ? String(fields['top_p']) : '';
   values.steps = typeof fields['steps'] === 'number' ? String(fields['steps']) : '';
-  values.prompt = selectedSource?.prompt ?? (typeof fields['prompt'] === 'string' ? fields['prompt'] : '');
-  permission = pretty(fields['permission']);
-  options = optionRows(fields['options']);
+  values.prompt = selectedSource?.prompt ?? (typeof fields['system'] === 'string' ? fields['system'] : '');
+  const rules = Array.isArray(fields['permissions']) ? fields['permissions'] : [];
+  permission = JSON.stringify(rules, null, 2);
 }
 $effect(() => {
   if (!agent) return;
@@ -122,21 +118,18 @@ $effect(() => {
     loadSource();
   }
 });
-function fieldValues() {
+function fieldValues(): Record<string, unknown> {
+  const rules = permissionRules(permission);
   return {
-    model: values.model ? (values.model as ModelRef) : undefined,
+    model: values.model ? joinModelSelector(values.model, values.variant) : undefined,
     mode: values.mode || undefined,
     description: values.description || undefined,
-    disable: values.disable,
+    disabled: values.disabled,
     hidden: values.hidden,
     color: values.color || undefined,
-    variant: values.variant || undefined,
-    temperature: values.temperature ? Number(values.temperature) : undefined,
-    top_p: values.topP ? Number(values.topP) : undefined,
     steps: values.steps ? Number(values.steps) : undefined,
     prompt: values.prompt || undefined,
-    permission: permissionObject(permission),
-    options: optionObject(options),
+    ...(rules.length ? { permissions: rules } : {}),
   };
 }
 async function submit() {
@@ -148,12 +141,14 @@ async function submit() {
     return;
   }
   try {
-    const fields: Record<string, unknown> = fieldValues();
+    const fields = fieldValues();
     const original = selectedSource.fields ?? {};
-    const clearFields: string[] = ['model', 'mode', 'color', 'variant', 'temperature', 'top_p', 'steps'].filter(
+    const clearFields: string[] = ['model', 'mode', 'color', 'steps'].filter(
       (key) => fields[key] === undefined && key in original,
     );
-    if ((selectedSource.prompt ?? '') && !values.prompt) clearFields.push('prompt');
+    if (fields['permissions'] === undefined && 'permissions' in original) clearFields.push('permissions');
+    const hadPrompt = (selectedSource.prompt ?? '') !== '' || 'prompt' in original || 'system' in original;
+    if (hadPrompt && !values.prompt) clearFields.push('prompt');
     const payload = {
       id: agent.id,
       source: agent.source,
@@ -216,7 +211,6 @@ async function submit() {
       </fieldset>
       <AgentFields
         bind:values
-        bind:options
         bind:permission
         {modelOptions}
         {modelVariants}

@@ -13,7 +13,7 @@ import { getI18n } from '$lib/features/i18n/context.js';
 const config = getConfig();
 const i18n = getI18n();
 let name = $state('');
-let npm = $state('');
+let packageValue = $state('');
 let baseURL = $state('');
 let apiKey = $state('');
 let headers = $state('');
@@ -27,16 +27,16 @@ const parseHeaders = (): Record<string, string> | undefined => {
   return parsed as Record<string, string>;
 };
 async function submit() {
-  if (!name.trim() || !npm.trim()) return;
+  if (!name.trim() || !packageValue.trim()) return;
   try {
     const value: ProviderDef = {
       name: name.trim(),
-      npm: npm.trim(),
-      options: {
+      package: packageValue.trim(),
+      settings: {
         apiKey: apiKey || undefined,
         baseURL: baseURL || undefined,
-        headers: parseHeaders(),
       },
+      headers: parseHeaders(),
       models: {},
     };
     await config.createProvider(value);
@@ -67,7 +67,7 @@ async function submit() {
     </div>
     <div class="field">
       <label for="provider-npm">{i18n.t('providers.npmLabel')}</label>
-      <NpmAdapterInput bind:value={npm} />
+      <NpmAdapterInput bind:value={packageValue} />
     </div>
     <div class="field full">
       <label for="provider-base-url">{i18n.t('providers.baseUrlLabel')}</label>

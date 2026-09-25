@@ -10,23 +10,22 @@ export const AGENT_STORAGES = ['inline', 'global_markdown'] as const;
 export const GROUP_TYPES = [GROUP_TYPE_NATIVE, GROUP_TYPE_SLIM, GROUP_TYPE_OMO] as const;
 export const AGENT_MODES = ['primary', 'subagent', 'all'] as const;
 export const COLOR_THEMES = ['primary', 'secondary', 'accent', 'success', 'warning', 'error', 'info'] as const;
-export const PERMISSION_ACTIONS = ['allow', 'ask', 'deny'] as const;
-export const PERMISSION_KEYS = [
+// V2 permission effects and built-in rule actions (plugins may define more).
+export const PERMISSION_EFFECTS = ['allow', 'ask', 'deny'] as const;
+export const PERMISSION_ACTIONS = [
+  '*',
   'read',
   'edit',
   'glob',
   'grep',
-  'list',
-  'bash',
-  'task',
+  'shell',
+  'subagent',
   'external_directory',
-  'todowrite',
   'webfetch',
   'websearch',
-  'lsp',
   'skill',
   'question',
-  'doom_loop',
+  'execute',
 ] as const;
 export const MAPPING_KINDS = [GROUP_TYPE_NATIVE, GROUP_TYPE_SLIM, GROUP_TYPE_OMO, 'category'] as const;
 

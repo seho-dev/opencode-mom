@@ -17,6 +17,15 @@ fn paths(state: &State<'_, ConfigPaths>) -> ConfigPaths {
     state.inner().clone()
 }
 
+/// One V2 permission rule: ordered `{action, resource, effect}` entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPermissionRule {
+    pub action: String,
+    pub resource: String,
+    pub effect: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentDefinitionDto {
@@ -43,28 +52,17 @@ pub struct AgentDefinitionDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub disable: Option<bool>,
+    pub disabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hidden: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub variant: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "top_p")]
-    pub top_p: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steps: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub permission: Option<Map<String, Value>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<std::collections::BTreeMap<String, bool>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub options: Option<Map<String, Value>>,
+    pub permissions: Option<Vec<AgentPermissionRule>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,20 +125,21 @@ impl From<AgentDefinition> for AgentDefinitionDto {
             model_ref: string_field(fields, "model"),
             mode: string_field(fields, "mode"),
             description: string_field(fields, "description"),
-            disable: bool_field(fields, "disable"),
+            disabled: bool_field(fields, "disabled"),
             hidden: bool_field(fields, "hidden"),
             color: string_field(fields, "color"),
-            variant: string_field(fields, "variant"),
-            prompt: string_field(fields, "prompt"),
-            temperature: number_field(fields, "temperature"),
-            top_p: number_field(fields, "top_p"),
+            prompt: string_field(fields, "system"),
             steps: unsigned_field(fields, "steps"),
-            permission: object_field(fields, "permission"),
-            tools: bool_map_field(fields, "tools"),
-            options: object_field(fields, "options"),
+            permissions: permission_rules(fields),
             effective,
         }
     }
+}
+
+/// Reads a V2 `permissions` array; anything but well-formed rules yields `None`.
+fn permission_rules(fields: Option<&Map<String, Value>>) -> Option<Vec<AgentPermissionRule>> {
+    let rules = fields?.get("permissions")?.as_array()?.clone();
+    serde_json::from_value(Value::Array(rules)).ok()
 }
 
 fn source_previews(
@@ -183,7 +182,8 @@ fn markdown_fields(markdown: &[MarkdownAgentSource]) -> Option<Map<String, Value
     let mut fields = Map::new();
     for source in markdown {
         fields.extend(source.frontmatter.clone());
-        fields.insert("prompt".to_owned(), Value::String(source.prompt.clone()));
+        // The Markdown body is the V2 system prompt.
+        fields.insert("system".to_owned(), Value::String(source.prompt.clone()));
     }
     (!fields.is_empty()).then_some(fields)
 }
@@ -203,28 +203,8 @@ fn bool_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<bool> {
     fields?.get(key)?.as_bool()
 }
 
-fn number_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<f64> {
-    fields?.get(key)?.as_f64()
-}
-
 fn unsigned_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<u64> {
     fields?.get(key)?.as_u64()
-}
-
-fn object_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<Map<String, Value>> {
-    fields?.get(key)?.as_object().cloned()
-}
-
-fn bool_map_field(
-    fields: Option<&Map<String, Value>>,
-    key: &str,
-) -> Option<std::collections::BTreeMap<String, bool>> {
-    fields?
-        .get(key)?
-        .as_object()?
-        .iter()
-        .map(|(key, value)| Some((key.clone(), value.as_bool()?)))
-        .collect()
 }
 
 #[tauri::command]

@@ -1,9 +1,7 @@
 <script lang="ts">
-import { Button } from '$lib/components/ui/button/index.js';
-import { type AgentFieldValues, optionObject, pretty } from '$lib/features/config/agentForm.js';
+import type { AgentFieldValues } from '$lib/features/config/agentForm.js';
 import { AGENT_MODES, COLOR_THEMES } from '$lib/features/config/constants.js';
 import { getConfig } from '$lib/features/config/context.js';
-import type { OptionRow } from '$lib/features/config/types.js';
 import { getI18n } from '$lib/features/i18n/context.js';
 import PermissionEditor from './PermissionEditor.svelte';
 import Select from './Select.svelte';
@@ -16,8 +14,7 @@ let {
   variantHint = '',
   promptHint = '',
   knownMode = false,
-  options = $bindable([]),
-  permission = $bindable('{}'),
+  permission = $bindable('[]'),
 }: {
   values: AgentFieldValues;
   modelOptions: { value: string; label: string }[];
@@ -26,22 +23,11 @@ let {
   variantHint: string;
   promptHint: string;
   knownMode: boolean;
-  options: OptionRow[];
   permission: string;
 } = $props();
 
 const config = getConfig();
 const i18n = getI18n();
-
-function addOption() {
-  options = [...options, { key: '', value: '' }];
-}
-function removeOption(index: number) {
-  options = options.filter((_, i) => i !== index);
-}
-function updateOption(index: number, key: 'key' | 'value', value: string) {
-  options = options.map((row, i) => (i === index ? { ...row, [key]: value } : row));
-}
 </script>
 
 <fieldset class="form-section">
@@ -71,19 +57,26 @@ function updateOption(index: number, key: 'key' | 'value', value: string) {
       <label for="model">{i18n.t('common.model')}</label>
       <Select id="model" bind:value={values.model} options={modelOptions} />
     </div>
+    <div class="field full">
+      <label for="variant">{i18n.t('agents.variant')}</label>
+      <Select
+        id="variant"
+        bind:value={values.variant}
+        disabled={!values.model || config.catalogLoading}
+        options={[
+          { value: '', label: i18n.t('agents.optionNone') },
+          ...modelVariants.map((name) => ({ value: name })),
+          ...(variantUnavailable
+            ? [{ value: values.variant, label: i18n.t('agents.optionUnavailable', { name: values.variant }) }]
+            : []),
+        ]}
+      /><small class="muted">{variantHint}</small>
+    </div>
   </div>
 </fieldset>
 <fieldset class="form-section">
   <legend>{i18n.t('agents.legendLimits')}</legend>
   <div class="limits-grid">
-    <div class="field">
-      <label for="temperature">{i18n.t('agents.temperature')}</label>
-      <input id="temperature" type="number" min="0" max="1" step="0.01" bind:value={values.temperature}>
-    </div>
-    <div class="field">
-      <label for="top-p">{i18n.t('agents.topP')}</label>
-      <input id="top-p" type="number" min="0" max="1" step="0.01" bind:value={values.topP}>
-    </div>
     <div class="field">
       <label for="steps">{i18n.t('agents.steps')}</label>
       <input id="steps" type="number" min="1" step="1" bind:value={values.steps}>
@@ -110,7 +103,7 @@ function updateOption(index: number, key: 'key' | 'value', value: string) {
 </fieldset>
 <fieldset class="form-section">
   <legend>{i18n.t('agents.legendStatus')}</legend>
-  <label class="check-row"><input type="checkbox" bind:checked={values.disable}> {i18n.t('agents.disable')}</label
+  <label class="check-row"><input type="checkbox" bind:checked={values.disabled}> {i18n.t('agents.disable')}</label
   ><small class="muted">{i18n.t('agents.disableHint')}</small>
 </fieldset>
 <fieldset class="form-section">
@@ -121,51 +114,3 @@ function updateOption(index: number, key: 'key' | 'value', value: string) {
   </div>
 </fieldset>
 <PermissionEditor bind:permission />
-<details class="form-section advanced-section">
-  <summary>{i18n.t('agents.advanced')}</summary>
-  <div class="form-grid">
-    <div class="field full">
-      <label for="variant">{i18n.t('agents.variant')}</label>
-      <Select
-        id="variant"
-        bind:value={values.variant}
-        disabled={!values.model || config.catalogLoading}
-        options={[
-          { value: '', label: i18n.t('agents.optionNone') },
-          ...modelVariants.map((name) => ({ value: name })),
-          ...(variantUnavailable
-            ? [{ value: values.variant, label: i18n.t('agents.optionUnavailable', { name: values.variant }) }]
-            : []),
-        ]}
-      /><small class="muted">{variantHint}</small>
-    </div>
-    <fieldset class="field full">
-      <legend>{i18n.t('agents.optionsKv')}</legend>
-      {#each options as row, index}
-        <div class="key-value-row">
-          <input
-            aria-label={i18n.t('agents.optionKey', { index: index + 1 })}
-            value={row.key}
-            oninput={(event) => updateOption(index, 'key', event.currentTarget.value)}
-            placeholder={i18n.t('agents.keyPlaceholder')}
-          ><input
-            aria-label={i18n.t('agents.optionValue', { index: index + 1 })}
-            value={row.value}
-            oninput={(event) => updateOption(index, 'value', event.currentTarget.value)}
-            placeholder={i18n.t('agents.valuePlaceholder')}
-          ><Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label={i18n.t('agents.removeOption')}
-            onclick={() => removeOption(index)}
-            >{i18n.t('common.remove')}</Button
-          >
-        </div>
-      {/each}
-      <Button type="button" size="sm" variant="outline" onclick={addOption}>{i18n.t('agents.addOption')}</Button>
-      <pre>{pretty(optionObject(options))}</pre>
-      <small class="muted">{i18n.t('agents.kvHintNew')}</small>
-    </fieldset>
-  </div>
-</details>

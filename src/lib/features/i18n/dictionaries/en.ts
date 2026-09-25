@@ -415,6 +415,14 @@ export const en = {
   'empty.modelsBuiltinShort': 'No builtin models.',
   'empty.agents': 'No agents.',
   'empty.groups': 'No groups.',
+
+  // V2 permission rule editor (new UI)
+  'agents.permissionAction': 'Action',
+  'agents.permissionResource': 'Resource',
+  'agents.permissionEffect': 'Effect',
+  'agents.addPermissionRule': 'Add rule',
+  'agents.moveRuleUp': 'Move rule up',
+  'agents.moveRuleDown': 'Move rule down',
 } as const;
 
 export type MessageKey = keyof typeof en;

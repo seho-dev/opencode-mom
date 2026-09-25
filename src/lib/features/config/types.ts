@@ -1,55 +1,62 @@
 export type ModelRef = `${string}/${string}`;
 
-// Model config mirrors provider.<id>.models.<model_id> in the opencode JSON schema.
+// Model config mirrors providers.<id>.models.<model_id> in the opencode V2 JSON schema.
 // String unions are derived from their constant arrays in constants.ts to avoid duplicate literals.
 import type { AgentMode, AgentSource, AgentStorage, GroupType, MappingKind } from './constants.js';
 
 export type { AgentMode, AgentSource, AgentStorage, GroupType, MappingKind };
 
-export interface ProviderOptions {
+export interface ProviderSettings {
   apiKey?: string;
   baseURL?: string;
-  headers?: Record<string, string>;
 }
 export interface ProviderDef {
   name: string;
-  npm?: string;
-  options?: ProviderOptions;
+  package?: string;
+  settings?: ProviderSettings;
+  headers?: Record<string, string>;
   models: Record<string, ModelDef>;
 }
 export type ModelModality = 'text' | 'audio' | 'image' | 'video' | 'pdf';
-export type ModelStatus = 'alpha' | 'beta' | 'deprecated' | 'active';
-export type ModelInterleaved = boolean | 'reasoning' | 'reasoning_content' | 'reasoning_text' | { field: string };
+export interface ModelCapabilities {
+  tools?: boolean;
+  input?: ModelModality[];
+  output?: ModelModality[];
+}
 export interface ModelCost {
   input: number;
   output: number;
-  cache_read?: number;
-  cache_write?: number;
-  context_over_200k?: { input: number; output: number; cache_read?: number; cache_write?: number };
+  cache?: { read?: number; write?: number };
 }
 export interface ModelLimit {
   context: number;
   output: number;
   input?: number;
 }
+// One V2 variant entry: `{ id }` plus optional `settings` / `headers` / `body` payloads.
+export interface ModelVariant {
+  id: string;
+  settings?: Record<string, unknown>;
+  headers?: Record<string, string>;
+  body?: unknown;
+}
 export interface ModelDef {
   id: string;
   name?: string;
   family?: string;
-  release_date?: string;
-  status?: ModelStatus;
-  reasoning?: boolean;
-  temperature?: boolean;
-  tool_call?: boolean;
-  attachment?: boolean;
-  experimental?: boolean;
-  interleaved?: ModelInterleaved;
+  disabled?: boolean;
+  capabilities?: ModelCapabilities;
   cost?: ModelCost;
   limit?: ModelLimit;
-  modalities?: { input?: ModelModality[]; output?: ModelModality[] };
-  options?: Record<string, unknown>;
+  settings?: Record<string, unknown>;
   headers?: Record<string, string>;
-  variants?: Record<string, Record<string, unknown>>;
+  variants?: ModelVariant[];
+}
+export type PermissionEffect = 'allow' | 'ask' | 'deny';
+export interface PermissionRule {
+  action: string;
+  resource: string;
+  effect: PermissionEffect | string;
 }
 export interface AgentDefinition {
   id: string;
@@ -61,25 +68,19 @@ export interface AgentDefinition {
   modelRef?: ModelRef;
   mode?: string;
   description?: string;
-  disable?: boolean;
+  disabled?: boolean;
   hidden?: boolean;
   color?: string;
-  variant?: string;
   prompt?: string;
-  temperature?: number;
-  top_p?: number;
   steps?: number;
-  permission?: Record<string, unknown>;
-  tools?: Record<string, boolean>;
-  options?: Record<string, unknown>;
+  permissions?: PermissionRule[];
 }
 // Payload for agent create/update. `clearFields` requests explicit removal of previously set keys.
 export type AgentMutation = { fields: Record<string, unknown>; clearFields?: string[] };
 export type AgentWrite = AgentDefinition & { mutation?: AgentMutation };
 
-export type OptionRow = { key: string; value: string };
-export type PermissionParse = { ok: true; object: Record<string, unknown> } | { ok: false };
-export type PermissionView = { mode: 'rows'; values: Record<string, string> } | { mode: 'json' } | { mode: 'invalid' };
+export type PermissionParse = { ok: true; rules: PermissionRule[] } | { ok: false };
+export type PermissionView = { mode: 'rules'; rules: PermissionRule[] } | { mode: 'json' } | { mode: 'invalid' };
 export interface AgentModelBinding {
   agentName: string;
   modelRef: ModelRef;
@@ -121,13 +122,8 @@ export interface ModelCatalogEntry {
   ref: ModelRef;
   name: string;
   isCustom: boolean;
-  status?: string;
-  cost?: unknown;
   limit?: { context?: number; input?: number; output?: number } | null;
-  capabilities?: unknown;
-  variants?: Record<string, unknown> | null;
-  api?: unknown;
-  releaseDate?: string;
+  variants?: ModelVariant[] | null;
 }
 export type CommandErrorCode =
   | 'not_found'

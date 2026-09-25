@@ -14,7 +14,7 @@ import { getI18n } from '$lib/features/i18n/context.js';
 const config = getConfig();
 const i18n = getI18n();
 const source = $derived(config.providers.find((provider) => provider.name === page.params.id));
-let npm = $state('');
+let packageValue = $state('');
 let baseURL = $state('');
 let apiKey = $state('');
 let headers = $state('');
@@ -24,10 +24,10 @@ let apiKeyVisible = $state(false);
 $effect(() => {
   if (source && loaded !== source.name) {
     loaded = source.name;
-    npm = source.npm ?? '';
-    baseURL = source.options?.baseURL ?? '';
-    apiKey = source.options?.apiKey ?? '';
-    headers = source.options?.headers ? JSON.stringify(source.options.headers, null, 2) : '';
+    packageValue = source.package ?? '';
+    baseURL = source.settings?.baseURL ?? '';
+    apiKey = source.settings?.apiKey ?? '';
+    headers = source.headers ? JSON.stringify(source.headers, null, 2) : '';
   }
 });
 
@@ -43,12 +43,12 @@ async function submit() {
   try {
     await config.updateProvider({
       ...source,
-      npm: npm.trim() || undefined,
-      options: {
-        apiKey,
+      package: packageValue.trim() || undefined,
+      settings: {
+        apiKey: apiKey || undefined,
         baseURL: baseURL || undefined,
-        headers: parseHeaders(),
       },
+      headers: parseHeaders(),
     } as ProviderDef);
     goto('/providers');
   } catch (error) {
@@ -77,7 +77,7 @@ async function submit() {
       </div>
       <div class="field">
         <label for="provider-npm">{i18n.t('providers.npmLabel')}</label>
-        <NpmAdapterInput bind:value={npm} />
+        <NpmAdapterInput bind:value={packageValue} />
       </div>
       <div class="field full">
         <label for="provider-base-url">{i18n.t('providers.baseUrlLabel')}</label>

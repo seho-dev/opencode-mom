@@ -1,25 +1,26 @@
 <script lang="ts">
 import { Pencil, Play, Plus, Trash2 } from '@lucide/svelte';
-import DataTable from '$lib/components/app/DataTable.svelte';
-import EmptyTableRow from '$lib/components/app/EmptyTableRow.svelte';
-import PageHead from '$lib/components/app/PageHead.svelte';
-import { Button } from '$lib/components/ui/button/index.js';
-import * as Dialog from '$lib/components/ui/dialog/index.js';
+import { Button } from '$src/components/button/index.js';
+import DataTable from '$src/components/DataTable.svelte';
+import * as Dialog from '$src/components/dialog/index.js';
+import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
+import PageHead from '$src/components/PageHead.svelte';
+import { getConfig } from '$src/config/context.js';
+import { getI18n } from '$src/i18n/context.js';
 import {
   GROUP_TYPE_LABELS,
   GROUP_TYPE_NATIVE,
   GROUP_TYPE_OMO,
   GROUP_TYPE_SLIM,
   type GroupType,
-} from '$lib/features/config/constants.js';
-import { getConfig } from '$lib/features/config/context.js';
-import { getI18n } from '$lib/features/i18n/context.js';
+} from '$src/utils/constants.js';
 
 const tabOrder: GroupType[] = [GROUP_TYPE_NATIVE, GROUP_TYPE_SLIM, GROUP_TYPE_OMO];
 const config = getConfig();
 const i18n = getI18n();
 let query = $state('');
 let deleting = $state<string | null>(null);
+let switchedGroup = $state<string | null>(null);
 let activeTab = $state<GroupType>(GROUP_TYPE_NATIVE);
 let nativeTabEl = $state<HTMLButtonElement | null>(null);
 let slimTabEl = $state<HTMLButtonElement | null>(null);
@@ -68,11 +69,20 @@ async function remove() {
     /* global feedback */
   }
 }
-async function activate(id: string) {
+async function activate(id: string, name: string, type: GroupType) {
   try {
     await config.switchGroup(id);
+    if (type === GROUP_TYPE_SLIM || type === GROUP_TYPE_OMO) switchedGroup = name;
   } catch {
     /* global feedback */
+  }
+}
+async function reloadNow() {
+  try {
+    await config.reloadOpencode();
+    switchedGroup = null;
+  } catch {
+    /* global feedback; keep the prompt open for retry */
   }
 }
 </script>
@@ -166,8 +176,8 @@ async function activate(id: string) {
                 size="icon-sm"
                 aria-label={i18n.t('groups.switchTo', { name: group.name })}
                 title={i18n.t('groups.switchTitle')}
-                onclick={() => activate(group.id)}
-                disabled={config.switching}
+                onclick={() => activate(group.id, group.name, group.type)}
+                disabled={config.switching || config.reloading}
                 ><Play size={14} /></Button
               ><Button
                 href={`/groups/${group.id}/edit`}
@@ -203,6 +213,40 @@ async function activate(id: string) {
     <Dialog.Footer>
       <Button variant="outline" onclick={() => (deleting = null)}>{i18n.t('common.cancel')}</Button>
       <Button variant="destructive" onclick={remove}>{i18n.t('common.delete')}</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+<Dialog.Root
+  open={switchedGroup !== null}
+  onOpenChange={(open) => {
+    if (!open && !config.reloading) switchedGroup = null;
+  }}
+>
+  <Dialog.Content
+    aria-busy={config.reloading}
+    onEscapeKeydown={(event) => { if (config.reloading) event.preventDefault(); }}
+    onInteractOutside={(event) => { if (config.reloading) event.preventDefault(); }}
+  >
+    <Dialog.Header>
+      <Dialog.Title>{i18n.t('groups.reloadTitle')}</Dialog.Title>
+      <Dialog.Description>
+        <span class="block">{i18n.t('groups.reloadDescription', { name: switchedGroup ?? '' })}</span>
+        <span class="mt-2 block">{i18n.t('groups.reloadWarning')}</span>
+      </Dialog.Description>
+      {#if config.reloading}
+        <span class="sr-only" role="status">{i18n.t('groups.reloading')}</span>
+      {/if}
+    </Dialog.Header>
+    <Dialog.Footer>
+      <Button variant="ghost" disabled={config.reloading} onclick={() => (switchedGroup = null)}
+        >{i18n.t('common.cancel')}</Button
+      >
+      <Button variant="outline" disabled={config.reloading} onclick={() => (switchedGroup = null)}
+        >{i18n.t('groups.reloadLater')}</Button
+      >
+      <Button disabled={config.reloading} onclick={reloadNow}
+        >{i18n.t(config.reloading ? 'groups.reloading' : 'groups.reloadNow')}</Button
+      >
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

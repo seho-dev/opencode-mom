@@ -24,3 +24,12 @@ pub fn opencode_resolve_binary() -> CommandResult<String> {
         .display()
         .to_string())
 }
+
+#[tauri::command]
+pub async fn opencode_reload() -> CommandResult<()> {
+    tauri::async_runtime::spawn_blocking(opencode_cli::reload_via_cli)
+        .await
+        .map_err(|error| {
+            AppError::configuration(format!("failed to join opencode reload task: {error}"))
+        })?
+}

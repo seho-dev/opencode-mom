@@ -37,6 +37,7 @@ pub fn run() {
             commands::list_custom_providers,
             commands::opencode_list_models,
             commands::opencode_resolve_binary,
+            commands::opencode_reload,
             commands::create_provider,
             commands::update_provider,
             commands::delete_provider,

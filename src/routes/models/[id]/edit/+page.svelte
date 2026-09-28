@@ -1,11 +1,11 @@
 <script lang="ts">
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
-import ModelForm from '$lib/components/app/ModelForm.svelte';
-import PageHead from '$lib/components/app/PageHead.svelte';
-import { getConfig } from '$lib/features/config/context.js';
-import type { ModelDef } from '$lib/features/config/types.js';
-import { getI18n } from '$lib/features/i18n/context.js';
+import PageHead from '$src/components/PageHead.svelte';
+import { getConfig } from '$src/config/context.js';
+import { getI18n } from '$src/i18n/context.js';
+import type { ModelDef } from '$src/types/models.js';
+import ModelForm from '../../ModelForm.svelte';
 
 const config = getConfig();
 const i18n = getI18n();

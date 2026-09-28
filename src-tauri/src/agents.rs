@@ -10,7 +10,7 @@ use crate::document::{read_text, write_file, JsoncDoc, OPENCODE_SCHEMA};
 use crate::error::{AppError, ErrorCode};
 use crate::providers::ModelRef;
 
-const AGENT_CATALOG_JSON: &str = include_str!("../../src/lib/features/config/agents.catalog.json");
+const AGENT_CATALOG_JSON: &str = include_str!("../../shared/agents.catalog.json");
 
 #[derive(Deserialize)]
 struct AgentCatalogEntry {

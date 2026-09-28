@@ -1,6 +1,6 @@
 <script lang="ts">
-import PageHead from '$lib/components/app/PageHead.svelte';
-import { getI18n } from '$lib/features/i18n/context.js';
+import PageHead from '$src/components/PageHead.svelte';
+import { getI18n } from '$src/i18n/context.js';
 
 const i18n = getI18n();
 </script>

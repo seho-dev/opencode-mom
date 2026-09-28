@@ -1,7 +1,7 @@
 <script lang="ts">
-import GroupForm from '$lib/components/app/GroupForm.svelte';
-import PageHead from '$lib/components/app/PageHead.svelte';
-import { getI18n } from '$lib/features/i18n/context.js';
+import PageHead from '$src/components/PageHead.svelte';
+import { getI18n } from '$src/i18n/context.js';
+import GroupForm from '../GroupForm.svelte';
 
 const i18n = getI18n();
 </script>

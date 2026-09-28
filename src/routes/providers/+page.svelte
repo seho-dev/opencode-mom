@@ -1,12 +1,12 @@
 <script lang="ts">
 import { Pencil, Plus, Trash2 } from '@lucide/svelte';
-import DataTable from '$lib/components/app/DataTable.svelte';
-import EmptyTableRow from '$lib/components/app/EmptyTableRow.svelte';
-import PageHead from '$lib/components/app/PageHead.svelte';
-import { Button } from '$lib/components/ui/button/index.js';
-import * as Dialog from '$lib/components/ui/dialog/index.js';
-import { getConfig } from '$lib/features/config/context.js';
-import { getI18n } from '$lib/features/i18n/context.js';
+import { Button } from '$src/components/button/index.js';
+import DataTable from '$src/components/DataTable.svelte';
+import * as Dialog from '$src/components/dialog/index.js';
+import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
+import PageHead from '$src/components/PageHead.svelte';
+import { getConfig } from '$src/config/context.js';
+import { getI18n } from '$src/i18n/context.js';
 
 const config = getConfig();
 const i18n = getI18n();

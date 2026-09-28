@@ -1,16 +1,16 @@
 <script lang="ts">
 import { Pencil, Plus, Trash2 } from '@lucide/svelte';
-import DataTable from '$lib/components/app/DataTable.svelte';
-import EmptyTableRow from '$lib/components/app/EmptyTableRow.svelte';
-import PageHead from '$lib/components/app/PageHead.svelte';
-import Select from '$lib/components/app/Select.svelte';
-import { Button } from '$lib/components/ui/button/index.js';
-import * as Dialog from '$lib/components/ui/dialog/index.js';
-import { BUILTIN_AGENTS, type BuiltinAgent, isBuiltinAgentId } from '$lib/features/config/builtinAgents.js';
-import { GROUP_TYPE_NATIVE, GROUP_TYPE_OMO, GROUP_TYPE_SLIM, STORAGE_OPTIONS } from '$lib/features/config/constants.js';
-import { getConfig } from '$lib/features/config/context.js';
-import type { AgentStorage } from '$lib/features/config/types.js';
-import { getI18n } from '$lib/features/i18n/context.js';
+import { Button } from '$src/components/button/index.js';
+import DataTable from '$src/components/DataTable.svelte';
+import * as Dialog from '$src/components/dialog/index.js';
+import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
+import PageHead from '$src/components/PageHead.svelte';
+import Select from '$src/components/Select.svelte';
+import { getConfig } from '$src/config/context.js';
+import { getI18n } from '$src/i18n/context.js';
+import type { AgentStorage } from '$src/types/agents.js';
+import { GROUP_TYPE_NATIVE, GROUP_TYPE_OMO, GROUP_TYPE_SLIM, STORAGE_OPTIONS } from '$src/utils/constants.js';
+import { BUILTIN_AGENTS, type BuiltinAgent, isBuiltinAgentId } from '$src/utils/index.js';
 
 type AgentTab = 'custom' | 'native' | 'slim' | 'omo';
 const tabOrder: AgentTab[] = ['custom', 'native', 'slim', 'omo'];

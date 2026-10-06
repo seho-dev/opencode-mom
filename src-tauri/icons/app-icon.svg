@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img">
+  <title>OpenCode-MOM application icon</title>
+  <rect x="80" y="80" width="864" height="864" rx="192" fill="#00e5ff" />
+  <path d="M224 752V272H336L512 512L688 272H800V752H688V460L512 684L336 460V752Z" fill="#071113" />
+</svg>

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/seho-dev/vibe-infra/main/schema.json",
+  "role": "consumer",
+  "infrastructures": {
+    "base": {
+      "url": "https://github.com/seho-dev/vibe-infra",
+      "version": "latest"
+    },
+    "seho-vibe-infra": {
+      "url": "https://github.com/seho-dev/my-vibe-infra",
+      "version": "latest"
+    }
+  }
+}

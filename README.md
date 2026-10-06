@@ -1,140 +1,195 @@
+<div align="center">
+
+![opencode-mom logo](shared/mom-logo.svg)
+
 # opencode-mom
 
-opencode-mom is a cross-platform desktop app for switching Oh My OpenAgent model groups. It maintains named category mappings, Oh My OpenAgent agent overrides, and optional OpenCode agent model overrides, then syncs the selected group into the matching config files.
+**The model-group manager for OpenCode v2.**<br />
+One window. Three runtimes — **Native**, **Slim**, **OMO**. One click to switch your whole agent setup, without losing a single hand-tuned config key.
 
-The active application is built with Tauri 2. The Svelte 5 and TypeScript frontend provides a single-window management console, while the Rust backend owns config persistence, projection, backups, and native Windows/macOS behavior.
+[![Latest release](https://img.shields.io/github/v/release/seho-dev/opencode-mom?label=release&color=00E5FF)](https://github.com/seho-dev/opencode-mom/releases/latest)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-6AA4FF)
+![OpenCode v2 only](https://img.shields.io/badge/OpenCode-v2%20only-FF6B6B)
+![License: MIT](https://img.shields.io/badge/license-MIT-3DA639)
+![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
+![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
+![Apple Developer Fund: 0/100 stars](https://img.shields.io/badge/Apple%20Developer%20Fund-0%2F100%20stars-yellow?logo=apple&logoColor=white)
+[![GitHub stars](https://img.shields.io/github/stars/seho-dev/opencode-mom?style=social)](https://github.com/seho-dev/opencode-mom/stargazers)
 
-## Features
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-- Model groups with category and agent mappings.
-- Single-window desktop management console.
-- Conditional OpenCode agent model overrides.
-- Native Windows NSIS and macOS app/DMG packages.
+</div>
 
-## Requirements
+> [!IMPORTANT]
+> **opencode-mom only supports OpenCode v2.** MOM reads and writes the v2 config surface — `provider/model#variant` model selectors, v2 permission rules, and v2 provider/model schemas. V1 configs are neither migrated nor managed. Make sure your OpenCode install is on v2 before switching groups.
 
-- Node.js 22.23.0 and npm.
-- Rust 1.77.2 or later with Cargo. CI and release workflows build with Rust 1.96.0.
-- Platform prerequisites required by Tauri 2 for Windows or macOS desktop builds.
-- Oh My OpenAgent config location: `~/.omo/omo.jsonc`.
-- Slim config location: `~/.config/opencode/oh-my-opencode-slim.jsonc`.
-- OpenCode config location: `~/.config/opencode/opencode.jsonc`, falling back to `opencode.json` when only the latter exists. `OPENCODE_CONFIG_DIR` can override the directory; `OPENCODE_CONFIG` selects an arbitrary managed config file.
+> [!NOTE]
+> **⭐ The Apple Developer Fund: 0 / 100 stars — because I'm broke 🤣**
+> macOS builds are unsigned and un-notarized; Apple charges $99/year for a developer certificate and I simply don't have it.
+> **If that bothers you: fork this repo, build it, and sign it yourself — you're probably richer than me.**
+> Otherwise, every ⭐ counts: at 100 stars I'll splurge on the full $99 and start signing builds. Probably.
 
-## Download
+> [!WARNING]
+> **macOS users: trust the app manually until the fund matures.**
+> After dragging `opencode-mom.app` into `/Applications`, do one of these:
+>
+> - Remove the quarantine flag:
+>
+>   ```bash
+>   sudo xattr -dr com.apple.quarantine /Applications/opencode-mom.app
+>   ```
+>
+> - Or try to open the app once, then click **Open Anyway** in **System Settings → Privacy & Security**.
+>
+> 🔒 Only trust a copy downloaded from this repository's [Releases](https://github.com/seho-dev/opencode-mom/releases/latest) page. Never bypass quarantine for a build from an untrusted source.
 
-Tagged release workflows produce these Tauri artifacts:
+<div align="center">
 
-- GitHub Release asset: `opencode-mom_0.1.0_x64-setup.exe` (Windows NSIS installer).
-- GitHub Release asset: `opencode-mom_0.1.0_aarch64.dmg` (macOS disk image).
-- GitHub Release asset: `opencode-mom_0.1.0_aarch64.app.tar.gz` (macOS app bundle archive preserving bundle metadata and executable permissions).
+![opencode-mom dashboard in light and dark themes](shared/app.png)
 
-<https://github.com/seho-dev/opencode-mom/releases/latest>
+*MOM at a glance — Native, Slim and OMO runtimes, live CLI status, token usage and an activity heatmap, in light and dark.*
 
-## Unsigned macOS builds
+</div>
 
-Current macOS release artifacts are not Developer ID-signed or notarized. macOS may block the app or require approval in **System Settings > Privacy & Security**. After moving `opencode-mom.app` into `/Applications`, the quarantine attribute can be removed manually:
+## 🌟 What is opencode-mom?
 
-🔒 Only bypass quarantine for an artifact whose source you trust.
+**opencode-mom** ("MOM") is a cross-platform desktop app that keeps a multi-runtime OpenCode v2 setup organized and instantly switchable. It manages named **model groups**, each binding providers, models, agents and categories for one of three runtimes:
+
+- **Native** — OpenCode's own agents, written into `~/.config/opencode/opencode.jsonc` (or `opencode.json`).
+- **Slim** — Oh My OpenCode Slim, written into `~/.config/opencode/oh-my-opencode-slim.json`.
+- **OMO** — Oh My OpenAgent, written into `~/.omo/omo.jsonc`.
+
+MOM never rewrites your configs wholesale: every write is a one-to-one key patch that leaves keys it doesn't own exactly as they were.
+
+## ✨ Features
+
+### 🧩 Model groups — switch everything in one click
+
+- Named groups per runtime, with category mappings and per-agent model bindings, including `#variant` selection.
+- Switch from the **Dashboard**, the **Groups** page, or the **tray popup**; the selected group is projected immediately.
+- Live CLI health and working-session counts, plus a reload reminder after switches when OpenCode needs one.
+- Non-destructive: hand-tuned keys are preserved, and changing a group's type removes only the keys that group owned.
+
+### 🧠 Providers, models & agents
+
+- **Providers** — register custom OpenAI-compatible, Anthropic or custom endpoints with API keys, base URLs and extra headers, all validated.
+- **Models** — a catalog with modalities (text, audio, image, video, pdf), context limits, input/output/cache pricing and custom variants; models discovered from the CLI are merged in.
+- **Agents** — browse the builtin catalog (24 agents across native / slim / omo) or define your own: mode, `provider/model#variant` selector, system prompt, color, and visual v2 permission rules (`allow` / `ask` / `deny`). Store definitions inline in config or as global Markdown.
+
+### 🔌 MCP & 📚 Skills
+
+- **MCP** — see every registered server across config sources, inspect diagnostics, keep credentials masked, edit raw JSON, and delete safely; file replacements leave recovery `.bak` snapshots.
+- **Skills** — discover local and remote skills, view and edit content, watch diagnostics. Remote skills stay read-only.
+
+### 📊 Dashboard, usage & tray
+
+- Real-time status: active group and runtime, CLI health, running sessions.
+- Token usage (input / output / cache) and an activity heatmap with daily, weekly, monthly and yearly views.
+- Tray popup: switch groups, reload the OpenCode CLI, open the app or settings, quit. Closing the window hides MOM to the tray.
+
+### 💤 Lid protection — work with the lid closed (macOS / Windows)
+
+- Keeps the laptop awake **only while OpenCode sessions are actually working** in the CLI-connected service, then restores your original power policy automatically.
+- macOS flips `SleepDisabled` through a bundled helper behind a one-time administrator authorization; Windows journals and restores the active power scheme's AC/DC lid-close actions.
+- Covered by a manual lid-close acceptance checklist — automated tests do not replace it (see [Development](#-development)).
+
+### 🌗 Native feel
+
+- English / 简体中文 UI, dark (default) and light themes, launch-at-login, a single-window console plus a tray for quick access.
+
+## 🏝️ Roadmap
+
+- **MOM Island (macOS, planned)** — OpenCode on your Mac's notch / Dynamic Island, as a lightweight approvals-and-reminders layer: approve or deny an agent's tool call, get nudged when a session needs you, and glance at running work — all without leaving the window you're in.
+- **Signed & notarized macOS builds** — unlocked at ⭐ 100 stars. See the fund above.
+
+## 📦 Install
+
+Grab the latest build from **[GitHub Releases](https://github.com/seho-dev/opencode-mom/releases/latest)**:
+
+| Platform | Artifact |
+| :--- | :--- |
+| Windows (x64) | `opencode-mom_*_x64-setup.exe` — NSIS installer |
+| macOS (Apple Silicon) | `opencode-mom_*_aarch64.dmg` |
+
+### macOS first launch
+
+Builds are unsigned for now — follow the **manual trust steps** above (quarantine removal or **Open Anyway** in System Settings).
+
+### Requirements
+
+- **OpenCode v2** for CLI-powered features: status, sessions, model discovery, reload and token usage. MOM finds the binary via `$OPENCODE_BIN`, standard install locations, then `$PATH`.
+- Editing configs works without the CLI; CLI features simply report as unavailable.
+
+## 🔧 How MOM writes config
+
+MOM keeps its own groups and selection state in `~/.config/opencode-mom/config.json`, separately from the files it manages:
+
+| Group type | Target file | Patched keys |
+| :--- | :--- | :--- |
+| `native` | `~/.config/opencode/opencode.jsonc` (fallback `opencode.json`) | `agents.<name>.model` only |
+| `slim` | `~/.config/opencode/oh-my-opencode-slim.json` | agent model bindings |
+| `omo` | `~/.omo/omo.jsonc` | categories and agent overrides |
+
+- **Non-destructive projection.** Keys outside the group definition are preserved as residual configuration. Selecting a different group or deleting a group leaves target files untouched; changing a group's type removes only the keys that group owned.
+- **No silent backups.** Plain config writes do not create backups or locks; recovery `.bak` files exist only when MCP/skill files are replaced.
+- **Overrides.** `OPENCODE_CONFIG_DIR` overrides the OpenCode config directory and `OPENCODE_CONFIG` pins an explicit managed file — which is also the highest-priority source for MCP and Skills discovery.
+- **Skip when empty.** OpenCode sync is skipped when a group has no effective OpenCode overrides, so a missing OpenCode config only blocks operations that actually need it.
+
+## 🛠️ Development
+
+Requirements: Node.js 22.23.0 + npm, Rust ≥ 1.77.2 (CI/release pin 1.96.0), and the platform prerequisites for Tauri 2 desktop builds.
 
 ```bash
-sudo xattr -dr com.apple.quarantine /Applications/opencode-mom.app
+npm ci                # install dependencies
+npm run tauri dev     # run the app in development
+npm run tauri build   # package the current platform
 ```
 
-The release workflow does not Developer ID-sign or notarize the app. The embedded macOS lid helper is separately ad-hoc signed during the Rust build.
-
-## Configuration behavior
-
-opencode-mom stores its own groups and selection state in one config file, separately from target application configs.
-
-| File                                                     | Purpose                                                                            |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `~/.config/opencode-mom/config.json`                     | opencode-mom group definitions, selection, and write metadata.                     |
-| `~/.omo/omo.jsonc`                                       | Merged when switching groups or saving the active group.                           |
-| `~/.config/opencode/oh-my-opencode-slim.json`            | Merged when switching Slim-type groups.                                            |
-| `~/.config/opencode/opencode.jsonc` (or `opencode.json`) | Patched only for Native-type groups with effective OpenCode agent model overrides. |
-
-Before rewriting target configs, opencode-mom creates backups under its config directory. Only `config.json` is read or written for opencode-mom data; legacy split files are ignored and are not migrated.
-
-MCP and Skills discovery includes the explicit `OPENCODE_CONFIG` file as the highest-priority managed source, even when it is a project file. Unselected project configs are not automatically discovered. Selecting an explicit file does not exclude the other managed config sources.
-
-When switching groups, opencode-mom merges the Oh My OpenAgent projection into the existing file. Saving the active group reapplies that projection immediately. Both the Oh My OpenAgent and Slim projections are one-to-one key patches: entries not defined by the group are preserved as residual configuration. Changing a group's type removes only the keys that group owned, while selecting a different group or deleting a group leaves the target files untouched. OpenCode sync is skipped when no effective OpenCode overrides exist, so a missing OpenCode config file only blocks operations that actually require OpenCode changes.
-
-For OpenCode, opencode-mom patches only `agents.<name>.model` (the V2 `provider/model#variant` selector). Existing fields inside agent objects and unrelated top-level keys such as `$schema`, `plugins`, and `providers` are preserved.
-
-## Development
-
-Install dependencies:
+Checks:
 
 ```bash
-npm ci
-```
-
-Run the Tauri app in development:
-
-```bash
-npm run tauri dev
-```
-
-Format frontend code:
-
-```bash
-npm run format
-```
-
-Build the frontend and check the Rust backend independently:
-
-```bash
-npm run build
+npm run check                 # Biome format + lint
+npm run test:components      # Vitest component tests (jsdom)
+npm run test:unit            # node --test unit tests
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo check --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Build native Tauri packages for the current platform:
+Never edit generated output (`build/`, `.svelte-kit/`, `src-tauri/target/`, `src-tauri/gen/`).
 
-```bash
-npm run tauri build
-```
+### macOS lid helper
 
-The configured package identity is `dev.seho.opencode-mom`, product name `opencode-mom`, version `0.1.0`. Tauri targets are Windows NSIS plus macOS app and DMG.
-
-### macOS lid helper build and safe checks
-
-For macOS targets, `src-tauri/build.rs` builds `src-tauri/native/macos-helper` as a separate Cargo workspace with its own `Cargo.lock`. Even a parent `cargo check` builds the helper with `--release --offline --locked`, the parent's target triple, and an isolated output directory. It then uses `/usr/bin/codesign` to ad-hoc sign and verify the helper and `/usr/bin/shasum` to hash the signed bytes before embedding them.
-
-Use a macOS host with the Xcode Command Line Tools/macOS SDK, the Rust target required by the parent build, and `rustfmt`. Both native tools above must be available. The helper's locked dependencies (currently `libc = 0.2.186`) and registry metadata must already be cached in the Cargo environment used by the build. Offline builds work with a populated cache; on a fresh developer or CI cache, fetch the standalone workspace first while network access is available:
+`src-tauri/build.rs` builds `src-tauri/native/macos-helper` as a standalone locked workspace, ad-hoc signs it, and embeds it. On a fresh Cargo cache, fetch it first:
 
 ```bash
 cargo fetch --manifest-path src-tauri/native/macos-helper/Cargo.toml --locked
-```
-
-Do not assume fetching only the parent workspace provisions the helper. A pre-provisioned cache is also sufficient. The standalone helper is not covered by the parent's formatting/test commands; run these separately on macOS:
-
-```bash
 cargo fmt --manifest-path src-tauri/native/macos-helper/Cargo.toml --all -- --check
 cargo check --manifest-path src-tauri/native/macos-helper/Cargo.toml --offline --locked
 cargo test --manifest-path src-tauri/native/macos-helper/Cargo.toml --offline --locked
 ```
 
-These checks require no administrator authorization and do not change real power policy: helper tests use mock policy backends and local test sockets. Do not run the helper executable directly or run these commands with `sudo`. Hardware acceptance below is separate and optional for local development.
+Do not run the helper directly or with `sudo`; its tests use mock policy backends.
 
-### Manual lid protection acceptance (macOS / Windows)
+<details>
+<summary><b>Manual lid-protection acceptance (macOS / Windows)</b></summary>
 
-🔒 This opt-in check changes real system power settings. Use only a laptop you control, save your work, keep it ventilated, and supervise brief trials. Never leave an awake, closed laptop in a bag. Keep the lid open unless the app confirms **Protected**; **Checking**, **Unknown**, or **Error** is not confirmation. Do not change power settings in another tool during the trial or manually disable sleep to make the test pass.
+🔒 This opt-in check changes real system power settings. Use only a laptop you control, save your work, keep it ventilated, and supervise brief trials. Never leave an awake, closed laptop in a bag. Keep the lid open unless the app confirms **Protected**; **Checking**, **Unknown** or **Error** is not confirmation. Only working sessions in the OpenCode service connected through the CLI are monitored.
 
-On macOS, the administrator-authorized helper changes the global `SleepDisabled` policy, not just display/idle sleep. On Windows, protection temporarily changes the active power scheme's AC/DC lid-close actions and requests system wakefulness. Only working sessions in the OpenCode service connected through the CLI are monitored; other instances are not covered.
+1. Record the baseline with read-only commands: macOS `pmset -g` (`SleepDisabled`); Windows `powercfg /getactivescheme` and `powercfg /qh SCHEME_CURRENT SUB_BUTTONS` (including hidden AC/DC lid-close values).
+2. macOS only: enable the setting and cancel the administrator prompt; confirm an error/non-protected state with an unchanged baseline. Restart the app before an approved authorization attempt. Windows has no equivalent app authorization prompt.
+3. Enable protection, start a real CLI-connected working session, wait for **Protected** with a positive working-session count, close the lid briefly, reopen it, and verify the work continued.
+4. Let all monitored work finish, wait for **Idle**, compare policy readback with the baseline, and confirm a brief lid close again follows the original behavior.
+5. Repeat with **Quit MOM** while protected and compare the baseline after exit. Closing the main window only hides it to the tray; it is not an exit test.
 
-1. Record the original policy with read-only commands: macOS `/usr/bin/pmset -g` (`SleepDisabled`); Windows `powercfg /getactivescheme` and `powercfg /qh SCHEME_CURRENT SUB_BUTTONS` (including hidden AC/DC lid-close values). If the baseline already prevents lid sleep, check restoration without changing it just to manufacture a sleep test.
-2. On macOS, enable the setting and cancel the administrator prompt. Confirm an error/non-protected state, unchanged baseline, and no repeated prompt in that app run. Restart the app before an approved authorization attempt. Windows has no equivalent app authorization prompt; if OS policy denies writes, confirm an error/non-protected state and unchanged or restored values. Do not weaken OS policy to manufacture this denial case.
-3. Enable protection (approve macOS authorization only if trusted), start a real working session in the CLI-connected service, and wait for **Protected** with a positive working-session count. Close the lid briefly, reopen it, and verify the work continued rather than relying only on the status label. Repeat on AC and battery only where safe and explicitly approved.
-4. Let all monitored work finish. Wait for **Idle**, compare policy readback with the baseline, and check that a brief lid close again follows the original behavior. Restoration does not itself force sleep.
-5. With another working session and **Protected** confirmed, turn the setting off and verify restoration. Re-enable as needed, then repeat using **Quit MOM** while protected and compare the baseline after exit. Closing the main window only hides it to the tray; it is not an exit test.
+If restoration is unconfirmed, keep the lid open and stop testing; restart the app for recovery. Automated tests and a successful policy readback do not replace real lid-close acceptance on each supported laptop/OS.
 
-If restoration is unconfirmed, keep the lid open and stop testing; do not delete recovery journals or issue ad-hoc power-policy writes. Restart the app for recovery (macOS requires explicitly enabling and authorizing the helper again), then verify readback. Native failures or forced helper termination can leave macOS recovery necessary; abrupt Windows app termination can leave a journaled policy until a subsequent app launch. Automated tests and a successful policy readback do not replace real lid-close acceptance on each supported laptop/OS.
+</details>
 
-## Release process
+## 🚢 Release
 
-Pushing a `v*` tag starts the release workflow. Each build job first requires the pushed tag to exactly equal `v<version>` from `src-tauri/tauri.conf.json`, then uses the pinned Node and Rust versions above to build and assert the exact Tauri artifact paths. The macOS job packages `opencode-mom.app` as `opencode-mom_0.1.0_aarch64.app.tar.gz` with macOS `tar` so bundle metadata and executable permissions survive transfer. A least-privilege publishing job downloads each platform artifact into an explicit directory and creates or updates the GitHub Release with the exact NSIS installer, app archive, and DMG.
+Pushing a `v*` tag starts the release workflow. The tag must exactly equal `v<version>` in `src-tauri/tauri.conf.json`; GitHub Actions then builds the Windows NSIS installer and the macOS app/DMG, and a least-privilege job publishes them to a GitHub Release.
 
-## License
+## 📄 License
 
-No license has been declared yet.
+Released under the [MIT License](LICENSE). © 2026 seho-dev.

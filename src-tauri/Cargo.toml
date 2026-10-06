@@ -3,6 +3,7 @@ name = "opencode-mom"
 version = "0.1.0"
 description = "Cross-platform desktop model group switcher"
 authors = ["opencode-mom contributors"]
+license = "MIT"
 edition = "2021"
 rust-version = "1.77.2"
 default-run = "opencode-mom"

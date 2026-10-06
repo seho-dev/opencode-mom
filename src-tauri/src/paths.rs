@@ -9,6 +9,9 @@ pub struct ConfigPaths {
     home: PathBuf,
     user_config_dir: PathBuf,
     opencode: PathBuf,
+    global_config_files: Vec<PathBuf>,
+    global_skill_dirs: Vec<PathBuf>,
+    working_directory: PathBuf,
 }
 
 impl ConfigPaths {
@@ -21,16 +24,17 @@ impl ConfigPaths {
             })?;
         let config = env::var_os("OPENCODE_CONFIG").map(PathBuf::from);
         let directory = env::var_os("OPENCODE_CONFIG_DIR").map(PathBuf::from);
-        // opencode (and this app) always use `<home>/.config/opencode`, on every
-        // platform. Do NOT use dirs::config_dir() here: on Windows it resolves to
-        // %APPDATA%\Roaming, which is a different, often empty, config file.
-        let user_config_dir = home.join(".config");
-        let opencode = resolve_opencode_file(config, directory, &user_config_dir);
-        Ok(Self {
+        let user_config_dir = env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| home.join(".config"));
+        Ok(Self::with_resource_parts(
             home,
+            config,
+            directory,
             user_config_dir,
-            opencode,
-        })
+            env::current_dir()?,
+        ))
     }
 
     pub fn for_home(home: &Path) -> Self {
@@ -39,11 +43,61 @@ impl ConfigPaths {
 
     pub fn with_parts(home: PathBuf, config: Option<PathBuf>, directory: Option<PathBuf>) -> Self {
         let user_config_dir = home.join(".config");
+        let working_directory = env::current_dir().unwrap_or_else(|_| home.clone());
+        Self::with_resource_parts(home, config, directory, user_config_dir, working_directory)
+    }
+
+    pub fn with_resource_parts(
+        home: PathBuf,
+        config: Option<PathBuf>,
+        directory: Option<PathBuf>,
+        user_config_dir: PathBuf,
+        working_directory: PathBuf,
+    ) -> Self {
+        let absolute = |path: PathBuf| {
+            if path.is_absolute() {
+                path
+            } else {
+                working_directory.join(path)
+            }
+        };
+        let config = config.map(absolute);
+        let directory = directory.map(absolute);
+        let global_dir = user_config_dir.join("opencode");
+        let mut global_config_files = vec![
+            global_dir.join("opencode.json"),
+            global_dir.join("opencode.jsonc"),
+        ];
+        let mut global_skill_dirs = vec![
+            home.join(".claude/skills"),
+            home.join(".agents/skills"),
+            global_dir.join("skills"),
+        ];
+        if let Some(directory) = &directory {
+            global_config_files.push(directory.join("opencode.json"));
+            global_config_files.push(directory.join("opencode.jsonc"));
+            global_skill_dirs.push(directory.join("skills"));
+        }
+        if let Some(config) = &config {
+            global_config_files.push(config.clone());
+        }
+        // Keep the last occurrence so an explicit override retains its precedence.
+        let deduplicate = |paths: &mut Vec<PathBuf>| {
+            let mut seen = std::collections::BTreeSet::new();
+            paths.reverse();
+            paths.retain(|path| seen.insert(path.clone()));
+            paths.reverse();
+        };
+        deduplicate(&mut global_config_files);
+        deduplicate(&mut global_skill_dirs);
         let opencode = resolve_opencode_file(config, directory, &user_config_dir);
         Self {
             home,
             user_config_dir,
             opencode,
+            global_config_files,
+            global_skill_dirs,
+            working_directory,
         }
     }
 
@@ -72,6 +126,36 @@ impl ConfigPaths {
     pub fn global_agents_dir(&self) -> PathBuf {
         self.user_config_dir.join("opencode").join("agents")
     }
+
+    pub fn global_config_files(&self) -> &[PathBuf] {
+        &self.global_config_files
+    }
+
+    pub fn global_skill_dirs(&self) -> &[PathBuf] {
+        &self.global_skill_dirs
+    }
+
+    pub fn native_global_skills_dir(&self) -> PathBuf {
+        self.user_config_dir.join("opencode/skills")
+    }
+
+    pub fn resolve_skill_path(&self, source: &str) -> PathBuf {
+        if let Some(relative) = source
+            .strip_prefix("~/")
+            .or_else(|| source.strip_prefix("~\\"))
+        {
+            return self.home.join(relative);
+        }
+        if source == "~" {
+            return self.home.clone();
+        }
+        let path = PathBuf::from(source);
+        if path.is_absolute() {
+            path
+        } else {
+            self.working_directory.join(path)
+        }
+    }
 }
 
 /// Resolve the opencode config file the CLI actually uses: explicit `OPENCODE_CONFIG`
@@ -95,31 +179,4 @@ fn resolve_opencode_file(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn opencode_file_prefers_jsonc_then_falls_back_to_json() {
-        let tmp = std::env::temp_dir().join(format!("opencode-mom-paths-{}", std::process::id()));
-        let dir = tmp.join(".config").join("opencode");
-        std::fs::create_dir_all(&dir).unwrap();
-        let paths = || ConfigPaths::for_home(&tmp);
-        // No file at all -> fall back to .json (opencode reads it too).
-        assert_eq!(paths().opencode_file(), dir.join("opencode.json"));
-        // Only opencode.json exists -> use it (the bug this guards against).
-        std::fs::write(dir.join("opencode.json"), "{}").unwrap();
-        assert_eq!(paths().opencode_file(), dir.join("opencode.json"));
-        // Both exist -> .jsonc wins (opencode's primary file).
-        std::fs::write(dir.join("opencode.jsonc"), "{}").unwrap();
-        assert_eq!(paths().opencode_file(), dir.join("opencode.jsonc"));
-        std::fs::write(dir.join("oh-my-opencode-slim.jsonc"), "{}").unwrap();
-        assert_eq!(paths().slim_file(), dir.join("oh-my-opencode-slim.json"));
-        // Explicit OPENCODE_CONFIG always wins.
-        let explicit = tmp.join("custom.json");
-        assert_eq!(
-            ConfigPaths::with_parts(tmp.clone(), Some(explicit.clone()), None).opencode_file(),
-            explicit
-        );
-        std::fs::remove_dir_all(&tmp).unwrap();
-    }
-}
+mod tests;

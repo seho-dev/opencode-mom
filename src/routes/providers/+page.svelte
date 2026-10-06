@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Pencil, Plus, Trash2 } from '@lucide/svelte';
+import { Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
 import { Button } from '$src/components/button/index.js';
 import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
@@ -12,6 +12,7 @@ const config = getConfig();
 const i18n = getI18n();
 let query = $state('');
 let deleting = $state<string | null>(null);
+let refreshing = $state(false);
 const pageSize = 5;
 let page = $state(1);
 const filtered = $derived(
@@ -25,6 +26,15 @@ $effect(() => {
   void filtered.length;
   page = 1;
 });
+async function refresh() {
+  if (config.loading || config.saving || refreshing) return;
+  refreshing = true;
+  try {
+    await config.refresh(true);
+  } finally {
+    refreshing = false;
+  }
+}
 async function remove() {
   if (!deleting) return;
   try {
@@ -39,7 +49,17 @@ async function remove() {
 <svelte:head><title>{i18n.t('providers.metaTitle')}</title></svelte:head>
 <PageHead eyebrow={i18n.t('providers.eyebrow')} title={i18n.t('providers.title')}
   >{#snippet children()}
-    <Button href="/providers/new"><Plus size={14} /> {i18n.t('providers.new')}</Button>
+    <div class="flex flex-wrap justify-end gap-2">
+      <Button
+        variant="outline"
+        disabled={config.loading || config.saving || refreshing}
+        aria-busy={refreshing}
+        onclick={refresh}
+      >
+        <RefreshCw size={14} aria-hidden="true" /> {i18n.t('configuration.refresh')}
+      </Button>
+      <Button href="/providers/new"><Plus size={14} /> {i18n.t('providers.new')}</Button>
+    </div>
   {/snippet}</PageHead
 >
 <div class="search-toolbar">
@@ -56,7 +76,6 @@ async function remove() {
       <th>{i18n.t('providers.colNpm')}</th>
       <th>{i18n.t('providers.colBaseUrl')}</th>
       <th>{i18n.t('providers.colModels')}</th>
-      <th>{i18n.t('providers.colStatus')}</th>
       <th class="th-actions">{i18n.t('providers.colActions')}</th>
     </tr>
   </thead>

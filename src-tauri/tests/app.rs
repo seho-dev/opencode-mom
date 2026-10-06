@@ -142,7 +142,8 @@ fn provider_crud_round_trip() {
     providers::delete_model(
         &opencode,
         &providers::ModelRef::new("acme", "turbo").unwrap(),
-    );
+    )
+    .unwrap();
     assert!(providers::get_provider(&opencode, "acme")
         .unwrap()
         .models

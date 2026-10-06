@@ -14,7 +14,7 @@
     "check:fix": "biome check --write .",
     "preview": "vite preview",
     "test:components": "vitest run",
-    "test:unit": "node --test --test-concurrency=1 src/config/*.test.mjs src/routes/*/*.test.mjs src/utils/*.test.mjs",
+    "test:unit": "node --test --test-concurrency=1 src/config/__tests__/*.test.mjs src/routes/*/__tests__/*.test.mjs src/utils/__tests__/*.test.mjs",
     "prepare": "husky",
     "tauri": "tauri"
   },

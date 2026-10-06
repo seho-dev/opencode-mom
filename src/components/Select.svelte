@@ -4,6 +4,7 @@ export type SelectOption = { value: string; label?: string; hint?: string; disab
 
 <script lang="ts">
 import { ChevronDown } from '@lucide/svelte';
+import { Popover } from 'bits-ui';
 import { getI18n } from '$src/i18n/context.js';
 
 const i18n = getI18n();
@@ -37,7 +38,6 @@ const optionId = (index: number) => `${uid}-option-${index}`;
 let open = $state(false);
 let query = $state('');
 let highlight = $state(-1);
-let root = $state<HTMLElement | null>(null);
 let trigger = $state<HTMLButtonElement | null>(null);
 let list = $state<HTMLElement | null>(null);
 let searchInput = $state<HTMLInputElement | null>(null);
@@ -130,7 +130,7 @@ function onSearchKeydown(event: KeyboardEvent) {
     return;
   }
   if (key === 'Tab') {
-    close();
+    close(true);
     return;
   }
   if (key === 'ArrowDown' || key === 'ArrowUp') {
@@ -145,23 +145,6 @@ function onSearchKeydown(event: KeyboardEvent) {
   }
 }
 
-// Close when clicking or focusing outside the component.
-$effect(() => {
-  if (!open) return;
-  const onPointerDown = (event: PointerEvent) => {
-    if (root && event.target instanceof Node && !root.contains(event.target)) close();
-  };
-  const onFocusIn = (event: FocusEvent) => {
-    if (root && event.target instanceof Node && !root.contains(event.target)) close();
-  };
-  document.addEventListener('pointerdown', onPointerDown);
-  document.addEventListener('focusin', onFocusIn);
-  return () => {
-    document.removeEventListener('pointerdown', onPointerDown);
-    document.removeEventListener('focusin', onFocusIn);
-  };
-});
-
 // Keep the highlighted option visible while navigating with the keyboard.
 $effect(() => {
   if (!open || highlight < 0) return;
@@ -174,94 +157,126 @@ $effect(() => {
 });
 </script>
 
-<div class="select {className}" bind:this={root}>
-  <button
-    type="button"
-    class="select-trigger"
-    class:open
-    class:placeholder={placeholderVisible}
-    {id}
-    aria-label={ariaLabel}
-    aria-haspopup="listbox"
-    aria-expanded={open}
-    aria-controls={listboxId}
-    {disabled}
-    bind:this={trigger}
-    onclick={() => (open ? close() : openList())}
-    onkeydown={onTriggerKeydown}
-  >
-    <span class="select-label">{label}</span>
-    <span class="select-chevron" class:open><ChevronDown size={14} /></span>
-  </button>
-  {#if open}
-    <div class="select-panel">
-      {#if searchable}
-        <input
-          class="select-search"
-          type="text"
-          role="combobox"
-          aria-label={i18n.t('common.searchOptions')}
-          aria-expanded={open}
-          aria-controls={listboxId}
-          aria-autocomplete="list"
-          aria-activedescendant={highlight >= 0 ? optionId(highlight) : undefined}
-          placeholder={i18n.t('common.searchOptionsPlaceholder')}
-          autocomplete="off"
-          value={query}
-          oninput={onSearchInput}
-          onkeydown={onSearchKeydown}
-          bind:this={searchInput}
-        >
-      {/if}
-      <div class="select-options" role="listbox" id={listboxId} bind:this={list}>
-        {#if filtered.length === 0}
-          <div class="select-empty">{i18n.t('common.searchOptionsEmpty')}</div>
-        {:else}
-          {#each filtered as option, index (option.value)}
-            {#if option.disabled}
-              <div
-                class="select-option disabled"
-                role="option"
-                tabindex="-1"
-                aria-disabled="true"
-                aria-selected="false"
-                data-index={index}
-              >
-                <span>{option.label ?? option.value}</span>
-                {#if option.hint}
-                  <small>{option.hint}</small>
+<Popover.Root
+  bind:open
+  onOpenChange={(isOpen) => {
+    if (!isOpen) close();
+  }}
+>
+  <div class="select {className}">
+    <button
+      type="button"
+      class="select-trigger"
+      class:open
+      class:placeholder={placeholderVisible}
+      {id}
+      aria-label={ariaLabel}
+      aria-haspopup="listbox"
+      aria-expanded={open}
+      aria-controls={listboxId}
+      {disabled}
+      bind:this={trigger}
+      onclick={() => (open ? close() : openList())}
+      onkeydown={onTriggerKeydown}
+    >
+      <span class="select-label">{label}</span>
+      <span class="select-chevron" class:open><ChevronDown size={14} /></span>
+    </button>
+    <Popover.Portal>
+      <Popover.Content
+        customAnchor={trigger}
+        align="start"
+        sideOffset={4}
+        collisionPadding={8}
+        strategy="fixed"
+        trapFocus={false}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onFocusOutside={(event) => {
+          if (event.target !== trigger) close();
+        }}
+      >
+        {#snippet child({ props, wrapperProps })}
+          <div {...wrapperProps}>
+            <div
+              {...props}
+              class="select-panel"
+              onfocusout={(event) => {
+                const target = event.relatedTarget;
+                if (target !== trigger && !(target instanceof Node && event.currentTarget.contains(target))) close();
+              }}
+            >
+              {#if searchable}
+                <input
+                  class="select-search"
+                  type="text"
+                  role="combobox"
+                  aria-label={i18n.t('common.searchOptions')}
+                  aria-expanded={open}
+                  aria-controls={listboxId}
+                  aria-autocomplete="list"
+                  aria-activedescendant={highlight >= 0 ? optionId(highlight) : undefined}
+                  placeholder={i18n.t('common.searchOptionsPlaceholder')}
+                  autocomplete="off"
+                  value={query}
+                  oninput={onSearchInput}
+                  onkeydown={onSearchKeydown}
+                  bind:this={searchInput}
+                >
+              {/if}
+              <div class="select-options" role="listbox" id={listboxId} bind:this={list}>
+                {#if filtered.length === 0}
+                  <div class="select-empty">{i18n.t('common.searchOptionsEmpty')}</div>
+                {:else}
+                  {#each filtered as option, index (option.value)}
+                    {#if option.disabled}
+                      <div
+                        class="select-option disabled"
+                        role="option"
+                        tabindex="-1"
+                        aria-disabled="true"
+                        aria-selected="false"
+                        data-index={index}
+                      >
+                        <span>{option.label ?? option.value}</span>
+                        {#if option.hint}
+                          <small>{option.hint}</small>
+                        {/if}
+                      </div>
+                    {:else}
+                      <div
+                        class="select-option"
+                        id={optionId(index)}
+                        class:highlighted={highlight === index}
+                        role="option"
+                        tabindex="-1"
+                        aria-selected={option.value === value}
+                        data-index={index}
+                        onpointerenter={() => (highlight = index)}
+                        onclick={() => choose(option)}
+                        onkeydown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            choose(option);
+                          }
+                        }}
+                      >
+                        <span>{option.label ?? option.value}</span>
+                        {#if option.hint}
+                          <small>{option.hint}</small>
+                        {/if}
+                      </div>
+                    {/if}
+                  {/each}
                 {/if}
               </div>
-            {:else}
-              <div
-                class="select-option"
-                id={optionId(index)}
-                class:highlighted={highlight === index}
-                role="option"
-                tabindex="-1"
-                aria-selected={option.value === value}
-                data-index={index}
-                onpointerenter={() => (highlight = index)}
-                onclick={() => choose(option)}
-                onkeydown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    choose(option);
-                  }
-                }}
-              >
-                <span>{option.label ?? option.value}</span>
-                {#if option.hint}
-                  <small>{option.hint}</small>
-                {/if}
-              </div>
-            {/if}
-          {/each}
-        {/if}
-      </div>
-    </div>
-  {/if}
-</div>
+            </div>
+          </div>
+        {/snippet}
+      </Popover.Content>
+    </Popover.Portal>
+  </div>
+</Popover.Root>
 
 <style>
 .select {
@@ -284,9 +299,6 @@ $effect(() => {
   font-size: 12px;
   text-align: left;
 }
-.select-trigger.placeholder .select-label {
-  color: var(--text-muted);
-}
 .select-trigger:disabled {
   cursor: not-allowed;
   opacity: var(--disabled-opacity);
@@ -295,6 +307,9 @@ $effect(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.select-trigger.placeholder .select-label {
+  color: var(--text-muted);
 }
 .select-chevron {
   flex-shrink: 0;
@@ -305,11 +320,10 @@ $effect(() => {
   transform: rotate(180deg);
 }
 .select-panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
   z-index: 50;
+  width: var(--bits-popover-anchor-width);
+  max-width: var(--bits-popover-content-available-width);
+  max-height: var(--bits-popover-content-available-height);
   display: flex;
   flex-direction: column;
   background: var(--surface-panel);
@@ -318,6 +332,7 @@ $effect(() => {
   overflow: hidden;
 }
 .select-search {
+  flex-shrink: 0;
   width: 100%;
   min-width: 0;
   border: 0;
@@ -333,6 +348,7 @@ $effect(() => {
   outline-offset: -1px;
 }
 .select-options {
+  min-height: 0;
   max-height: 240px;
   overflow-y: auto;
   overflow-x: hidden;

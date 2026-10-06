@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "tray-events",
+  "description": "Local event listeners for the main window and tray popup.",
+  "local": true,
+  "windows": ["main", "tray"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

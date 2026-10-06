@@ -8,7 +8,7 @@ const config = getConfig();
 
 <header class="header">
   <div class="header-main">
-    <MobileNavigation /><span class="header-title">CONTROL PLANE</span>
+    <MobileNavigation />
   </div>
   <div class="header-meta"><AppearanceControls /></div>
 </header>

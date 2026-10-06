@@ -1,7 +1,7 @@
 use tauri::State;
 
 use crate::error::AppError;
-use crate::opencode_cli::{self, ModelCatalogEntry};
+use crate::opencode_cli::{self, ModelCatalogEntry, TokenUsageRecord};
 use crate::paths::ConfigPaths;
 
 type CommandResult<T> = Result<T, AppError>;
@@ -31,5 +31,25 @@ pub async fn opencode_reload() -> CommandResult<()> {
         .await
         .map_err(|error| {
             AppError::configuration(format!("failed to join opencode reload task: {error}"))
+        })?
+}
+
+#[tauri::command]
+pub async fn opencode_active_sessions() -> CommandResult<usize> {
+    tauri::async_runtime::spawn_blocking(opencode_cli::active_sessions_via_cli)
+        .await
+        .map_err(|error| {
+            AppError::configuration(format!(
+                "failed to join opencode active sessions task: {error}"
+            ))
+        })?
+}
+
+#[tauri::command]
+pub async fn opencode_token_usage_records() -> CommandResult<Vec<TokenUsageRecord>> {
+    tauri::async_runtime::spawn_blocking(opencode_cli::token_usage_records_via_cli)
+        .await
+        .map_err(|error| {
+            AppError::configuration(format!("failed to join opencode token usage task: {error}"))
         })?
 }

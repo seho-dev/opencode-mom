@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Pencil, Plus, Trash2 } from '@lucide/svelte';
+import { Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
 import { Button } from '$src/components/button/index.js';
 import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
@@ -13,6 +13,7 @@ const config = getConfig();
 const i18n = getI18n();
 let query = $state('');
 let deleting = $state<string | null>(null);
+let refreshing = $state(false);
 let activeTab = $state<'custom' | 'builtin'>('custom');
 const pageSize = 5;
 let page = $state(1);
@@ -47,6 +48,15 @@ $effect(() => {
   page = 1;
 });
 
+async function refresh() {
+  if (config.loading || config.saving || refreshing) return;
+  refreshing = true;
+  try {
+    await config.refresh(true);
+  } finally {
+    refreshing = false;
+  }
+}
 async function retryCatalog() {
   try {
     await config.loadCatalog();
@@ -68,7 +78,15 @@ async function remove() {
 <svelte:head><title>{i18n.t('models.metaTitle')}</title></svelte:head
 ><PageHead eyebrow={i18n.t('models.eyebrow')} title={i18n.t('models.title')}
   >{#snippet children()}
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap justify-end gap-2">
+      <Button
+        variant="outline"
+        disabled={config.loading || config.saving || refreshing}
+        aria-busy={refreshing}
+        onclick={refresh}
+      >
+        <RefreshCw size={14} aria-hidden="true" /> {i18n.t('configuration.refresh')}
+      </Button>
       <Button href="/models/new"><Plus size={14} /> {i18n.t('models.new')}</Button>
     </div>
   {/snippet}</PageHead

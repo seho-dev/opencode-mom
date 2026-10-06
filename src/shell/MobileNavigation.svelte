@@ -86,7 +86,7 @@ function handleKeydown(event: KeyboardEvent) {
     }}
     onkeydown={handleKeydown}
   >
-    <aside class="drawer-panel" aria-label={i18n.t('header.mobileNav')}>
+    <aside class="drawer-panel overflow-y-auto" aria-label={i18n.t('header.mobileNav')}>
       <div class="drawer-top">
         <span class="brand"><span class="brand-mark">{brand.slice(0, 1)}</span>{brand.slice(1)}</span
         ><Button

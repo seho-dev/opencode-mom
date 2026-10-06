@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Popover } from 'bits-ui';
 import type { HTMLInputAttributes } from 'svelte/elements';
 import { getI18n } from '$src/i18n/context.js';
 
@@ -34,6 +35,8 @@ let open = $state(false);
 // Filtering uses the typed query, not the committed value, so reopening shows all options.
 let query = $state('');
 let activeIndex = $state(-1);
+let input = $state<HTMLInputElement | null>(null);
+let list = $state<HTMLDivElement | null>(null);
 
 const filtered = $derived(
   query.trim()
@@ -72,63 +75,99 @@ function onkeydown(event: KeyboardEvent) {
       event.preventDefault();
       pick(option);
     }
-  } else if (event.key === 'Escape') {
+  } else if (event.key === 'Escape' || event.key === 'Tab') {
     close();
   }
 }
+
+$effect(() => {
+  if (open && activeIndex >= 0) {
+    list?.children[activeIndex]?.scrollIntoView({ block: 'nearest' });
+  }
+});
 </script>
 
-<div class="combo">
-  <input
-    {...rest}
-    id={inputId}
-    type="text"
-    role="combobox"
-    aria-expanded={open}
-    aria-controls={listId}
-    aria-autocomplete="list"
-    aria-activedescendant={open && activeIndex >= 0 ? optionId(activeIndex) : undefined}
-    {placeholder}
-    {disabled}
-    autocomplete="off"
-    {value}
-    oninput={(event) => {
-      value = event.currentTarget.value;
-      query = value;
-      open = true;
-      activeIndex = -1;
-      onchange?.(value);
-    }}
-    onfocus={() => (open = true)}
-    onblur={() => setTimeout(close, 100)}
-    {onkeydown}
-  >
-  {#if open}
-    <div class="combo-list" role="listbox" id={listId}>
-      {#if filtered.length === 0}
-        <div class="combo-empty">{i18n.t('common.noMatches')}</div>
-      {:else}
-        {#each filtered as option, index (option.value)}
-          <button
-            type="button"
-            id={optionId(index)}
-            role="option"
-            aria-selected={index === activeIndex}
-            class:active={index === activeIndex}
-            onmouseenter={() => (activeIndex = index)}
-            onmousedown={(event) => event.preventDefault()}
-            onclick={() => pick(option)}
-          >
-            <span>{option.label ?? option.value}</span>
-            {#if option.hint}
-              <small>{option.hint}</small>
-            {/if}
-          </button>
-        {/each}
-      {/if}
-    </div>
-  {/if}
-</div>
+<Popover.Root
+  bind:open
+  onOpenChange={(isOpen) => {
+    if (!isOpen) close();
+  }}
+>
+  <div class="combo">
+    <input
+      {...rest}
+      id={inputId}
+      type="text"
+      role="combobox"
+      aria-expanded={open}
+      aria-controls={listId}
+      aria-autocomplete="list"
+      aria-activedescendant={open && activeIndex >= 0 ? optionId(activeIndex) : undefined}
+      {placeholder}
+      {disabled}
+      autocomplete="off"
+      {value}
+      bind:this={input}
+      oninput={(event) => {
+        value = event.currentTarget.value;
+        query = value;
+        open = true;
+        activeIndex = -1;
+        onchange?.(value);
+      }}
+      onfocus={() => (open = true)}
+      onblur={(event) => {
+        if (!(event.relatedTarget instanceof Node && list?.contains(event.relatedTarget))) close();
+      }}
+      {onkeydown}
+    >
+    <Popover.Portal>
+      <Popover.Content
+        role="listbox"
+        customAnchor={input}
+        align="start"
+        sideOffset={4}
+        collisionPadding={8}
+        strategy="fixed"
+        trapFocus={false}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onFocusOutside={(event) => {
+          if (event.target !== input) close();
+        }}
+      >
+        {#snippet child({ props, wrapperProps })}
+          <div {...wrapperProps}>
+            <div {...props} id={listId} class="combo-list" bind:this={list}>
+              {#if filtered.length === 0}
+                <div class="combo-empty">{i18n.t('common.noMatches')}</div>
+              {:else}
+                {#each filtered as option, index (option.value)}
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    id={optionId(index)}
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    class:active={index === activeIndex}
+                    onmouseenter={() => (activeIndex = index)}
+                    onmousedown={(event) => event.preventDefault()}
+                    onclick={() => pick(option)}
+                  >
+                    <span>{option.label ?? option.value}</span>
+                    {#if option.hint}
+                      <small>{option.hint}</small>
+                    {/if}
+                  </button>
+                {/each}
+              {/if}
+            </div>
+          </div>
+        {/snippet}
+      </Popover.Content>
+    </Popover.Portal>
+  </div>
+</Popover.Root>
 
 <style>
 .combo {
@@ -149,12 +188,10 @@ function onkeydown(event: KeyboardEvent) {
   opacity: var(--disabled-opacity);
 }
 .combo-list {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
   z-index: 50;
-  max-height: 264px;
+  width: var(--bits-popover-anchor-width);
+  max-width: var(--bits-popover-content-available-width);
+  max-height: min(264px, var(--bits-popover-content-available-height));
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--surface-panel);

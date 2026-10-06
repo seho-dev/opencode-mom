@@ -6,7 +6,7 @@ export default defineConfig({
   resolve: { conditions: ['browser'] },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/__tests__/*.test.ts'],
     setupFiles: ['src/test-utils/setup.ts'],
   },
 });

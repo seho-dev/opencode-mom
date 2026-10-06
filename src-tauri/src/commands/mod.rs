@@ -1,13 +1,20 @@
 pub mod agent;
 pub mod app;
+pub mod autostart;
 pub mod cli;
 pub mod group;
 pub mod model;
+pub mod power;
 pub mod provider;
+pub mod resources;
 
+pub use crate::tray::*;
 pub use agent::*;
 pub use app::*;
+pub use autostart::*;
 pub use cli::*;
 pub use group::*;
 pub use model::*;
+pub use power::*;
 pub use provider::*;
+pub use resources::*;

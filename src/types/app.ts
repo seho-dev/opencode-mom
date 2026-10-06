@@ -12,6 +12,7 @@ export interface AppState {
   providers: ProviderDef[];
   agents: AgentDefinition[];
   groups: Group[];
+  selectedGroupId?: string | null;
   preferences: AppPreferences;
   diagnostics?: string[];
 }

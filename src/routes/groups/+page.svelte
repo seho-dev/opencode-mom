@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Pencil, Play, Plus, Trash2 } from '@lucide/svelte';
+import { Pencil, Play, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
 import { Button } from '$src/components/button/index.js';
 import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
@@ -20,6 +20,7 @@ const config = getConfig();
 const i18n = getI18n();
 let query = $state('');
 let deleting = $state<string | null>(null);
+let refreshing = $state(false);
 let switchedGroup = $state<string | null>(null);
 let activeTab = $state<GroupType>(GROUP_TYPE_NATIVE);
 let nativeTabEl = $state<HTMLButtonElement | null>(null);
@@ -60,6 +61,15 @@ function onTabKeys(event: KeyboardEvent) {
   selectTab(next);
   tabElement(next)?.focus();
 }
+async function refresh() {
+  if (config.loading || config.saving || refreshing) return;
+  refreshing = true;
+  try {
+    await config.refresh(true);
+  } finally {
+    refreshing = false;
+  }
+}
 async function remove() {
   if (!deleting) return;
   try {
@@ -90,7 +100,17 @@ async function reloadNow() {
 <svelte:head><title>{i18n.t('groups.metaTitle')}</title></svelte:head>
 <PageHead eyebrow={i18n.t('groups.eyebrow')} title={i18n.t('groups.title')}
   >{#snippet children()}
-    <Button href="/groups/new"><Plus size={14} /> {i18n.t('groups.new')}</Button>
+    <div class="flex flex-wrap justify-end gap-2">
+      <Button
+        variant="outline"
+        disabled={config.loading || config.saving || refreshing}
+        aria-busy={refreshing}
+        onclick={refresh}
+      >
+        <RefreshCw size={14} aria-hidden="true" /> {i18n.t('configuration.refresh')}
+      </Button>
+      <Button href="/groups/new"><Plus size={14} /> {i18n.t('groups.new')}</Button>
+    </div>
   {/snippet}</PageHead
 >
 <div class="search-toolbar">

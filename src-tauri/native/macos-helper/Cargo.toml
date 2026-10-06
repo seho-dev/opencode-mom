@@ -1,0 +1,15 @@
+[package]
+name = "opencode-lid-helper"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+publish = false
+
+[workspace]
+
+[dependencies]
+libc = "=0.2.186"
+
+[profile.release]
+panic = "abort"
+strip = true

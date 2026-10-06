@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Pencil, Plus, Trash2 } from '@lucide/svelte';
+import { Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
 import { Button } from '$src/components/button/index.js';
 import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
@@ -18,6 +18,7 @@ const config = getConfig();
 const i18n = getI18n();
 let query = $state('');
 let deleting = $state<string | null>(null);
+let refreshing = $state(false);
 let storage = $state<AgentStorage>('inline');
 let activeTab = $state<AgentTab>('custom');
 let customTabEl = $state<HTMLButtonElement | null>(null);
@@ -63,6 +64,15 @@ function onTabKeys(event: KeyboardEvent) {
   tabElement(next)?.focus();
 }
 const canSelect = $derived(!!deleting && config.agents.find((agent) => agent.id === deleting)?.source === 'both');
+async function refresh() {
+  if (config.loading || config.saving || refreshing) return;
+  refreshing = true;
+  try {
+    await config.refresh(true);
+  } finally {
+    refreshing = false;
+  }
+}
 async function remove() {
   if (!deleting) return;
   try {
@@ -77,9 +87,19 @@ async function remove() {
 <svelte:head><title>{i18n.t('agents.metaTitle')}</title></svelte:head>
 <PageHead eyebrow={i18n.t('agents.eyebrow')} title={i18n.t('agents.title')}
   >{#snippet children()}
-    {#if activeTab === 'custom'}
-      <Button href="/agents/new"><Plus size={14} /> {i18n.t('agents.new')}</Button>
-    {/if}
+    <div class="flex flex-wrap justify-end gap-2">
+      <Button
+        variant="outline"
+        disabled={config.loading || config.saving || refreshing}
+        aria-busy={refreshing}
+        onclick={refresh}
+      >
+        <RefreshCw size={14} aria-hidden="true" /> {i18n.t('configuration.refresh')}
+      </Button>
+      {#if activeTab === 'custom'}
+        <Button href="/agents/new"><Plus size={14} /> {i18n.t('agents.new')}</Button>
+      {/if}
+    </div>
   {/snippet}</PageHead
 >
 

@@ -1,8 +1,12 @@
 import type { AgentDefinition } from '$src/types/agents.js';
 import type { AppPreferences, AppState, CommandError } from '$src/types/app.js';
 import type { Group, GroupType } from '$src/types/groups.js';
+import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
+import type { LidState } from '$src/types/power.js';
 import type { ProviderDef } from '$src/types/providers.js';
+import type { SkillDraft, SkillEntry, SkillList, SkillUpdate } from '$src/types/skills.js';
+import type { TokenUsageRecord } from '$src/types/stats.js';
 import { GROUP_TYPE_NATIVE, GROUP_TYPE_OMO, GROUP_TYPE_SLIM } from '$src/utils/constants.js';
 
 type Result<T> = Promise<T>;
@@ -30,6 +34,7 @@ export interface CommandAdapter {
   opencodeListModels(provider?: string): Result<ModelCatalogEntry[]>;
   opencodeResolveBinary(): Result<string>;
   opencodeReload(): Result<void>;
+  opencodeTokenUsageRecords(): Result<TokenUsageRecord[]>;
   createProvider(value: ProviderDef): Result<ProviderDef>;
   updateProvider(value: ProviderDef): Result<ProviderDef>;
   deleteProvider(id: string): Result<void>;
@@ -42,6 +47,19 @@ export interface CommandAdapter {
   createAgent(value: AgentDefinition): Result<AgentDefinition>;
   updateAgent(value: AgentDefinition): Result<AgentDefinition>;
   deleteAgent(id: string, storage?: AgentDefinition['storage']): Result<void>;
+  listMcps(): Result<McpList>;
+  getMcp(name: string): Result<McpServer>;
+  createMcp(draft: McpDraft): Result<McpServer>;
+  updateMcp(draft: McpUpdate): Result<McpServer>;
+  deleteMcp(name: string): Result<void>;
+  listSkills(): Result<SkillList>;
+  getSkill(id: string): Result<SkillEntry>;
+  createSkill(draft: SkillDraft): Result<SkillEntry>;
+  updateSkill(draft: SkillUpdate): Result<SkillEntry>;
+  getAutostart(): Result<boolean>;
+  setAutostart(enabled: boolean): Result<boolean>;
+  getLidProtection(): Result<LidState>;
+  setLidProtection(enabled: boolean): Result<LidState>;
   saveGroup(value: Group): Result<Group>;
   copyGroup(id: string, name: string): Result<Group>;
   deleteGroup(id: string): Result<void>;
@@ -64,6 +82,7 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     opencodeListModels: (provider) => invoke('opencode_list_models', { provider }),
     opencodeResolveBinary: () => invoke('opencode_resolve_binary'),
     opencodeReload: () => invoke('opencode_reload'),
+    opencodeTokenUsageRecords: () => invoke('opencode_token_usage_records'),
     createProvider: (value) => invoke('create_provider', { provider: value }),
     updateProvider: (value) => invoke('update_provider', { provider: value }),
     deleteProvider: (id) => invoke('delete_provider', { id }),
@@ -76,6 +95,19 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     createAgent: (value) => invoke('create_agent', { agent: value }),
     updateAgent: (value) => invoke('update_agent', { agent: value }),
     deleteAgent: (id, storage) => invoke('delete_agent', { id, storage }),
+    listMcps: () => invoke('list_mcps'),
+    getMcp: (name) => invoke('get_mcp', { name }),
+    createMcp: (draft) => invoke('create_mcp', { draft }),
+    updateMcp: (draft) => invoke('update_mcp', { draft }),
+    deleteMcp: (name) => invoke('delete_mcp', { name }),
+    listSkills: () => invoke('list_skills'),
+    getSkill: (id) => invoke('get_skill', { id }),
+    createSkill: (draft) => invoke('create_skill', { draft }),
+    updateSkill: (draft) => invoke('update_skill', { draft }),
+    getAutostart: () => invoke('get_autostart'),
+    setAutostart: (enabled) => invoke('set_autostart', { enabled }),
+    getLidProtection: () => invoke('get_lid_protection'),
+    setLidProtection: (enabled) => invoke('set_lid_protection', { enabled }),
     saveGroup: async (value) => readGroup(await invoke<Group>('save_group', { group: writeGroup(value) })),
     copyGroup: async (id, name) => readGroup(await invoke<Group>('copy_group', { id, name })),
     deleteGroup: (id) => invoke('delete_group', { id }),

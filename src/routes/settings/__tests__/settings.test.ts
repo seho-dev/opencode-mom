@@ -13,6 +13,9 @@ function mount(overrides: Record<string, unknown> = {}) {
     setAutostart: vi.fn().mockResolvedValue(true),
     getLidProtection: vi.fn().mockResolvedValue({ enabled: false, phase: 'disabled' }),
     setLidProtection: vi.fn().mockResolvedValue({ enabled: true, phase: 'idle' }),
+    getAppInfo: vi.fn().mockResolvedValue({ version: '0.1.0', platform: 'other' }),
+    checkForUpdates: vi.fn(),
+    openProjectPage: vi.fn(),
     ...overrides,
   } as unknown as ConfigStore;
   render(Settings, {}, { wrapper: Harness, wrapperProps: { config } });
@@ -122,4 +125,17 @@ test('unavailable autostart does not block lid interaction or its independent re
   await waitFor(() => expect(config.getLidProtection).toHaveBeenCalledTimes(2));
   expect(getAutostart).toHaveBeenCalledOnce();
   expect(config.setAutostart).not.toHaveBeenCalled();
+});
+
+test('mount and system refresh read local app details without checking updates', async () => {
+  const config = mount();
+  await screen.findByText('Installed version: 0.1.0');
+  expect(config.getAppInfo).toHaveBeenCalledOnce();
+  expect(config.checkForUpdates).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(false),
+  );
+  await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  expect(config.checkForUpdates).not.toHaveBeenCalled();
+  expect(config.getAppInfo).toHaveBeenCalledOnce();
 });

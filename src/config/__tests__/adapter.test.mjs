@@ -86,6 +86,39 @@ test('deleteAgent passes storage through IPC when provided', async () => {
   }
 });
 
+test('app info, manual updates, and project pages preserve IPC names, payloads, results, and errors', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
+    const calls = [];
+    const info = { version: '0.1.0', platform: 'macos' };
+    const update = { currentVersion: '0.1.0', latestVersion: '0.10.0', updateAvailable: true };
+    let failure;
+    const adapter = createTauriAdapter(async (...args) => {
+      calls.push(args);
+      if (failure) throw failure;
+      if (args[0] === 'get_app_info') return info;
+      if (args[0] === 'check_for_updates') return update;
+    });
+    assert.strictEqual(await adapter.getAppInfo(), info);
+    assert.strictEqual(await adapter.checkForUpdates(), update);
+    assert.equal(await adapter.openProjectPage('repository'), undefined);
+    assert.equal(await adapter.openProjectPage('releases'), undefined);
+    assert.deepEqual(calls, [
+      ['get_app_info'],
+      ['check_for_updates'],
+      ['open_project_page', { page: 'repository' }],
+      ['open_project_page', { page: 'releases' }],
+    ]);
+    failure = { code: 'configuration_failed', message: 'GitHub unavailable' };
+    await assert.rejects(adapter.getAppInfo(), failure);
+    await assert.rejects(adapter.checkForUpdates(), failure);
+    await assert.rejects(adapter.openProjectPage('releases'), failure);
+  } finally {
+    await vite.close();
+  }
+});
+
 test('token usage records invoke the no-argument IPC command and preserve timestamp and count data', async () => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   try {

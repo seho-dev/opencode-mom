@@ -117,7 +117,7 @@ beforeEach(() => {
   vi.mocked(goto).mockClear();
 });
 
-test('list encodes detail links, separates config status from connection status, and delete supports cancel/failure/retry', async () => {
+test('list encodes detail links, keeps config status without the hint, and supports delete cancel/failure/retry', async () => {
   const deleteMcp = vi.fn().mockRejectedValueOnce(new Error('write failed')).mockResolvedValueOnce(undefined);
   const listMcps = vi
     .fn()
@@ -133,8 +133,8 @@ test('list encodes detail links, separates config status from connection status,
     '/mcp/docs%2Fa%20b?edit=1',
   );
   expect(screen.getByText('Enabled')).toBeTruthy();
+  expect(screen.queryByText(/Servers from global configuration|not live connection status/)).toBeNull();
   expect(screen.getByText('Unreadable source')).toBeTruthy();
-  expect(screen.getByText(/not live connection status/)).toBeTruthy();
   await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'missing' } });
   expect(screen.getByText('No matches')).toBeTruthy();
   await fireEvent.input(screen.getByRole('textbox'), { target: { value: '' } });
@@ -183,6 +183,8 @@ test('detail masks secrets, confirms sources, blocks dismissal while deleting, a
   const config = makeConfig({ deleteMcp });
   render(McpDetail, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('heading', { name: server.name });
+  expect(screen.getByText('Enabled')).toBeTruthy();
+  expect(screen.queryByText(/Servers from global configuration|not live connection status/)).toBeNull();
   expect(document.body.textContent).not.toContain('secret-header');
   expect(document.body.textContent).not.toContain('secret-env');
   expect(document.body.textContent).not.toContain('secret-oauth');

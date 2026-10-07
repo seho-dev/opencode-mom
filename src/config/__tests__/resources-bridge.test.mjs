@@ -136,3 +136,51 @@ test('resource writes return saved entries without refresh and never retain secr
     await vite.close();
   }
 });
+
+test('manual update and project facades stay lazy and do not touch config loading, refresh, or recovery', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
+    const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
+    const calls = [];
+    const info = { version: '0.1.0', platform: 'windows' };
+    const update = { currentVersion: '0.1.0', latestVersion: null, updateAvailable: false };
+    let failure;
+    const store = createConfigStore(
+      createTauriAdapter(async (...args) => {
+        calls.push(args);
+        if (args[0] === 'load_app_state')
+          return { providers: [], agents: [], groups: [], preferences: { theme: 'dark', locale: 'en' } };
+        if (args[0] === 'opencode_list_models') return [];
+        if (failure) throw failure;
+        if (args[0] === 'get_app_info') return info;
+        if (args[0] === 'check_for_updates') return update;
+      }),
+    );
+    await new Promise(setImmediate);
+    assert.deepEqual(calls, [['opencode_list_models', { provider: undefined }], ['load_app_state']]);
+    calls.length = 0;
+    assert.strictEqual(await store.getAppInfo(), info);
+    assert.strictEqual(await store.checkForUpdates(), update);
+    assert.equal(await store.openProjectPage('repository'), undefined);
+    assert.equal(await store.openProjectPage('releases'), undefined);
+    assert.deepEqual(calls, [
+      ['get_app_info'],
+      ['check_for_updates'],
+      ['open_project_page', { page: 'repository' }],
+      ['open_project_page', { page: 'releases' }],
+    ]);
+    failure = { code: 'configuration_failed', message: 'Update check unavailable' };
+    await assert.rejects(store.getAppInfo(), failure);
+    await assert.rejects(store.checkForUpdates(), failure);
+    await assert.rejects(store.openProjectPage('releases'), failure);
+    assert.equal(calls.length, 7);
+    assert.equal(store.loading, false);
+    assert.equal(store.saving, false);
+    assert.equal(store.error, null);
+    assert.equal(store.notice, null);
+    assert.equal(store.draftRecovery, null);
+  } finally {
+    await vite.close();
+  }
+});

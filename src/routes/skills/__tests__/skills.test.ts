@@ -68,7 +68,7 @@ beforeEach(() => {
   vi.mocked(goto).mockClear();
 });
 
-test('list shows scope, diagnostics, encoded detail link, search, and retry', async () => {
+test('list omits the scope hint and shows diagnostics, encoded detail link, search, and retry', async () => {
   const listSkills = vi
     .fn()
     .mockRejectedValueOnce(new Error('read denied'))
@@ -80,7 +80,9 @@ test('list shows scope, diagnostics, encoded detail link, search, and retry', as
   const link = await screen.findByRole('link', { name: skill.name });
   expect(link.getAttribute('href')).toBe('/skills/docs%2Fa%20b');
   expect(screen.getByText('Skipped unreadable skill')).toBeTruthy();
-  expect(screen.getByText(/Project, built-in and plugin skills are not included/)).toBeTruthy();
+  expect(
+    screen.queryByText(/Skills from user-global directories|Project, built-in and plugin skills are not included/),
+  ).toBeNull();
   expect(screen.getByRole('link', { name: 'New skill' }).getAttribute('href')).toBe('/skills/new');
   expect(screen.getByRole('link', { name: `Edit ${skill.name}` }).getAttribute('href')).toBe(
     '/skills/docs%2Fa%20b?edit=1',
@@ -98,6 +100,9 @@ test('detail displays full Markdown safely as plain text with metadata', async (
   expect(container.querySelector('img')).toBeNull();
   expect(screen.getByText(skill.path)).toBeTruthy();
   expect(screen.getByText('Enabled')).toBeTruthy();
+  expect(
+    screen.queryByText(/Skills from user-global directories|Project, built-in and plugin skills are not included/),
+  ).toBeNull();
 });
 
 test('detail explains empty content and errors; direct ID change cannot show old content', async () => {

@@ -75,7 +75,6 @@ onDestroy(() => {
     <Button href="/mcp/new"><Plus size={14} />{i18n.t('mcp.newTitle')}</Button>
   </div>
 </PageHead>
-<p class="page-description">{i18n.t('mcp.description')}</p>
 {#if removed || route.url.searchParams.get('removed') === '1'}
   <div class="state-banner success" role="status">{i18n.t('mcp.removed')}</div>
 {/if}

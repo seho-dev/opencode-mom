@@ -9,13 +9,15 @@ export const en = {
   // header
   'header.brand': 'OPENCODE-MOM',
   'header.title': 'CONTROL PLANE',
-  'header.version': 'VERSION 0.1.0',
+  'header.version': 'VERSION {version}',
   'header.reloadOpencode': 'Reload OpenCode',
   'header.reloading': 'Reloading…',
   'header.openMenu': 'Open navigation menu',
   'header.closeMenu': 'Close navigation menu',
   'header.mobileNav': 'Mobile navigation',
   'header.mainNav': 'Main navigation',
+  'header.openProject': 'Open project on GitHub in your default browser',
+  'header.projectOpenFailed': 'Could not open GitHub in your default browser: {message}',
 
   // appearance
   'appearance.group': 'Header controls',
@@ -552,8 +554,6 @@ export const en = {
   'mcp.eyebrow': 'CONFIG / MCP',
   'mcp.title': 'MCP',
   'mcp.detailTitle': 'MCP details',
-  'mcp.description':
-    'Servers from global configuration. Enabled and disabled describe configuration, not live connection status.',
   'mcp.search': 'Search MCP servers',
   'mcp.searchPlaceholder': 'Search name, command or URL',
   'mcp.target': 'Command / URL',
@@ -580,8 +580,6 @@ export const en = {
   'skills.eyebrow': 'CONFIG / SKILLS',
   'skills.title': 'Skills',
   'skills.detailTitle': 'Skill details',
-  'skills.description':
-    'Read-only skills from user-global directories. Project, built-in and plugin skills are not included.',
   'skills.search': 'Search skills',
   'skills.searchPlaceholder': 'Search name, ID or description',
   'skills.empty': 'No skills in user-global directories.',
@@ -603,6 +601,40 @@ export const en = {
   'settings.loadFailed': 'Launch-at-login status is unavailable. The control is disabled until status can be read.',
   'settings.saveFailed': 'Launch at login could not be updated. The last confirmed status is shown.',
   'settings.autostartSaved': 'Launch-at-login setting updated.',
+  'settings.updates': 'App updates',
+  'settings.installedVersion': 'Installed version: {version}',
+  'settings.versionUnavailable': 'unavailable',
+  'settings.updatesHint':
+    'Checks GitHub only when you ask. Downloads open in your default browser; nothing is installed automatically.',
+  'settings.appInfoFailed': 'Could not read installed application details.',
+  'settings.retryAppInfo': 'Retry app details',
+  'settings.checkUpdates': 'Check for updates',
+  'settings.checkingUpdates': 'Checking for updates…',
+  'settings.retryUpdates': 'Retry update check',
+  'settings.upToDate': 'You’re up to date (version {version}).',
+  'settings.noRelease': 'No published release is available yet.',
+  'settings.updateAvailable': 'Version {version} is available.',
+  'settings.updateCheckFailed': 'Could not check for updates.',
+  'settings.releaseDownloads': 'View GitHub downloads',
+  'settings.macInstallGuide': 'Installing an update on macOS',
+  'settings.macSigning':
+    'This macOS build is ad-hoc signed, but not signed with an Apple Developer certificate or notarized by Apple. Gatekeeper may block the first launch.',
+  'settings.macTrustWarning':
+    '🔒 Only proceed if you trust the official download. Never bypass security warnings for unknown downloads.',
+  'settings.macDownloadOfficial': 'Download only from the official opencode-mom GitHub Releases page.',
+  'settings.macReplaceApp':
+    'Quit opencode-mom from its tray menu first (closing the window only hides it), replace the app in Applications (drag it from the .dmg), then try opening it.',
+  'settings.macOpenAnyway':
+    'If blocked, first use System Settings → Privacy & Security → Open Anyway. This is usually sufficient; the Terminal command below is not required.',
+  'settings.macManualQuarantine':
+    'Optional fallback: only if this trusted official download is still blocked or Open Anyway is unavailable, run the command below yourself in Terminal. It removes quarantine only from this app. Do not use sudo or disable Gatekeeper globally.',
+  'settings.macQuarantineCommand': 'xattr -dr com.apple.quarantine "/Applications/opencode-mom.app"',
+  'settings.macAuthorizationScope':
+    'These first-launch security checks are separate from the administrator authorization used by lid protection.',
+  'settings.supportProject': 'Support MOM',
+  'settings.starRequest':
+    'If MOM has helped you, would you consider giving the project a Star? When it reaches 100 stars, I plan to buy an Apple Developer certificate with my own money to make installation smoother. Thanks for your support 🙏',
+  'settings.starProject': 'Star on GitHub',
   'settings.lid': 'Stay awake with lid closed',
   'settings.lidHint':
     'Keep your Mac awake only while monitored OpenCode sessions are working. Off by default; requires macOS administrator authorization.',
@@ -657,8 +689,6 @@ export const en = {
   'mcp.typeRequired': 'Set type to local or remote.',
   'mcp.commandRequired': 'Local configuration needs a non-empty command array of strings.',
   'mcp.urlRequired': 'Remote configuration needs a URL.',
-  'skills.managementDescription':
-    'Skills from user-global directories. Local skills can be edited; Remote skills are read-only. Project, built-in and plugin skills are not included.',
   'skills.local': 'Local',
   'skills.remote': 'Remote',
   'skills.remoteHint':

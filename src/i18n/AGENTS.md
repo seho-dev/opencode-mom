@@ -31,6 +31,7 @@ i18n/                         # Translation data and context API
 ## Conventions
 
 - **Key schema**: Define new keys in `en.ts`; mirror every key in the typed `zh.ts` map rather than maintaining a separate key union.
+- **Project and update messages**: `header.*` covers the GitHub opener; `settings.*` covers manual version checks, macOS trust guidance, and optional Star support. Keep security steps and the quarantine command equivalent in both locales; Star support never gates downloads.
 - **Parameters**: Use matching `{name}` placeholders in both locales and pass string or number values to `t`; with a params object, missing values become empty strings, while omitting params leaves placeholders intact.
 - **Locale getter**: Keep `createI18n(() => config.preferences.locale)` in context providers so lookup follows preference changes; this module does not persist the locale.
 - **Context access**: Install the translator with `setI18n` in a parent and consume it with `getI18n` in descendants; `context.ts` owns the private Symbol key.

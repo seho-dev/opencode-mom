@@ -1,5 +1,5 @@
 import type { AgentDefinition } from '$src/types/agents.js';
-import type { AppPreferences, AppState, CommandError } from '$src/types/app.js';
+import type { AppInfo, AppPreferences, AppState, CommandError, ProjectPage, UpdateCheck } from '$src/types/app.js';
 import type { Group, GroupType } from '$src/types/groups.js';
 import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
@@ -29,6 +29,9 @@ export const groupTypeFromWire = (value: string): GroupType => WIRE_GROUP_TYPE[v
 
 export interface CommandAdapter {
   loadAppState(): Result<AppState>;
+  getAppInfo(): Result<AppInfo>;
+  checkForUpdates(): Result<UpdateCheck>;
+  openProjectPage(page: ProjectPage): Result<void>;
   listProviders(): Result<ProviderDef[]>;
   listCustomProviders(): Result<ProviderDef[]>;
   opencodeListModels(provider?: string): Result<ModelCatalogEntry[]>;
@@ -77,6 +80,9 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
       const state = await invoke<AppState>('load_app_state');
       return { ...state, groups: state.groups.map(readGroup) };
     },
+    getAppInfo: () => invoke('get_app_info'),
+    checkForUpdates: () => invoke('check_for_updates'),
+    openProjectPage: (page) => invoke('open_project_page', { page }),
     listProviders: () => invoke('list_providers'),
     listCustomProviders: () => invoke('list_custom_providers'),
     opencodeListModels: (provider) => invoke('opencode_list_models', { provider }),

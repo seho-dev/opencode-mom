@@ -3,6 +3,7 @@ import { page } from '$app/state';
 import { Button } from '$src/components/button/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
+import { version } from '../../package.json';
 import { isNavigationItemActive, navigationItems } from './navigation.js';
 
 const config = getConfig();
@@ -20,7 +21,7 @@ const brand = i18n.t('header.brand');
     {/each}
   </nav>
   <div class="system-status flex items-center justify-between gap-2">
-    <span>{i18n.t('header.version')}</span>
+    <span>{i18n.t('header.version', { version })}</span>
     <Button
       variant="outline"
       size="sm"

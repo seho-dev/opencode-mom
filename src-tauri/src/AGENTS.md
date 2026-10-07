@@ -34,7 +34,9 @@ src/                    # Rust crate root
 ├── resource_file/       # File identity, permissions, and publication safety tests
 ├── skills.rs            # Local/HTTP skill discovery and local mutations
 ├── skills/              # Management safety and remote catalog tests
-└── tray.rs              # Native tray/window handlers and inline tests
+├── tray.rs              # Native tray/window handlers and inline tests
+├── updates.rs           # App metadata, manual stable-release checks, and fixed project links
+└── updates/             # Version, HTTP, wire contract, and destination safety tests
 ```
 
 ## Key Files
@@ -51,6 +53,7 @@ src/                    # Rust crate root
 | Agent documents | `agents.rs`, `agents_md.rs` | Merges inline/Markdown sources and edits selected storage while retaining untouched frontmatter sections. |
 | Provider/model editing | `providers.rs`, `models.rs` | ModelRef identity, field-level config edits, and persisted app data types. |
 | Resource management | `mcp.rs`, `skills.rs` | Ordered global discovery, provenance, diagnostics, and guarded MCP/local skill writes. |
+| Manual updates | `updates.rs` | Reads native platform, checks the fixed public GitHub latest-release API, and opens only predefined project pages. |
 
 ## Conventions
 
@@ -63,6 +66,8 @@ src/                    # Rust crate root
 - **Reference guards**: Provider/model IPC deletes query `refs` before CRUD; agent deletes receive `collect_agent_references`. The model index includes inline/Markdown agents, app groups, Slim presets, and OMO mappings.
 - **Backup-before-replace**: MCP replacements and local skill updates use `resource_file::replace`: validate snapshots, create recovery `.bak` files before publication, preserve modes, and remove owned backups only on success. `document::write_file` and `JsoncDoc::save` are plain writes without backups or locking.
 - **Resource freshness**: MCP/skill updates compare expected source and content/config; resource snapshots revalidate aliases, identity, and content. MCP validates the effective patched server before publication to catch duplicate-key mismatches.
+- **Update safety**: Manual checks use bounded blocking HTTP with timeouts, no credentials, and no redirects; only stable `vX.Y.Z`/`X.Y.Z` tags are compared numerically. HTTP 404 means no stable release; malformed/network/rate-limit failures remain errors. Never install updates or accept arbitrary API/browser URLs.
+- **Project links**: Validate `repository`/`releases` before building native opener commands; pass fixed URLs as arguments without shell interpolation and check launch status. Tests inspect commands without running an opener.
 - **Tests**: Module tests use `tests.rs` submodules, explicit `#[path]` safety/remote suites, or inline tests in `tray.rs`; public filesystem workflows live in `../tests/app.rs` and `../tests/resources.rs`.
 
 ## Sync

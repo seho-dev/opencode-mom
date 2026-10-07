@@ -2,7 +2,7 @@
 
 ## Overview
 
-Domain-scoped Tauri IPC handlers translate frontend requests into backend operations for agents, app state, autostart, CLI, groups, models, power, providers, MCP, and skills. Backend modules own the underlying operations; handlers adapt DTOs, validate command inputs, and send window notifications.
+Domain-scoped Tauri IPC handlers translate frontend requests into backend operations for agents, app state, autostart, CLI, groups, models, power, providers, MCP, skills, and manual updates. Backend modules own the underlying operations; handlers adapt DTOs, validate command inputs, and send window notifications.
 
 ## Directory Structure
 
@@ -20,14 +20,15 @@ commands/              # IPC handler boundary
 ├── model.rs            # Provider-scoped model CRUD and reference checks
 ├── power.rs            # Lid protection through managed PowerService
 ├── provider.rs         # Provider CRUD and custom-provider filtering
-└── resources.rs        # MCP and skill list, get, and mutation handlers
+├── resources.rs        # MCP and skill list, get, and mutation handlers
+└── updates.rs          # Actual package metadata, manual update check, and fixed project links
 ```
 
 ## Key Files
 
 | Responsibility | File | Description |
 | :--- | :--- | :--- |
-| Command exports | `mod.rs` | Declares nine domain modules and re-exports their handlers plus `crate::tray::*`. |
+| Command exports | `mod.rs` | Declares domain modules and re-exports their handlers plus `crate::tray::*`. |
 | Agent boundary | `agent.rs` | Converts source/effective data to DTOs; selects storage and validates model references. |
 | App state | `app.rs` | Returns `AppStateResponse`; saves preferences and notifies the tray. |
 | Serialization test | `app/tests.rs` | Checks `selectedGroupId` naming and nullable serialization. |
@@ -38,6 +39,7 @@ commands/              # IPC handler boundary
 | Power boundary | `power.rs` | Delegates reads and toggles to managed `PowerService`. |
 | Provider mutations | `provider.rs` | Lists all/custom providers and checks references before deletion. |
 | Resource boundary | `resources.rs` | Delegates MCP operations directly and skill operations through blocking tasks. |
+| Update boundary | `updates.rs` | Reads `AppHandle.package_info()` for the actual version; delegates manual release checks and fixed-destination browser opens. |
 
 ## Conventions
 
@@ -50,7 +52,8 @@ commands/              # IPC handler boundary
 - **Deletion guards**: Collect agent references before agent deletion; reject referenced models/providers with `AppError::references` and location details before deleting them.
 - **Wire DTOs**: `AgentDefinitionDto`, `AgentSourcePreviewDto`, and `AppStateResponse` serialize fields as camelCase; `AgentStorageDto` serializes variants as snake_case.
 - **Notifications**: Emit `app:preferences-changed` to `tray` after saving preferences; tray-origin group switches emit `tray:config-changed` to `main`. Log notification failures without failing a completed mutation.
-- **Blocking work**: Async CLI reload/session/usage and skill handlers use `tauri::async_runtime::spawn_blocking`; map join failures to configuration errors.
+- **Blocking work**: Async CLI reload/session/usage, skill, update-check, and project-opener handlers use `tauri::async_runtime::spawn_blocking`; map join failures to configuration errors.
+- **Manual updates**: `get_app_info` performs no network work; `check_for_updates` has no caller-controlled endpoint or credentials; `open_project_page` accepts only the domain-validated `repository`/`releases` destination names. No automatic checks or installation.
 - **Tests**: `app.rs` includes `app/tests.rs` via `#[cfg(test)] mod tests` for response serialization. Filesystem workflow coverage in `../../tests/app.rs` uses temporary homes with `ConfigPaths::for_home`.
 
 ## Sync

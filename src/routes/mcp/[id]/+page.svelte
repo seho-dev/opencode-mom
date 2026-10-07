@@ -84,7 +84,6 @@ $effect(() => {
     {/if}
   </PageHead>
 </div>
-<p class="page-description">{i18n.t('mcp.description')}</p>
 {#if saved || page.url.searchParams.get('saved') === '1'}
   <div class="state-banner success" role="status">{i18n.t('configuration.saved')}</div>
 {/if}

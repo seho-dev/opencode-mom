@@ -17,6 +17,7 @@ pub mod replacement;
 mod resource_file;
 pub mod skills;
 mod tray;
+pub mod updates;
 
 use tauri::Manager;
 
@@ -42,6 +43,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::load_app_state,
+            commands::get_app_info,
+            commands::check_for_updates,
+            commands::open_project_page,
             commands::list_providers,
             commands::list_custom_providers,
             commands::opencode_list_models,

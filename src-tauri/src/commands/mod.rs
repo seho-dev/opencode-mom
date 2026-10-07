@@ -7,6 +7,7 @@ pub mod model;
 pub mod power;
 pub mod provider;
 pub mod resources;
+pub mod updates;
 
 pub use crate::tray::*;
 pub use agent::*;
@@ -18,3 +19,4 @@ pub use model::*;
 pub use power::*;
 pub use provider::*;
 pub use resources::*;
+pub use updates::*;

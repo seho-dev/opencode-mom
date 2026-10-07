@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory connects typed command calls to shared application state and Svelte context. The adapter translates backend payloads; the store coordinates initialization, mutations, refreshes, preferences, and failed-draft recovery. Resource facades remain lazy rather than becoming part of the global configuration snapshot.
+This directory connects typed command calls to shared application state and Svelte context. The adapter translates backend payloads; the store coordinates initialization, mutations, refreshes, preferences, and failed-draft recovery. Resource, app metadata, and manual-update facades remain lazy rather than becoming part of the global configuration snapshot.
 
 ## Directory Structure
 
@@ -12,9 +12,9 @@ src/config/                         # Command translation and shared state
 ├── context.ts                      # Symbol-keyed ConfigStore context access
 ├── store.svelte.ts                 # Reactive state, refresh sequencing, and recovery
 └── __tests__/                      # Node regression tests with Vite module loading
-    ├── adapter.test.mjs            # Command names, payloads, and wire conversions
+    ├── adapter.test.mjs            # Command names, payloads, wire conversions, and update IPC
     ├── config-refresh.test.mjs     # Initialization, reload, races, selection, and drafts
-    └── resources-bridge.test.mjs   # Lazy resource calls and secret-draft protection
+    └── resources-bridge.test.mjs   # Lazy resource/update calls and secret-draft protection
 ```
 
 ## Key Files
@@ -29,6 +29,7 @@ src/config/                         # Command translation and shared state
 ## Conventions
 
 - **Adapter injection**: Keep command translation in `createTauriAdapter`; `createCommandAdapter` supplies the lazy Tauri import and normalizes unstructured failures to `ipc_error`.
+- **Manual updates**: `getAppInfo`, `checkForUpdates`, and `openProjectPage` pass through their typed results/errors without tracked mutations, snapshot fields, refreshes, or startup prefetch. Only `openProjectPage` carries a `{ page }` payload.
 - **Mutation lifecycle**: Use `run(operation, payload, action)` for tracked writes; successful provider/model/agent/group writes then refresh, while MCP/skill writes return saved entries without a global refresh.
 - **Request ownership**: Preserve separate state/catalog sequence counters; only the newest response updates values or errors. State loading uses an outstanding-request count; catalog loading belongs to its latest request.
 - **Refresh failures**: Automatic refresh tolerates catalog failure after a successful mutation. `refreshAll` rejects catalog failure through `refreshAllError`; failed catalog loads retain the previous catalog.

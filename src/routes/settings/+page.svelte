@@ -8,6 +8,7 @@ import { Switch } from '$src/components/switch/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import { toast } from '$src/shell/toast.svelte.js';
+import AppUpdates from './AppUpdates.svelte';
 import LidProtection from './LidProtection.svelte';
 
 const config = getConfig();
@@ -111,4 +112,5 @@ onDestroy(() => {
     />
   </div>
   <LidProtection />
+  <AppUpdates />
 </section>

@@ -4,6 +4,16 @@ import type { ProviderDef } from './providers.js';
 
 export type ThemePreference = 'light' | 'dark';
 export type LocalePreference = 'en' | 'zh';
+export interface AppInfo {
+  version: string;
+  platform: 'macos' | 'windows' | 'linux' | 'other';
+}
+export interface UpdateCheck {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+}
+export type ProjectPage = 'repository' | 'releases';
 export interface AppPreferences {
   theme: ThemePreference;
   locale: LocalePreference;

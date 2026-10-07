@@ -72,7 +72,6 @@ onDestroy(() => {
     <Button href="/skills/new"><Plus size={14} />{i18n.t('skills.newTitle')}</Button>
   </div>
 </PageHead>
-<p class="page-description">{i18n.t('skills.managementDescription')}</p>
 <Diagnostics messages={diagnostics} />
 {#if error}
   <div class="state-banner error" role="alert">

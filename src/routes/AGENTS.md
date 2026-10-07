@@ -54,10 +54,11 @@ src/routes/                         # SvelteKit page module
 │   ├── [id]/+page.svelte            # /skills/[id]: plain-text content and local edit mode
 │   ├── SkillForm.svelte            # Full Markdown document creation/editing
 │   └── __tests__/                  # List/detail/edit and safe content tests
-├── settings/                       # /settings: launch-at-login and lid protection
-│   ├── +page.svelte                # Autostart readback and independent lid control
+├── settings/                       # /settings: launch-at-login, lid protection, and manual updates
+│   ├── +page.svelte                # Autostart readback and independent lid/update sections
 │   ├── LidProtection.svelte        # Native phase display, polling, and restore actions
-│   └── __tests__/                  # Autostart, lid lifecycle, and navigation tests
+│   ├── AppUpdates.svelte           # Installed version, explicit release check, and native macOS guide
+│   └── __tests__/                  # Autostart, lid lifecycle, updates, openers, and navigation tests
 └── tray/                           # /tray: special tray-window mode
     ├── +page.svelte                # Group switching, runtime health, and native window actions
     └── __tests__/                  # Tray lifecycle, commands, preferences, and locale tests
@@ -76,6 +77,7 @@ src/routes/                         # SvelteKit page module
 | MCP display | `mcp/config-view.ts` | Masks credentials in targets and nested configuration without modifying source values. |
 | Document editors | `mcp/McpForm.svelte`, `skills/SkillForm.svelte` | Preserve full documents and send expected source snapshots on updates. |
 | Power status | `settings/LidProtection.svelte` | Polls every two seconds without overlapping reads; pauses during writes. |
+| Manual updates | `settings/AppUpdates.svelte` | Reads local app info; checks releases only on click and opens official project pages through config. |
 | Tray lifecycle | `tray/+page.svelte` | Coalesces focus/show events; refreshes config and health when shown. |
 | Cross-route tests | `__tests__/list-refresh.test.ts`, `__tests__/layout-preferences.test.ts` | Cover draft-preserving refresh and window-specific listener cleanup. |
 
@@ -86,6 +88,7 @@ src/routes/                         # SvelteKit page module
 - **Navigation**: Use links for route entry and `goto` from `$app/navigation` after successful saves; read IDs through `$app/state`. Model/agent/MCP/skill links encode identifiers with `encodeURIComponent`.
 - **List refresh**: Provider/model/agent/group lists call `config.refresh(true)` and guard loading/saving/local refresh; MCP/skill lists reload only their own data and diagnostics. Pagination uses five rows for the former and ten for the latter.
 - **Async reads**: MCP/skill lists and details invalidate request sequences on teardown or route changes; preserve these guards so stale responses cannot replace current data.
+- **Settings updates**: `AppUpdates` only calls local `getAppInfo` on mount; `checkForUpdates` requires an explicit click. Release downloads and optional Stars use `openProjectPage`, never frontend URLs or automatic installation. Show the expandable macOS security guide only for native `platform === 'macos'` with an available update; quarantine commands remain selectable text, not executable controls. Pending operations are guarded and invalidated on teardown.
 - **Detail editing**: MCP/skill `?edit=1` opens editing after loading; keyed forms retain immutable expected snapshots, keep drafts on failure, and do not automatically reload OpenCode. Remote skills remain read-only.
 - **MCP display**: Read-only targets/search use `maskTarget`; detail fields use `maskConfig`. Only the explicit JSON editor receives unmasked configuration.
 - **Draft resets**: Agent/group forms initialize on identity changes and `config.formResetVersion`, rather than resetting on every reactive store update; agent edits use the selected storage snapshot.

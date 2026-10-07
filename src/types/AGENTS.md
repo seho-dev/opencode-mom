@@ -9,7 +9,7 @@ This directory defines frontend domain records, command DTOs, and small UI resul
 ```text
 src/types/            # Domain contracts without runtime implementations
 ├── agents.ts         # Agent definitions, permissions, and field mutations
-├── app.ts            # App snapshot, preferences, and command errors
+├── app.ts            # App snapshot, preferences, metadata, manual updates, and command errors
 ├── groups.ts         # Group records, agent bindings, and category mappings
 ├── mcp.ts            # MCP entries, lists, drafts, and guarded updates
 ├── models.ts         # Model references, definitions, variants, and catalog entries
@@ -24,7 +24,7 @@ src/types/            # Domain contracts without runtime implementations
 
 | Responsibility | File | Description |
 | :--- | :--- | :--- |
-| App contract | `app.ts` | `AppState`, `AppPreferences`, and `CommandError`; selection and diagnostics are optional. |
+| App contract | `app.ts` | `AppState`, `AppPreferences`, `AppInfo`, `UpdateCheck`, `ProjectPage`, and `CommandError`; selection and diagnostics are optional. |
 | Group contract | `groups.ts` | `Group`, `AgentModelBinding`, and `CategoryMapping`; preset-specific collections can be `null`. |
 | Model contract | `models.ts` | `ModelRef`, `ModelDef`, and `ModelCatalogEntry`; catalog limits and variants have distinct optional/nullable shapes. |
 | Agent contract | `agents.ts` | `AgentDefinition`, permissive source records, permission rules, and `AgentWrite` mutation metadata. |
@@ -36,6 +36,7 @@ src/types/            # Domain contracts without runtime implementations
 - **Constant-derived unions**: `agents.ts` and `groups.ts` import and re-export their domain unions from `src/utils/constants.ts`; extend those source constants rather than duplicating unions here.
 - **References and dictionaries**: Use `ModelRef` (`${string}/${string}`) for model bindings; `ProviderDef.models` is a `Record<string, ModelDef>`, while model variants are arrays.
 - **Optional versus null**: Preserve required nullable preset collections in `Group` and optional nullable catalog fields; `AppState.selectedGroupId` can be absent or `null`.
+- **Manual updates**: `AppInfo.platform` is `macos`/`windows`/`linux`/`other`; `UpdateCheck.latestVersion` is required but nullable when no stable release exists. `ProjectPage` limits browser destinations to `repository`/`releases`; metadata/check results are not part of `AppState`.
 - **Guarded updates**: Keep `expectedConfig`/`expectedSourcePath` on `McpUpdate` and `expectedContent`/`expectedPath` on `SkillUpdate`; creation drafts do not carry these fields.
 - **Open-ended data**: Retain `Record<string, unknown>` for raw/config/settings objects, `unknown` for variant bodies and error detail, and open strings for agent modes and permission effects.
 - **Permission results**: Preserve the `ok` discriminator in `PermissionParse` and `mode` discriminator in `PermissionView`; only successful/rules branches carry rules.

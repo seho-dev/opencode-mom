@@ -1,5 +1,14 @@
 import type { AgentDefinition } from '$src/types/agents.js';
-import type { AppPreferences, AppState, CommandError, LocalePreference, ThemePreference } from '$src/types/app.js';
+import type {
+  AppInfo,
+  AppPreferences,
+  AppState,
+  CommandError,
+  LocalePreference,
+  ProjectPage,
+  ThemePreference,
+  UpdateCheck,
+} from '$src/types/app.js';
 import type { Group } from '$src/types/groups.js';
 import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
@@ -274,6 +283,15 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     reloadKeepingDraft,
     discardDraftAndRefresh,
     continueEditing,
+    getAppInfo(): Promise<AppInfo> {
+      return adapter.getAppInfo();
+    },
+    checkForUpdates(): Promise<UpdateCheck> {
+      return adapter.checkForUpdates();
+    },
+    openProjectPage(page: ProjectPage): Promise<void> {
+      return adapter.openProjectPage(page);
+    },
     async createProvider(value: ProviderDef) {
       await run('createProvider', value, () => adapter.createProvider(value));
       await refresh();

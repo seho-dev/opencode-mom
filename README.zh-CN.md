@@ -13,7 +13,7 @@
 ![许可证：MIT](https://img.shields.io/badge/license-MIT-3DA639)
 ![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
 ![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
-![Apple 开发者基金：0 / 100 stars](https://img.shields.io/badge/Apple%20Developer%20Fund-0%2F100%20stars-yellow?logo=apple&logoColor=white)
+![个人目标：100 stars](https://img.shields.io/badge/personal%20goal-100%20stars-yellow?logo=apple&logoColor=white)
 [![GitHub stars](https://img.shields.io/github/stars/seho-dev/opencode-mom?style=social)](https://github.com/seho-dev/opencode-mom/stargazers)
 
 [English](README.md) · 简体中文
@@ -24,24 +24,21 @@
 > **opencode-mom 仅支持 OpenCode v2。** MOM 读写的是 v2 配置体系 —— `provider/model#variant` 模型选择器、v2 权限规则、v2 provider/model schema。V1 配置不会被迁移，也不会被管理。切换模型组前，请确认你的 OpenCode 已升级到 v2。
 
 > [!NOTE]
-> **⭐ Apple 开发者基金：0 / 100 stars —— 因为我穷 🤣**
-> macOS 构建目前未签名、未公证；Apple 一张开发者证书要 99 美元/年，而我真的拿不出来。
-> **如果你介意：自行 fork 本仓库，自行打包、自行签名 —— 你应该比我有钱。**
-> 不介意的话，每一个 ⭐ 都算数：破 100 stars 我就斥巨资买下这 99 美元的会员，开始发布签名版本。大概率。
+> **⭐ 个人目标：100 stars。**
+> macOS 构建目前采用 ad-hoc 签名，没有 Apple Developer ID 证书，也未公证。达到 100 stars 后，我计划自费加入 Apple Developer Program，并推进签名与公证发布。
+> 如果 MOM 帮到了你，欢迎点个 Star，但这完全自愿，不影响下载或使用任何功能；Star 是鼓励，不是证书费用。感谢支持；如果你更希望自行签名，也可以从源码构建自己的副本。
 
 > [!WARNING]
-> **macOS 用户：在基金壮大之前，请手动信任 App。**
-> 把 `opencode-mom.app` 拖进 `/Applications` 后，二选一：
+> **macOS 首次启动需要主动确认是否信任。**
+> 把 `opencode-mom.app` 拖进 `/Applications` 后，先尝试打开一次。若被拦截，优先使用 **系统设置 → 隐私与安全性 → 仍要打开**；这个 GUI 步骤通常已经足够。
 >
-> - 移除隔离标记：
+> 下方命令**不是必做步骤**。仅当可信的官方副本仍被拦截，或系统没有 **仍要打开** 选项时，才考虑这个可选备用方法，**仅对这个 App**移除 quarantine 标记，无需 `sudo`：
 >
->   ```bash
->   sudo xattr -dr com.apple.quarantine /Applications/opencode-mom.app
->   ```
+> ```bash
+> xattr -dr com.apple.quarantine "/Applications/opencode-mom.app"
+> ```
 >
-> - 或者先尝试打开一次 App，然后在 **系统设置 → 隐私与安全性** 中点击 **仍要打开**。
->
-> 🔒 只信任从本仓库 [Releases](https://github.com/seho-dev/opencode-mom/releases/latest) 下载的副本。永远不要为来路不明的构建绕过 quarantine。
+> 🔒 仅对从本仓库官方 [Releases](https://github.com/seho-dev/opencode-mom/releases/latest) 下载、并已查看源码和发布信息的副本考虑这些步骤。不要为不可信构建绕过 quarantine，也不要全局关闭 Gatekeeper。
 
 <div align="center">
 
@@ -100,7 +97,7 @@ MOM 从不整文件重写配置：每次写入都是一对一的 key patch，不
 ## 🏝️ 路线图
 
 - **MOM Island（macOS，规划中）** —— 把 OpenCode 放进 Mac 的刘海 / 灵动岛：轻量级**审批与提醒**。直接批准或拒绝 agent 的工具调用、session 需要你时收到提醒、扫一眼正在跑的任务 —— 不用离开当前窗口。
-- **macOS 签名与公证** —— ⭐ 100 stars 解锁。详见上方基金。
+- **macOS Developer ID 签名与公证** —— 计划在个人目标 ⭐ 100 stars 达成后自费加入开发者计划；Star 不能购买证书。
 
 ## 📦 安装
 
@@ -110,10 +107,22 @@ MOM 从不整文件重写配置：每次写入都是一对一的 key patch，不
 | :--- | :--- |
 | Windows (x64) | `opencode-mom_*_x64-setup.exe` —— NSIS 安装包 |
 | macOS (Apple Silicon) | `opencode-mom_*_aarch64.dmg` |
+| macOS (Intel) | `opencode-mom_*_x64.dmg` |
+
+Workflow 也提供两种 macOS 架构的 `.app.tar.gz`。Windows 安装包未签名，可能显示 **SmartScreen** 警告；请核对发布者与来源，仅对自己准备安装的官方 Release 决定是否继续。
 
 ### macOS 首次启动
 
-构建暂未签名 —— 请按上方**手动信任步骤**操作（移除 quarantine 标记，或系统设置中点击 **仍要打开**）。
+构建采用 ad-hoc 签名，但没有 Developer ID 签名或公证 —— 优先使用系统设置中的 **仍要打开**，通常已足够；上方限定范围的 quarantine 命令仅作为可选备用方法。
+
+### 手动更新与 Settings 检查
+
+**Settings（设置）** 显示实际运行的 App 版本。点击 **检查更新**，按数字比较稳定 `X.Y.Z` 版本与 GitHub 最新稳定 Release。结果区分发现新版本、已是最新、尚无已发布版本以及错误；版本无法读取或格式无效、网络失败、限流都不代表已经是最新版。发现更新时，**查看 GitHub 下载** 会在浏览器打开官方 Releases 页面。请手动下载与安装：不会自动检查，也不会自动安装。
+
+- **macOS：** 先从托盘菜单选择 **Quit（退出）**（关闭窗口只会隐藏）。下载适合自己 Mac 的 Apple Silicon（`aarch64`）或 Intel（`x64`）`.dmg`，打开后把 `opencode-mom.app` 拖入 `/Applications` 并选择 **替换**，然后重新打开 App。若被拦截，按上方 **仍要打开** 指引处理；quarantine 命令不是更新的必做步骤。
+- **Windows：** 从托盘退出 MOM，再运行新版未签名 NSIS 安装包 `opencode-mom_*_x64-setup.exe`，完成后重新打开 App。只有信任自己准备安装的官方 Release 下载时，才考虑继续通过 **SmartScreen** 提示。
+
+重新打开后，确认 **Settings** 显示的实际版本与安装的 Release 一致，并自行检查开机自启与合盖守护状态。合盖守护会改变系统电源策略，请执行下方手动验收清单，不要假定升级已自动验证这些行为。
 
 ### 环境要求
 
@@ -151,6 +160,7 @@ npm run tauri build   # 打包当前平台
 npm run check                 # Biome 格式化 + lint
 npm run test:components      # Vitest 组件测试（jsdom）
 npm run test:unit            # node --test 单元测试
+node --test scripts/release-version.test.mjs
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml
@@ -188,7 +198,22 @@ cargo test --manifest-path src-tauri/native/macos-helper/Cargo.toml --offline --
 
 ## 🚢 发布
 
-推送 `v*` tag 触发发布流程。tag 必须与 `src-tauri/tauri.conf.json` 中的 `v<version>` 完全一致；GitHub Actions 随后构建 Windows NSIS 安装包与 macOS app/DMG，并由最小权限任务发布到 GitHub Release。
+**Release** workflow 支持推送到 `main`（当前默认分支）、推送 `v*` tag，以及 **Actions → Release → Run workflow**。对于 `main` 上由 commit 触发的发布，只检查 **HEAD commit subject**，区分大小写：
+
+- `release` 或 `release: description` → 下一个 patch 版本。
+- `release: 2.1.0` → 指定稳定版本 `2.1.0`（规则为 `release: X.Y.Z`），必须严格高于当前 App 版本和已有稳定发布 tag。格式错误的数字版本、预发布版本、相同或更旧的版本均拒绝发布。为兼容 Windows VERSIONINFO，每个版本字段须为 `0..65535`，patch 递增溢出时拒绝发布。
+- 不以小写 `release` 单词开头的 subject（包括 `releases`、`chore: release`）不发布，也不扫描此次 push 中更早的 commit。
+- 手动 dispatch 必须选择默认分支；可选 `version` 接受稳定 `X.Y.Z`，留空则递增 patch。如重命名默认分支，请同时更新 workflow 的 push 分支过滤器。
+
+准备阶段同步 `package.json`、`package-lock.json` 的两个根版本字段、`src-tauri/Cargo.toml` 和 `src-tauri/Cargo.lock` 的 App package，以及 `src-tauri/tauri.conf.json`，生成 `chore(release): vX.Y.Z` commit 并原子推送 commit 和 tag。准备阶段也会在 `CHANGELOG.md` 顶部插入新版本章节，内容为上一个稳定 tag 之后的 commit subject（排除发布 commit），并将其包含在发布 commit 中。独立 macOS helper 保留自身 package 版本。仓库 **Actions permissions** 与分支/tag 规则需允许 workflow 的 `GITHUB_TOKEN` 创建这个发布 commit 和 tag；不会绕过保护规则。
+
+准备阶段串行执行，并检查默认分支 HEAD 是否变化；并发变更会使推送失败，不会覆盖新 commit。重跑只复用原触发 commit 的确切发布子 commit/tag；构建失败时重跑原 workflow 即可，无需再次递增版本。也可自行推送已有的 `vX.Y.Z` tag：它必须与**全部** App 版本来源一致，此路径只构建、不递增版本。不要移动已发布 tag。
+
+先将当前 `v2.0` 分支的工作合并到默认分支 `main`，再触发发布或推送发布 tag。App manifest 使用 `2.0.0`，对应 tag 为 `v2.0.0`。当前版本为 `2.0.0` 时，`release` / `release: description` 会选择 `2.0.1`，而 `release: 2.0.0` 会被拒绝。要**原样发布当前 `2.0.0`**，合并时不要使用 release 前缀的 subject，并走上方已有 tag 路径：`v2.0.0` 必须指向全部 App 版本来源均已同步为 `2.0.0` 的合并后 commit，而不是使用递增版本的触发方式。
+
+之后在**同一次 workflow run** 中，使用 Node **22.23.0**、Rust **1.96.0**，分别在 `macos-15`（Apple Silicon）、`macos-15-intel`（Intel）和 `windows-2022`（x64 NSIS）上构建。macOS 会先 fetch 独立 helper 的锁定依赖，再执行其 offline build。macOS 使用 ad-hoc 签名身份 `-`，没有 Developer ID 签名或公证；Windows 未签名。无需签名或 updater secrets。
+
+Build jobs 只有仓库读取权限并上传 artifacts；仅在**三个平台全部成功**后，独立的写权限 job 才上传全部五个产物并发布 GitHub Release（新 Release 在上传完成前保持 draft）。重跑发布会替换同名产物，不会另建 Release。`GITHUB_TOKEN` 生成的 push 不会触发另一个 workflow，因此依赖 build jobs 必须保留。可用 `node --test scripts/release-version.test.mjs` 本地验证版本逻辑；真实 hosted build 仍需在 GitHub 实际运行后确认。
 
 ## 📄 许可证
 

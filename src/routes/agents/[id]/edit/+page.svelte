@@ -1,5 +1,6 @@
 <script lang="ts">
 import { page } from '$app/state';
+import GlobalDestination from '$src/components/GlobalDestination.svelte';
 import PageHead from '$src/components/PageHead.svelte';
 import { getI18n } from '$src/i18n/context.js';
 import AgentForm from '../../AgentForm.svelte';
@@ -10,4 +11,5 @@ const id = $derived(decodeURIComponent(page.params.id ?? ''));
 
 <svelte:head><title>{i18n.t('agents.editMetaTitle')}</title></svelte:head>
 <PageHead eyebrow={i18n.t('agents.eyebrow')} title={i18n.t('agents.editTitle')} />
+<GlobalDestination />
 <AgentForm {id} />

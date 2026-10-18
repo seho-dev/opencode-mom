@@ -55,7 +55,7 @@ test('reads OS status before enabling interaction and updates only after readbac
   await waitFor(() => expect(autostart.checked).toBe(true));
   expect(vi.mocked(toast)).toHaveBeenCalledWith({
     variant: 'success',
-    description: 'Launch-at-login setting updated.',
+    description: 'Launch at login updated.',
   });
   expect(lid.checked).toBe(false);
   expect(lid.disabled).toBe(false);

@@ -88,9 +88,16 @@ onDestroy(() => {
       </p>
       <p class="mt-1 mb-0 text-xs leading-5 text-[var(--text-muted)]">{i18n.t('settings.updatesHint')}</p>
     </div>
-    <Button variant="outline" disabled={checking} aria-busy={checking} onclick={check}>
+    <Button
+      variant="outline"
+      size="icon"
+      disabled={checking}
+      aria-label={i18n.t(checking ? 'settings.checkingUpdates' : checkError ? 'settings.retryUpdates' : 'settings.checkUpdates')}
+      title={i18n.t(checking ? 'settings.checkingUpdates' : checkError ? 'settings.retryUpdates' : 'settings.checkUpdates')}
+      aria-busy={checking}
+      onclick={check}
+    >
       <RefreshCw size={14} class={checking ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />
-      {i18n.t(checking ? 'settings.checkingUpdates' : checkError ? 'settings.retryUpdates' : 'settings.checkUpdates')}
     </Button>
   </div>
 

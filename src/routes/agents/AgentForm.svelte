@@ -8,7 +8,7 @@ import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import { toast } from '$src/shell/toast.svelte.js';
 import type { AgentDefinition, AgentSource, AgentStorage, AgentWrite } from '$src/types/agents.js';
-import { AGENT_MODES, COLOR_THEMES, STORAGE_LABELS } from '$src/utils/constants.js';
+import { AGENT_MODES, COLOR_THEMES, STORAGE_OPTIONS } from '$src/utils/constants.js';
 import { buildModelOptions, buildModelVariants, isBuiltinAgentId } from '$src/utils/index.js';
 import {
   type AgentFormValues,
@@ -197,9 +197,9 @@ function changeModel(model: string) {
                 id="storage"
                 bind:value={storage}
                 onchange={() => loadSource()}
-                options={snapshots(agent).map((entry) => ({
-                  value: entry.storage,
-                  label: i18n.t(STORAGE_LABELS[entry.storage]),
+                options={STORAGE_OPTIONS.filter((option) => snapshots(agent).some((entry) => entry.storage === option.value)).map((option) => ({
+                  value: option.value,
+                  label: i18n.t(option.label),
                 }))}
               />
               {#if selectedSource}

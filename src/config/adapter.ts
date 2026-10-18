@@ -1,6 +1,24 @@
 import type { AgentDefinition } from '$src/types/agents.js';
-import type { AppInfo, AppPreferences, AppState, CommandError, ProjectPage, UpdateCheck } from '$src/types/app.js';
+import type {
+  AppInfo,
+  AppPreferences,
+  AppState,
+  CommandError,
+  OpenCodeInstallation,
+  OpenCodeServiceStatus,
+  OpenCodeUpdateCheck,
+  ProjectFolder,
+  ProjectPage,
+  UpdateCheck,
+} from '$src/types/app.js';
 import type { Group, GroupType } from '$src/types/groups.js';
+import type {
+  IslandAnswer,
+  IslandMessage,
+  IslandPermissionDecision,
+  IslandState,
+  IslandView,
+} from '$src/types/island.js';
 import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
 import type { LidState } from '$src/types/power.js';
@@ -31,7 +49,20 @@ export interface CommandAdapter {
   loadAppState(): Result<AppState>;
   getAppInfo(): Result<AppInfo>;
   checkForUpdates(): Result<UpdateCheck>;
+  getOpenCodeInstallation(): Result<OpenCodeInstallation>;
+  getOpenCodeServiceStatus(): Result<OpenCodeServiceStatus>;
+  setOpenCodeServiceTarget(url: string | null, password?: string | null): Result<OpenCodeServiceStatus>;
+  checkOpenCodeUpdate(): Result<OpenCodeUpdateCheck>;
+  upgradeOpenCode(
+    expectedBinaryPath: string,
+    expectedVersion: string,
+    targetVersion: string,
+  ): Result<OpenCodeInstallation>;
   openProjectPage(page: ProjectPage): Result<void>;
+  pickProjectFolder(): Result<string | null>;
+  addProject(path: string): Result<ProjectFolder>;
+  removeProject(id: string): Result<void>;
+  selectProject(id: string | null): Result<void>;
   listProviders(): Result<ProviderDef[]>;
   listCustomProviders(): Result<ProviderDef[]>;
   opencodeListModels(provider?: string): Result<ModelCatalogEntry[]>;
@@ -45,24 +76,45 @@ export interface CommandAdapter {
   createModel(providerId: string, value: ModelDef): Result<ModelDef>;
   updateModel(providerId: string, value: ModelDef): Result<ModelDef>;
   deleteModel(ref: ModelRef): Result<void>;
-  listAgents(): Result<AgentDefinition[]>;
-  getAgent(id: string): Result<AgentDefinition>;
-  createAgent(value: AgentDefinition): Result<AgentDefinition>;
-  updateAgent(value: AgentDefinition): Result<AgentDefinition>;
-  deleteAgent(id: string, storage?: AgentDefinition['storage']): Result<void>;
-  listMcps(): Result<McpList>;
-  getMcp(name: string): Result<McpServer>;
-  createMcp(draft: McpDraft): Result<McpServer>;
-  updateMcp(draft: McpUpdate): Result<McpServer>;
-  deleteMcp(name: string): Result<void>;
-  listSkills(): Result<SkillList>;
-  getSkill(id: string): Result<SkillEntry>;
-  createSkill(draft: SkillDraft): Result<SkillEntry>;
-  updateSkill(draft: SkillUpdate): Result<SkillEntry>;
+  listAgents(projectId?: string | null): Result<AgentDefinition[]>;
+  getAgent(id: string, projectId?: string | null): Result<AgentDefinition>;
+  createAgent(value: AgentDefinition, projectId?: string | null): Result<AgentDefinition>;
+  updateAgent(value: AgentDefinition, projectId?: string | null): Result<AgentDefinition>;
+  deleteAgent(id: string, storage?: AgentDefinition['storage'], projectId?: string | null): Result<void>;
+  listMcps(projectId?: string | null): Result<McpList>;
+  getMcp(name: string, projectId?: string | null): Result<McpServer>;
+  createMcp(draft: McpDraft, projectId?: string | null): Result<McpServer>;
+  updateMcp(draft: McpUpdate, projectId?: string | null): Result<McpServer>;
+  deleteMcp(name: string, projectId?: string | null): Result<void>;
+  listSkills(projectId?: string | null): Result<SkillList>;
+  getSkill(id: string, projectId?: string | null): Result<SkillEntry>;
+  createSkill(draft: SkillDraft, projectId?: string | null): Result<SkillEntry>;
+  updateSkill(draft: SkillUpdate, projectId?: string | null): Result<SkillEntry>;
   getAutostart(): Result<boolean>;
   setAutostart(enabled: boolean): Result<boolean>;
   getLidProtection(): Result<LidState>;
   setLidProtection(enabled: boolean): Result<LidState>;
+  getIslandState(): Result<IslandState>;
+  setIslandEnabled(enabled: boolean): Result<IslandState>;
+  refreshIsland(): Result<IslandState>;
+  setIslandView(view: IslandView): Result<void>;
+  setIslandExpanded(expanded: boolean): Result<void>;
+  islandMessages(sessionId: string, expectedConnectionGeneration: number): Result<IslandMessage[]>;
+  islandSend(sessionId: string, text: string, messageId: string, expectedConnectionGeneration: number): Result<void>;
+  islandReplyPermission(
+    sessionId: string,
+    requestId: string,
+    decision: IslandPermissionDecision,
+    expectedConnectionGeneration: number,
+  ): Result<void>;
+  islandReplyQuestion(
+    sessionId: string,
+    formId: string,
+    answer: IslandAnswer,
+    expectedConnectionGeneration: number,
+  ): Result<void>;
+  islandCancelQuestion(sessionId: string, formId: string, expectedConnectionGeneration: number): Result<void>;
+  islandInterrupt(sessionId: string, expectedConnectionGeneration: number): Result<void>;
   saveGroup(value: Group): Result<Group>;
   copyGroup(id: string, name: string): Result<Group>;
   deleteGroup(id: string): Result<void>;
@@ -74,6 +126,7 @@ export type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) =
 // Persisted group.type uses frozen wire values; canonicalize at the IPC boundary only.
 const readGroup = (group: Group): Group => ({ ...group, type: groupTypeFromWire(group.type) });
 const writeGroup = (group: Group): Group => ({ ...group, type: groupTypeToWire(group.type) as GroupType });
+const projectScope = (projectId?: string | null) => (projectId == null ? {} : { projectId });
 export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
   return {
     loadAppState: async () => {
@@ -82,7 +135,18 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     },
     getAppInfo: () => invoke('get_app_info'),
     checkForUpdates: () => invoke('check_for_updates'),
+    getOpenCodeInstallation: () => invoke('opencode_get_installation'),
+    getOpenCodeServiceStatus: () => invoke('opencode_get_service_status'),
+    setOpenCodeServiceTarget: (url, password) =>
+      invoke('opencode_set_service_target', { url, ...(password === undefined ? {} : { password }) }),
+    checkOpenCodeUpdate: () => invoke('opencode_check_update'),
+    upgradeOpenCode: (expectedBinaryPath, expectedVersion, targetVersion) =>
+      invoke('opencode_upgrade', { expectedBinaryPath, expectedVersion, targetVersion }),
     openProjectPage: (page) => invoke('open_project_page', { page }),
+    pickProjectFolder: () => invoke('pick_project_folder'),
+    addProject: (path) => invoke('add_project', { path }),
+    removeProject: (id) => invoke('remove_project', { id }),
+    selectProject: (id) => invoke('select_project', { id }),
     listProviders: () => invoke('list_providers'),
     listCustomProviders: () => invoke('list_custom_providers'),
     opencodeListModels: (provider) => invoke('opencode_list_models', { provider }),
@@ -96,24 +160,41 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     createModel: (providerId, value) => invoke('create_model', { providerId, model: value }),
     updateModel: (providerId, value) => invoke('update_model', { providerId, model: value }),
     deleteModel: (modelRef) => invoke('delete_model', { modelRef }),
-    listAgents: () => invoke('list_agents'),
-    getAgent: (id) => invoke('get_agent', { id }),
-    createAgent: (value) => invoke('create_agent', { agent: value }),
-    updateAgent: (value) => invoke('update_agent', { agent: value }),
-    deleteAgent: (id, storage) => invoke('delete_agent', { id, storage }),
-    listMcps: () => invoke('list_mcps'),
-    getMcp: (name) => invoke('get_mcp', { name }),
-    createMcp: (draft) => invoke('create_mcp', { draft }),
-    updateMcp: (draft) => invoke('update_mcp', { draft }),
-    deleteMcp: (name) => invoke('delete_mcp', { name }),
-    listSkills: () => invoke('list_skills'),
-    getSkill: (id) => invoke('get_skill', { id }),
-    createSkill: (draft) => invoke('create_skill', { draft }),
-    updateSkill: (draft) => invoke('update_skill', { draft }),
+    listAgents: (projectId) => (projectId == null ? invoke('list_agents') : invoke('list_agents', { projectId })),
+    getAgent: (id, projectId) => invoke('get_agent', { id, ...projectScope(projectId) }),
+    createAgent: (value, projectId) => invoke('create_agent', { agent: value, ...projectScope(projectId) }),
+    updateAgent: (value, projectId) => invoke('update_agent', { agent: value, ...projectScope(projectId) }),
+    deleteAgent: (id, storage, projectId) => invoke('delete_agent', { id, storage, ...projectScope(projectId) }),
+    listMcps: (projectId) => (projectId == null ? invoke('list_mcps') : invoke('list_mcps', { projectId })),
+    getMcp: (name, projectId) => invoke('get_mcp', { name, ...projectScope(projectId) }),
+    createMcp: (draft, projectId) => invoke('create_mcp', { draft, ...projectScope(projectId) }),
+    updateMcp: (draft, projectId) => invoke('update_mcp', { draft, ...projectScope(projectId) }),
+    deleteMcp: (name, projectId) => invoke('delete_mcp', { name, ...projectScope(projectId) }),
+    listSkills: (projectId) => (projectId == null ? invoke('list_skills') : invoke('list_skills', { projectId })),
+    getSkill: (id, projectId) => invoke('get_skill', { id, ...projectScope(projectId) }),
+    createSkill: (draft, projectId) => invoke('create_skill', { draft, ...projectScope(projectId) }),
+    updateSkill: (draft, projectId) => invoke('update_skill', { draft, ...projectScope(projectId) }),
     getAutostart: () => invoke('get_autostart'),
     setAutostart: (enabled) => invoke('set_autostart', { enabled }),
     getLidProtection: () => invoke('get_lid_protection'),
     setLidProtection: (enabled) => invoke('set_lid_protection', { enabled }),
+    getIslandState: () => invoke('get_island_state', {}),
+    setIslandEnabled: (enabled) => invoke('set_island_enabled', { enabled }),
+    refreshIsland: () => invoke('refresh_island', {}),
+    setIslandView: (view) => invoke('set_island_view', { view }),
+    setIslandExpanded: (expanded) => invoke('set_island_expanded', { expanded }),
+    islandMessages: (sessionId, expectedConnectionGeneration) =>
+      invoke('island_messages', { sessionId, expectedConnectionGeneration }),
+    islandSend: (sessionId, text, messageId, expectedConnectionGeneration) =>
+      invoke('island_send', { sessionId, text, messageId, expectedConnectionGeneration }),
+    islandReplyPermission: (sessionId, requestId, decision, expectedConnectionGeneration) =>
+      invoke('island_reply_permission', { sessionId, requestId, decision, expectedConnectionGeneration }),
+    islandReplyQuestion: (sessionId, formId, answer, expectedConnectionGeneration) =>
+      invoke('island_reply_question', { sessionId, formId, answer, expectedConnectionGeneration }),
+    islandCancelQuestion: (sessionId, formId, expectedConnectionGeneration) =>
+      invoke('island_cancel_question', { sessionId, formId, expectedConnectionGeneration }),
+    islandInterrupt: (sessionId, expectedConnectionGeneration) =>
+      invoke('island_interrupt', { sessionId, expectedConnectionGeneration }),
     saveGroup: async (value) => readGroup(await invoke<Group>('save_group', { group: writeGroup(value) })),
     copyGroup: async (id, name) => readGroup(await invoke<Group>('copy_group', { id, name })),
     deleteGroup: (id) => invoke('delete_group', { id }),

@@ -1,9 +1,9 @@
 <script lang="ts" module>
-export type SelectOption = { value: string; label?: string; hint?: string; disabled?: boolean };
+export type SelectOption = { value: string; label?: string; hint?: string; disabled?: boolean; globe?: boolean };
 </script>
 
 <script lang="ts">
-import { ChevronDown } from '@lucide/svelte';
+import { ChevronDown, Globe } from '@lucide/svelte';
 import { Popover } from 'bits-ui';
 import { getI18n } from '$src/i18n/context.js';
 
@@ -18,6 +18,9 @@ let {
   ariaLabel,
   onchange,
   class: className = '',
+  alwaysSearch = false,
+  pinnedValue,
+  stacked = false,
 }: {
   value?: string;
   options?: SelectOption[];
@@ -27,6 +30,9 @@ let {
   ariaLabel?: string;
   onchange?: (value: string) => void;
   class?: string;
+  alwaysSearch?: boolean;
+  pinnedValue?: string;
+  stacked?: boolean;
 } = $props();
 
 // Long lists (e.g. model pickers) get an inline search field; short selects stay compact.
@@ -42,14 +48,17 @@ let trigger = $state<HTMLButtonElement | null>(null);
 let list = $state<HTMLElement | null>(null);
 let searchInput = $state<HTMLInputElement | null>(null);
 
-const searchable = $derived(options.length > SEARCH_THRESHOLD);
+const searchable = $derived(alwaysSearch || options.length > SEARCH_THRESHOLD);
 const selected = $derived(options.find((option) => option.value === value));
 const label = $derived(selected ? (selected.label ?? selected.value) : placeholder);
 const placeholderVisible = $derived(!selected);
 const filtered = $derived(query.trim() ? options.filter((option) => matches(option, query.trim())) : options);
 
 function matches(option: SelectOption, needle: string) {
-  return `${option.label ?? ''} ${option.value}`.toLowerCase().includes(needle.toLowerCase());
+  return (
+    option.value === pinnedValue ||
+    `${option.label ?? ''} ${option.hint ?? ''} ${option.value}`.toLowerCase().includes(needle.toLowerCase())
+  );
 }
 
 function openList() {
@@ -179,7 +188,12 @@ $effect(() => {
       onclick={() => (open ? close() : openList())}
       onkeydown={onTriggerKeydown}
     >
-      <span class="select-label">{label}</span>
+      <span class="select-label option-label"
+        >{#if selected?.globe}
+          <Globe size={14} aria-hidden="true" />
+        {/if}
+        {label}</span
+      >
       <span class="select-chevron" class:open><ChevronDown size={14} /></span>
     </button>
     <Popover.Portal>
@@ -200,7 +214,7 @@ $effect(() => {
           <div {...wrapperProps}>
             <div
               {...props}
-              class="select-panel"
+              class={`select-panel${stacked ? ' stacked' : ''}`}
               onfocusout={(event) => {
                 const target = event.relatedTarget;
                 if (target !== trigger && !(target instanceof Node && event.currentTarget.contains(target))) close();
@@ -238,7 +252,12 @@ $effect(() => {
                         aria-selected="false"
                         data-index={index}
                       >
-                        <span>{option.label ?? option.value}</span>
+                        <span class="option-label"
+                          >{#if option.globe}
+                            <Globe size={14} aria-hidden="true" />
+                          {/if}
+                          {option.label ?? option.value}</span
+                        >
                         {#if option.hint}
                           <small>{option.hint}</small>
                         {/if}
@@ -261,7 +280,12 @@ $effect(() => {
                           }
                         }}
                       >
-                        <span>{option.label ?? option.value}</span>
+                        <span class="option-label"
+                          >{#if option.globe}
+                            <Globe size={14} aria-hidden="true" />
+                          {/if}
+                          {option.label ?? option.value}</span
+                        >
                         {#if option.hint}
                           <small>{option.hint}</small>
                         {/if}
@@ -384,5 +408,19 @@ $effect(() => {
   color: var(--text-muted);
   font-family: var(--font-primary);
   font-size: 12px;
+}
+.option-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stacked .select-option {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+.stacked .select-option small {
+  margin-left: 0;
+  overflow-wrap: anywhere;
 }
 </style>

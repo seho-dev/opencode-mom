@@ -15,6 +15,65 @@ const group = (id, type) => ({
   updatedAt: '',
 });
 
+test('all target-bound Island IPCs forward the caller generation unchanged and never retry conflicts', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
+    const calls = [];
+    let failure;
+    const result = [];
+    const adapter = createTauriAdapter(async (command, args) => {
+      calls.push([command, args]);
+      if (failure) throw failure;
+      return result;
+    });
+    const answer = { field: 'choice' };
+    const cases = [
+      ['islandMessages', ['ses_same'], 'island_messages', { sessionId: 'ses_same' }],
+      [
+        'islandSend',
+        ['ses_same', 'text', 'msg_same'],
+        'island_send',
+        { sessionId: 'ses_same', text: 'text', messageId: 'msg_same' },
+      ],
+      [
+        'islandReplyPermission',
+        ['ses_same', 'request_same', 'once'],
+        'island_reply_permission',
+        { sessionId: 'ses_same', requestId: 'request_same', decision: 'once' },
+      ],
+      [
+        'islandReplyQuestion',
+        ['ses_same', 'request_same', answer],
+        'island_reply_question',
+        { sessionId: 'ses_same', formId: 'request_same', answer },
+      ],
+      [
+        'islandCancelQuestion',
+        ['ses_same', 'request_same'],
+        'island_cancel_question',
+        { sessionId: 'ses_same', formId: 'request_same' },
+      ],
+      ['islandInterrupt', ['ses_same'], 'island_interrupt', { sessionId: 'ses_same' }],
+    ];
+    for (const generation of [0, 17]) {
+      for (const [method, args, command, payload] of cases) {
+        assert.strictEqual(await adapter[method](...args, generation), result);
+        assert.deepEqual(calls.at(-1), [command, { ...payload, expectedConnectionGeneration: generation }]);
+      }
+    }
+    failure = { code: 'conflict', message: 'Connection generation changed' };
+    for (const [method, args, command, payload] of cases) {
+      const before = calls.length;
+      await assert.rejects(adapter[method](...args, 17), (cause) => cause === failure);
+      assert.equal(calls.length, before + 1);
+      assert.deepEqual(calls.at(-1), [command, { ...payload, expectedConnectionGeneration: 17 }]);
+    }
+  } finally {
+    await vite.close();
+  }
+});
+
 test('group IPC reads wire types and writes canonical types for save and copy', async () => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   try {
@@ -143,6 +202,46 @@ test('token usage records invoke the no-argument IPC command and preserve timest
   }
 });
 
+test('OpenCode installation, explicit checks, and guarded upgrades preserve IPC contracts and errors', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
+    const calls = [];
+    const installation = {
+      binaryPath: '/exact/bin/opencode',
+      version: '2.0.0',
+      method: 'curl',
+      canUpgrade: true,
+      upgradeReason: null,
+      manualCommand: null,
+    };
+    const update = { installation, latestVersion: '2.1.0', updateAvailable: true };
+    let failure;
+    const adapter = createTauriAdapter(async (...args) => {
+      calls.push(args);
+      if (failure) throw failure;
+      return args[0] === 'opencode_check_update' ? update : installation;
+    });
+    assert.strictEqual(await adapter.getOpenCodeInstallation(), installation);
+    assert.strictEqual(await adapter.checkOpenCodeUpdate(), update);
+    assert.strictEqual(await adapter.upgradeOpenCode('/exact/bin/opencode', '2.0.0', '2.1.0'), installation);
+    assert.deepEqual(calls, [
+      ['opencode_get_installation'],
+      ['opencode_check_update'],
+      [
+        'opencode_upgrade',
+        { expectedBinaryPath: '/exact/bin/opencode', expectedVersion: '2.0.0', targetVersion: '2.1.0' },
+      ],
+    ]);
+    failure = { code: 'conflict', message: 'Installation changed. Refresh first.' };
+    await assert.rejects(adapter.getOpenCodeInstallation(), failure);
+    await assert.rejects(adapter.checkOpenCodeUpdate(), failure);
+    await assert.rejects(adapter.upgradeOpenCode('/exact/bin/opencode', '2.0.0', '2.1.0'), failure);
+  } finally {
+    await vite.close();
+  }
+});
+
 test('MCP, skills, autostart, and lid protection preserve IPC commands, payloads, and results', async () => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   try {
@@ -191,6 +290,49 @@ test('MCP, skills, autostart, and lid protection preserve IPC commands, payloads
       ['set_lid_protection', { enabled: true }],
       ['set_lid_protection', { enabled: false }],
     ]);
+  } finally {
+    await vite.close();
+  }
+});
+
+test('local service target IPC preserves nullable fields and omitted, retained, new, and cleared passwords', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
+    const calls = [];
+    const status = {
+      target: { mode: 'shared', url: null, hasPassword: false },
+      connected: false,
+      url: null,
+      pid: null,
+      version: null,
+      error: null,
+    };
+    let failure;
+    const adapter = createTauriAdapter(async (...args) => {
+      calls.push(args);
+      if (failure) throw failure;
+      return status;
+    });
+    assert.strictEqual(await adapter.getOpenCodeServiceStatus(), status);
+    assert.strictEqual(await adapter.setOpenCodeServiceTarget(null), status);
+    await adapter.setOpenCodeServiceTarget('http://127.0.0.1:4096');
+    await adapter.setOpenCodeServiceTarget('http://127.0.0.1:4096', undefined);
+    await adapter.setOpenCodeServiceTarget('http://127.0.0.1:4096', null);
+    await adapter.setOpenCodeServiceTarget('http://127.0.0.1:4096', 'local-secret');
+    await adapter.setOpenCodeServiceTarget('http://127.0.0.1:4096', '');
+    assert.deepEqual(calls, [
+      ['opencode_get_service_status'],
+      ['opencode_set_service_target', { url: null }],
+      ['opencode_set_service_target', { url: 'http://127.0.0.1:4096' }],
+      ['opencode_set_service_target', { url: 'http://127.0.0.1:4096' }],
+      ['opencode_set_service_target', { url: 'http://127.0.0.1:4096', password: null }],
+      ['opencode_set_service_target', { url: 'http://127.0.0.1:4096', password: 'local-secret' }],
+      ['opencode_set_service_target', { url: 'http://127.0.0.1:4096', password: '' }],
+    ]);
+    failure = { code: 'busy', message: 'Disable monitoring and restore power settings first.' };
+    await assert.rejects(adapter.getOpenCodeServiceStatus(), failure);
+    await assert.rejects(adapter.setOpenCodeServiceTarget(null), failure);
   } finally {
     await vite.close();
   }

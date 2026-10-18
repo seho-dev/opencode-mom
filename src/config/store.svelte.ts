@@ -5,11 +5,22 @@ import type {
   AppState,
   CommandError,
   LocalePreference,
+  OpenCodeInstallation,
+  OpenCodeServiceStatus,
+  OpenCodeUpdateCheck,
+  ProjectFolder,
   ProjectPage,
   ThemePreference,
   UpdateCheck,
 } from '$src/types/app.js';
 import type { Group } from '$src/types/groups.js';
+import type {
+  IslandAnswer,
+  IslandMessage,
+  IslandPermissionDecision,
+  IslandState,
+  IslandView,
+} from '$src/types/island.js';
 import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
 import type { LidState } from '$src/types/power.js';
@@ -54,14 +65,18 @@ const serializeError = (value: unknown): CommandError => {
 };
 const snapshot = <T>(value: T): T => structuredClone(value);
 
-export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = true) {
+export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = true, initialize = true) {
   let providers = $state<ProviderDef[]>([]);
   let agents = $state<AgentDefinition[]>([]);
   let groups = $state<Group[]>([]);
   let selectedGroupId = $state<string | null>(null);
-  let loading = $state(true);
-  let splashLoading = $state(true);
-  let initializing = true;
+  let projects = $state<ProjectFolder[]>([]);
+  let selectedProjectId = $state<string | null>(null);
+  let projectSaving = $state(false);
+  let projectVersion = 0;
+  let loading = $state(initialize);
+  let splashLoading = $state(initialize);
+  let initializing = initialize;
   let stateRequests = 0;
   let stateRequestSeq = 0;
   let saving = $state(false);
@@ -78,17 +93,33 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
   let refreshAllError = $state<CommandError | null>(null);
   // Guards against out-of-order catalog responses when loads overlap (startup prefetch, group switch, manual refresh).
   let catalogRequestSeq = 0;
+  let serviceTargetVersion = $state(0);
+  let serviceTargetRequests = 0;
+  function assertServiceTarget(version: number) {
+    if (version !== serviceTargetVersion || serviceTargetRequests > 0)
+      throw {
+        code: 'conflict',
+        message: 'The OpenCode service target changed. Refresh to read the current target.',
+      } satisfies CommandError;
+  }
   let preferences = $state<AppPreferences>({ theme: 'dark', locale: 'en' });
   function syncPreferencesToDom() {
     if (typeof document === 'undefined') return;
     document.documentElement.setAttribute('data-theme', preferences.theme);
     document.documentElement.lang = preferences.locale;
   }
-  const apply = (state: AppState, resetForms = false) => {
+  const apply = (state: AppState, resetForms = false, readProjectVersion = projectVersion) => {
     providers = state.providers;
     agents = state.agents;
     groups = state.groups;
     selectedGroupId = state.selectedGroupId ?? null;
+    // Older global reads must not revert a completed project persistence operation.
+    if (readProjectVersion === projectVersion) {
+      projects = state.projects ?? [];
+      selectedProjectId = projects.some((project) => project.id === state.selectedProjectId)
+        ? (state.selectedProjectId ?? null)
+        : null;
+    }
     preferences = state.preferences;
     syncPreferencesToDom();
     if (resetForms) formResetVersion += 1;
@@ -133,10 +164,24 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       saving = false;
     }
   };
+  const runProject = async <T>(action: () => Promise<T>, commit: (result: T) => void): Promise<T> => {
+    if (projectSaving)
+      throw { code: 'busy', message: 'A project operation is already in progress.' } satisfies CommandError;
+    projectSaving = true;
+    try {
+      const result = await action();
+      projectVersion += 1;
+      commit(result);
+      return result;
+    } finally {
+      projectSaving = false;
+    }
+  };
   async function refresh(keepDraft = false, rejectCatalog = false) {
     loading = true;
     stateRequests += 1;
     const request = ++stateRequestSeq;
+    const readProjectVersion = projectVersion;
     if (!keepDraft) {
       error = null;
       draftRecovery = null;
@@ -147,7 +192,7 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     );
     try {
       const state = await adapter.loadAppState();
-      if (request === stateRequestSeq) apply(state, !keepDraft);
+      if (request === stateRequestSeq) apply(state, !keepDraft, readProjectVersion);
     } catch (cause) {
       if (request === stateRequestSeq) error = serializeError(cause);
     } finally {
@@ -193,16 +238,20 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     error = null;
   }
   async function loadCatalog(provider?: string) {
+    const targetVersion = serviceTargetVersion;
+    assertServiceTarget(targetVersion);
     const seq = ++catalogRequestSeq;
     catalogLoading = true;
     catalogError = null;
     try {
       const result = await adapter.opencodeListModels(provider);
+      assertServiceTarget(targetVersion);
       if (seq === catalogRequestSeq) catalog = result;
       return result;
     } catch (cause) {
       const err = serializeError(cause);
-      if (seq === catalogRequestSeq) catalogError = err;
+      if (seq === catalogRequestSeq && targetVersion === serviceTargetVersion && serviceTargetRequests === 0)
+        catalogError = err;
       throw err;
     } finally {
       if (seq === catalogRequestSeq) catalogLoading = false;
@@ -212,7 +261,7 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     initializing = false;
     if (!reloading) splashLoading = false;
   };
-  void refresh().then(finishInitialization, finishInitialization);
+  if (initialize) void refresh().then(finishInitialization, finishInitialization);
   return {
     get providers() {
       return providers;
@@ -225,6 +274,15 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     },
     get selectedGroupId() {
       return selectedGroupId;
+    },
+    get projects() {
+      return projects;
+    },
+    get selectedProjectId() {
+      return selectedProjectId;
+    },
+    get projectSaving() {
+      return projectSaving;
     },
     get preferences() {
       return preferences;
@@ -256,6 +314,9 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     get formResetVersion() {
       return formResetVersion;
     },
+    get serviceTargetVersion() {
+      return serviceTargetVersion;
+    },
     get catalog() {
       return catalog;
     },
@@ -277,6 +338,10 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     setLocale(locale: LocalePreference) {
       return persistPreferences({ ...preferences, locale });
     },
+    applyPreferences(next: AppPreferences) {
+      preferences = next;
+      syncPreferencesToDom();
+    },
     refresh,
     refreshAll,
     reloadOpencode,
@@ -289,8 +354,71 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     checkForUpdates(): Promise<UpdateCheck> {
       return adapter.checkForUpdates();
     },
+    getOpenCodeInstallation(): Promise<OpenCodeInstallation> {
+      return adapter.getOpenCodeInstallation();
+    },
+    getOpenCodeServiceStatus(): Promise<OpenCodeServiceStatus> {
+      return adapter.getOpenCodeServiceStatus();
+    },
+    async setOpenCodeServiceTarget(url: string | null, password?: string | null): Promise<OpenCodeServiceStatus> {
+      serviceTargetRequests += 1;
+      try {
+        const status = await adapter.setOpenCodeServiceTarget(url, password);
+        serviceTargetVersion += 1;
+        catalogRequestSeq += 1;
+        catalog = [];
+        catalogError = null;
+        catalogLoading = false;
+        return status;
+      } finally {
+        serviceTargetRequests -= 1;
+      }
+    },
+    checkOpenCodeUpdate(): Promise<OpenCodeUpdateCheck> {
+      return adapter.checkOpenCodeUpdate();
+    },
+    upgradeOpenCode(
+      expectedBinaryPath: string,
+      expectedVersion: string,
+      targetVersion: string,
+    ): Promise<OpenCodeInstallation> {
+      return adapter.upgradeOpenCode(expectedBinaryPath, expectedVersion, targetVersion);
+    },
     openProjectPage(page: ProjectPage): Promise<void> {
       return adapter.openProjectPage(page);
+    },
+    pickProjectFolder(): Promise<string | null> {
+      return adapter.pickProjectFolder();
+    },
+    addProject(path: string): Promise<ProjectFolder> {
+      return runProject(
+        () => adapter.addProject(path),
+        (project) => {
+          projects = [...projects.filter((entry) => entry.id !== project.id && entry.path !== project.path), project];
+          selectedProjectId = project.id;
+        },
+      );
+    },
+    removeProject(id: string): Promise<void> {
+      return runProject(
+        () => adapter.removeProject(id),
+        () => {
+          projects = projects.filter((project) => project.id !== id);
+          if (selectedProjectId === id) selectedProjectId = null;
+        },
+      );
+    },
+    selectProject(id: string | null): Promise<void> {
+      return runProject(
+        async () => {
+          if (id !== null && !projects.some((project) => project.id === id))
+            throw { code: 'not_found', message: 'Project not found.' } satisfies CommandError;
+          await adapter.selectProject(id);
+        },
+        () => {
+          selectedProjectId = id;
+        },
+      );
     },
     async createProvider(value: ProviderDef) {
       await run('createProvider', value, () => adapter.createProvider(value));
@@ -316,44 +444,50 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       await run('deleteModel', { ref }, () => adapter.deleteModel(ref));
       await refresh();
     },
-    async createAgent(value: AgentDefinition) {
-      await run('createAgent', value, () => adapter.createAgent(value));
+    listAgents(projectId?: string | null): Promise<AgentDefinition[]> {
+      return adapter.listAgents(projectId);
+    },
+    getAgent(id: string, projectId?: string | null): Promise<AgentDefinition> {
+      return adapter.getAgent(id, projectId);
+    },
+    async createAgent(value: AgentDefinition, projectId?: string | null) {
+      await run('createAgent', value, () => adapter.createAgent(value, projectId));
       await refresh();
     },
-    async updateAgent(value: AgentDefinition) {
-      await run('updateAgent', value, () => adapter.updateAgent(value));
+    async updateAgent(value: AgentDefinition, projectId?: string | null) {
+      await run('updateAgent', value, () => adapter.updateAgent(value, projectId));
       await refresh();
     },
-    async deleteAgent(id: string, storage?: AgentDefinition['storage']) {
-      await run('deleteAgent', { id, storage }, () => adapter.deleteAgent(id, storage));
+    async deleteAgent(id: string, storage?: AgentDefinition['storage'], projectId?: string | null) {
+      await run('deleteAgent', { id, storage }, () => adapter.deleteAgent(id, storage, projectId));
       await refresh();
     },
-    listMcps(): Promise<McpList> {
-      return adapter.listMcps();
+    listMcps(projectId?: string | null): Promise<McpList> {
+      return adapter.listMcps(projectId);
     },
-    getMcp(name: string): Promise<McpServer> {
-      return adapter.getMcp(name);
+    getMcp(name: string, projectId?: string | null): Promise<McpServer> {
+      return adapter.getMcp(name, projectId);
     },
-    createMcp(draft: McpDraft): Promise<McpServer> {
-      return run('createMcp', draft, () => adapter.createMcp(draft));
+    createMcp(draft: McpDraft, projectId?: string | null): Promise<McpServer> {
+      return run('createMcp', draft, () => adapter.createMcp(draft, projectId));
     },
-    updateMcp(draft: McpUpdate): Promise<McpServer> {
-      return run('updateMcp', draft, () => adapter.updateMcp(draft));
+    updateMcp(draft: McpUpdate, projectId?: string | null): Promise<McpServer> {
+      return run('updateMcp', draft, () => adapter.updateMcp(draft, projectId));
     },
-    async deleteMcp(name: string): Promise<void> {
-      await run('deleteMcp', { name }, () => adapter.deleteMcp(name));
+    async deleteMcp(name: string, projectId?: string | null): Promise<void> {
+      await run('deleteMcp', { name }, () => adapter.deleteMcp(name, projectId));
     },
-    listSkills(): Promise<SkillList> {
-      return adapter.listSkills();
+    listSkills(projectId?: string | null): Promise<SkillList> {
+      return adapter.listSkills(projectId);
     },
-    getSkill(id: string): Promise<SkillEntry> {
-      return adapter.getSkill(id);
+    getSkill(id: string, projectId?: string | null): Promise<SkillEntry> {
+      return adapter.getSkill(id, projectId);
     },
-    createSkill(draft: SkillDraft): Promise<SkillEntry> {
-      return run('createSkill', draft, () => adapter.createSkill(draft));
+    createSkill(draft: SkillDraft, projectId?: string | null): Promise<SkillEntry> {
+      return run('createSkill', draft, () => adapter.createSkill(draft, projectId));
     },
-    updateSkill(draft: SkillUpdate): Promise<SkillEntry> {
-      return run('updateSkill', draft, () => adapter.updateSkill(draft));
+    updateSkill(draft: SkillUpdate, projectId?: string | null): Promise<SkillEntry> {
+      return run('updateSkill', draft, () => adapter.updateSkill(draft, projectId));
     },
     getAutostart(): Promise<boolean> {
       return adapter.getAutostart();
@@ -366,6 +500,54 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     },
     setLidProtection(enabled: boolean): Promise<LidState> {
       return adapter.setLidProtection(enabled);
+    },
+    getIslandState(): Promise<IslandState> {
+      return adapter.getIslandState();
+    },
+    setIslandEnabled(enabled: boolean): Promise<IslandState> {
+      return adapter.setIslandEnabled(enabled);
+    },
+    refreshIsland(): Promise<IslandState> {
+      return adapter.refreshIsland();
+    },
+    setIslandView(view: IslandView): Promise<void> {
+      return adapter.setIslandView(view);
+    },
+    setIslandExpanded(expanded: boolean): Promise<void> {
+      return adapter.setIslandExpanded(expanded);
+    },
+    islandMessages(sessionId: string, expectedConnectionGeneration: number): Promise<IslandMessage[]> {
+      return adapter.islandMessages(sessionId, expectedConnectionGeneration);
+    },
+    islandSend(
+      sessionId: string,
+      text: string,
+      messageId: string,
+      expectedConnectionGeneration: number,
+    ): Promise<void> {
+      return adapter.islandSend(sessionId, text, messageId, expectedConnectionGeneration);
+    },
+    islandReplyPermission(
+      sessionId: string,
+      requestId: string,
+      decision: IslandPermissionDecision,
+      expectedConnectionGeneration: number,
+    ): Promise<void> {
+      return adapter.islandReplyPermission(sessionId, requestId, decision, expectedConnectionGeneration);
+    },
+    islandReplyQuestion(
+      sessionId: string,
+      formId: string,
+      answer: IslandAnswer,
+      expectedConnectionGeneration: number,
+    ): Promise<void> {
+      return adapter.islandReplyQuestion(sessionId, formId, answer, expectedConnectionGeneration);
+    },
+    islandCancelQuestion(sessionId: string, formId: string, expectedConnectionGeneration: number): Promise<void> {
+      return adapter.islandCancelQuestion(sessionId, formId, expectedConnectionGeneration);
+    },
+    islandInterrupt(sessionId: string, expectedConnectionGeneration: number): Promise<void> {
+      return adapter.islandInterrupt(sessionId, expectedConnectionGeneration);
     },
     async saveGroup(value: Group) {
       await run('saveGroup', value, () => adapter.saveGroup(value));
@@ -385,8 +567,12 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       }
     },
     loadCatalog,
-    loadTokenUsageRecords(): Promise<TokenUsageRecord[]> {
-      return adapter.opencodeTokenUsageRecords();
+    async loadTokenUsageRecords(): Promise<TokenUsageRecord[]> {
+      const targetVersion = serviceTargetVersion;
+      assertServiceTarget(targetVersion);
+      const records = await adapter.opencodeTokenUsageRecords();
+      assertServiceTarget(targetVersion);
+      return records;
     },
     async refreshCatalog(provider?: string) {
       return loadCatalog(provider);

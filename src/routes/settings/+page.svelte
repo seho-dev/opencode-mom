@@ -10,6 +10,8 @@ import { getI18n } from '$src/i18n/context.js';
 import { toast } from '$src/shell/toast.svelte.js';
 import AppUpdates from './AppUpdates.svelte';
 import LidProtection from './LidProtection.svelte';
+import MiniIsland from './MiniIsland.svelte';
+import OpenCodeSettings from './OpenCodeSettings.svelte';
 
 const config = getConfig();
 const i18n = getI18n();
@@ -112,5 +114,7 @@ onDestroy(() => {
     />
   </div>
   <LidProtection />
+  <MiniIsland />
+  <OpenCodeSettings />
   <AppUpdates />
 </section>

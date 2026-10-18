@@ -15,17 +15,25 @@ import SplashScreen from '$src/shell/SplashScreen.svelte';
 
 let { children }: { children: Snippet } = $props();
 const isTray = $derived(page.url.pathname === '/tray');
-setConfig(createConfigStore(createCommandAdapter(), page.url.pathname !== '/tray'));
+const isIsland = $derived(page.url.pathname === '/island');
+setConfig(
+  createConfigStore(
+    createCommandAdapter(),
+    page.url.pathname !== '/tray' && page.url.pathname !== '/island',
+    page.url.pathname !== '/island',
+  ),
+);
 const config = getConfig();
 setI18n(createI18n(() => config.preferences.locale));
 
 $effect(() => {
   document.documentElement.classList.toggle('tray-window', isTray);
-  return () => document.documentElement.classList.remove('tray-window');
+  document.documentElement.classList.toggle('island-window', isIsland);
+  return () => document.documentElement.classList.remove('tray-window', 'island-window');
 });
 
 onMount(() => {
-  if (!isTauri() || isTray) return;
+  if (!isTauri() || isTray || isIsland) return;
   let disposed = false;
   const unlisteners: UnlistenFn[] = [];
   const track = (pending: Promise<UnlistenFn>) => {
@@ -84,9 +92,17 @@ onMount(() => {
 });
 </script>
 
-{#if isTray}
+{#if isTray || isIsland}
   {@render children()}
 {:else}
   <AppShell>{@render children()}</AppShell>
   <SplashScreen visible={config.splashLoading} />
 {/if}
+
+<style>
+:global(html.island-window),
+:global(html.island-window body) {
+  background: transparent;
+  overflow: hidden;
+}
+</style>

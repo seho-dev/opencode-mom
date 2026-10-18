@@ -4,7 +4,9 @@ import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { Button } from '$src/components/button/index.js';
 import { isNotFound, readError } from '$src/components/configuration/read-error.js';
+import GlobalDestination from '$src/components/GlobalDestination.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import ResourceScopeNotice from '$src/components/ResourceScopeNotice.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { McpServer } from '$src/types/mcp.js';
@@ -23,11 +25,17 @@ let deleting = $state<McpServer | null>(null);
 let editing = $state(false);
 let saved = $state(false);
 let request = 0;
-const server = $derived(loadedId === page.params.id ? data : null);
+const projectId = $derived(page.url.searchParams.get('project'));
+const readonly = $derived(projectId !== null || page.url.searchParams.get('readonly') === '1');
+const identity = $derived(`${projectId ?? 'global'}:${page.params.id ?? ''}`);
+const server = $derived(loadedId === identity ? data : null);
 const fields = $derived(Object.entries((maskConfig(server?.config ?? {}) ?? {}) as Record<string, unknown>));
 
 async function load(id: string, edit = false) {
   const seq = ++request;
+  const scope = projectId;
+  const key = `${scope ?? 'global'}:${id}`;
+  const readOnly = readonly;
   loading = true;
   data = null;
   deleting = null;
@@ -36,11 +44,11 @@ async function load(id: string, edit = false) {
   error = '';
   missing = false;
   try {
-    const result = await config.getMcp(id);
+    const result = await (scope === null ? config.getMcp(id) : config.getMcp(id, scope));
     if (seq !== request) return;
     data = result;
-    loadedId = id;
-    editing = edit;
+    loadedId = key;
+    editing = edit && !readOnly;
   } catch (cause) {
     if (seq === request) {
       error = readError(cause);
@@ -72,7 +80,7 @@ $effect(() => {
           aria-label={i18n.t('configuration.refresh')}
           ><RefreshCw size={14} /></Button
         >
-        {#if server}
+        {#if server && !readonly}
           <Button variant="outline" size="sm" onclick={() => { editing = true; saved = false; }}
             ><Pencil size={14} />{i18n.t('configuration.edit')}</Button
           >
@@ -84,7 +92,11 @@ $effect(() => {
     {/if}
   </PageHead>
 </div>
-{#if saved || page.url.searchParams.get('saved') === '1'}
+<ResourceScopeNotice {projectId} {readonly} />
+{#if editing}
+  <GlobalDestination />
+{/if}
+{#if !readonly && (saved || page.url.searchParams.get('saved') === '1')}
   <div class="state-banner success" role="status">{i18n.t('configuration.saved')}</div>
 {/if}
 {#if loading}
@@ -92,15 +104,15 @@ $effect(() => {
 {:else if error}
   <div class="state-banner error" role="alert">
     <span class="min-w-0 break-words [overflow-wrap:anywhere]"
-      >{i18n.t(missing ? 'mcp.notFound' : 'mcp.loadFailed')} {error}</span
+      >{i18n.t(missing ? projectId !== null ? 'scope.notFound' : 'mcp.notFound' : 'mcp.loadFailed')} {error}</span
     >
     <Button variant="outline" size="sm" onclick={() => load(page.params.id ?? '')}
       >{i18n.t('configuration.retry')}</Button
     >
   </div>
 {:else if server}
-  {#if editing}
-    {#key server.name}
+  {#if editing && !readonly}
+    {#key identity}
       <McpForm
         source={server}
         onCancel={() => { editing = false; }}
@@ -125,7 +137,9 @@ $effect(() => {
           </dd>
         </div>
         <div class="min-w-0 sm:col-span-2">
-          <dt class="text-xs text-[var(--text-muted)]">{i18n.t('configuration.globalSources')}</dt>
+          <dt class="text-xs text-[var(--text-muted)]">
+            {i18n.t(projectId !== null ? 'configuration.source' : 'configuration.globalSources')}
+          </dt>
           <dd class="mt-2 ml-0">
             <ul class="m-0 pl-4 space-y-1 break-words [overflow-wrap:anywhere]">
               {#each server.sourcePaths.length ? server.sourcePaths : [server.sourcePath] as path}

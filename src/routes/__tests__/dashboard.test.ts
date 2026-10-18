@@ -85,11 +85,17 @@ function expectTokens(input: number | null, output: number | null) {
   expect(outputValue?.getAttribute('title')).toBe(output === null ? null : output.toLocaleString('en-US'));
 }
 function labeledButton(name: string) {
-  return screen.getByLabelText(name, { selector: 'button' }) as HTMLButtonElement;
+  const container =
+    name.startsWith('Usage ') || name === 'Heatmap period' || name === 'Year'
+      ? document.querySelector(name.startsWith('Usage ') ? '.usage-controls' : '.heatmap-controls')
+      : document.body;
+  return within(container as HTMLElement).getByLabelText(name, { selector: 'button' }) as HTMLButtonElement;
 }
 async function select(name: string, option: string) {
-  await fireEvent.click(labeledButton(name));
-  await fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: option }));
+  const trigger = labeledButton(name);
+  await fireEvent.click(trigger);
+  const panel = document.getElementById(trigger.getAttribute('aria-controls') ?? '')?.parentElement as HTMLElement;
+  await fireEvent.click(within(within(panel).getByRole('listbox')).getByRole('option', { name: option }));
 }
 async function readyDialog(name: string) {
   const dialog = await screen.findByRole('dialog', { name });

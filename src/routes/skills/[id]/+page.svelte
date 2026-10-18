@@ -3,7 +3,9 @@ import { ArrowLeft, Pencil, RefreshCw } from '@lucide/svelte';
 import { page } from '$app/state';
 import { Button } from '$src/components/button/index.js';
 import { isNotFound, readError } from '$src/components/configuration/read-error.js';
+import GlobalDestination from '$src/components/GlobalDestination.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import ResourceScopeNotice from '$src/components/ResourceScopeNotice.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { SkillEntry } from '$src/types/skills.js';
@@ -19,10 +21,16 @@ let missing = $state(false);
 let editing = $state(false);
 let saved = $state(false);
 let request = 0;
-const skill = $derived(loadedId === page.params.id ? data : null);
+const projectId = $derived(page.url.searchParams.get('project'));
+const readonly = $derived(projectId !== null || page.url.searchParams.get('readonly') === '1');
+const identity = $derived(`${projectId ?? 'global'}:${page.params.id ?? ''}`);
+const skill = $derived(loadedId === identity ? data : null);
 
 async function load(id: string, edit = false) {
   const seq = ++request;
+  const scope = projectId;
+  const key = `${scope ?? 'global'}:${id}`;
+  const readOnly = readonly;
   loading = true;
   data = null;
   editing = false;
@@ -30,11 +38,11 @@ async function load(id: string, edit = false) {
   error = '';
   missing = false;
   try {
-    const result = await config.getSkill(id);
+    const result = await (scope === null ? config.getSkill(id) : config.getSkill(id, scope));
     if (seq !== request) return;
     data = result;
-    loadedId = id;
-    editing = edit && result.kind === 'local';
+    loadedId = key;
+    editing = edit && result.kind === 'local' && !readOnly;
   } catch (cause) {
     if (seq === request) {
       error = readError(cause);
@@ -66,7 +74,7 @@ $effect(() => {
           onclick={() => load(page.params.id ?? '')}
           ><RefreshCw size={14} /></Button
         >
-        {#if skill?.kind === 'local'}
+        {#if skill?.kind === 'local' && !readonly}
           <Button variant="outline" size="sm" onclick={() => { editing = true; saved = false; }}
             ><Pencil size={14} />{i18n.t('configuration.edit')}</Button
           >
@@ -75,7 +83,11 @@ $effect(() => {
     {/if}
   </PageHead>
 </div>
-{#if saved || page.url.searchParams.get('saved') === '1'}
+<ResourceScopeNotice {projectId} {readonly} />
+{#if editing}
+  <GlobalDestination />
+{/if}
+{#if !readonly && (saved || page.url.searchParams.get('saved') === '1')}
   <div class="state-banner success" role="status">{i18n.t('configuration.saved')}</div>
 {/if}
 {#if loading}
@@ -83,15 +95,15 @@ $effect(() => {
 {:else if error}
   <div class="state-banner error" role="alert">
     <span class="min-w-0 break-words [overflow-wrap:anywhere]"
-      >{i18n.t(missing ? 'skills.notFound' : 'skills.loadFailed')} {error}</span
+      >{i18n.t(missing ? projectId !== null ? 'scope.notFound' : 'skills.notFound' : 'skills.loadFailed')} {error}</span
     >
     <Button variant="outline" size="sm" onclick={() => load(page.params.id ?? '')}
       >{i18n.t('configuration.retry')}</Button
     >
   </div>
 {:else if skill}
-  {#if editing && skill.kind === 'local'}
-    {#key skill.id}
+  {#if editing && skill.kind === 'local' && !readonly}
+    {#key identity}
       <SkillForm
         source={skill}
         onCancel={() => { editing = false; }}

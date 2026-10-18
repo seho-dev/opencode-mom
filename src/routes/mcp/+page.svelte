@@ -1,6 +1,6 @@
 <script lang="ts">
 import { Eye, Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
-import { onDestroy, onMount } from 'svelte';
+import { untrack } from 'svelte';
 import { page as route } from '$app/state';
 import { Button } from '$src/components/button/index.js';
 import Diagnostics from '$src/components/configuration/Diagnostics.svelte';
@@ -8,6 +8,7 @@ import { readError } from '$src/components/configuration/read-error.js';
 import DataTable from '$src/components/DataTable.svelte';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import ResourceScope from '$src/components/ResourceScope.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { McpServer } from '$src/types/mcp.js';
@@ -17,6 +18,12 @@ import DeleteMcpDialog from './DeleteMcpDialog.svelte';
 const config = getConfig();
 const i18n = getI18n();
 let servers = $state<McpServer[]>([]);
+let globalServers = $state<McpServer[]>([]);
+let globalDiagnostics = $state<string[]>([]);
+let globalError = $state('');
+let globalLoading = $state(false);
+let showGlobal = $state(false);
+const projectId = $derived(config.selectedProjectId ?? null);
 let diagnostics = $state<string[]>([]);
 let loading = $state(true);
 let error = $state('');
@@ -26,8 +33,13 @@ let removed = $state(false);
 let page = $state(1);
 const pageSize = 10;
 let request = 0;
+let globalRequest = 0;
+const entries = $derived([
+  ...servers.map((entry) => ({ entry, projectId })),
+  ...(projectId && showGlobal ? globalServers.map((entry) => ({ entry, projectId: null })) : []),
+]);
 const filtered = $derived(
-  servers.filter((server) =>
+  entries.filter(({ entry: server }) =>
     `${server.name} ${server.type} ${maskTarget(server)}`.toLowerCase().includes(query.trim().toLowerCase()),
   ),
 );
@@ -41,11 +53,12 @@ $effect(() => {
 
 async function load() {
   const id = ++request;
+  const scope = projectId;
   loading = true;
   error = '';
   diagnostics = [];
   try {
-    const result = await config.listMcps();
+    const result = await (scope === null ? config.listMcps() : config.listMcps(scope));
     if (id !== request) return;
     servers = result.data;
     diagnostics = result.diagnostics;
@@ -58,27 +71,89 @@ async function load() {
     if (id === request) loading = false;
   }
 }
-onMount(() => {
+$effect(() => {
+  void projectId;
+  servers = [];
+  query = '';
+  page = 1;
+  deleting = null;
+  removed = false;
+  untrack(() => {
+    void load();
+  });
+  return () => {
+    request += 1;
+  };
+});
+$effect(() => {
+  const compare = projectId !== null && showGlobal;
+  globalServers = [];
+  globalDiagnostics = [];
+  globalError = '';
+  if (compare)
+    untrack(() => {
+      void loadGlobal();
+    });
+  else globalLoading = false;
+  return () => {
+    globalRequest += 1;
+  };
+});
+async function loadGlobal() {
+  const id = ++globalRequest;
+  globalLoading = true;
+  globalError = '';
+  globalServers = [];
+  globalDiagnostics = [];
+  try {
+    const result = await config.listMcps();
+    if (id !== globalRequest) return;
+    globalServers = result.data;
+    globalDiagnostics = result.diagnostics;
+  } catch (cause) {
+    if (id === globalRequest) globalError = readError(cause);
+  } finally {
+    if (id === globalRequest) globalLoading = false;
+  }
+}
+function refresh() {
   void load();
-});
-onDestroy(() => {
-  request += 1;
-});
+  if (projectId && showGlobal) void loadGlobal();
+}
+function href(name: string, scope: string | null) {
+  return `/mcp/${encodeURIComponent(name)}${scope !== null ? `?project=${encodeURIComponent(scope)}` : projectId ? '?readonly=1' : ''}`;
+}
 </script>
 
 <svelte:head><title>{i18n.t('mcp.metaTitle')}</title></svelte:head>
 <PageHead eyebrow={i18n.t('mcp.eyebrow')} title={i18n.t('mcp.title')}>
   <div class="flex flex-wrap justify-end gap-2">
-    <Button variant="outline" disabled={loading} onclick={load}>
+    <Button variant="outline" disabled={loading || globalLoading || config.saving} onclick={refresh}>
       <RefreshCw size={14} />{i18n.t('configuration.refresh')}
     </Button>
-    <Button href="/mcp/new"><Plus size={14} />{i18n.t('mcp.newTitle')}</Button>
+    {#if projectId === null}
+      <Button href="/mcp/new"><Plus size={14} />{i18n.t('mcp.newTitle')}</Button>
+    {/if}
   </div>
 </PageHead>
-{#if removed || route.url.searchParams.get('removed') === '1'}
+<ResourceScope disabled={!!deleting || config.saving} bind:showGlobal />
+{#if projectId === null && (removed || route.url.searchParams.get('removed') === '1')}
   <div class="state-banner success" role="status">{i18n.t('mcp.removed')}</div>
 {/if}
 <Diagnostics messages={diagnostics} />
+{#if projectId && showGlobal}
+  <Diagnostics messages={globalDiagnostics} />
+  {#if globalLoading}
+    <div class="state-banner" role="status">{i18n.t('scope.global')} · {i18n.t('common.loadingConfiguration')}</div>
+  {/if}
+  {#if globalError}
+    <div class="state-banner error" role="alert">
+      <span class="min-w-0 break-words [overflow-wrap:anywhere]"
+        >{i18n.t('scope.globalComparisonFailed')} {globalError}</span
+      ><Button variant="outline" size="sm" onclick={loadGlobal}>{i18n.t('configuration.retry')}</Button>
+    </div>
+  {/if}
+{/if}
 {#if error}
   <div class="state-banner error" role="alert">
     <span class="min-w-0 break-words [overflow-wrap:anywhere]">{i18n.t('mcp.loadFailed')} {error}</span>
@@ -105,14 +180,17 @@ onDestroy(() => {
     {:else if error}
       <EmptyTableRow colspan={6} message={i18n.t('mcp.loadFailed')} />
     {:else if !filtered.length}
-      <EmptyTableRow colspan={6} message={i18n.t(query.trim() ? 'common.noMatches' : 'mcp.empty')} />
+      <EmptyTableRow
+        colspan={6}
+        message={i18n.t(query.trim() ? 'common.noMatches' : projectId ? 'scope.empty' : 'mcp.empty')}
+      />
     {:else}
-      {#each rows as server (server.name)}
+      {#each rows as { entry: server, projectId: rowProjectId } (`${rowProjectId ?? 'global'}:${server.name}`)}
         <tr>
           <td class="model-name">
             <a
               class="inline-block max-w-56 break-words [overflow-wrap:anywhere] hover:text-[var(--accent-primary)] hover:underline"
-              href={`/mcp/${encodeURIComponent(server.name)}`}
+              href={href(server.name, rowProjectId)}
               >{server.name}</a
             >
           </td>
@@ -127,32 +205,40 @@ onDestroy(() => {
             >
           </td>
           <td>
+            {#if projectId}
+              <span
+                class="mb-1 inline-block border border-[var(--border-default)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]"
+                >{i18n.t(rowProjectId ? 'scope.project' : 'scope.global')}</span
+              >
+            {/if}
             <span class="block max-w-64 break-words text-[var(--text-secondary)] [overflow-wrap:anywhere]"
               >{server.sourcePath}</span
             >
           </td>
           <td class="row-actions">
             <Button
-              href={`/mcp/${encodeURIComponent(server.name)}`}
+              href={href(server.name, rowProjectId)}
               variant="ghost"
               size="icon-sm"
               aria-label={i18n.t('configuration.viewAria', { name: server.name })}
               ><Eye size={14} /></Button
             >
-            <Button
-              href={`/mcp/${encodeURIComponent(server.name)}?edit=1`}
-              variant="ghost"
-              size="icon-sm"
-              aria-label={i18n.t('configuration.editAria', { name: server.name })}
-              ><Pencil size={14} /></Button
-            >
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={i18n.t('mcp.deleteAria', { name: server.name })}
-              onclick={() => (deleting = server)}
-              ><Trash2 size={14} /></Button
-            >
+            {#if projectId === null}
+              <Button
+                href={`/mcp/${encodeURIComponent(server.name)}?edit=1`}
+                variant="ghost"
+                size="icon-sm"
+                aria-label={i18n.t('configuration.editAria', { name: server.name })}
+                ><Pencil size={14} /></Button
+              >
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={i18n.t('mcp.deleteAria', { name: server.name })}
+                onclick={() => (deleting = server)}
+                ><Trash2 size={14} /></Button
+              >
+            {/if}
           </td>
         </tr>
       {/each}

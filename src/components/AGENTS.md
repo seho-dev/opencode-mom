@@ -39,6 +39,10 @@ components/                       # Shared UI library; no top-level barrel
 ├── EmptyTableRow.svelte           # Empty-state tr/td with colspan and message
 ├── FormActions.svelte             # Shared form-actions snippet container
 ├── PageHead.svelte                # Eyebrow/title with actions or children snippet
+├── ResourceScope.svelte           # Local shared project/Global picker and forget-folder dialog
+├── ResourceScopeNotice.svelte     # Read-only detail destination and selected root path
+├── GlobalDestination.svelte       # Global write destination notice on direct forms
+├── __tests__/                     # Scope picker tests and local reactive config double
 ├── Pagination.svelte              # Bindable page and previous/next controls
 └── Select.svelte                  # Fixed-choice Bits UI Popover picker; search above eight options
 ```
@@ -52,6 +56,7 @@ components/                       # Shared UI library; no top-level barrel
 | Modal composition | `dialog/dialog-content.svelte` | Portal, overlay, children snippet, optional close control, destructive variant. |
 | Free-text selection | `combobox/combobox.svelte` | Bindable string, label/value filtering, keyboard highlight, portaled options. |
 | Fixed-choice selection | `Select.svelte` | Exports `SelectOption`; skips disabled choices and optionally focuses search. |
+| Resource browsing | `ResourceScope.svelte`, `ResourceScopeNotice.svelte`, `GlobalDestination.svelte` | Saved root selection shared only by MCP/Agent/Skill lists; read-only details and explicit Global forms. |
 | Table composition | `DataTable.svelte`, `Pagination.svelte`, `EmptyTableRow.svelte` | Table contents come from callers; pagination controls do not slice rows. |
 | Page/form composition | `PageHead.svelte`, `FormActions.svelte` | Snippet-based heading actions and form footer. |
 | Notifications | `toast/toast.svelte` | Presentation only; actions and dismissal are supplied as callbacks. |
@@ -68,6 +73,7 @@ components/                       # Shared UI library; no top-level barrel
 - **Bits composition**: Dialog, Tooltip, Checkbox, and Separator forward remaining props to Bits primitives. Dialog/Tooltip content wraps its portal internally; Popover pickers spread both `wrapperProps` and `props` in child snippets.
 - **Styling hooks**: Wrappers combine Tailwind classes with tokens from `../styles/tokens.css`; preserve `data-slot` hooks. Table, heading, form, and feedback classes are shared with `../styles/table.css`, `head.css`, `forms.css`, and `feedback.css`.
 - **Picker accessibility**: Preserve combobox/listbox IDs, expanded/selected state, arrow/Enter selection, Escape/Tab dismissal, and outside-focus handling. Combobox keeps input focus; Select restores trigger focus after selection and skips disabled options.
+- **Scope picker**: Select supports opt-in always-search, pinned choice, stacked path hints, and globe icons. ResourceScope persists selection only through config, restores the confirmed selection on failure, treats native picker cancellation as a no-op, and disables management during writes but not list reads. Forgetting a folder never deletes its files.
 - **Accessible names**: Switch consumers provide an external label or `aria-label`; Select accepts `ariaLabel` or a label targeting its `id`. Spinner is decorative; Toast uses alert for warning/error and status otherwise.
 - **Table ownership**: `DataTable` receives a table-content snippet and total count, with page size defaulting to five; callers own row selection. Keep PageHead's explicit actions snippet precedence over children.
 - **Local tests**: Follow the button click test and dropdown harness: role/name queries, `fireEvent`, and `waitFor` for portaled state. The dropdown harness installs i18n; tests stub missing JSDOM layout/scroll APIs and restore mocks.

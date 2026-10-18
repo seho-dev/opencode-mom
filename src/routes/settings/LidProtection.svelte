@@ -1,6 +1,6 @@
 <script lang="ts">
 import { RefreshCw } from '@lucide/svelte';
-import { onMount, tick } from 'svelte';
+import { onMount, tick, untrack } from 'svelte';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import { Switch } from '$src/components/switch/index.js';
@@ -22,6 +22,8 @@ let saveError = $state('');
 let mounted = false;
 let request = 0;
 let readGeneration = 0;
+let targetVersion = config.serviceTargetVersion;
+let reloadQueued = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 const failure = $derived(saveError || queryError || state.error || '');
 const uncertain = $derived(!known || !!failure || state.phase === 'unknown' || state.phase === 'error');
@@ -41,8 +43,27 @@ const status = $derived.by(() => {
   return i18n.t(state.phase === 'idle' ? 'settings.lidIdle' : 'settings.lidDisabled');
 });
 
+$effect(() => {
+  const version = config.serviceTargetVersion;
+  if (version === targetVersion) return;
+  targetVersion = version;
+  untrack(() => {
+    known = false;
+    state = { enabled: state.enabled, phase: 'unknown' };
+    queryError = '';
+    saveError = '';
+    loading = true;
+    reloadQueued = true;
+    void readStatus();
+  });
+});
+
 function schedule() {
   clearTimeout(timer);
+  if (reloadQueued && mounted && !querying && !saving) {
+    void readStatus();
+    return;
+  }
   if (mounted && !querying && !saving) timer = setTimeout(() => void readStatus(), 2000);
 }
 async function readStatus(manual = false) {
@@ -50,17 +71,19 @@ async function readStatus(manual = false) {
   clearTimeout(timer);
   const seq = ++request;
   const readSeq = ++readGeneration;
+  const version = config.serviceTargetVersion;
+  reloadQueued = false;
   querying = true;
   refreshing = manual;
   try {
     const result = await config.getLidProtection();
-    if (!mounted || seq !== request) return;
+    if (!mounted || seq !== request || version !== config.serviceTargetVersion) return;
     state = result;
     known = true;
     queryError = '';
     if (manual) saveError = '';
   } catch (cause) {
-    if (mounted && seq === request) queryError = readError(cause);
+    if (mounted && seq === request && version === config.serviceTargetVersion) queryError = readError(cause);
   } finally {
     if (mounted) {
       if (readSeq === readGeneration) {
@@ -79,18 +102,19 @@ async function setEnabled(enabled: boolean) {
   clearTimeout(timer);
   // A pending status read must never overwrite a newer native setting result.
   const seq = ++request;
+  const version = config.serviceTargetVersion;
   saving = true;
   savingEnabled = enabled;
   refreshing = false;
   saveError = '';
   try {
     const result = await config.setLidProtection(enabled);
-    if (!mounted || seq !== request) return;
+    if (!mounted || seq !== request || version !== config.serviceTargetVersion) return;
     state = result;
     known = true;
     queryError = '';
   } catch (cause) {
-    if (mounted && seq === request) saveError = readError(cause);
+    if (mounted && seq === request && version === config.serviceTargetVersion) saveError = readError(cause);
   } finally {
     if (mounted && seq === request) {
       saving = false;

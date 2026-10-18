@@ -20,7 +20,15 @@ vi.mock('$app/state', () => ({
   },
 }));
 
-const model = { ref: 'demo/fast', name: 'Fast', variants: [{ id: 'quick' }] };
+const model = {
+  ref: 'demo/fast',
+  id: 'fast',
+  modelId: 'fast',
+  providerId: 'demo',
+  isCustom: true,
+  name: 'Fast',
+  variants: [{ id: 'quick' }],
+} satisfies ReturnType<ConfigStore['models']>[number] & ReturnType<ConfigStore['catalogModels']>[number];
 const rule = { action: 'read', resource: '*.ts', effect: 'allow' };
 const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
@@ -42,7 +50,7 @@ function mount(
   const reset = new SvelteMap([['version', 0]]);
   const agentStore = new SvelteMap([['agents', agents]]);
   const loadingStore = new SvelteMap([['loading', initiallyLoading]]);
-  const config = {
+  const config: Partial<ConfigStore> = {
     preferences: { theme: 'light', locale: 'en' },
     get loading() {
       return loadingStore.get('loading') ?? false;
@@ -59,7 +67,7 @@ function mount(
     catalogModels: () => [model],
     createAgent,
     updateAgent,
-  } satisfies Partial<ConfigStore>;
+  };
   render(component, {}, { wrapper: Harness, wrapperProps: { config: config as ConfigStore } });
   return {
     createAgent,
@@ -86,8 +94,14 @@ test('built-in edit is read-only even when the agent exists in config', () => {
     {
       id: 'build',
       source: 'inline',
-      sources: [{ storage: 'inline', fields: { description: 'Built-in description' } }],
-    } as AgentDefinition,
+      sources: [
+        {
+          storage: 'inline',
+          raw: { description: 'Built-in description' },
+          fields: { description: 'Built-in description' },
+        },
+      ],
+    },
   ]);
   expect(screen.getByRole('status').textContent).toBe('Built-in agents are read-only.');
   expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
@@ -105,8 +119,14 @@ test('edit waits for an initially missing agent and loads it when available', as
     {
       id: 'helper',
       source: 'inline',
-      sources: [{ storage: 'inline', fields: { description: 'Loaded description' } }],
-    } as AgentDefinition,
+      sources: [
+        {
+          storage: 'inline',
+          raw: { description: 'Loaded description' },
+          fields: { description: 'Loaded description' },
+        },
+      ],
+    },
   ]);
   await waitFor(() =>
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ }).value).toBe('Loaded description'),
@@ -120,13 +140,21 @@ test('edit switches agent snapshots when the route id changes without remounting
     {
       id: 'helper',
       source: 'inline',
-      sources: [{ storage: 'inline', fields: { description: 'First description' } }],
-    } as AgentDefinition,
+      sources: [
+        { storage: 'inline', raw: { description: 'First description' }, fields: { description: 'First description' } },
+      ],
+    },
     {
       id: 'second',
       source: 'inline',
-      sources: [{ storage: 'inline', fields: { description: 'Second description' } }],
-    } as AgentDefinition,
+      sources: [
+        {
+          storage: 'inline',
+          raw: { description: 'Second description' },
+          fields: { description: 'Second description' },
+        },
+      ],
+    },
   ]);
   const description = screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ });
   await waitFor(() => expect(description.value).toBe('First description'));
@@ -187,22 +215,24 @@ test('new agent sends source, storage, model variant and permission rules', asyn
 });
 
 test('edit loads the selected source snapshot and clears removed model and prompt', async () => {
-  const agent = {
+  const agent: AgentDefinition = {
     id: 'helper',
     source: 'both',
     sources: [
       {
         storage: 'inline',
+        raw: { description: 'Inline description', model: 'demo/fast#quick', prompt: 'Inline prompt' },
         prompt: 'Inline prompt',
         fields: { description: 'Inline description', model: 'demo/fast#quick', prompt: 'Inline prompt' },
       },
       {
         storage: 'global_markdown',
+        raw: '---\ndescription: Markdown description\nmodel: demo/fast\n---\n\nMarkdown prompt',
         prompt: 'Markdown prompt',
         fields: { description: 'Markdown description', model: 'demo/fast' },
       },
     ],
-  } as AgentDefinition;
+  };
   const { updateAgent } = mount(EditAgent, [agent]);
   await waitFor(() =>
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ }).value).toBe('Inline description'),
@@ -240,11 +270,13 @@ test('edit loads the selected source snapshot and clears removed model and promp
 });
 
 test('edit restores the source snapshot after formResetVersion changes', async () => {
-  const agent = {
+  const agent: AgentDefinition = {
     id: 'helper',
     source: 'inline',
-    sources: [{ storage: 'inline', fields: { description: 'Saved description' } }],
-  } as AgentDefinition;
+    sources: [
+      { storage: 'inline', raw: { description: 'Saved description' }, fields: { description: 'Saved description' } },
+    ],
+  };
   const { reset, updateAgent } = mount(EditAgent, [agent]);
   const description = screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ });
   await waitFor(() => expect(description.value).toBe('Saved description'));
@@ -252,5 +284,40 @@ test('edit restores the source snapshot after formResetVersion changes', async (
   expect(description.value).toBe('Unsaved description');
   reset.set('version', 1);
   await waitFor(() => expect(description.value).toBe('Saved description'));
+  expect(updateAgent).not.toHaveBeenCalled();
+});
+
+test('edit source picker offers one Markdown choice for multiple alias previews', async () => {
+  const agent: AgentDefinition = {
+    id: 'helper',
+    source: 'markdown',
+    sources: [
+      {
+        storage: 'global_markdown',
+        path: '/global/agent/helper.md',
+        raw: '---\ndescription: Singular alias\n---\n\nFirst prompt',
+        fields: { description: 'Singular alias' },
+        prompt: 'First prompt',
+      },
+      {
+        storage: 'global_markdown',
+        path: '/global/agents/helper.md',
+        raw: '---\ndescription: Plural alias\n---\n\nSecond prompt',
+        fields: { description: 'Plural alias' },
+        prompt: 'Second prompt',
+      },
+    ],
+  };
+  const { updateAgent } = mount(EditAgent, [agent]);
+  await waitFor(() =>
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ }).value).toBe('Singular alias'),
+  );
+  await fireEvent.click(screen.getByLabelText('Edit source'));
+  const listbox = await screen.findByRole('listbox');
+  expect(within(listbox).getAllByRole('option', { name: 'Global Markdown' })).toHaveLength(1);
+  expect(within(listbox).queryByRole('option', { name: 'Inline' })).toBeNull();
+  await fireEvent.click(within(listbox).getByRole('option', { name: 'Global Markdown' }));
+  expect(screen.getByLabelText<HTMLTextAreaElement>('Prompt').value).toBe('First prompt');
+  expect(agent.sources).toHaveLength(2);
   expect(updateAgent).not.toHaveBeenCalled();
 });

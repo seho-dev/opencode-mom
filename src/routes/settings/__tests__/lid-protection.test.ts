@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, expect, test, vi } from 'vitest';
-import type { ConfigStore } from '$src/config/store.svelte.js';
+import type { CommandAdapter } from '$src/config/adapter.js';
+import { type ConfigStore, createConfigStore } from '$src/config/store.svelte.js';
 import Harness from '$src/test-utils/harness.svelte';
 import type { LidState } from '$src/types/power.js';
 import LidProtection from '../LidProtection.svelte';
@@ -28,6 +29,18 @@ function mount(overrides: Record<string, unknown> = {}) {
   const toggle = screen.getByRole('checkbox', { name: 'Stay awake with lid closed' }) as HTMLInputElement;
   return { config, toggle, ...view };
 }
+function mountTarget(overrides: Record<string, unknown> = {}) {
+  const adapter = {
+    getLidProtection: vi.fn().mockResolvedValue(disabled),
+    setLidProtection: vi.fn().mockResolvedValue(disabled),
+    setOpenCodeServiceTarget: vi.fn().mockResolvedValue({ connected: false }),
+    ...overrides,
+  };
+  const config = createConfigStore(adapter as unknown as CommandAdapter, false, false);
+  const view = render(LidProtection, {}, { wrapper: Harness, wrapperProps: { config } });
+  const toggle = screen.getByRole('checkbox') as HTMLInputElement;
+  return { ...view, config, adapter, toggle };
+}
 async function settle() {
   await tick();
   await Promise.resolve();
@@ -46,7 +59,7 @@ test('loads without enabling, waits through authorization, and uses native phase
   const { toggle } = mount({ getLidProtection, setLidProtection });
   expect(toggle.disabled).toBe(true);
   expect(toggle.checked).toBe(false);
-  expect(screen.getByRole('status').textContent).toBe('Reading lid protection status…');
+  expect(screen.getByRole('status').textContent).toBe('Reading status…');
   await settle();
   expect(getLidProtection).toHaveBeenCalledOnce();
   expect(setLidProtection).not.toHaveBeenCalled();
@@ -75,7 +88,7 @@ test('loads without enabling, waits through authorization, and uses native phase
 test.each([
   ['disabled', 'Disabled'],
   ['idle', 'Watching — no working sessions'],
-  ['checking', 'Checking administrator authorization — keep the lid open'],
+  ['checking', 'Checking authorization — keep the lid open'],
   ['protected', 'Protected — working sessions detected'],
   ['unknown', 'Status unknown — keep the lid open'],
   ['error', 'Protection not confirmed — keep the lid open'],
@@ -198,7 +211,7 @@ test('polls status only, without overlap or unchanged live-region mutations, and
   expect(observer.takeRecords()).toHaveLength(0);
   observer.disconnect();
   await fireEvent.click(toggle);
-  expect(status.textContent).toContain('Restoring your original power settings');
+  expect(status.textContent).toContain('Restoring power settings');
   await vi.advanceTimersByTimeAsync(6000);
   expect(getLidProtection).toHaveBeenCalledTimes(2);
   save.resolve(disabled);
@@ -258,7 +271,7 @@ test('a stale read finishing during authorization cannot restore the old protect
   poll.resolve(protectedState);
   await settle();
   expect(toggle.disabled).toBe(true);
-  expect(screen.getByRole('status').textContent).toContain('Restoring your original power settings');
+  expect(screen.getByRole('status').textContent).toContain('Restoring power settings');
   await vi.advanceTimersByTimeAsync(4000);
   expect(getLidProtection).toHaveBeenCalledTimes(2);
   save.resolve(disabled);
@@ -287,5 +300,108 @@ test.each(['read', 'save'] as const)(
     expect(getLidProtection).toHaveBeenCalledOnce();
     expect(setLidProtection).toHaveBeenCalledTimes(operation === 'save' ? 1 : 0);
     expect(screen.queryByRole('status')).toBeNull();
+  },
+);
+
+test.each([disabled, protectedState])(
+  'successful target saves reread without changing enabled=$enabled; failed saves do nothing',
+  async (value) => {
+    const view = mountTarget({ getLidProtection: vi.fn().mockResolvedValue(value) });
+    await waitFor(() => expect(view.toggle.disabled).toBe(false));
+    expect(view.toggle.checked).toBe(value.enabled);
+    const details = view.container.querySelector('details') as HTMLDetailsElement;
+    details.open = true;
+    await view.config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
+    await waitFor(() => expect(view.adapter.getLidProtection).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('checkbox')).toBe(view.toggle);
+    expect(view.toggle.checked).toBe(value.enabled);
+    expect(details.open).toBe(true);
+    view.adapter.setOpenCodeServiceTarget.mockRejectedValueOnce(new Error('Save failed'));
+    await expect(view.config.setOpenCodeServiceTarget(null)).rejects.toThrow('Save failed');
+    await settle();
+    expect(view.config.serviceTargetVersion).toBe(1);
+    expect(view.adapter.getLidProtection).toHaveBeenCalledTimes(2);
+    expect(view.adapter.setLidProtection).not.toHaveBeenCalled();
+  },
+);
+
+test.each(['resolve', 'reject'] as const)(
+  'target changes during a pending read ignore its old %s and reread only the latest target',
+  async (completion) => {
+    const pending = deferred();
+    const latest = deferred();
+    const getLidProtection = vi.fn().mockReturnValueOnce(pending.promise).mockReturnValueOnce(latest.promise);
+    const view = mountTarget({ getLidProtection });
+    await settle();
+    await view.config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
+    await settle();
+    await view.config.setOpenCodeServiceTarget(null);
+    await settle();
+    expect(getLidProtection).toHaveBeenCalledOnce();
+    if (completion === 'resolve') pending.resolve(protectedState);
+    else pending.reject(new Error('Old target error'));
+    await settle();
+    expect(getLidProtection).toHaveBeenCalledTimes(2);
+    expect(view.toggle.checked).toBe(false);
+    expect(screen.queryByRole('alert')).toBeNull();
+    latest.resolve(disabled);
+    await settle();
+    expect(screen.getByRole('status').textContent).toBe('Disabled');
+    expect(view.adapter.setLidProtection).not.toHaveBeenCalled();
+  },
+);
+
+test('target change during authorization defers the latest read without retrying the preference write', async () => {
+  const save = deferred();
+  const latest = deferred();
+  const getLidProtection = vi.fn().mockResolvedValueOnce(disabled).mockReturnValueOnce(latest.promise);
+  const setLidProtection = vi.fn().mockReturnValueOnce(save.promise);
+  const view = mountTarget({ getLidProtection, setLidProtection });
+  await settle();
+  await fireEvent.click(view.toggle);
+  await view.config.setOpenCodeServiceTarget(null);
+  await settle();
+  expect(getLidProtection).toHaveBeenCalledOnce();
+  save.resolve(protectedState);
+  await settle();
+  expect(getLidProtection).toHaveBeenCalledTimes(2);
+  expect(view.toggle.checked).toBe(false);
+  expect(screen.getByRole('status').textContent).not.toContain('Protected');
+  latest.resolve({ enabled: true, phase: 'idle' });
+  await settle();
+  expect(view.toggle.checked).toBe(true);
+  expect(screen.getByRole('status').textContent).toBe('Watching — no working sessions');
+  expect(setLidProtection).toHaveBeenCalledExactlyOnceWith(true);
+});
+
+test.each([false, true])(
+  'target change immediately hides old protected counts and errors while latest read is pending (errors=%s)',
+  async (errors) => {
+    const latest = deferred();
+    const getLidProtection = vi
+      .fn()
+      .mockResolvedValueOnce({ ...protectedState, ...(errors ? { error: 'Old native error' } : {}) })
+      .mockReturnValueOnce(latest.promise);
+    const setLidProtection = vi.fn().mockRejectedValueOnce(new Error('Old save error'));
+    const view = mountTarget({ getLidProtection, setLidProtection });
+    await settle();
+    expect(view.toggle.checked).toBe(true);
+    if (errors) {
+      await fireEvent.click(view.toggle);
+      await screen.findByRole('alert');
+      expect(screen.getByRole('alert').textContent).toContain('Old save error');
+    } else expect(screen.getByRole('status').textContent).toBe('Protected — 2 working sessions');
+    await view.config.setOpenCodeServiceTarget(null);
+    await settle();
+    expect(getLidProtection).toHaveBeenCalledTimes(2);
+    expect(view.toggle.checked).toBe(true);
+    expect(screen.getByRole('status').textContent).toBe('Reading status…');
+    expect(screen.getByRole('status').className).not.toContain('accent-primary');
+    expect(screen.queryByRole('alert')).toBeNull();
+    latest.resolve({ enabled: true, phase: 'idle' });
+    await settle();
+    expect(screen.getByRole('status').textContent).toBe('Watching — no working sessions');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(setLidProtection).toHaveBeenCalledTimes(errors ? 1 : 0);
   },
 );

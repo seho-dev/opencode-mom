@@ -38,12 +38,20 @@ test('reads installed version locally, checks only on click, guards pending and 
   await fireEvent.click(checkButton);
   expect(checkButton.disabled).toBe(true);
   expect(checkButton.getAttribute('aria-busy')).toBe('true');
+  expect(checkButton.getAttribute('aria-label')).toBe('Checking for updates…');
+  expect(checkButton.getAttribute('title')).toBe('Checking for updates…');
+  expect(checkButton.textContent?.trim()).toBe('');
+  expect(checkButton.querySelector('svg')?.classList.contains('animate-spin')).toBe(true);
+  expect(checkButton.querySelector('svg')?.classList.contains('motion-reduce:animate-none')).toBe(true);
   expect(screen.getByRole('status').textContent).toContain('Checking for updates…');
   await fireEvent.click(checkButton);
   expect(checkForUpdates).toHaveBeenCalledOnce();
   finish(current);
-  await screen.findByText('You’re up to date (version 0.1.0).');
+  await screen.findByText('Up to date (0.1.0).');
   expect(checkButton.disabled).toBe(false);
+  expect(checkButton.getAttribute('aria-label')).toBe('Check for updates');
+  expect(checkButton.getAttribute('title')).toBe('Check for updates');
+  expect(checkButton.querySelector('svg')?.classList.contains('animate-spin')).toBe(false);
   expect(screen.queryByRole('button', { name: 'View GitHub downloads' })).toBeNull();
   expect(screen.queryByText('Installing an update on macOS')).toBeNull();
 });
@@ -60,17 +68,15 @@ test('new macOS release opens a GUI-first security guide with an optional comman
   expect(details.open).toBe(true);
   expect(details.textContent).toContain('ad-hoc signed');
   expect(details.textContent).toContain('notarized by Apple');
-  expect(details.textContent).toContain('Never bypass security warnings for unknown downloads.');
+  expect(details.textContent).toContain('Never bypass warnings for unknown downloads.');
+  expect(details.textContent).toContain('Quit from the tray menu (closing the window only hides it)');
+  expect(details.textContent).toContain('replace the app in Applications');
+  expect(details.textContent).toContain('If blocked, use System Settings → Privacy & Security → Open Anyway');
+  expect(details.textContent).toContain('The Terminal command is usually unnecessary');
   expect(details.textContent).toContain(
-    'Quit opencode-mom from its tray menu first (closing the window only hides it)',
+    'Optional fallback: if the trusted download is still blocked, run this in Terminal',
   );
-  expect(details.textContent).toContain('Applications (drag it from the .dmg)');
-  expect(details.textContent).toContain('first use System Settings → Privacy & Security → Open Anyway');
-  expect(details.textContent).toContain('usually sufficient; the Terminal command below is not required');
-  expect(details.textContent).toContain(
-    'Optional fallback: only if this trusted official download is still blocked or Open Anyway is unavailable',
-  );
-  expect(details.textContent).toContain('Do not use sudo or disable Gatekeeper globally.');
+  expect(details.textContent).toContain('no sudo, no global Gatekeeper changes.');
   const command = screen.getByText(quarantineCommand);
   expect(command.tagName).toBe('CODE');
   expect(command.textContent).toBe(quarantineCommand);
@@ -88,7 +94,7 @@ test('new macOS release opens a GUI-first security guide with an optional comman
   );
   await fireEvent.click(screen.getByRole('button', { name: 'Star on GitHub' }));
   expect(config.openProjectPage).toHaveBeenNthCalledWith(2, 'repository');
-  expect(screen.getByText(/100 stars/).textContent).toContain('with my own money');
+  expect(screen.getByText(/100 stars/).textContent).toContain('I’ll buy an Apple Developer certificate');
 });
 
 test.each(['windows', 'linux', 'other'] as const)('does not show macOS guidance on native %s', async (platform) => {
@@ -127,16 +133,37 @@ test('reports no published release without offering a download', async () => {
   expect(screen.queryByRole('button', { name: 'View GitHub downloads' })).toBeNull();
 });
 
-test('failed update check reports an error and explicit retry clears it', async () => {
-  const checkForUpdates = vi.fn().mockRejectedValueOnce(new Error('GitHub rate limit')).mockResolvedValueOnce(current);
-  mount({ checkForUpdates });
-  await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
-  expect((await screen.findByRole('alert')).textContent).toContain('GitHub rate limit');
-  await fireEvent.click(screen.getByRole('button', { name: 'Retry update check' }));
-  await screen.findByText('You’re up to date (version 0.1.0).');
-  expect(checkForUpdates).toHaveBeenCalledTimes(2);
-  expect(screen.queryByRole('alert')).toBeNull();
-});
+test.each([
+  ['en', 'Check for updates', 'Retry update check'],
+  ['zh', '检查更新', '重试检查更新'],
+] as const)(
+  '%s update action is icon-only with localized check and retry names and tooltips',
+  async (locale, check, retry) => {
+    const checkForUpdates = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('GitHub rate limit'))
+      .mockResolvedValueOnce(current);
+    mount({ preferences: { locale, theme: 'dark' }, checkForUpdates });
+    const button = screen.getByRole('button', { name: check });
+    expect(checkForUpdates).not.toHaveBeenCalled();
+    for (const label of [check, retry]) {
+      expect(screen.getByRole('button', { name: label })).toBe(button);
+      expect(button.getAttribute('aria-label')).toBe(label);
+      expect(button.getAttribute('title')).toBe(label);
+      expect(button.textContent?.trim()).toBe('');
+      expect(button.classList.contains('size-8')).toBe(true);
+      expect(button.className).toContain('focus-visible:');
+      expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+      expect(button.querySelector('svg')?.classList.contains('lucide-refresh-cw')).toBe(true);
+      await fireEvent.click(button);
+      if (label === check) expect((await screen.findByRole('alert')).textContent).toContain('GitHub rate limit');
+    }
+    await waitFor(() => expect(button.getAttribute('aria-busy')).toBe('false'));
+    expect(screen.getByRole('button', { name: check })).toBe(button);
+    expect(checkForUpdates).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+  },
+);
 
 test.each([
   ['View GitHub downloads', 'releases'],
@@ -223,16 +250,16 @@ test('Chinese update feedback, GUI-first guidance and courteous Star copy match 
   await screen.findByText('发现新版本 0.2.0。');
   const details = screen.getByText('在 macOS 上安装更新').closest('details') as HTMLDetailsElement;
   expect(details.open).toBe(true);
-  expect(details.textContent).toContain('优先前往「系统设置 → 隐私与安全性 → 仍要打开」');
-  expect(details.textContent).toContain('通常这样即可，无需执行下方终端命令');
-  expect(details.textContent).toContain('可选备用方法：仅当这份可信的官方应用仍被拦截，或没有「仍要打开」选项时');
-  expect(details.textContent).toContain('请勿使用 sudo，也不要全局关闭 Gatekeeper');
+  expect(details.textContent).toContain('如被拦截，先用 系统设置 → 隐私与安全性 → 仍要打开');
+  expect(details.textContent).toContain('通常无需下面的终端命令');
+  expect(details.textContent).toContain('可选后备方案：若信任的官方下载仍被拦截，请在终端自行运行下方命令');
+  expect(details.textContent).toContain('不要用 sudo 或全局关闭 Gatekeeper');
   const command = screen.getByText(quarantineCommand);
   expect(command.tagName).toBe('CODE');
   expect(command.textContent).toBe(quarantineCommand);
   expect(command.classList.contains('select-text')).toBe(true);
   expect(details.querySelector('button')).toBeNull();
-  expect(screen.getByText(/如果 MOM 帮到了你/).textContent).toContain('达到 100 Star 后，我计划自费购买');
+  expect(screen.getByText(/如果 MOM 帮到了你/).textContent).toContain('达到 100 星后，我会自费购买');
   expect(screen.getByRole('button', { name: '查看 GitHub 下载' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '在 GitHub 点个 Star' })).toBeTruthy();
 });

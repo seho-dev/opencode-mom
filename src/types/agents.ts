@@ -9,6 +9,19 @@ export interface PermissionRule {
   resource: string;
   effect: PermissionEffect | string;
 }
+export interface AgentSourcePreview {
+  storage: AgentStorage;
+  path?: string;
+  raw: unknown;
+  fields: Record<string, unknown>;
+  prompt?: string | null;
+}
+export interface AgentFieldOverride {
+  field: string;
+  inline: unknown;
+  markdown: unknown;
+  effective: unknown;
+}
 export interface AgentDefinition {
   id: string;
   source: AgentSource;
@@ -16,6 +29,8 @@ export interface AgentDefinition {
   inline?: Record<string, unknown>;
   markdown?: Record<string, unknown>;
   effective?: Record<string, unknown>;
+  sources?: AgentSourcePreview[];
+  overrides?: AgentFieldOverride[];
   modelRef?: ModelRef;
   mode?: string;
   description?: string;

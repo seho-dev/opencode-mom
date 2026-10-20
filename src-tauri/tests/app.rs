@@ -221,6 +221,8 @@ fn agent_inline_and_markdown_lifecycle() {
             fields: serde_json::Map::new(),
             prompt: Some("updated prompt".to_owned()),
             clear_fields: vec!["model".to_owned()],
+            expected_path: Some(created.inline.as_ref().unwrap().resolved_path.clone()),
+            expected_content: Some(created.inline.as_ref().unwrap().raw.to_string()),
         },
     )
     .unwrap();
@@ -534,6 +536,9 @@ fn selection_state_survives_save_of_unselected_group() {
     let home = temp_home("state");
     let selected = group(GroupType::Native, "selected");
     let (selected_saved, _) = groups::save_group(&home.paths, selected).unwrap();
+    let mut enabled_config = load_config(&home);
+    enabled_config.state.island_enabled = true;
+    opencode_mom_tauri::models::save_config(&home.paths.config_file(), &enabled_config).unwrap();
     groups::switch_group(&home.paths, selected_saved.id).unwrap();
 
     let other = group(GroupType::Slim, "other");
@@ -543,7 +548,743 @@ fn selection_state_survives_save_of_unselected_group() {
         AppSelectionState {
             selected_group_id: Some(selected_saved.id),
             selected_group_name: Some("selected".to_owned()),
-            preferences: Default::default(),
+            selected_project_id: None,
+            island_enabled: true,
+            ..Default::default()
         }
     );
+    let config = groups::delete_group(&home.paths, selected_saved.id).unwrap();
+    assert!(config.state.island_enabled);
+    assert!(config.state.selected_group_id.is_none());
+}
+
+#[test]
+fn project_folder_lifecycle_preserves_files_and_normalizes_stale_selection() {
+    use opencode_mom_tauri::models;
+    let home = temp_home("projects");
+    let root = home.root.join("project");
+    fs::create_dir(&root).unwrap();
+    let file = root.join("opencode.json");
+    fs::write(&file, "{}").unwrap();
+    let config_file = home.paths.config_file();
+    let added = models::add_project(&config_file, root.to_str().unwrap()).unwrap();
+    assert_eq!(
+        added.path,
+        fs::canonicalize(&root).unwrap().to_str().unwrap()
+    );
+    assert_eq!(
+        models::add_project(&config_file, root.join(".").to_str().unwrap()).unwrap(),
+        added
+    );
+    let config = load_config(&home);
+    assert_eq!(config.projects, [added.clone()]);
+    assert_eq!(config.state.selected_project_id, Some(added.id));
+    models::select_project(&config_file, None).unwrap();
+    assert_eq!(load_config(&home).state.selected_project_id, None);
+    assert_eq!(
+        models::add_project(&config_file, root.to_str().unwrap()).unwrap(),
+        added
+    );
+    models::remove_project(&config_file, added.id).unwrap();
+    assert!(root.is_dir());
+    assert_eq!(fs::read_to_string(&file).unwrap(), "{}");
+    assert!(load_config(&home).projects.is_empty());
+    assert_eq!(load_config(&home).state.selected_project_id, None);
+    let unknown = Uuid::new_v4();
+    assert_eq!(
+        models::select_project(&config_file, Some(unknown))
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+    assert_eq!(
+        models::remove_project(&config_file, unknown)
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+    assert_eq!(
+        home.paths.for_project(Some(unknown)).unwrap_err().code,
+        ErrorCode::NotFound
+    );
+    for invalid in [PathBuf::from("relative"), home.root.join("missing"), file] {
+        assert!(models::add_project(&config_file, invalid.to_str().unwrap()).is_err());
+    }
+    let mut config = load_config(&home);
+    config.state.selected_project_id = Some(unknown);
+    models::save_config(&config_file, &config).unwrap();
+    assert_eq!(
+        models::load_config(&config_file)
+            .unwrap()
+            .state
+            .selected_project_id,
+        None
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn project_folder_symlink_dedup_unreadable_and_non_utf8_validation() {
+    use opencode_mom_tauri::models;
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    let home = temp_home("project-alias");
+    let root = home.root.join("project");
+    fs::create_dir(&root).unwrap();
+    let alias = home.root.join("alias");
+    symlink(&root, &alias).unwrap();
+    let added = models::add_project(&home.paths.config_file(), root.to_str().unwrap()).unwrap();
+    assert_eq!(
+        models::add_project(&home.paths.config_file(), alias.to_str().unwrap()).unwrap(),
+        added
+    );
+    let scoped = home.paths.for_project(Some(added.id)).unwrap();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o0)).unwrap();
+    let privileged = unsafe { libc::geteuid() } == 0;
+    let unreadable_add = models::add_project(&home.paths.config_file(), root.to_str().unwrap());
+    let unreadable_read = opencode_mom_tauri::agents::list(&scoped);
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+    if !privileged {
+        assert!(unreadable_add.is_err());
+        assert!(unreadable_read.is_err());
+    }
+    let invalid = home.root.join(OsString::from_vec(vec![0xff]));
+    if fs::create_dir(&invalid).is_ok() {
+        let invalid_alias = home.root.join("invalid-alias");
+        symlink(&invalid, &invalid_alias).unwrap();
+        assert_eq!(
+            models::add_project(&home.paths.config_file(), invalid_alias.to_str().unwrap())
+                .unwrap_err()
+                .code,
+            ErrorCode::ValidationFailed
+        );
+    }
+    assert_eq!(load_config(&home).projects, [added]);
+}
+
+#[test]
+fn group_lifecycle_preserves_selected_project_and_preferences() {
+    use opencode_mom_tauri::models;
+    let home = temp_home("group-project-selection");
+    write_opencode(&home);
+    let root = home.root.join("project");
+    fs::create_dir(&root).unwrap();
+    let project = models::add_project(&home.paths.config_file(), root.to_str().unwrap()).unwrap();
+    let mut config = load_config(&home);
+    config.state.preferences.locale = models::LocalePreference::Zh;
+    models::save_config(&home.paths.config_file(), &config).unwrap();
+    let (saved, _) = groups::save_group(&home.paths, group(GroupType::Native, "selected")).unwrap();
+    groups::switch_group(&home.paths, saved.id).unwrap();
+    groups::copy_group(&home.paths, saved.id, None).unwrap();
+    groups::delete_group(&home.paths, saved.id).unwrap();
+    let config = load_config(&home);
+    assert_eq!(config.projects, [project.clone()]);
+    assert_eq!(config.state.selected_project_id, Some(project.id));
+    assert_eq!(
+        config.state.preferences.locale,
+        models::LocalePreference::Zh
+    );
+    assert_eq!(config.state.selected_group_id, None);
+}
+
+#[test]
+fn global_agent_aliases_retain_paths_and_refuse_ambiguous_mutations() {
+    use opencode_mom_tauri::agents;
+    let home = temp_home("agent-aliases");
+    let singular = home.root.join(".config/opencode/agent/nested/helper.md");
+    write_file(&singular, b"---\nmodel: acme/old\n---\nsingular").unwrap();
+    write_file(
+        &home.root.join(".config/opencode/mode/ignored.md"),
+        b"ignored",
+    )
+    .unwrap();
+    write_file(
+        &home.root.join(".config/opencode/modes/ignored.md"),
+        b"ignored",
+    )
+    .unwrap();
+    assert_eq!(agents::list(&home.paths).unwrap().len(), 1);
+    assert_eq!(
+        agents::collect_markdown_files_in_roots(&home.paths).unwrap(),
+        [singular.clone()]
+    );
+    assert_eq!(agents::model_references(&home.paths).unwrap().len(), 1);
+    agents::update(
+        &home.paths,
+        "nested/helper",
+        AgentStorage::GlobalMarkdown,
+        AgentMutation {
+            prompt: Some("edited".to_owned()),
+            expected_path: Some(fs::canonicalize(&singular).unwrap()),
+            expected_content: Some(fs::read_to_string(&singular).unwrap()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let plural = home.paths.global_agents_dir().join("nested/helper.md");
+    assert!(!plural.exists());
+    assert!(fs::read_to_string(&singular).unwrap().ends_with("edited"));
+    write_file(&plural, b"plural").unwrap();
+    let agent = agents::get(&home.paths, "nested/helper").unwrap();
+    assert_eq!(agent.markdown.len(), 2);
+    assert_eq!(agent.effective["system"], "plural");
+    let before = fs::read(&singular).unwrap();
+    let error = agents::update(
+        &home.paths,
+        "nested/helper",
+        AgentStorage::GlobalMarkdown,
+        AgentMutation {
+            expected_path: Some(fs::canonicalize(&singular).unwrap()),
+            expected_content: Some(fs::read_to_string(&singular).unwrap()),
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(error.code, ErrorCode::ValidationFailed);
+    assert!(error.message.contains("multiple Markdown paths"));
+    assert!(agents::delete(
+        &home.paths,
+        "nested/helper",
+        AgentStorage::GlobalMarkdown,
+        &Default::default()
+    )
+    .is_err());
+    assert!(agents::create(
+        &home.paths,
+        AgentCreate {
+            id: "nested/helper".to_owned(),
+            storage: AgentStorage::GlobalMarkdown,
+            fields: Default::default(),
+            prompt: None
+        }
+    )
+    .is_err());
+    assert_eq!(fs::read(&singular).unwrap(), before);
+    assert_eq!(fs::read_to_string(&plural).unwrap(), "plural");
+    fs::remove_file(&plural).unwrap();
+    agents::delete(
+        &home.paths,
+        "nested/helper",
+        AgentStorage::GlobalMarkdown,
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(!singular.exists());
+    assert!(!plural.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn agent_alias_symlinks_to_one_file_are_not_ambiguous() {
+    use opencode_mom_tauri::agents;
+    use std::os::unix::fs::symlink;
+    let home = temp_home("agent-symlink-aliases");
+    let singular = home.root.join(".config/opencode/agent/helper.md");
+    write_file(&singular, b"body").unwrap();
+    let plural = home.paths.global_agents_dir().join("helper.md");
+    fs::create_dir_all(plural.parent().unwrap()).unwrap();
+    symlink(&singular, &plural).unwrap();
+    agents::update(
+        &home.paths,
+        "helper",
+        AgentStorage::GlobalMarkdown,
+        AgentMutation {
+            prompt: Some("edited".to_owned()),
+            expected_path: Some(fs::canonicalize(&singular).unwrap()),
+            expected_content: Some(fs::read_to_string(&singular).unwrap()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(fs::read_to_string(&singular).unwrap().ends_with("edited"));
+    assert!(fs::symlink_metadata(plural)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+}
+
+#[cfg(unix)]
+#[test]
+fn project_scope_rejects_saved_root_retarget_but_ignores_added_alias_retarget() {
+    use opencode_mom_tauri::{agents, mcp, models, skills};
+    use std::os::unix::fs::symlink;
+    let home = temp_home("project-root-retarget");
+    let root = home.root.join("project");
+    let target = home.root.join("target");
+    for (directory, marker) in [(&root, "original"), (&target, "retargeted")] {
+        write_file(
+            &directory.join("opencode.json"),
+            serde_json::json!({
+                "agents": {"helper": {"description": marker}},
+                "mcp": {"servers": {"server": {"type": "local", "command": [marker]}}}
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+        write_file(
+            &directory.join(".opencode/skills/Shared.md"),
+            marker.as_bytes(),
+        )
+        .unwrap();
+    }
+    let alias = home.root.join("alias");
+    symlink(&root, &alias).unwrap();
+    let project = models::add_project(&home.paths.config_file(), alias.to_str().unwrap()).unwrap();
+    assert_eq!(
+        PathBuf::from(&project.path),
+        fs::canonicalize(&root).unwrap()
+    );
+    let scoped = home.paths.for_project(Some(project.id)).unwrap();
+    let config_before = fs::read(home.paths.config_file()).unwrap();
+    fs::remove_file(&alias).unwrap();
+    symlink(&target, &alias).unwrap();
+    for paths in [&scoped, &home.paths.for_project(Some(project.id)).unwrap()] {
+        assert_eq!(agents::list(paths).unwrap().len(), 1);
+        assert_eq!(
+            agents::get(paths, "helper").unwrap().effective["description"],
+            "original"
+        );
+        assert_eq!(mcp::list(paths).unwrap().data.len(), 1);
+        assert_eq!(mcp::get(paths, "server").unwrap().target, "original");
+        assert_eq!(skills::list(paths).unwrap().data.len(), 1);
+        assert_eq!(skills::get(paths, "Shared").unwrap().content, "original");
+    }
+    fs::rename(&root, home.root.join("moved-project")).unwrap();
+    symlink(&target, &root).unwrap();
+    assert_eq!(
+        home.paths.for_project(Some(project.id)).unwrap_err().code,
+        ErrorCode::ConfigurationFailed
+    );
+    for error in [
+        agents::list(&scoped).unwrap_err(),
+        agents::get(&scoped, "helper").unwrap_err(),
+        mcp::list(&scoped).unwrap_err(),
+        mcp::get(&scoped, "server").unwrap_err(),
+        skills::list(&scoped).unwrap_err(),
+        skills::get(&scoped, "Shared").unwrap_err(),
+    ] {
+        assert_eq!(error.code, ErrorCode::ConfigurationFailed);
+    }
+    assert_eq!(fs::read(home.paths.config_file()).unwrap(), config_before);
+}
+
+#[cfg(unix)]
+#[test]
+fn agent_delete_refuses_same_target_logical_aliases_in_both_directions() {
+    use opencode_mom_tauri::agents;
+    use std::os::unix::fs::symlink;
+    for singular_is_link in [false, true] {
+        let home = temp_home("agent-delete-aliases");
+        let singular = home.root.join(".config/opencode/agent/helper.md");
+        let plural = home.paths.global_agents_dir().join("helper.md");
+        let (real, alias) = if singular_is_link {
+            (&plural, &singular)
+        } else {
+            (&singular, &plural)
+        };
+        write_file(real, b"---\ndescription: keep\n---\noriginal body").unwrap();
+        fs::create_dir_all(alias.parent().unwrap()).unwrap();
+        symlink(real, alias).unwrap();
+        let original = fs::read(real).unwrap();
+        let original_link = fs::read_link(alias).unwrap();
+        assert_eq!(
+            agents::get(&home.paths, "helper").unwrap().markdown.len(),
+            2
+        );
+        let error = agents::delete(
+            &home.paths,
+            "helper",
+            AgentStorage::GlobalMarkdown,
+            &Default::default(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::ValidationFailed);
+        assert!(error.message.contains("multiple Markdown paths"));
+        assert_eq!(fs::read(real).unwrap(), original);
+        assert_eq!(fs::read(alias).unwrap(), original);
+        assert_eq!(fs::read_link(alias).unwrap(), original_link);
+        assert!(fs::symlink_metadata(alias)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(!fs::symlink_metadata(real).unwrap().file_type().is_symlink());
+        assert_eq!(
+            agents::get(&home.paths, "helper").unwrap().markdown.len(),
+            2
+        );
+    }
+}
+
+#[test]
+fn agent_update_rejects_stale_inline_and_markdown_drafts_without_writes() {
+    use opencode_mom_tauri::agents;
+    use serde_json::json;
+    for storage in [AgentStorage::Inline, AgentStorage::GlobalMarkdown] {
+        let home = temp_home("agent-stale-draft");
+        let (path, original, changed, expected_content) = match storage {
+            AgentStorage::Inline => (
+                home.paths.opencode_file(),
+                r#"{"agents":{"helper":{"description":"original"}},"unrelated":"keep"}"#,
+                r#"{"agents":{"helper":{"description":"external edit"}},"unrelated":"keep"}"#,
+                json!({"description": "original"}).to_string(),
+            ),
+            AgentStorage::GlobalMarkdown => (
+                home.paths.global_agents_dir().join("helper.md"),
+                "---\ndescription: original\n---\noriginal body",
+                "---\ndescription: external edit\n---\nexternal body",
+                "---\ndescription: original\n---\noriginal body".to_owned(),
+            ),
+        };
+        write_file(&path, original.as_bytes()).unwrap();
+        let mutation: AgentMutation = serde_json::from_value(json!({
+            "fields": {"description": "draft"},
+            "expectedPath": fs::canonicalize(&path).unwrap(),
+            "expectedContent": expected_content,
+        }))
+        .unwrap();
+        fs::write(&path, changed).unwrap();
+        let error = agents::update(&home.paths, "helper", storage, mutation).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ConfigurationFailed);
+        assert_eq!(fs::read_to_string(&path).unwrap(), changed);
+        assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
+    }
+}
+
+#[test]
+fn agent_update_requires_expected_source_but_creation_stays_compatible() {
+    use opencode_mom_tauri::agents;
+    use serde_json::json;
+    for storage in [AgentStorage::Inline, AgentStorage::GlobalMarkdown] {
+        let home = temp_home("agent-required-snapshot");
+        agents::create(
+            &home.paths,
+            AgentCreate {
+                id: "helper".to_owned(),
+                storage,
+                fields: Default::default(),
+                prompt: Some("keep".to_owned()),
+            },
+        )
+        .unwrap();
+        let path = match storage {
+            AgentStorage::Inline => home.paths.opencode_file(),
+            AgentStorage::GlobalMarkdown => home.paths.global_agents_dir().join("helper.md"),
+        };
+        let before = fs::read(&path).unwrap();
+        for payload in [
+            json!({}),
+            json!({"expectedPath": fs::canonicalize(&path).unwrap()}),
+            json!({"expectedContent": "keep"}),
+            json!({"expectedPath": fs::canonicalize(&path).unwrap(), "expectedRaw": {"system": "keep"}}),
+        ] {
+            let mutation = serde_json::from_value(payload).unwrap();
+            let error = agents::update(&home.paths, "helper", storage, mutation).unwrap_err();
+            assert_eq!(error.code, ErrorCode::ValidationFailed);
+            assert_eq!(fs::read(&path).unwrap(), before);
+        }
+        assert_eq!(
+            agents::get(&home.paths, "helper").unwrap().effective["system"],
+            "keep"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn agent_update_rejects_identical_content_symlink_retarget_for_both_storages() {
+    use opencode_mom_tauri::agents;
+    use serde_json::json;
+    use std::os::unix::fs::symlink;
+    for storage in [AgentStorage::Inline, AgentStorage::GlobalMarkdown] {
+        let home = temp_home("agent-draft-retarget");
+        let (logical, content, expected_content) = match storage {
+            AgentStorage::Inline => (
+                home.paths.opencode_file(),
+                r#"{"agents":{"helper":{"description":"original"}}}"#,
+                json!({"description": "original"}).to_string(),
+            ),
+            AgentStorage::GlobalMarkdown => (
+                home.paths.global_agents_dir().join("helper.md"),
+                "---\ndescription: original\n---\nbody",
+                "---\ndescription: original\n---\nbody".to_owned(),
+            ),
+        };
+        let original = home.root.join("original");
+        let outside = home.root.join("outside");
+        fs::write(&original, content).unwrap();
+        fs::write(&outside, content).unwrap();
+        fs::create_dir_all(logical.parent().unwrap()).unwrap();
+        symlink(&original, &logical).unwrap();
+        let mutation: AgentMutation = serde_json::from_value(json!({
+            "fields": {"description": "draft"},
+            "expectedPath": fs::canonicalize(&original).unwrap(),
+            "expectedContent": expected_content,
+        }))
+        .unwrap();
+        fs::remove_file(&logical).unwrap();
+        symlink(&outside, &logical).unwrap();
+        let error = agents::update(&home.paths, "helper", storage, mutation).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ConfigurationFailed);
+        assert_eq!(fs::read_to_string(&original).unwrap(), content);
+        assert_eq!(fs::read_to_string(&outside).unwrap(), content);
+        assert_eq!(fs::read_link(&logical).unwrap(), outside);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn agent_markdown_symlink_update_replaces_target_without_truncating_other_hardlinks() {
+    use opencode_mom_tauri::agents;
+    use serde_json::json;
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    let home = temp_home("agent-atomic-symlink");
+    let logical = home.paths.global_agents_dir().join("helper.md");
+    let target = home.root.join("linked/helper.md");
+    let held = home.root.join("held.md");
+    let content = "---\ndescription: original\n---\nbody";
+    write_file(&target, content.as_bytes()).unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
+    fs::hard_link(&target, &held).unwrap();
+    fs::create_dir_all(logical.parent().unwrap()).unwrap();
+    symlink(&target, &logical).unwrap();
+    let mutation: AgentMutation = serde_json::from_value(json!({
+        "fields": {"description": "edited"},
+        "expectedPath": fs::canonicalize(&target).unwrap(),
+        "expectedContent": content,
+    }))
+    .unwrap();
+    let saved = agents::update(
+        &home.paths,
+        "helper",
+        AgentStorage::GlobalMarkdown,
+        mutation,
+    )
+    .unwrap();
+    assert_eq!(saved.effective["description"], "edited");
+    assert_eq!(fs::read_to_string(&held).unwrap(), content);
+    assert_eq!(fs::read_link(&logical).unwrap(), target);
+    assert_eq!(
+        fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+    assert_eq!(fs::read_dir(target.parent().unwrap()).unwrap().count(), 1);
+}
+
+#[test]
+fn agent_inline_expected_content_allows_unrelated_config_edits_and_preserves_jsonc() {
+    use opencode_mom_tauri::agents;
+    use serde_json::json;
+    let home = temp_home("agent-inline-unrelated");
+    let path = home.paths.opencode_file();
+    let original = "{\n// keep comment\n\"agents\":{\"helper\":{\"description\":\"original\",\"custom\":true}},\n\"other\":\"original\",\n}\n";
+    write_file(&path, original.as_bytes()).unwrap();
+    let loaded = agents::get(&home.paths, "helper").unwrap().inline.unwrap();
+    fs::write(
+        &path,
+        original.replace("\"other\":\"original\"", "\"other\":\"external\""),
+    )
+    .unwrap();
+    let mutation: AgentMutation = serde_json::from_value(json!({
+        "fields": {"description": "draft"},
+        "expectedPath": loaded.resolved_path,
+        "expectedContent": loaded.raw.to_string(),
+    }))
+    .unwrap();
+    let saved = agents::update(&home.paths, "helper", AgentStorage::Inline, mutation).unwrap();
+    assert_eq!(saved.effective["description"], "draft");
+    assert_eq!(saved.effective["custom"], true);
+    let content = fs::read_to_string(&path).unwrap();
+    assert!(content.contains("// keep comment"));
+    assert!(content.contains("\"other\":\"external\""));
+    assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
+}
+
+#[test]
+fn agent_ipc_forwards_expected_source_and_rejects_stale_payloads() {
+    use opencode_mom_tauri::commands::{self, AgentDefinitionDto};
+    use serde_json::json;
+    use tauri::Manager;
+    for storage in ["inline", "global_markdown"] {
+        let home = temp_home("agent-ipc-snapshot");
+        let path = if storage == "inline" {
+            home.paths.opencode_file()
+        } else {
+            home.paths.global_agents_dir().join("helper.md")
+        };
+        let original = if storage == "inline" {
+            r#"{"agents":{"helper":{"description":"original"}}}"#
+        } else {
+            "---\ndescription: original\n---\nbody"
+        };
+        write_file(&path, original.as_bytes()).unwrap();
+        let app = tauri::test::mock_app();
+        app.manage(home.paths.clone());
+        let loaded =
+            commands::get_agent(app.state::<ConfigPaths>(), "helper".to_owned(), None).unwrap();
+        let preview = &loaded.sources[0];
+        assert_eq!(preview.path.as_deref(), path.to_str());
+        let resolved = fs::canonicalize(&path).unwrap();
+        assert_eq!(preview.resolved_path, resolved.to_str().unwrap());
+        assert_eq!(
+            preview.content,
+            if storage == "inline" {
+                preview.raw.to_string()
+            } else {
+                preview.raw.as_str().unwrap().to_owned()
+            }
+        );
+        let draft: AgentDefinitionDto = serde_json::from_value(json!({
+            "id": "helper", "source": loaded.source, "storage": storage,
+            "mutation": {"fields": {"description": "draft"},
+                "expectedPath": preview.resolved_path, "expectedContent": preview.content},
+        }))
+        .unwrap();
+        let saved =
+            commands::update_agent(app.state::<ConfigPaths>(), draft.clone(), None).unwrap();
+        assert_eq!(saved.description.as_deref(), Some("draft"));
+        let before = fs::read(&path).unwrap();
+        let error = commands::update_agent(app.state::<ConfigPaths>(), draft, None).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ConfigurationFailed);
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn agent_markdown_delete_removes_only_the_leaf_symlink() {
+    use opencode_mom_tauri::agents;
+    use std::os::unix::fs::symlink;
+    let home = temp_home("agent-delete-leaf-symlink");
+    let logical = home.paths.global_agents_dir().join("helper.md");
+    let target = home.root.join("outside.md");
+    fs::write(&target, "keep external body").unwrap();
+    fs::create_dir_all(logical.parent().unwrap()).unwrap();
+    symlink(&target, &logical).unwrap();
+    agents::delete(
+        &home.paths,
+        "helper",
+        AgentStorage::GlobalMarkdown,
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(fs::symlink_metadata(logical).is_err());
+    assert_eq!(fs::read_to_string(target).unwrap(), "keep external body");
+}
+
+#[test]
+fn agent_inline_create_rejects_invalid_config_filename_without_creating_directories() {
+    let home = temp_home("agent-invalid-config-name");
+    let missing = home.root.join("missing");
+    let paths = ConfigPaths::with_parts(home.root.clone(), Some(missing.join("..")), None);
+    let error = opencode_mom_tauri::agents::create(
+        &paths,
+        AgentCreate {
+            id: "helper".to_owned(),
+            storage: AgentStorage::Inline,
+            fields: Default::default(),
+            prompt: None,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(error.code, ErrorCode::ValidationFailed);
+    assert!(!missing.exists());
+}
+
+#[test]
+fn agent_inline_javascript_roundtrip_preserves_numeric_snapshots_and_disk_fields() {
+    use opencode_mom_tauri::commands::{self, AgentDefinitionDto};
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    use tauri::Manager;
+
+    let home = temp_home("agent-js-numeric-roundtrip");
+    let path = home.paths.opencode_file();
+    let original = r#"{
+  // Numeric spelling and precision must survive an unrelated description edit.
+  "agents": {"helper": {"description":"original","temperature":1.0,
+    "nested":{"float":1e0,"large":9007199254740993},"array":[1.0,9007199254740995]}},
+  "other":"keep"
+}"#;
+    write_file(&path, original.as_bytes()).unwrap();
+    let app = tauri::test::mock_app();
+    app.manage(home.paths.clone());
+    let draft = |description: &str| {
+        let loaded =
+            commands::get_agent(app.state::<ConfigPaths>(), "helper".to_owned(), None).unwrap();
+        let mut node = Command::new("node")
+            .args([
+                "--input-type=module",
+                "-e",
+                r#"import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const agent = JSON.parse(readFileSync(0, 'utf8'));
+const source = agent.sources[0];
+assert.equal(JSON.stringify(source.raw.temperature), '1');
+assert.equal(source.raw.nested.large, 9007199254740992);
+assert.equal(typeof source.content, 'string');
+assert.ok(source.content.includes('"temperature":1.0'));
+assert.ok(source.content.includes('"large":9007199254740993'));
+process.stdout.write(JSON.stringify({id:agent.id,source:agent.source,storage:'inline',
+  mutation:{fields:{description:process.argv[1]},expectedPath:source.resolvedPath,expectedContent:source.content}}));"#,
+                description,
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("agent numeric roundtrip regression requires Node.js");
+        node.stdin
+            .take()
+            .unwrap()
+            .write_all(&serde_json::to_vec(&loaded).unwrap())
+            .unwrap();
+        let output = node.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "JavaScript roundtrip failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<AgentDefinitionDto>(&output.stdout).unwrap()
+    };
+
+    let saved = commands::update_agent(app.state::<ConfigPaths>(), draft("draft"), None).unwrap();
+    assert_eq!(saved.description.as_deref(), Some("draft"));
+    let saved_content = fs::read_to_string(&path).unwrap();
+    assert!(saved_content.contains("\"temperature\":1.0"));
+    assert!(saved_content.contains("\"float\":1e0"));
+    assert!(saved_content.contains("\"large\":9007199254740993"));
+    assert!(saved_content.contains("\"array\":[1.0,9007199254740995]"));
+
+    for external in [
+        saved_content.replace("9007199254740993", "9007199254740992"),
+        saved_content.replace("\"temperature\":1.0", "\"temperature\":1"),
+        saved_content.replace("\"description\":\"draft\"", "\"description\":\"external\""),
+    ] {
+        fs::write(&path, &saved_content).unwrap();
+        let stale = draft("stale draft");
+        fs::write(&path, &external).unwrap();
+        let error = commands::update_agent(app.state::<ConfigPaths>(), stale, None).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ConfigurationFailed);
+        assert_eq!(fs::read_to_string(&path).unwrap(), external);
+        assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
+    }
+
+    fs::write(&path, &saved_content).unwrap();
+    let unrelated = draft("second draft");
+    fs::write(
+        &path,
+        saved_content.replace("\"other\":\"keep\"", "\"other\":\"external\""),
+    )
+    .unwrap();
+    let saved = commands::update_agent(app.state::<ConfigPaths>(), unrelated, None).unwrap();
+    assert_eq!(saved.description.as_deref(), Some("second draft"));
+    let content = fs::read_to_string(&path).unwrap();
+    assert!(content.contains("\"other\":\"external\""));
+    assert!(content.contains("\"temperature\":1.0"));
+    assert!(content.contains("\"float\":1e0"));
+    assert!(content.contains("\"large\":9007199254740993"));
+    assert!(content.contains("\"array\":[1.0,9007199254740995]"));
+    assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
 }

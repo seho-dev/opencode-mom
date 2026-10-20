@@ -8,23 +8,9 @@ use crate::refs;
 
 type CommandResult<T> = Result<T, AppError>;
 
-fn paths(state: &State<'_, ConfigPaths>) -> ConfigPaths {
-    state.inner().clone()
-}
-
 #[tauri::command]
 pub fn list_providers(state: State<'_, ConfigPaths>) -> CommandResult<Vec<ProviderDef>> {
-    providers::list_providers(&paths(&state).opencode_file())
-}
-
-#[tauri::command]
-pub fn list_custom_providers(state: State<'_, ConfigPaths>) -> CommandResult<Vec<ProviderDef>> {
-    let all = providers::list_providers(&paths(&state).opencode_file())?;
-    let custom_ids = providers::custom_provider_ids(&paths(&state).opencode_file())?;
-    Ok(all
-        .into_iter()
-        .filter(|p| custom_ids.contains(&p.name))
-        .collect())
+    providers::list_providers(&state.inner().opencode_file())
 }
 
 #[tauri::command]
@@ -32,7 +18,7 @@ pub fn create_provider(
     state: State<'_, ConfigPaths>,
     provider: ProviderDef,
 ) -> CommandResult<ProviderDef> {
-    providers::create_provider(&paths(&state).opencode_file(), provider)
+    providers::create_provider(&state.inner().opencode_file(), provider)
 }
 
 #[tauri::command]
@@ -40,13 +26,13 @@ pub fn update_provider(
     state: State<'_, ConfigPaths>,
     provider: ProviderDef,
 ) -> CommandResult<ProviderDef> {
-    providers::update_provider(&paths(&state).opencode_file(), provider)
+    providers::update_provider(&state.inner().opencode_file(), provider)
 }
 
 #[tauri::command]
 pub fn delete_provider(state: State<'_, ConfigPaths>, id: String) -> CommandResult<()> {
-    let paths = paths(&state);
-    let references = refs::provider_is_referenced(&paths, &id)?;
+    let paths = state.inner();
+    let references = refs::collect_model_references(paths)?.for_provider(&id);
     if !references.is_empty() {
         return Err(AppError::references(
             format!("{id} is referenced by {} location(s)", references.len()),

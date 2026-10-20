@@ -8,13 +8,9 @@ use crate::refs;
 
 type CommandResult<T> = Result<T, AppError>;
 
-fn paths(state: &State<'_, ConfigPaths>) -> ConfigPaths {
-    state.inner().clone()
-}
-
 #[tauri::command]
 pub fn list_models(state: State<'_, ConfigPaths>) -> CommandResult<Vec<ProviderDef>> {
-    providers::list_providers(&paths(&state).opencode_file())
+    providers::list_providers(&state.inner().opencode_file())
 }
 
 #[tauri::command]
@@ -23,7 +19,7 @@ pub fn create_model(
     provider_id: String,
     model: ModelDef,
 ) -> CommandResult<ModelDef> {
-    providers::create_model(&paths(&state).opencode_file(), &provider_id, model)
+    providers::create_model(&state.inner().opencode_file(), &provider_id, model)
 }
 
 #[tauri::command]
@@ -33,14 +29,14 @@ pub fn update_model(
     model: ModelDef,
 ) -> CommandResult<ModelDef> {
     let model_ref = ModelRef::new(&provider_id, &model.id)?;
-    providers::update_model(&paths(&state).opencode_file(), &model_ref, model)
+    providers::update_model(&state.inner().opencode_file(), &model_ref, model)
 }
 
 #[tauri::command]
 pub fn delete_model(state: State<'_, ConfigPaths>, model_ref: String) -> CommandResult<()> {
-    let paths = paths(&state);
+    let paths = state.inner();
     let model_ref = ModelRef::parse(&model_ref)?;
-    let references = refs::model_is_referenced(&paths, &model_ref)?;
+    let references = refs::collect_model_references(paths)?.for_model(&model_ref);
     if !references.is_empty() {
         return Err(AppError::references(
             format!(

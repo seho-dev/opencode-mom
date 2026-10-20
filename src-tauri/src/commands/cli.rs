@@ -1,21 +1,63 @@
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
+use super::spawn_blocking_task;
 use crate::error::AppError;
-use crate::opencode_cli::{self, ModelCatalogEntry, TokenUsageRecord};
+use crate::opencode_cli::{
+    self, installation, ModelCatalogEntry, OpenCodeInstallation, OpenCodeServiceStatus,
+    OpenCodeUpdateCheck, TokenUsageRecord,
+};
 use crate::paths::ConfigPaths;
 
 type CommandResult<T> = Result<T, AppError>;
 
-fn paths(state: &State<'_, ConfigPaths>) -> ConfigPaths {
-    state.inner().clone()
-}
-
 #[tauri::command]
-pub fn opencode_list_models(
+pub async fn opencode_list_models(
     state: State<'_, ConfigPaths>,
     provider: Option<String>,
 ) -> CommandResult<Vec<ModelCatalogEntry>> {
-    opencode_cli::list_models_via_cli(&paths(&state), provider.as_deref())
+    let paths = state.inner().clone();
+    spawn_blocking_task("OpenCode model catalog", move || {
+        opencode_cli::list_models_via_cli(&paths, provider.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn opencode_get_service_status() -> CommandResult<OpenCodeServiceStatus> {
+    spawn_blocking_task("OpenCode service status", opencode_cli::target::get_status).await
+}
+
+#[tauri::command]
+pub async fn opencode_set_service_target(
+    app: AppHandle,
+    url: Option<String>,
+    password: Option<String>,
+) -> CommandResult<OpenCodeServiceStatus> {
+    spawn_blocking_task("OpenCode service target", move || {
+        let power = app.state::<crate::power::PowerService>();
+        let island = app.state::<crate::island::IslandService>();
+        opencode_cli::target::set_target(
+            url,
+            password,
+            || {
+                Ok((
+                    power.prepare_target_refresh()?,
+                    island.prepare_target_refresh(),
+                ))
+            },
+            |(power, island)| {
+                power.invalidate();
+                island.invalidate()
+            },
+            |generation| {
+                power.finish_target_refresh();
+                if island.finish_target_refresh(&app, generation).is_err() {
+                    eprintln!("OpenCode target saved; Mini Island refresh unavailable");
+                }
+            },
+        )
+    })
+    .await
 }
 
 #[tauri::command]
@@ -26,30 +68,46 @@ pub fn opencode_resolve_binary() -> CommandResult<String> {
 }
 
 #[tauri::command]
+pub async fn opencode_get_installation() -> CommandResult<OpenCodeInstallation> {
+    spawn_blocking_task("OpenCode installation", installation::get_installation).await
+}
+
+#[tauri::command]
+pub async fn opencode_check_update() -> CommandResult<OpenCodeUpdateCheck> {
+    spawn_blocking_task("OpenCode update check", installation::check_for_update).await
+}
+
+#[tauri::command]
+pub async fn opencode_upgrade(
+    expected_binary_path: String,
+    expected_version: String,
+    target_version: String,
+) -> CommandResult<OpenCodeInstallation> {
+    spawn_blocking_task("OpenCode upgrade", move || {
+        installation::upgrade(&expected_binary_path, &expected_version, &target_version)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn opencode_reload() -> CommandResult<()> {
-    tauri::async_runtime::spawn_blocking(opencode_cli::reload_via_cli)
-        .await
-        .map_err(|error| {
-            AppError::configuration(format!("failed to join opencode reload task: {error}"))
-        })?
+    spawn_blocking_task("OpenCode reload", opencode_cli::reload_via_cli).await
 }
 
 #[tauri::command]
 pub async fn opencode_active_sessions() -> CommandResult<usize> {
-    tauri::async_runtime::spawn_blocking(opencode_cli::active_sessions_via_cli)
-        .await
-        .map_err(|error| {
-            AppError::configuration(format!(
-                "failed to join opencode active sessions task: {error}"
-            ))
-        })?
+    spawn_blocking_task(
+        "OpenCode active sessions",
+        opencode_cli::active_sessions_via_cli,
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn opencode_token_usage_records() -> CommandResult<Vec<TokenUsageRecord>> {
-    tauri::async_runtime::spawn_blocking(opencode_cli::token_usage_records_via_cli)
-        .await
-        .map_err(|error| {
-            AppError::configuration(format!("failed to join opencode token usage task: {error}"))
-        })?
+    spawn_blocking_task(
+        "OpenCode token usage",
+        opencode_cli::token_usage_records_via_cli,
+    )
+    .await
 }

@@ -9,7 +9,7 @@ use std::time::Duration;
 use opencode_mom_tauri::document::{write_file, JsoncDoc};
 use opencode_mom_tauri::error::ErrorCode;
 use opencode_mom_tauri::paths::ConfigPaths;
-use opencode_mom_tauri::{mcp, skills};
+use opencode_mom_tauri::{agents, mcp, models, skills};
 use serde_json::json;
 
 struct Home(PathBuf);
@@ -46,7 +46,7 @@ impl Drop for Home {
 }
 
 #[test]
-fn global_paths_include_all_sources_in_override_order_and_anchor_relative_skills() {
+fn global_paths_include_aliases_in_override_order_and_skip_relative_skills() {
     let home = Home::new();
     let paths = ConfigPaths::with_resource_parts(
         home.0.clone(),
@@ -66,24 +66,684 @@ fn global_paths_include_all_sources_in_override_order_and_anchor_relative_skills
         ]
     );
     assert_eq!(paths.opencode_file(), home.0.join("cwd/override.jsonc"));
-    assert_eq!(paths.resolve_skill_path("~/custom"), home.0.join("custom"));
     assert_eq!(
-        paths.resolve_skill_path("relative"),
-        home.0.join("cwd/relative")
+        paths.resolve_skill_path("~/custom"),
+        Some(home.0.join("custom"))
     );
+    assert_eq!(paths.resolve_skill_path("relative"), None);
     assert_eq!(
         paths.resolve_skill_path(&home.0.display().to_string()),
-        home.0
+        Some(home.0.clone())
     );
     assert_eq!(
         paths.global_skill_dirs(),
         &[
             home.0.join(".claude/skills"),
             home.0.join(".agents/skills"),
+            home.0.join("xdg/opencode/skill"),
             home.0.join("xdg/opencode/skills"),
+            home.0.join("cwd/extra/skill"),
             home.0.join("cwd/extra/skills"),
         ]
     );
+}
+
+#[test]
+fn project_scope_reads_only_exact_root_sources_and_preserves_global_paths() {
+    let home = Home::new();
+    let paths = home.paths();
+    let original_paths = paths.clone();
+    let cwd = std::env::current_dir().unwrap();
+    let root = home.0.join("workspace/project");
+    let mut source_files = Vec::new();
+    for (index, relative) in [
+        "opencode.json",
+        "opencode.jsonc",
+        ".opencode/opencode.json",
+        ".opencode/opencode.jsonc",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        source_files.push(home.write(&format!("workspace/project/{relative}"), &json!({
+            "agents": {"shared": {"description": format!("source-{index}"), "steps": index}},
+            "mcp": {"servers": {"shared": {"type":"local", "command":[format!("source-{index}")]}}},
+            "skills": ["./team-skills", home.0.join("custom"), "~/custom", "http://127.0.0.1:1/ignored"]
+        }).to_string()));
+    }
+    for outside in [
+        ".config/opencode",
+        "workspace",
+        "workspace/sibling",
+        "workspace/project/child",
+    ] {
+        home.write(&format!("{outside}/opencode.json"), r#"{"agents":{"outside":{}},"mcp":{"servers":{"outside":{"type":"local","command":["outside"]}}}}"#);
+        home.write(&format!("{outside}/.opencode/agents/outside.md"), "outside");
+        home.write(&format!("{outside}/.opencode/skills/Outside.md"), "outside");
+    }
+    home.write(".config/opencode/agents/global.md", "global");
+    home.write(".config/opencode/skills/Global.md", "global");
+    for ignored in [
+        "workspace/project/team-skills",
+        "workspace/project/.claude/skills",
+        "workspace/project/.agents/skills",
+        "custom",
+    ] {
+        home.write(&format!("{ignored}/Ignored.md"), "ignored custom skill");
+    }
+    home.write("workspace/project/.opencode/mode/ignored.md", "ignored");
+    home.write("workspace/project/.opencode/modes/ignored.md", "ignored");
+    home.write(
+        "workspace/project/.opencode/agent/nested/reviewer.md",
+        "singular",
+    );
+    let markdown = home.write(
+        "workspace/project/.opencode/agents/nested/reviewer.md",
+        "plural",
+    );
+    home.write("workspace/project/.opencode/skill/Shared.md", "singular");
+    let skill_file = home.write("workspace/project/.opencode/skills/Shared.md", "plural");
+    let project = models::add_project(&paths.config_file(), root.to_str().unwrap()).unwrap();
+    let scoped = paths.for_project(Some(project.id)).unwrap();
+    let canonical = fs::canonicalize(&root).unwrap();
+    assert_eq!(
+        scoped.global_config_files(),
+        [
+            canonical.join("opencode.json"),
+            canonical.join("opencode.jsonc"),
+            canonical.join(".opencode/opencode.json"),
+            canonical.join(".opencode/opencode.jsonc")
+        ]
+    );
+    assert_eq!(scoped.opencode_file(), paths.opencode_file());
+    assert_eq!(scoped.config_file(), paths.config_file());
+    let app_config_before = fs::read(paths.config_file()).unwrap();
+    let global_before = fs::read(paths.opencode_file()).unwrap();
+    let inline = agents::get(&scoped, "shared").unwrap();
+    assert_eq!(inline.inline_sources.len(), 4);
+    assert_eq!(inline.effective["description"], "source-3");
+    let dto: opencode_mom_tauri::commands::AgentDefinitionDto = inline.into();
+    assert_eq!(
+        dto.sources
+            .iter()
+            .map(|source| source.path.clone().unwrap())
+            .collect::<Vec<_>>(),
+        scoped
+            .global_config_files()
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+    );
+    let reviewer = agents::get(&scoped, "nested/reviewer").unwrap();
+    assert_eq!(reviewer.markdown.len(), 2);
+    assert_eq!(reviewer.effective["system"], "plural");
+    assert_eq!(
+        reviewer.markdown.last().unwrap().path,
+        canonical.join(".opencode/agents/nested/reviewer.md")
+    );
+    assert_eq!(agents::list(&scoped).unwrap().len(), 2);
+    let server = mcp::get(&scoped, "shared").unwrap();
+    assert_eq!(server.target, "source-3");
+    assert_eq!(server.source_paths.len(), 4);
+    assert_eq!(
+        server.source_path,
+        canonical
+            .join(".opencode/opencode.jsonc")
+            .display()
+            .to_string()
+    );
+    assert_eq!(mcp::list(&scoped).unwrap().data.len(), 1);
+    let skill = skills::get(&scoped, "Shared").unwrap();
+    assert_eq!(skill.content, "plural");
+    assert_eq!(
+        skill.path,
+        canonical
+            .join(".opencode/skills/Shared.md")
+            .display()
+            .to_string()
+    );
+    let listed = skills::list(&scoped).unwrap();
+    assert_eq!(listed.data.len(), 1);
+    assert!(listed.diagnostics.is_empty());
+    assert!(agents::get(&scoped, "outside").is_err());
+    assert!(agents::get(&scoped, "../shared").is_err());
+    assert!(skills::get(&scoped, "Ignored").is_err());
+    assert_eq!(paths.for_project(None).unwrap(), original_paths);
+    assert_eq!(paths, original_paths);
+    assert_eq!(std::env::current_dir().unwrap(), cwd);
+    assert_eq!(fs::read(paths.config_file()).unwrap(), app_config_before);
+    assert_eq!(fs::read(paths.opencode_file()).unwrap(), global_before);
+    assert_eq!(fs::read_to_string(markdown).unwrap(), "plural");
+    assert_eq!(fs::read_to_string(skill_file).unwrap(), "plural");
+    assert!(skills::get(&paths, "Global").is_ok());
+    assert!(agents::get(&paths, "global").is_ok());
+    assert!(agents::get(&paths, "shared").is_err());
+    assert!(mcp::get(&paths, "shared").is_err());
+    fs::remove_dir_all(&root).unwrap();
+    assert_eq!(
+        paths.for_project(Some(project.id)).unwrap_err().code,
+        ErrorCode::NotFound
+    );
+    for error in [
+        agents::list(&scoped).unwrap_err(),
+        mcp::list(&scoped).unwrap_err(),
+        skills::list(&scoped).unwrap_err(),
+    ] {
+        assert_eq!(error.code, ErrorCode::NotFound);
+    }
+    assert_eq!(
+        models::load_config(&paths.config_file()).unwrap().projects,
+        [project]
+    );
+    assert!(source_files.iter().all(|path| !path.exists()));
+}
+
+#[test]
+fn global_aliases_and_absolute_home_remote_skill_sources_skip_relative_paths() {
+    let home = Home::new();
+    let paths = ConfigPaths::with_resource_parts(
+        home.0.clone(),
+        None,
+        Some(home.0.join("override")),
+        home.0.join(".config"),
+        home.0.join("cwd"),
+    );
+    home.write(".claude/skills/Claude.md", "claude");
+    home.write(".agents/skills/Agents.md", "agents");
+    home.write(".config/opencode/skill/Shared.md", "native singular");
+    home.write(".config/opencode/skills/Shared.md", "native plural");
+    home.write("override/skill/Shared.md", "override singular");
+    let shared_path = home.write("override/skills/Shared.md", "override plural");
+    home.write(".config/opencode/agent/native.md", "native singular");
+    home.write(".config/opencode/agents/native-plural.md", "native plural");
+    home.write("override/agent/override.md", "override singular");
+    home.write("override/agents/override-plural.md", "override plural");
+    home.write("override/mode/ignored.md", "ignored");
+    home.write("override/modes/ignored.md", "ignored");
+    home.write("absolute/Absolute.md", "absolute");
+    home.write("home-source/Home.md", "home");
+    home.write("cwd/team-skills/Relative.md", "relative ignored");
+    home.write("cwd/not-a-directory", "would diagnose if read");
+    let (url, server) = serve(vec![
+        (
+            "/catalog/index.json",
+            200,
+            json!({"skills":[{"name":"Remote","files":["Remote.md"]}]}).to_string(),
+            None,
+        ),
+        ("/catalog/Remote/Remote.md", 200, "remote".to_owned(), None),
+    ]);
+    home.write("override/opencode.json", &json!({"skills": ["./team-skills", "not-a-directory", home.0.join("absolute"), "~/home-source", url]}).to_string());
+    let listed = skills::list(&paths).unwrap();
+    assert!(listed.diagnostics.is_empty(), "{:?}", listed.diagnostics);
+    assert_eq!(
+        listed
+            .data
+            .iter()
+            .map(|skill| skill.id.as_str())
+            .collect::<Vec<_>>(),
+        ["Absolute", "Agents", "Claude", "Home", "Remote", "Shared"]
+    );
+    assert_eq!(
+        listed
+            .data
+            .iter()
+            .find(|skill| skill.id == "Remote")
+            .unwrap()
+            .kind,
+        skills::SkillKind::Remote
+    );
+    let shared = listed
+        .data
+        .iter()
+        .find(|skill| skill.id == "Shared")
+        .unwrap();
+    assert_eq!(shared.content, "override plural");
+    assert_eq!(shared.path, shared_path.display().to_string());
+    assert_catalog_requests(
+        server.join().unwrap(),
+        &["/catalog/index.json", "/catalog/Remote/Remote.md"],
+    );
+    assert_eq!(
+        agents::list(&paths)
+            .unwrap()
+            .iter()
+            .map(|agent| agent.id.as_str())
+            .collect::<Vec<_>>(),
+        ["native", "native-plural", "override", "override-plural"]
+    );
+}
+
+#[test]
+fn project_resource_ipc_mutations_are_refused_before_any_write() {
+    use opencode_mom_tauri::commands;
+    use tauri::Manager;
+    let home = Home::new();
+    let paths = home.paths();
+    let global = home.write(".config/opencode/opencode.json", r#"{"agents":{"helper":{}},"mcp":{"servers":{"server":{"type":"local","command":["run"]}}}}"#);
+    let root = home.0.join("project");
+    fs::create_dir(&root).unwrap();
+    let project_file = home.write("project/opencode.json", "{}");
+    let project = models::add_project(&paths.config_file(), root.to_str().unwrap()).unwrap();
+    let scoped = paths.for_project(Some(project.id)).unwrap();
+    let app = tauri::test::mock_app();
+    app.manage(paths.clone());
+    let global_before = fs::read(&global).unwrap();
+    let config_before = fs::read(paths.config_file()).unwrap();
+    let agent: commands::AgentDefinitionDto =
+        serde_json::from_value(json!({"id":"new", "source":"inline", "storage":"inline"})).unwrap();
+    for id in [project.id, uuid::Uuid::new_v4()] {
+        let state = || app.state::<ConfigPaths>();
+        let errors = vec![
+            commands::create_agent(state(), agent.clone(), Some(id)).unwrap_err(),
+            commands::update_agent(state(), agent.clone(), Some(id)).unwrap_err(),
+            commands::delete_agent(state(), "helper".to_owned(), None, Some(id)).unwrap_err(),
+            commands::create_mcp(
+                state(),
+                mcp_draft("new", json!({"type":"local","command":["run"]})),
+                Some(id),
+            )
+            .unwrap_err(),
+            commands::update_mcp(
+                state(),
+                mcp_update(
+                    &mcp::get(&paths, "server").unwrap(),
+                    json!({"type":"local","command":["changed"]}),
+                ),
+                Some(id),
+            )
+            .unwrap_err(),
+            commands::delete_mcp(state(), "server".to_owned(), Some(id)).unwrap_err(),
+            tauri::async_runtime::block_on(commands::create_skill(
+                state(),
+                skills::SkillDraft {
+                    id: "new".to_owned(),
+                    content: "body".to_owned(),
+                },
+                Some(id),
+            ))
+            .unwrap_err(),
+            tauri::async_runtime::block_on(commands::update_skill(
+                state(),
+                skills::SkillUpdate {
+                    id: "new".to_owned(),
+                    content: "body".to_owned(),
+                    expected_content: "".to_owned(),
+                    expected_path: "".to_owned(),
+                },
+                Some(id),
+            ))
+            .unwrap_err(),
+        ];
+        assert!(errors
+            .iter()
+            .all(|error| error.code == ErrorCode::ValidationFailed
+                && error.message.contains("read-only")));
+    }
+    assert!(agents::create(
+        &scoped,
+        agents::AgentCreate {
+            id: "new".to_owned(),
+            storage: agents::AgentStorage::Inline,
+            fields: Default::default(),
+            prompt: None
+        }
+    )
+    .is_err());
+    assert!(mcp::create(
+        &scoped,
+        mcp_draft("new", json!({"type":"local","command":["run"]}))
+    )
+    .is_err());
+    assert!(skills::create(
+        &scoped,
+        skills::SkillDraft {
+            id: "new".to_owned(),
+            content: "body".to_owned()
+        }
+    )
+    .is_err());
+    assert_eq!(fs::read(&global).unwrap(), global_before);
+    assert_eq!(fs::read(paths.config_file()).unwrap(), config_before);
+    assert_eq!(fs::read_to_string(project_file).unwrap(), "{}");
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    assert!(!paths.native_global_skills_dir().exists());
+    let response = commands::load_app_state(app.state()).unwrap();
+    assert_eq!(response.projects, [project.clone()]);
+    assert_eq!(response.selected_project_id, Some(project.id));
+    assert_eq!(response.agents.len(), 1);
+    assert_eq!(commands::list_agents(app.state(), None).unwrap().len(), 1);
+    assert!(commands::list_agents(app.state(), Some(project.id))
+        .unwrap()
+        .is_empty());
+    assert!(commands::get_agent(app.state(), "helper".to_owned(), Some(project.id)).is_err());
+    assert!(commands::get_mcp(app.state(), "server".to_owned(), Some(project.id)).is_err());
+    assert!(tauri::async_runtime::block_on(commands::get_skill(
+        app.state(),
+        "Global".to_owned(),
+        Some(project.id)
+    ))
+    .is_err());
+    assert!(commands::list_mcps(app.state(), Some(project.id))
+        .unwrap()
+        .data
+        .is_empty());
+    assert!(
+        tauri::async_runtime::block_on(commands::list_skills(app.state(), Some(project.id)))
+            .unwrap()
+            .data
+            .is_empty()
+    );
+    commands::select_project(app.state(), None).unwrap();
+    assert_eq!(
+        commands::load_app_state(app.state())
+            .unwrap()
+            .selected_project_id,
+        None
+    );
+    fs::remove_dir_all(&root).unwrap();
+    commands::select_project(app.state(), Some(project.id)).unwrap();
+    assert_eq!(
+        commands::load_app_state(app.state())
+            .unwrap()
+            .selected_project_id,
+        Some(project.id)
+    );
+    for error in [
+        commands::list_agents(app.state(), Some(project.id)).unwrap_err(),
+        commands::get_agent(app.state(), "helper".to_owned(), Some(project.id)).unwrap_err(),
+        commands::list_mcps(app.state(), Some(project.id)).unwrap_err(),
+        commands::get_mcp(app.state(), "server".to_owned(), Some(project.id)).unwrap_err(),
+        tauri::async_runtime::block_on(commands::list_skills(app.state(), Some(project.id)))
+            .unwrap_err(),
+        tauri::async_runtime::block_on(commands::get_skill(
+            app.state(),
+            "Global".to_owned(),
+            Some(project.id),
+        ))
+        .unwrap_err(),
+    ] {
+        assert_eq!(error.code, ErrorCode::NotFound);
+    }
+    commands::remove_project(app.state(), project.id).unwrap();
+    assert!(commands::load_app_state(app.state())
+        .unwrap()
+        .projects
+        .is_empty());
+    let mut config = models::load_config(&paths.config_file()).unwrap();
+    config.state.selected_project_id = Some(uuid::Uuid::new_v4());
+    models::save_config(&paths.config_file(), &config).unwrap();
+    assert_eq!(
+        commands::load_app_state(app.state())
+            .unwrap()
+            .selected_project_id,
+        None
+    );
+}
+
+#[test]
+fn explicit_global_resource_ipc_remains_writable_while_a_project_is_selected() {
+    use opencode_mom_tauri::commands;
+    use tauri::Manager;
+    let home = Home::new();
+    let paths = home.paths();
+    let root = home.0.join("project");
+    fs::create_dir(&root).unwrap();
+    let project_file = home.write("project/opencode.json", "{\"project\":true}");
+    let project = models::add_project(&paths.config_file(), root.to_str().unwrap()).unwrap();
+    let config_before = fs::read(paths.config_file()).unwrap();
+    let app = tauri::test::mock_app();
+    app.manage(paths.clone());
+    let state = || app.state::<ConfigPaths>();
+    let server = commands::create_mcp(
+        state(),
+        mcp_draft("global", json!({"type":"local","command":["created"]})),
+        None,
+    )
+    .unwrap();
+    let updated = commands::update_mcp(
+        state(),
+        mcp_update(&server, json!({"type":"local","command":["updated"]})),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        commands::get_mcp(state(), "global".to_owned(), None).unwrap(),
+        updated
+    );
+    commands::delete_mcp(state(), "global".to_owned(), None).unwrap();
+    assert!(commands::list_mcps(state(), None).unwrap().data.is_empty());
+    let skill = tauri::async_runtime::block_on(commands::create_skill(
+        state(),
+        skills::SkillDraft {
+            id: "Global".to_owned(),
+            content: "created".to_owned(),
+        },
+        None,
+    ))
+    .unwrap();
+    let updated = tauri::async_runtime::block_on(commands::update_skill(
+        state(),
+        skill_update(&skill, "updated"),
+        None,
+    ))
+    .unwrap();
+    assert_eq!(updated.content, "updated");
+    assert_eq!(
+        tauri::async_runtime::block_on(commands::get_skill(state(), "Global".to_owned(), None,))
+            .unwrap(),
+        updated
+    );
+    assert!(commands::list_mcps(state(), Some(project.id))
+        .unwrap()
+        .data
+        .is_empty());
+    assert!(
+        tauri::async_runtime::block_on(commands::list_skills(state(), Some(project.id)))
+            .unwrap()
+            .data
+            .is_empty()
+    );
+    assert_eq!(
+        fs::read_to_string(&project_file).unwrap(),
+        "{\"project\":true}"
+    );
+    fs::remove_dir_all(&root).unwrap();
+    commands::create_mcp(
+        state(),
+        mcp_draft(
+            "missing-project-global",
+            json!({"type":"local","command":["run"]}),
+        ),
+        None,
+    )
+    .unwrap();
+    assert_eq!(fs::read(paths.config_file()).unwrap(), config_before);
+    assert_eq!(
+        models::load_config(&paths.config_file())
+            .unwrap()
+            .state
+            .selected_project_id,
+        Some(project.id)
+    );
+}
+
+#[test]
+fn project_scope_rejects_managed_global_roots_but_not_ancestors_or_unrelated_projects() {
+    let home = Home::new();
+    let paths = ConfigPaths::with_resource_parts(
+        home.0.clone(),
+        Some(home.0.join("selected/custom.jsonc")),
+        Some(home.0.join("override")),
+        home.0.join(".config"),
+        home.0.join("cwd"),
+    );
+    for relative in [
+        ".config/opencode",
+        ".config/opencode/agents",
+        ".config/opencode/skill",
+        ".claude/skills",
+        ".agents/skills",
+        "override",
+        "override/agents",
+    ] {
+        let root = home.0.join(relative);
+        fs::create_dir_all(&root).unwrap();
+        assert_eq!(
+            paths.validate_project_directory(&root).unwrap_err().code,
+            ErrorCode::ValidationFailed,
+            "{relative}",
+        );
+        let project = models::add_project(&paths.config_file(), root.to_str().unwrap()).unwrap();
+        assert_eq!(
+            paths.for_project(Some(project.id)).unwrap_err().code,
+            ErrorCode::ValidationFailed,
+            "{relative}",
+        );
+    }
+    for relative in [
+        "",
+        ".config",
+        "project",
+        "override-sibling",
+        "selected",
+        "override/unrelated-project",
+        ".config/opencode/unrelated-project",
+    ] {
+        let root = home.0.join(relative);
+        fs::create_dir_all(&root).unwrap();
+        assert!(
+            paths.validate_project_directory(&root).is_ok(),
+            "{relative}"
+        );
+        let project = models::add_project(&paths.config_file(), root.to_str().unwrap()).unwrap();
+        assert!(paths.for_project(Some(project.id)).is_ok(), "{relative}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn project_scope_rejects_global_directory_aliases_and_fixed_source_aliases() {
+    use std::os::unix::fs::symlink;
+    for global_is_alias in [false, true] {
+        let home = Home::new();
+        let global = home.0.join(".config/opencode");
+        fs::create_dir_all(global.parent().unwrap()).unwrap();
+        let root = home.0.join("project");
+        let path = if global_is_alias {
+            fs::create_dir(&root).unwrap();
+            symlink(&root, &global).unwrap();
+            root
+        } else {
+            fs::create_dir(&global).unwrap();
+            symlink(&global, &root).unwrap();
+            root
+        };
+        let paths = home.paths();
+        assert_eq!(
+            paths.validate_project_directory(&path).unwrap_err().code,
+            ErrorCode::ValidationFailed
+        );
+        let project = models::add_project(&paths.config_file(), path.to_str().unwrap()).unwrap();
+        assert_eq!(
+            paths.for_project(Some(project.id)).unwrap_err().code,
+            ErrorCode::ValidationFailed
+        );
+    }
+    let home = Home::new();
+    let paths = home.paths();
+    let global_file = home.write(".config/opencode/opencode.json", "{}");
+    let root = home.0.join("project");
+    fs::create_dir(&root).unwrap();
+    let project = models::add_project(&paths.config_file(), root.to_str().unwrap()).unwrap();
+    let scoped = paths.for_project(Some(project.id)).unwrap();
+    let config_before = fs::read(paths.config_file()).unwrap();
+    symlink(&global_file, root.join("opencode.json")).unwrap();
+    assert_eq!(
+        paths.for_project(Some(project.id)).unwrap_err().code,
+        ErrorCode::ValidationFailed
+    );
+    for error in [
+        agents::list(&scoped).unwrap_err(),
+        mcp::list(&scoped).unwrap_err(),
+        skills::list(&scoped).unwrap_err(),
+    ] {
+        assert_eq!(error.code, ErrorCode::ValidationFailed);
+    }
+    assert_eq!(fs::read(paths.config_file()).unwrap(), config_before);
+    assert_eq!(fs::read_to_string(&global_file).unwrap(), "{}");
+    fs::remove_file(root.join("opencode.json")).unwrap();
+    symlink(global_file.parent().unwrap(), root.join(".opencode")).unwrap();
+    assert_eq!(
+        paths.for_project(Some(project.id)).unwrap_err().code,
+        ErrorCode::ValidationFailed
+    );
+}
+
+#[test]
+fn project_scope_rejects_pinned_fixed_config_but_not_an_unrelated_explicit_filename() {
+    for (filename, overlaps) in [("opencode.jsonc", true), ("custom.jsonc", false)] {
+        let home = Home::new();
+        let root = home.0.join("project");
+        fs::create_dir(&root).unwrap();
+        let explicit = root.join(filename);
+        let paths = ConfigPaths::with_resource_parts(
+            home.0.clone(),
+            Some(explicit),
+            None,
+            home.0.join(".config"),
+            home.0.join("cwd"),
+        );
+        let project = models::add_project(&paths.config_file(), root.to_str().unwrap()).unwrap();
+        let result = paths.for_project(Some(project.id));
+        if overlaps {
+            assert_eq!(result.unwrap_err().code, ErrorCode::ValidationFailed);
+        } else {
+            assert!(result.is_ok());
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn unrelated_unreadable_global_resources_do_not_block_project_browsing() {
+    use std::os::unix::fs::PermissionsExt;
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let home = Home::new();
+    let global = home.0.join(".config/opencode");
+    let root = home.0.join("project");
+    fs::create_dir_all(&global).unwrap();
+    fs::create_dir(&root).unwrap();
+    let paths = home.paths();
+    let project = models::add_project(&paths.config_file(), root.to_str().unwrap()).unwrap();
+    fs::set_permissions(&global, fs::Permissions::from_mode(0o0)).unwrap();
+    let scoped = paths.for_project(Some(project.id));
+    fs::set_permissions(&global, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(scoped.is_ok());
+}
+
+#[test]
+fn malformed_global_path_does_not_block_an_unrelated_project() {
+    let home = Home::new();
+    home.write(".config/opencode", "not a directory");
+    let root = home.0.join("project");
+    fs::create_dir(&root).unwrap();
+    let paths = home.paths();
+    let project = models::add_project(&paths.config_file(), root.to_str().unwrap()).unwrap();
+    assert!(paths.for_project(Some(project.id)).is_ok());
+}
+
+#[test]
+fn global_skill_alias_update_keeps_existing_singular_path() {
+    let home = Home::new();
+    let path = home.write(".config/opencode/skill/Existing.md", "original");
+    let current = skills::get(&home.paths(), "Existing").unwrap();
+    skills::update(&home.paths(), skill_update(&current, "edited")).unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "edited");
+    assert!(!home.0.join(".config/opencode/skills/Existing.md").exists());
+    assert!(!home.0.join(".config/opencode/skills/Existing").exists());
 }
 
 #[test]
@@ -103,12 +763,12 @@ fn explicit_selected_config_is_managed_but_unselected_projects_are_not_discovere
     );
     home.write(
         ".config/opencode/opencode.json",
-        r#"{"mcp":{"servers":{"shared":{"type":"local","command":["global"]}}},"skills":["relative"]}"#,
+        r#"{"mcp":{"servers":{"shared":{"type":"local","command":["global"]}}},"skills":["~/cwd/relative"]}"#,
     );
     home.write("cwd/relative/Global.md", "global configured skill");
     let project = home.write(
         "cwd/opencode.jsonc",
-        r#"{"mcp":{"servers":{"shared":{"type":"local","command":["project"]},"project-only":{"type":"local","command":["project"]}}},"skills":["project-skills"]}"#,
+        r#"{"mcp":{"servers":{"shared":{"type":"local","command":["project"]},"project-only":{"type":"local","command":["project"]}}},"skills":["~/cwd/project-skills"]}"#,
     );
     home.write("cwd/project-skills/Project.md", "project configured skill");
     let before = fs::read_to_string(&project).unwrap();
@@ -132,7 +792,7 @@ fn explicit_selected_config_is_managed_but_unselected_projects_are_not_discovere
         ErrorCode::NotFound
     );
     assert_eq!(fs::read_to_string(&project).unwrap(), before);
-    home.write(".config/opencode/opencode.json", r#"{"mcp":{"servers":{"shared":{"type":"local","command":["global"]}}},"skills":["relative"]}"#);
+    home.write(".config/opencode/opencode.json", r#"{"mcp":{"servers":{"shared":{"type":"local","command":["global"]}}},"skills":["~/cwd/relative"]}"#);
     let selected = ConfigPaths::with_resource_parts(
         home.0.clone(),
         Some(PathBuf::from("opencode.jsonc")),
@@ -332,7 +992,7 @@ fn skill_discovery_has_case_sensitive_file_ids_precedence_frontmatter_and_diagno
     );
     home.write(
         ".config/opencode/opencode.jsonc",
-        r#"{"skills":["second","~/lowercase-source","missing"]}"#,
+        r#"{"skills":["~/cwd/second","~/lowercase-source","missing"]}"#,
     );
     home.write("cwd/.opencode/skills/Project.md", "project must not appear");
     let paths = home.paths();
@@ -1643,7 +2303,7 @@ fn absent_explicit_config_is_a_create_target_and_arbitrary_source_supports_round
     assert!(!home.0.join(".config/opencode/opencode.jsonc").exists());
     let mut document = JsoncDoc::parse(&fs::read_to_string(&explicit).unwrap()).unwrap();
     document
-        .patch(&["skills"], Some(json!(["relative"])))
+        .patch(&["skills"], Some(json!(["~/cwd/relative"])))
         .unwrap();
     fs::write(&explicit, document.content()).unwrap();
     let skill = home.write("cwd/relative/Selected.md", "original selected skill");

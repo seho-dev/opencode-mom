@@ -1,21 +1,18 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tauri::State;
+use uuid::Uuid;
 
 use crate::agents::{
     self, AgentCreate, AgentDefinition, AgentFieldOverride, AgentMutation, AgentReferenceIndex,
     AgentSource, AgentStorage, InlineAgentSource, MarkdownAgentSource,
 };
 use crate::error::AppError;
-use crate::paths::ConfigPaths;
+use crate::paths::{reject_project_write, ConfigPaths};
 use crate::providers;
 use crate::refs;
 
 type CommandResult<T> = Result<T, AppError>;
-
-fn paths(state: &State<'_, ConfigPaths>) -> ConfigPaths {
-    state.inner().clone()
-}
 
 /// One V2 permission rule: ordered `{action, resource, effect}` entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -96,6 +93,10 @@ pub struct AgentSourcePreviewDto {
     pub storage: AgentStorageDto,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    #[serde(default)]
+    pub resolved_path: String,
+    #[serde(default)]
+    pub content: String,
     pub raw: Value,
     pub fields: Map<String, Value>,
     pub prompt: Option<String>,
@@ -108,8 +109,7 @@ impl From<AgentDefinition> for AgentDefinitionDto {
             AgentSource::Markdown => unique_markdown_storage(&agent),
             AgentSource::Both => None,
         };
-        let inline_source = agent.inline.clone();
-        let inline = inline_source.clone().and_then(|source| object(source.raw));
+        let inline = agent.inline.and_then(|source| object(source.raw));
         let markdown = markdown_fields(&agent.markdown);
         let effective = object(agent.effective);
         let fields = effective.as_ref();
@@ -117,7 +117,7 @@ impl From<AgentDefinition> for AgentDefinitionDto {
             id: agent.id,
             source: agent.source,
             storage,
-            sources: source_previews(inline_source, &agent.markdown),
+            sources: source_previews(&agent.inline_sources, &agent.markdown),
             overrides: agent.overrides,
             mutation: None,
             inline,
@@ -143,16 +143,19 @@ fn permission_rules(fields: Option<&Map<String, Value>>) -> Option<Vec<AgentPerm
 }
 
 fn source_previews(
-    inline: Option<InlineAgentSource>,
+    inline: &[InlineAgentSource],
     markdown: &[MarkdownAgentSource],
 ) -> Vec<AgentSourcePreviewDto> {
     let mut sources = Vec::new();
-    if let Some(inline) = inline {
+    for inline in inline {
         sources.push(AgentSourcePreviewDto {
             storage: AgentStorageDto::Inline,
-            path: None,
+            path: Some(inline.path.display().to_string()),
+            resolved_path: inline.resolved_path.display().to_string(),
+            // Generate before JavaScript can normalize floats or round large integers.
+            content: inline.raw.to_string(),
             fields: inline.raw.as_object().cloned().unwrap_or_default(),
-            raw: inline.raw,
+            raw: inline.raw.clone(),
             prompt: None,
         });
     }
@@ -162,6 +165,8 @@ fn source_previews(
         AgentSourcePreviewDto {
             storage: source.storage.into(),
             path: Some(source.path.display().to_string()),
+            resolved_path: source.resolved_path.display().to_string(),
+            content: source.raw.clone(),
             raw: Value::String(source.raw.clone()),
             fields,
             prompt: Some(source.prompt.clone()),
@@ -208,29 +213,38 @@ fn unsigned_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<u64>
 }
 
 #[tauri::command]
-pub fn list_agents(state: State<'_, ConfigPaths>) -> CommandResult<Vec<AgentDefinitionDto>> {
-    let agents = agents::list(&paths(&state))?;
+pub fn list_agents(
+    state: State<'_, ConfigPaths>,
+    project_id: Option<Uuid>,
+) -> CommandResult<Vec<AgentDefinitionDto>> {
+    let agents = agents::list(&state.inner().for_project(project_id)?)?;
     Ok(agents.into_iter().map(Into::into).collect())
 }
 
 #[tauri::command]
-pub fn get_agent(state: State<'_, ConfigPaths>, id: String) -> CommandResult<AgentDefinitionDto> {
-    agents::get(&paths(&state), &id).map(Into::into)
+pub fn get_agent(
+    state: State<'_, ConfigPaths>,
+    id: String,
+    project_id: Option<Uuid>,
+) -> CommandResult<AgentDefinitionDto> {
+    agents::get(&state.inner().for_project(project_id)?, &id).map(Into::into)
 }
 
 #[tauri::command]
 pub fn create_agent(
     state: State<'_, ConfigPaths>,
     agent: AgentDefinitionDto,
+    project_id: Option<Uuid>,
 ) -> CommandResult<AgentDefinitionDto> {
-    let paths = paths(&state);
+    reject_project_write(project_id)?;
+    let paths = state.inner();
     let storage = agent.storage.map(Into::into).ok_or_else(|| {
         AppError::validation("agent creation requires an explicit storage target")
     })?;
-    let mutation = agent.mutation.clone().unwrap_or_default();
-    validate_agent_model_reference(&paths, &mutation.fields)?;
+    let mutation = agent.mutation.unwrap_or_default();
+    validate_agent_model_reference(paths, &mutation.fields)?;
     agents::create(
-        &paths,
+        paths,
         AgentCreate {
             id: agent.id,
             storage,
@@ -245,25 +259,17 @@ pub fn create_agent(
 pub fn update_agent(
     state: State<'_, ConfigPaths>,
     agent: AgentDefinitionDto,
+    project_id: Option<Uuid>,
 ) -> CommandResult<AgentDefinitionDto> {
-    let paths = paths(&state);
+    reject_project_write(project_id)?;
+    let paths = state.inner();
     let storage = agent
         .storage
         .map(Into::into)
         .ok_or_else(|| AppError::validation("agent update requires an explicit storage target"))?;
-    let mutation = agent.mutation.clone().unwrap_or_default();
-    validate_agent_model_reference(&paths, &mutation.fields)?;
-    agents::update(
-        &paths,
-        &agent.id,
-        storage,
-        AgentMutation {
-            fields: mutation.fields,
-            prompt: mutation.prompt,
-            clear_fields: mutation.clear_fields,
-        },
-    )
-    .map(Into::into)
+    let mutation = agent.mutation.unwrap_or_default();
+    validate_agent_model_reference(paths, &mutation.fields)?;
+    agents::update(paths, &agent.id, storage, mutation).map(Into::into)
 }
 
 #[tauri::command]
@@ -271,12 +277,14 @@ pub fn delete_agent(
     state: State<'_, ConfigPaths>,
     id: String,
     storage: Option<AgentStorageDto>,
+    project_id: Option<Uuid>,
 ) -> CommandResult<()> {
-    let paths = paths(&state);
+    reject_project_write(project_id)?;
+    let paths = state.inner();
     let storage: AgentStorage = match storage {
         Some(storage) => storage.into(),
         None => {
-            let current: AgentDefinition = agents::get(&paths, &id)?;
+            let current: AgentDefinition = agents::get(paths, &id)?;
             match current.source {
                 AgentSource::Inline => AgentStorage::Inline,
                 AgentSource::Both => {
@@ -302,8 +310,8 @@ pub fn delete_agent(
             }
         }
     };
-    let references: AgentReferenceIndex = refs::collect_agent_references(&paths)?;
-    agents::delete(&paths, &id, storage, &references).map(|_| ())
+    let references: AgentReferenceIndex = refs::collect_agent_references(paths)?;
+    agents::delete(paths, &id, storage, &references).map(|_| ())
 }
 
 fn validate_agent_model_reference(

@@ -5,8 +5,12 @@ struct Mock {
     calls: Vec<String>,
     leases: Vec<Duration>,
     fail_busy: bool,
+    fail_prepare: bool,
     fail_idle: bool,
     fail_stop: bool,
+    prepare_gate: Option<Gate>,
+    busy_gate: Option<Gate>,
+    stop_gate: Option<Gate>,
     cancel_prepare: Option<Arc<Mutex<Shared>>>,
     cancel_busy: Option<Arc<Mutex<Shared>>>,
 }
@@ -14,19 +18,31 @@ struct Mock {
 impl PowerController for Mock {
     fn prepare(&mut self) -> Result<(), AppError> {
         self.calls.push("prepare".into());
+        if let Some(gate) = self.prepare_gate.take() {
+            gate.wait();
+        }
         if let Some(shared) = self.cancel_prepare.take() {
             let mut shared = shared.lock().unwrap();
             shared.desired.generation += 1;
+            shared.desired.control_generation += 1;
             shared.desired.enabled = false;
         }
-        Ok(())
+        if self.fail_prepare {
+            Err(AppError::configuration("authorization failed"))
+        } else {
+            Ok(())
+        }
     }
     fn busy(&mut self, ttl: Duration) -> Result<(), AppError> {
         self.calls.push("busy".into());
         self.leases.push(ttl);
+        if let Some(gate) = self.busy_gate.take() {
+            gate.wait();
+        }
         if let Some(shared) = self.cancel_busy.take() {
             let mut shared = shared.lock().unwrap();
             shared.desired.generation += 1;
+            shared.desired.control_generation += 1;
             shared.desired.enabled = false;
         }
         if self.fail_busy {
@@ -45,6 +61,9 @@ impl PowerController for Mock {
     }
     fn stop(&mut self) -> Result<(), AppError> {
         self.calls.push("stop".into());
+        if let Some(gate) = self.stop_gate.take() {
+            gate.wait();
+        }
         if self.fail_stop {
             Err(AppError::configuration("stop restore failed"))
         } else {
@@ -53,10 +72,36 @@ impl PowerController for Mock {
     }
 }
 
+struct Gate {
+    entered: mpsc::Sender<()>,
+    release: mpsc::Receiver<()>,
+}
+
+impl Gate {
+    fn wait(self) {
+        self.entered.send(()).unwrap();
+        self.release.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+}
+
+fn gate() -> (Gate, mpsc::Receiver<()>, mpsc::Sender<()>) {
+    let (entered, arrival) = mpsc::channel();
+    let (release, departure) = mpsc::channel();
+    (
+        Gate {
+            entered,
+            release: departure,
+        },
+        arrival,
+        release,
+    )
+}
+
 fn engine(enabled: bool) -> Engine<Mock> {
     let shared = Arc::new(Mutex::new(Shared {
         desired: Desired {
             generation: 1,
+            control_generation: 1,
             enabled,
             authorize: true,
             shutdown: false,
@@ -69,8 +114,21 @@ fn engine(enabled: bool) -> Engine<Mock> {
             active_sessions: None,
             error: None,
         },
+        preparing: false,
     }));
-    Engine::new(Mock::default(), shared)
+    Engine::new(Mock::default(), shared, Arc::new(Mutex::new(())))
+}
+
+fn service(engine: &Engine<Mock>) -> PowerService {
+    let (wake, _events) = mpsc::channel();
+    let (_finished, done) = mpsc::channel();
+    PowerService {
+        directory: std::env::temp_dir().join(format!("mom-power-{}", uuid::Uuid::new_v4())),
+        shared: Arc::clone(&engine.shared),
+        effects: Arc::clone(&engine.effects),
+        wake,
+        done: Mutex::new(done),
+    }
 }
 
 fn state(engine: &Engine<Mock>) -> LidState {
@@ -86,6 +144,7 @@ fn set(engine: &Engine<Mock>, enabled: bool) {
     let mut shared = engine.shared.lock().unwrap();
     shared.desired.enabled = enabled;
     shared.desired.generation += 1;
+    shared.desired.control_generation += 1;
 }
 
 #[test]
@@ -218,6 +277,15 @@ fn startup_authorization_is_explicit_and_not_repeated() {
     assert_eq!(state(&engine).phase, LidPhase::Error);
     assert_eq!(engine.controller.calls, ["idle"]);
     assert!(engine.start_query(now).is_none());
+    let error = state(&engine).error;
+    let service = service(&engine);
+    service.prepare_target_refresh().unwrap().invalidate();
+    engine.tick(now + POLL);
+    assert_eq!(state(&engine).phase, LidPhase::Error);
+    assert_eq!(state(&engine).error, error);
+    assert!(!engine.shared.lock().unwrap().desired.authorize);
+    assert_eq!(engine.controller.calls, ["idle", "idle"]);
+    assert!(engine.start_query(now + POLL).is_none());
 }
 
 #[test]
@@ -229,6 +297,7 @@ fn shutdown_invalidates_inflight_query() {
     {
         let mut shared = engine.shared.lock().unwrap();
         shared.desired.generation += 1;
+        shared.desired.control_generation += 1;
         shared.desired.enabled = false;
         shared.desired.shutdown = true;
     }
@@ -299,6 +368,7 @@ fn preference_save_failure_does_not_block_disable_restore() {
     let service = PowerService {
         directory: path.clone(),
         shared: Arc::clone(&engine.shared),
+        effects: Arc::clone(&engine.effects),
         wake,
         done: Mutex::new(done),
     };
@@ -309,4 +379,381 @@ fn preference_save_failure_does_not_block_disable_restore() {
     assert_eq!(service.get().unwrap().phase, LidPhase::Error);
     assert!(!engine.protection);
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn target_refresh_clears_observations_and_grace_without_reauthorizing_or_stopping() {
+    let now = Instant::now();
+    let mut engine = engine(true);
+    engine.tick(now);
+    observe(&mut engine, Ok(4), now);
+    let service = service(&engine);
+    let control = engine.control_generation;
+    service.prepare_target_refresh().unwrap().invalidate();
+    assert_eq!(service.get().unwrap().active_sessions, None);
+    assert_eq!(service.get().unwrap().phase, LidPhase::Checking);
+    engine.tick(now + POLL);
+    assert!(engine.prepared);
+    assert!(engine.preparation_attempted);
+    assert_eq!(engine.control_generation, control);
+    assert!(!engine.protection);
+    assert_eq!(engine.last_busy, None);
+    assert_eq!(engine.controller.calls, ["idle", "prepare", "busy", "idle"]);
+    observe(
+        &mut engine,
+        Err(AppError::configuration("new target unavailable")),
+        now + POLL,
+    );
+    assert_eq!(state(&engine).phase, LidPhase::Unknown);
+    assert_eq!(state(&engine).active_sessions, None);
+    assert_eq!(engine.last_busy, None);
+    assert!(engine.prepared);
+    assert_eq!(engine.controller.calls, ["idle", "prepare", "busy", "idle"]);
+    observe(&mut engine, Ok(2), now + POLL * 2);
+    assert_eq!(state(&engine).active_sessions, Some(2));
+    engine.tick(now + POLL * 3);
+    assert_eq!(
+        engine
+            .controller
+            .calls
+            .iter()
+            .filter(|s| *s == "prepare")
+            .count(),
+        1
+    );
+    assert!(!engine.controller.calls.iter().any(|s| s == "stop"));
+    assert!(!service.directory.exists());
+}
+
+#[test]
+fn target_refresh_preserves_disabled_authorization_and_preference_errors() {
+    let now = Instant::now();
+    let mut disabled = engine(false);
+    disabled.tick(now);
+    let disabled_service = service(&disabled);
+    disabled_service
+        .prepare_target_refresh()
+        .unwrap()
+        .invalidate();
+    disabled.tick(now + POLL);
+    assert_eq!(state(&disabled).phase, LidPhase::Disabled);
+    assert_eq!(disabled.controller.calls, ["idle"]);
+    assert!(disabled.start_query(now + POLL).is_none());
+    for enabled in [false, true] {
+        let now = Instant::now();
+        let mut engine = engine(enabled);
+        {
+            let mut shared = engine.shared.lock().unwrap();
+            shared.desired.authorize = false;
+            shared.desired.preference_error = Some("preference failed".into());
+        }
+        engine.tick(now);
+        let service = service(&engine);
+        let calls = engine.controller.calls.clone();
+        let before = service.get().unwrap();
+        let generation = engine.generation;
+        drop(service.prepare_target_refresh().unwrap());
+        assert_eq!(engine.shared.lock().unwrap().desired.generation, generation);
+        assert_eq!(service.get().unwrap(), before);
+        service.prepare_target_refresh().unwrap().invalidate();
+        engine.tick(now + POLL);
+        let shared = engine.shared.lock().unwrap();
+        assert_eq!(shared.desired.enabled, enabled);
+        assert!(!shared.desired.authorize);
+        assert_eq!(
+            shared.desired.preference_error.as_deref(),
+            Some("preference failed")
+        );
+        assert_eq!(
+            shared.snapshot().error.as_deref(),
+            Some("preference failed")
+        );
+        assert_eq!(shared.snapshot().phase, LidPhase::Error);
+        drop(shared);
+        assert!(engine.start_query(now + POLL).is_none());
+        assert!(!engine
+            .controller
+            .calls
+            .iter()
+            .any(|s| s == "prepare" || s == "stop"));
+        if !enabled {
+            assert_eq!(engine.controller.calls, calls);
+        }
+    }
+}
+
+#[test]
+fn failed_preparation_stays_visible_across_target_refresh_and_restore_retry() {
+    let now = Instant::now();
+    let mut engine = engine(true);
+    engine.controller.fail_prepare = true;
+    engine.tick(now);
+    assert!(!engine.shared.lock().unwrap().preparing);
+    let error = state(&engine).error;
+    assert_eq!(error.as_deref(), Some("authorization failed"));
+    let service = service(&engine);
+    engine.controller.fail_idle = true;
+    service.prepare_target_refresh().unwrap().invalidate();
+    engine.tick(now + POLL);
+    assert_eq!(state(&engine).error.as_deref(), Some("restore failed"));
+    assert!(engine.start_query(now + POLL).is_none());
+    engine.controller.fail_idle = false;
+    engine.tick(now + POLL * 2);
+    assert_eq!(state(&engine).phase, LidPhase::Error);
+    assert_eq!(state(&engine).error, error);
+    engine.tick(now + POLL * 3);
+    service.prepare_target_refresh().unwrap().invalidate();
+    engine.tick(now + POLL * 4);
+    assert_eq!(state(&engine).phase, LidPhase::Error);
+    assert_eq!(state(&engine).error, error);
+    assert!(engine.start_query(now + POLL * 4).is_none());
+    assert_eq!(
+        engine
+            .controller
+            .calls
+            .iter()
+            .filter(|s| *s == "prepare")
+            .count(),
+        1
+    );
+    assert!(!engine.controller.calls.iter().any(|s| s == "stop"));
+}
+
+#[test]
+fn old_positive_query_keeps_its_slot_until_arrival_and_cannot_apply_after_commit() {
+    for tick_before_result in [false, true] {
+        let now = Instant::now();
+        let mut engine = engine(true);
+        engine.tick(now);
+        let old = engine.start_query(now).unwrap();
+        let service = service(&engine);
+        service.prepare_target_refresh().unwrap().invalidate();
+        if tick_before_result {
+            engine.tick(now + POLL);
+        }
+        assert_eq!(engine.inflight, Some(old));
+        assert!(engine.start_query(now + POLL).is_none());
+        engine.observation(old, Ok(7), now + POLL);
+        assert_eq!(engine.inflight, None);
+        assert!(!engine.controller.calls.iter().any(|s| s == "busy"));
+        assert_eq!(service.get().unwrap().active_sessions, None);
+        engine.tick(now + POLL);
+        let fresh = engine.start_query(now + POLL).unwrap();
+        assert_ne!(fresh, old);
+        engine.observation(fresh, Ok(1), now + POLL);
+        assert_eq!(state(&engine).active_sessions, Some(1));
+    }
+}
+
+#[test]
+fn target_refresh_restore_failure_blocks_queries_and_busy_until_cleanup_recovers() {
+    let now = Instant::now();
+    let mut engine = engine(true);
+    engine.tick(now);
+    observe(&mut engine, Ok(1), now);
+    let service = service(&engine);
+    engine.controller.fail_idle = true;
+    service.prepare_target_refresh().unwrap().invalidate();
+    engine.tick(now + POLL);
+    let calls = engine.controller.calls.len();
+    assert!(engine.prepared);
+    assert!(engine.cleanup_failed);
+    assert_eq!(state(&engine).phase, LidPhase::Error);
+    assert!(engine.start_query(now + POLL).is_none());
+    engine.tick(now + POLL + POLL / 2);
+    assert_eq!(engine.controller.calls.len(), calls);
+    engine.tick(now + POLL * 2);
+    assert_eq!(engine.controller.calls.last().unwrap(), "idle");
+    assert_eq!(engine.controller.leases.len(), 1);
+    engine.controller.fail_idle = false;
+    engine.tick(now + POLL * 3);
+    assert!(!engine.cleanup_failed);
+    assert_eq!(state(&engine).phase, LidPhase::Checking);
+    observe(&mut engine, Ok(2), now + POLL * 3);
+    assert_eq!(state(&engine).phase, LidPhase::Protected);
+    assert_eq!(
+        engine
+            .controller
+            .calls
+            .iter()
+            .filter(|s| *s == "prepare")
+            .count(),
+        1
+    );
+    assert!(!engine.controller.calls.iter().any(|s| s == "stop"));
+}
+
+#[test]
+fn authorization_releases_locks_but_target_refresh_stays_busy_through_late_stop() {
+    let now = Instant::now();
+    let mut engine = engine(true);
+    let mut service = service(&engine);
+    let (prepare, entered, release) = gate();
+    let (stop, stopping, stopped) = gate();
+    engine.controller.prepare_gate = Some(prepare);
+    engine.controller.stop_gate = Some(stop);
+    let worker = thread::spawn(move || {
+        engine.tick(now);
+        engine
+    });
+    entered.recv_timeout(Duration::from_secs(5)).unwrap();
+    let error = service.prepare_target_refresh().err().unwrap();
+    assert_eq!(error.code, crate::error::ErrorCode::Busy);
+    assert!(service.effects.try_lock().is_ok());
+    assert!(service.shared.try_lock().is_ok());
+    let (wake, _events) = mpsc::channel();
+    service.wake = wake;
+    let blocked = std::env::temp_dir().join(format!("mom-power-optout-{}", uuid::Uuid::new_v4()));
+    std::fs::write(&blocked, "not a directory").unwrap();
+    service.directory = blocked.clone();
+    assert!(service.set(false).is_err());
+    assert!(!service.get().unwrap().enabled);
+    assert_eq!(
+        service.prepare_target_refresh().err().unwrap().code,
+        crate::error::ErrorCode::Busy
+    );
+    release.send(()).unwrap();
+    stopping.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(service.shared.lock().unwrap().preparing);
+    assert!(service.effects.try_lock().is_err());
+    stopped.send(()).unwrap();
+    let mut engine = worker.join().unwrap();
+    assert!(!service.shared.lock().unwrap().preparing);
+    assert_eq!(engine.controller.calls, ["idle", "prepare", "stop"]);
+    drop(service.prepare_target_refresh().unwrap());
+    engine.tick(now + POLL);
+    assert!(!engine.prepared);
+    std::fs::remove_file(blocked).unwrap();
+}
+
+#[test]
+fn target_commit_and_old_busy_or_renew_are_serialized_in_both_orders() {
+    for renew in [false, true] {
+        for commit_first in [false, true] {
+            let now = Instant::now();
+            let mut engine = engine(true);
+            engine.tick(now);
+            let generation = if renew {
+                observe(&mut engine, Ok(1), now);
+                engine.generation
+            } else {
+                engine.start_query(now).unwrap()
+            };
+            let service = service(&engine);
+            let baseline = engine.controller.leases.len();
+            let (busy, entered, release) = gate();
+            engine.controller.busy_gate = Some(busy);
+            if commit_first {
+                let refresh = service.prepare_target_refresh().unwrap();
+                let (attempting, attempt) = mpsc::channel();
+                let worker = thread::spawn(move || {
+                    attempting.send(()).unwrap();
+                    if renew {
+                        engine.tick(now + POLL);
+                    } else {
+                        engine.observation(generation, Ok(8), now + POLL);
+                    }
+                    engine
+                });
+                attempt.recv_timeout(Duration::from_secs(5)).unwrap();
+                assert!(entered.try_recv().is_err());
+                refresh.invalidate();
+                engine = worker.join().unwrap();
+                assert_eq!(engine.controller.leases.len(), baseline);
+                engine.controller.busy_gate = None;
+            } else {
+                let worker = thread::spawn(move || {
+                    if renew {
+                        engine.tick(now + POLL);
+                    } else {
+                        engine.observation(generation, Ok(8), now + POLL);
+                    }
+                    engine
+                });
+                entered.recv_timeout(Duration::from_secs(5)).unwrap();
+                assert!(service.effects.try_lock().is_err());
+                let (attempting, attempt) = mpsc::channel();
+                let (committed, commit) = mpsc::channel();
+                thread::scope(|scope| {
+                    scope.spawn(|| {
+                        attempting.send(()).unwrap();
+                        service.prepare_target_refresh().unwrap().invalidate();
+                        committed.send(()).unwrap();
+                    });
+                    attempt.recv_timeout(Duration::from_secs(5)).unwrap();
+                    assert!(commit.try_recv().is_err());
+                    release.send(()).unwrap();
+                    commit.recv_timeout(Duration::from_secs(5)).unwrap();
+                });
+                engine = worker.join().unwrap();
+                assert_eq!(engine.controller.leases.len(), baseline + 1);
+            }
+            engine.tick(now + POLL * 2);
+            assert!(!engine.protection);
+            assert_eq!(engine.last_busy, None);
+            assert_eq!(state(&engine).active_sessions, None);
+            assert_eq!(
+                engine
+                    .controller
+                    .calls
+                    .iter()
+                    .filter(|s| *s == "prepare")
+                    .count(),
+                1
+            );
+            assert!(!engine.controller.calls.iter().any(|s| s == "stop"));
+        }
+    }
+}
+
+#[test]
+fn target_guard_prevents_authorization_until_commit_and_releases_on_abort() {
+    let now = Instant::now();
+    let mut engine = engine(true);
+    let service = service(&engine);
+    let (prepare, entered, release) = gate();
+    engine.controller.prepare_gate = Some(prepare);
+    let refresh = service.prepare_target_refresh().unwrap();
+    let worker = thread::spawn(move || {
+        engine.tick(now);
+        engine
+    });
+    assert!(entered.try_recv().is_err());
+    refresh.invalidate();
+    entered.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(
+        service.prepare_target_refresh().err().unwrap().code,
+        crate::error::ErrorCode::Busy
+    );
+    release.send(()).unwrap();
+    let engine = worker.join().unwrap();
+    assert!(engine.prepared);
+    assert!(!service.shared.lock().unwrap().preparing);
+    let generation = engine.generation;
+    drop(service.prepare_target_refresh().unwrap());
+    assert_eq!(
+        service.shared.lock().unwrap().desired.generation,
+        generation
+    );
+    assert_eq!(engine.controller.calls, ["idle", "prepare"]);
+}
+
+#[test]
+fn target_refresh_finish_only_queues_wake_and_does_not_fail_a_committed_save() {
+    let engine = engine(false);
+    let mut service = service(&engine);
+    let (wake, events) = mpsc::channel();
+    service.wake = wake;
+    service.prepare_target_refresh().unwrap().invalidate();
+    let generation = service.shared.lock().unwrap().desired.generation;
+    service.finish_target_refresh();
+    assert_eq!(events.try_recv(), Ok(()));
+    drop(events);
+    service.finish_target_refresh();
+    assert_eq!(
+        service.shared.lock().unwrap().desired.generation,
+        generation
+    );
+    assert!(!service.get().unwrap().enabled);
+    assert!(engine.controller.calls.is_empty());
 }

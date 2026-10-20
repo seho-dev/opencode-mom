@@ -10,7 +10,7 @@ use macos::NativeController;
 use windows::NativeController;
 
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -54,6 +54,7 @@ const SHUTDOWN_WAIT: Duration = Duration::from_secs(3);
 
 struct Desired {
     generation: u64,
+    control_generation: u64,
     enabled: bool,
     authorize: bool,
     shutdown: bool,
@@ -64,6 +65,7 @@ struct Shared {
     desired: Desired,
     generation: u64,
     state: LidState,
+    preparing: bool,
 }
 
 impl Shared {
@@ -84,8 +86,30 @@ impl Shared {
 pub struct PowerService {
     directory: PathBuf,
     shared: Arc<Mutex<Shared>>,
+    effects: Arc<Mutex<()>>,
     wake: mpsc::Sender<()>,
     done: Mutex<mpsc::Receiver<()>>,
+}
+
+pub struct TargetRefresh<'a> {
+    shared: MutexGuard<'a, Shared>,
+    _effects: MutexGuard<'a, ()>,
+}
+
+impl TargetRefresh<'_> {
+    pub fn invalidate(mut self) {
+        self.shared.desired.generation += 1;
+    }
+}
+
+struct Preparation(Arc<Mutex<Shared>>);
+
+impl Drop for Preparation {
+    fn drop(&mut self) {
+        if let Ok(mut shared) = self.0.lock() {
+            shared.preparing = false;
+        }
+    }
 }
 
 impl PowerService {
@@ -98,6 +122,7 @@ impl PowerService {
         let shared = Arc::new(Mutex::new(Shared {
             desired: Desired {
                 generation: 1,
+                control_generation: 1,
                 enabled,
                 authorize: !cfg!(target_os = "macos"),
                 shutdown: false,
@@ -114,15 +139,22 @@ impl PowerService {
                 active_sessions: None,
                 error,
             },
+            preparing: false,
         }));
+        let effects = Arc::new(Mutex::new(()));
         let (wake, events) = mpsc::channel();
         let (finished, done) = mpsc::channel();
         let worker_shared = Arc::clone(&shared);
+        let worker_effects = Arc::clone(&effects);
         let journal_dir = directory.clone();
         thread::Builder::new()
             .name("lid-controller".into())
             .spawn(move || {
-                let mut engine = Engine::new(NativeController::new(journal_dir), worker_shared);
+                let mut engine = Engine::new(
+                    NativeController::new(journal_dir),
+                    worker_shared,
+                    worker_effects,
+                );
                 run_worker(&mut engine, events);
                 let _ = finished.send(());
             })
@@ -130,6 +162,7 @@ impl PowerService {
         Ok(Self {
             directory,
             shared,
+            effects,
             wake,
             done: Mutex::new(done),
         })
@@ -142,7 +175,35 @@ impl PowerService {
             .map_err(|_| AppError::configuration("Power monitor lock failed"))
     }
 
+    pub fn prepare_target_refresh(&self) -> Result<TargetRefresh<'_>, AppError> {
+        let effects = self
+            .effects
+            .lock()
+            .map_err(|_| AppError::configuration("Power effects lock failed"))?;
+        let shared = self
+            .shared
+            .lock()
+            .map_err(|_| AppError::configuration("Power monitor lock failed"))?;
+        if shared.preparing {
+            return Err(AppError::new(
+                crate::error::ErrorCode::Busy,
+                "Lid protection authorization is in progress; retry when it finishes",
+            ));
+        }
+        Ok(TargetRefresh {
+            _effects: effects,
+            shared,
+        })
+    }
+
+    pub fn finish_target_refresh(&self) {
+        if self.wake.send(()).is_err() {
+            eprintln!("Power monitor stopped after target refresh; native recovery/watchdog remains required");
+        }
+    }
+
     pub fn set(&self, enabled: bool) -> Result<LidState, AppError> {
+        let _transition = crate::opencode_cli::target::transition()?;
         let mut shared = self
             .shared
             .lock()
@@ -156,6 +217,7 @@ impl PowerService {
         }
         // Failed preference writes must never prevent an in-memory opt-out/restore.
         shared.desired.generation += 1;
+        shared.desired.control_generation += 1;
         shared.desired.enabled = enabled;
         shared.desired.authorize = true;
         shared.desired.preference_error = saved.as_ref().err().map(ToString::to_string);
@@ -174,6 +236,7 @@ impl PowerService {
                 return;
             }
             shared.desired.generation += 1;
+            shared.desired.control_generation += 1;
             shared.desired.enabled = false;
             shared.desired.shutdown = true;
         }
@@ -194,9 +257,12 @@ impl PowerService {
 struct Engine<C: PowerController> {
     controller: C,
     shared: Arc<Mutex<Shared>>,
+    effects: Arc<Mutex<()>>,
     generation: u64,
+    control_generation: u64,
     prepared: bool,
     preparation_attempted: bool,
+    preparation_error: Option<String>,
     cleanup_failed: bool,
     protection: bool,
     last_busy: Option<Instant>,
@@ -206,13 +272,16 @@ struct Engine<C: PowerController> {
 }
 
 impl<C: PowerController> Engine<C> {
-    fn new(controller: C, shared: Arc<Mutex<Shared>>) -> Self {
+    fn new(controller: C, shared: Arc<Mutex<Shared>>, effects: Arc<Mutex<()>>) -> Self {
         Self {
             controller,
             shared,
+            effects,
             generation: 0,
+            control_generation: 0,
             prepared: false,
             preparation_attempted: false,
+            preparation_error: None,
             cleanup_failed: false,
             protection: false,
             last_busy: None,
@@ -250,13 +319,40 @@ impl<C: PowerController> Engine<C> {
         self.cleanup_failed = true;
         self.prepared = false;
         self.preparation_attempted = true;
+        self.preparation_error = Some(error.to_string());
         self.protection = false;
         self.last_busy = None;
         self.error(error);
     }
 
+    fn preparation_failed(&mut self, error: AppError) {
+        self.prepared = false;
+        self.preparation_error = Some(error.to_string());
+        self.error(error);
+    }
+
+    fn publish_ready(&self, enabled: bool, preference_error: Option<String>) {
+        let error =
+            preference_error.or_else(|| enabled.then(|| self.preparation_error.clone()).flatten());
+        self.publish(
+            if error.is_some() {
+                LidPhase::Error
+            } else if !enabled {
+                LidPhase::Disabled
+            } else {
+                LidPhase::Checking
+            },
+            None,
+            error,
+        );
+    }
+
     fn stale_stop(&mut self) -> bool {
-        if self.current() {
+        if self
+            .shared
+            .lock()
+            .is_ok_and(|shared| shared.desired.control_generation == self.control_generation)
+        {
             return false;
         }
         self.prepared = false;
@@ -270,10 +366,59 @@ impl<C: PowerController> Engine<C> {
     }
 
     fn tick(&mut self, now: Instant) -> bool {
-        let (generation, enabled, authorize, shutdown, preference_error) = {
+        let effects = Arc::clone(&self.effects);
+        let guard = effects.lock().expect("power effects lock poisoned");
+        if self.tick_locked(now) {
+            return true;
+        }
+        let preparation = {
+            let mut shared = self.shared.lock().expect("power monitor lock poisoned");
+            if shared.desired.generation == self.generation
+                && shared.desired.control_generation == self.control_generation
+                && shared.desired.enabled
+                && shared.desired.authorize
+                && !shared.desired.shutdown
+                && !self.cleanup_failed
+                && !self.prepared
+                && !self.preparation_attempted
+                && now >= self.query_at
+            {
+                shared.preparing = true;
+                self.preparation_attempted = true;
+                Some(Preparation(Arc::clone(&self.shared)))
+            } else {
+                None
+            }
+        };
+        drop(guard);
+        if let Some(preparation) = preparation {
+            // Interactive authorization holds neither transition, effects nor shared locks.
+            let result = self.controller.prepare();
+            let _guard = effects.lock().expect("power effects lock poisoned");
+            let mut shared = self.shared.lock().expect("power monitor lock poisoned");
+            if shared.desired.control_generation != self.control_generation {
+                drop(shared);
+                self.stale_stop();
+            } else {
+                self.prepared = result.is_ok();
+                self.preparation_error = result.as_ref().err().map(ToString::to_string);
+                shared.preparing = false;
+                drop(shared);
+                if let Err(error) = result {
+                    self.error(error);
+                }
+            }
+            drop(preparation);
+        }
+        false
+    }
+
+    fn tick_locked(&mut self, now: Instant) -> bool {
+        let (generation, control_generation, enabled, authorize, shutdown, preference_error) = {
             let shared = self.shared.lock().expect("power monitor lock poisoned");
             (
                 shared.desired.generation,
+                shared.desired.control_generation,
                 shared.desired.enabled,
                 shared.desired.authorize,
                 shared.desired.shutdown,
@@ -281,15 +426,22 @@ impl<C: PowerController> Engine<C> {
             )
         };
         if generation != self.generation {
+            let control_changed = control_generation != self.control_generation;
             self.generation = generation;
-            self.prepared = false;
-            self.preparation_attempted = false;
+            self.control_generation = control_generation;
+            if control_changed {
+                self.prepared = false;
+                self.preparation_attempted = false;
+                self.preparation_error = None;
+            }
             self.protection = false;
             self.last_busy = None;
             self.query_at = now;
             // An ordinary opt-out restores policy but keeps this run's authorized helper reusable.
             let restored = if shutdown {
                 self.controller.stop()
+            } else if !control_changed && !enabled && !self.cleanup_failed {
+                Ok(())
             } else {
                 self.controller.idle()
             };
@@ -299,16 +451,7 @@ impl<C: PowerController> Engine<C> {
             self.cleanup_failed = restored.is_err();
             match restored {
                 Err(error) => self.error(error),
-                Ok(()) if !enabled => self.publish(
-                    if preference_error.is_some() {
-                        LidPhase::Error
-                    } else {
-                        LidPhase::Disabled
-                    },
-                    None,
-                    preference_error.clone(),
-                ),
-                Ok(()) => self.publish(LidPhase::Checking, None, None),
+                Ok(()) => self.publish_ready(enabled, preference_error.clone()),
             }
             self.renew_at = now + POLL;
         }
@@ -330,21 +473,7 @@ impl<C: PowerController> Engine<C> {
                 if let Err(error) = result {
                     self.error(error);
                 } else {
-                    self.publish(
-                        if preference_error.is_some() || (enabled && self.preparation_attempted) {
-                            LidPhase::Error
-                        } else if enabled {
-                            LidPhase::Checking
-                        } else {
-                            LidPhase::Disabled
-                        },
-                        None,
-                        preference_error.clone().or_else(|| {
-                            (enabled && self.preparation_attempted).then(|| {
-                                "Restoration completed; enable lid protection again to retry".into()
-                            })
-                        }),
-                    );
+                    self.publish_ready(enabled, preference_error.clone());
                 }
                 self.renew_at = now + POLL;
             }
@@ -354,26 +483,11 @@ impl<C: PowerController> Engine<C> {
             return false;
         }
         if !authorize {
-            self.publish(
-                LidPhase::Error,
-                None,
-                Some("Enable lid protection again to authorize this app run".into()),
-            );
-            return false;
-        }
-        if !self.prepared && !self.preparation_attempted && now >= self.query_at {
             self.preparation_attempted = true;
-            let result = self.controller.prepare();
-            if self.stale_stop() {
-                return false;
-            }
-            match result {
-                Ok(()) => self.prepared = true,
-                Err(error) => {
-                    self.error(error);
-                    return false;
-                }
-            }
+            self.preparation_error =
+                Some("Enable lid protection again to authorize this app run".into());
+            self.publish_ready(enabled, preference_error);
+            return false;
         }
         if self.protection
             && (now >= self.renew_at || self.last_busy.is_some_and(|busy| now >= busy + GRACE))
@@ -392,9 +506,8 @@ impl<C: PowerController> Engine<C> {
                         return false;
                     }
                     self.protection = false;
-                    self.prepared = false;
                     match restored {
-                        Ok(()) => self.error(error),
+                        Ok(()) => self.preparation_failed(error),
                         Err(restore) => self.restore_failed(AppError::configuration(format!(
                             "{error}; restore: {restore}"
                         ))),
@@ -423,6 +536,8 @@ impl<C: PowerController> Engine<C> {
     }
 
     fn start_query(&mut self, now: Instant) -> Option<u64> {
+        let effects = Arc::clone(&self.effects);
+        let _guard = effects.lock().expect("power effects lock poisoned");
         let enabled = self
             .shared
             .lock()
@@ -443,15 +558,27 @@ impl<C: PowerController> Engine<C> {
     }
 
     fn observation(&mut self, generation: u64, result: Result<usize, AppError>, now: Instant) {
+        let effects = Arc::clone(&self.effects);
+        let _guard = effects.lock().expect("power effects lock poisoned");
+        self.observation_locked(generation, result, now);
+    }
+
+    fn observation_locked(
+        &mut self,
+        generation: u64,
+        result: Result<usize, AppError>,
+        now: Instant,
+    ) {
         if self.inflight != Some(generation) {
             return;
         }
         self.inflight = None;
-        self.query_at = now + POLL;
         if generation != self.generation || !self.current() || self.cleanup_failed || !self.prepared
         {
+            self.query_at = now;
             return;
         }
+        self.query_at = now + POLL;
         match result {
             Err(error) => self.publish(LidPhase::Unknown, None, Some(error.to_string())),
             Ok(0) => {
@@ -489,10 +616,9 @@ impl<C: PowerController> Engine<C> {
                         }
                         self.protection = false;
                         self.last_busy = None;
-                        self.prepared = false;
                         self.renew_at = now + POLL;
                         match restored {
-                            Ok(()) => self.error(error),
+                            Ok(()) => self.preparation_failed(error),
                             Err(restore) => self.restore_failed(AppError::configuration(format!(
                                 "{error}; restore: {restore}"
                             ))),
@@ -518,6 +644,8 @@ fn run_worker<C: PowerController>(engine: &mut Engine<C>, wake: mpsc::Receiver<(
             }
         });
     if let Err(error) = query_worker {
+        let effects = Arc::clone(&engine.effects);
+        let _guard = effects.lock().expect("power effects lock poisoned");
         engine.generation = engine
             .shared
             .lock()
@@ -549,6 +677,8 @@ fn run_worker<C: PowerController>(engine: &mut Engine<C>, wake: mpsc::Receiver<(
             wake.recv_timeout(Duration::from_millis(100)),
             Err(mpsc::RecvTimeoutError::Disconnected)
         ) {
+            let effects = Arc::clone(&engine.effects);
+            let _guard = effects.lock().expect("power effects lock poisoned");
             let _ = engine.controller.stop();
             break;
         }

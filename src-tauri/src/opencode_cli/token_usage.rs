@@ -11,7 +11,7 @@ use serde::{
 
 use crate::error::AppError;
 
-mod transport;
+pub(in crate::opencode_cli) mod transport;
 
 use transport::ManagedConnection;
 
@@ -224,9 +224,9 @@ fn inspect_session(session: &Session) -> Result<(&str, usize), AppError> {
 }
 
 impl Message {
-    fn usage(&self) -> Result<Option<&Tokens>, AppError> {
+    fn usage(&self) -> Option<&Tokens> {
         if !matches!(self.kind.as_str(), "assistant" | "compaction") {
-            return Ok(None);
+            return None;
         }
         let pending = match self.kind.as_str() {
             "compaction" => {
@@ -244,10 +244,10 @@ impl Message {
             _ => false,
         };
         if pending {
-            Ok(None)
+            None
         } else {
             // Absent recorded usage does not establish zero provider billing.
-            Ok(self.tokens.as_ref())
+            self.tokens.as_ref()
         }
     }
 
@@ -290,7 +290,6 @@ fn inspect_message(message: &Message) -> Result<(&str, usize), AppError> {
     if let Some(tokens) = &message.tokens {
         safe_sum(tokens.input, tokens.output)?;
     }
-    message.usage()?;
     Ok((
         &message.id,
         size_of::<Message>()
@@ -507,7 +506,7 @@ fn records(
     for (timeline, offset) in timelines.iter().zip(offsets) {
         for message in &timeline[offset..] {
             remaining(deadline)?;
-            let Some(tokens) = message.usage()? else {
+            let Some(tokens) = message.usage() else {
                 continue;
             };
             if records.len() == MAX_RECORDS {
@@ -529,17 +528,26 @@ fn records(
 
 pub fn token_usage_records_via_cli() -> Result<Vec<TokenUsageRecord>, AppError> {
     let deadline = Instant::now() + SCAN_TIMEOUT;
-    let budget = Budget::default();
     let connection = transport::connect(deadline)?;
+    scan(&connection, deadline)
+}
+
+pub(super) fn scan(
+    connection: &ManagedConnection,
+    deadline: Instant,
+) -> Result<Vec<TokenUsageRecord>, AppError> {
+    let budget = Budget::default();
     let sessions = read_pages(
         |cursor| connection.fetch_page(None, cursor, deadline),
         inspect_session,
         &budget,
         deadline,
     )?;
-    let timelines = read_timelines(&connection, &sessions, &budget, deadline)?;
-    records(&sessions, &timelines, deadline)
+    let timelines = read_timelines(connection, &sessions, &budget, deadline)?;
+    let records = records(&sessions, &timelines, deadline)?;
+    connection.ensure_current()?;
+    Ok(records)
 }
 
 #[cfg(test)]
-mod tests;
+pub(in crate::opencode_cli) mod tests;

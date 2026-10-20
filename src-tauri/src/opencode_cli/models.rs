@@ -1,17 +1,15 @@
 use std::collections::BTreeSet;
-use std::path::Path;
-use std::process::Command;
+use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::AppError;
 use crate::paths::ConfigPaths;
 
-use super::binary::opencode_candidates;
+use super::token_usage::transport::{self, ManagedConnection};
 
-/// Frontend-facing catalog entry. V2's `opencode models` prints one `provider/model`
-/// ref per line; rich metadata comes from the local config's `providers` block.
+/// Frontend-facing catalog entry; local config remains authoritative for metadata.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCatalogEntry {
@@ -25,76 +23,79 @@ pub struct ModelCatalogEntry {
     pub variants: Option<Value>,
 }
 
-fn run_opencode_models() -> Result<String, AppError> {
-    let mut last_error: Option<String> = None;
-    let candidates = opencode_candidates();
-    let total = candidates.len();
-    for (index, binary) in candidates.iter().enumerate() {
-        // Skip probing non-existent paths, except the final bare `opencode`
-        // candidate which resolves through PATH at spawn time.
-        if !binary.exists() && index + 1 < total {
-            continue;
+#[derive(Deserialize)]
+struct Catalog {
+    data: Vec<ApiModel>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApiModel {
+    id: String,
+    #[serde(rename = "providerID")]
+    provider_id: String,
+    #[serde(rename = "modelID")]
+    model_id: String,
+    enabled: bool,
+}
+
+pub(super) fn model_refs(
+    connection: &ManagedConnection,
+    deadline: Instant,
+) -> Result<BTreeSet<String>, AppError> {
+    let directory = connection.directory().and_then(|path| path.to_str());
+    let query: Vec<_> = directory
+        .into_iter()
+        .map(|directory| ("location[directory]", directory))
+        .collect();
+    let catalog: super::active::JsonObject<Catalog> = connection.get_json(
+        &["model"],
+        &query,
+        deadline,
+        8 * 1024 * 1024,
+        "model catalog",
+        "8 MiB",
+    )?;
+    let mut refs = BTreeSet::new();
+    for model in catalog.0.data {
+        if [&model.id, &model.provider_id, &model.model_id]
+            .into_iter()
+            .any(|value| {
+                value.is_empty()
+                    || value.len() > 4096
+                    || value.contains(char::is_whitespace)
+                    || value.chars().any(char::is_control)
+            })
+            || model.provider_id.contains('/')
+        {
+            return Err(AppError::configuration(
+                "Invalid OpenCode model catalog identity",
+            ));
         }
-        match run_with_binary(binary) {
-            Ok(stdout) => return Ok(stdout),
-            Err(e) => last_error = Some(format!("{}: {e}", binary.display())),
+        if model.enabled {
+            refs.insert(format!("{}/{}", model.provider_id, model.model_id));
         }
     }
-    Err(AppError::configuration(format!(
-        "failed to run opencode CLI — tried {}, none worked. Install the opencode CLI and ensure it is on PATH, or set OPENCODE_BIN.",
-        last_error.unwrap_or_else(|| "no candidates found".to_owned())
-    )))
+    Ok(refs)
 }
 
-/// Spawn `opencode models` with the given binary and return stdout.
-fn run_with_binary(binary: &Path) -> Result<String, AppError> {
-    // std::process handles the platform specifics of launching `opencode`:
-    // Windows searches PATHEXT (skipping extension-less shims) and runs .cmd/.bat
-    // through cmd.exe; Unix uses execvp which natively runs shebang scripts/bins.
-    let mut cmd = Command::new(binary);
-    cmd.arg("models");
-
-    let output = cmd.output().map_err(|e| {
-        AppError::configuration(format!(
-            "failed to spawn opencode binary at {}: {e}",
-            binary.display()
-        ))
-    })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        let detail = if stderr.is_empty() { stdout } else { stderr };
-        return Err(AppError::configuration(format!(
-            "opencode models failed ({}): {}",
-            output.status, detail
-        )));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-/// Parses plain `opencode models` output: one `provider/model` ref per line.
-fn parse_model_refs(stdout: &str) -> BTreeSet<String> {
-    stdout
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.contains(char::is_whitespace))
-        .map(str::to_owned)
-        .collect()
-}
-
-/// Lists models via the local opencode binary, merged with the local config.
-///
-/// The CLI provides the enabled catalog refs; config-provided models (including
-/// disabled ones) are always present so they stay editable. `provider_filter`
-/// narrows the result client-side because V2's CLI takes no positional argument.
+/// Lists enabled models from the selected local service plus all configured models.
 pub fn list_models_via_cli(
     paths: &ConfigPaths,
     provider_filter: Option<&str>,
 ) -> Result<Vec<ModelCatalogEntry>, AppError> {
-    let stdout = run_opencode_models()?;
-    let mut refs: BTreeSet<String> = parse_model_refs(&stdout);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let connection = transport::connect(deadline)?;
+    list_models(paths, provider_filter, &connection, deadline)
+}
+
+fn list_models(
+    paths: &ConfigPaths,
+    provider_filter: Option<&str>,
+    connection: &ManagedConnection,
+    deadline: Instant,
+) -> Result<Vec<ModelCatalogEntry>, AppError> {
+    let mut refs = model_refs(connection, deadline)?;
 
     let config_providers = crate::providers::list_providers(&paths.opencode_file())?;
     let custom_ids = crate::providers::custom_provider_ids(&paths.opencode_file())?;
@@ -136,5 +137,9 @@ pub fn list_models_via_cli(
                 .and_then(|variants| serde_json::to_value(variants).ok()),
         });
     }
+    connection.ensure_current()?;
     Ok(catalog)
 }
+
+#[cfg(test)]
+mod tests;

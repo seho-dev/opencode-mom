@@ -643,14 +643,16 @@ fn oversized_page_metadata_is_rejected_before_unbounded_allocation() {
     assert!(serde_json::from_value::<Page<Session>>(page(items, None)).is_err());
 }
 
-pub(super) struct FakeApi {
+pub(in crate::opencode_cli) struct FakeApi {
     pub(super) address: SocketAddr,
     stopping: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
 }
 
 impl FakeApi {
-    pub(super) fn new(handler: impl Fn(&str, &mut TcpStream) + Send + Sync + 'static) -> Self {
+    pub(in crate::opencode_cli) fn new(
+        handler: impl Fn(&str, &mut TcpStream) + Send + Sync + 'static,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let stopping = Arc::new(AtomicBool::new(false));
@@ -705,7 +707,7 @@ impl FakeApi {
         }
     }
 
-    pub(super) fn url(&self) -> String {
+    pub(in crate::opencode_cli) fn url(&self) -> String {
         format!("http://{}", self.address)
     }
 }
@@ -718,7 +720,12 @@ impl Drop for FakeApi {
     }
 }
 
-pub(super) fn respond(stream: &mut TcpStream, status: u16, headers: &str, body: &[u8]) {
+pub(in crate::opencode_cli) fn respond(
+    stream: &mut TcpStream,
+    status: u16,
+    headers: &str,
+    body: &[u8],
+) {
     let _ = write!(
         stream,
         "HTTP/1.1 {status} Fixture\r\nConnection: close\r\nContent-Length: {}\r\n{headers}\r\n",
@@ -727,11 +734,11 @@ pub(super) fn respond(stream: &mut TcpStream, status: u16, headers: &str, body: 
     let _ = stream.write_all(body);
 }
 
-pub(super) fn healthy_response(stream: &mut TcpStream) {
+pub(in crate::opencode_cli) fn healthy_response(stream: &mut TcpStream) {
     respond(stream, 200, "", br#"{"version":"2.0.22","pid":42}"#);
 }
 
-pub(super) fn connection(api: &FakeApi) -> ManagedConnection {
+pub(in crate::opencode_cli) fn connection(api: &FakeApi) -> ManagedConnection {
     transport::test_connection(&api.url(), deadline())
 }
 

@@ -1,15 +1,32 @@
-use std::os::unix::process::ExitStatusExt;
-use std::process::{ExitStatus, Output};
+use std::time::{Duration, Instant};
 
-use super::reload_result;
+use crate::opencode_cli::token_usage::tests::{connection, healthy_response, respond, FakeApi};
 
 #[test]
-fn reload_nonzero_reports_failure() {
-    let error = reload_result(Output {
-        status: ExitStatus::from_raw(7 << 8),
-        stdout: Vec::new(),
-        stderr: b"reload failed".to_vec(),
-    })
-    .unwrap_err();
-    assert!(error.message.contains("reload failed"));
+fn reload_accepts_204_and_never_retries_or_exposes_errors() {
+    for status in [204, 401, 500] {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let requested = calls.clone();
+        let api = FakeApi::new(move |target, stream| {
+            if target == "/api/info" {
+                healthy_response(stream);
+            } else {
+                assert_eq!(target, "/api/location/reload");
+                requested.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                respond(
+                    stream,
+                    status,
+                    "",
+                    if status == 204 { b"" } else { b"PRIVATE_ERROR" },
+                );
+            }
+        });
+        let result = connection(&api).reload(Instant::now() + Duration::from_secs(1));
+        if status == 204 {
+            result.unwrap();
+        } else {
+            assert!(!result.unwrap_err().message.contains("PRIVATE"));
+        }
+        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }
 }

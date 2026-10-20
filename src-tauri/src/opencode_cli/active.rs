@@ -1,17 +1,14 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::marker::PhantomData;
-use std::path::Path;
-use std::process::{Child, Command, Output, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
 use crate::error::AppError;
 
-use super::binary::opencode_candidates;
-use super::command::collect_output;
+use super::token_usage::transport::{self, ManagedConnection};
 
 const ACTIVE_SESSIONS_TIMEOUT: Duration = Duration::from_secs(5);
 const ACTIVE_SESSIONS_MAX_BYTES: u64 = 1024 * 1024;
@@ -29,7 +26,7 @@ enum ActiveSession {
     Running,
 }
 
-struct JsonObject<T>(T);
+pub(super) struct JsonObject<T>(pub(super) T);
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for JsonObject<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -55,16 +52,23 @@ fn count_running_sessions<'de, D>(deserializer: D) -> Result<usize, D::Error>
 where
     D: Deserializer<'de>,
 {
+    running_sessions(deserializer).map(|ids| ids.len())
+}
+
+pub(super) fn running_sessions<'de, D>(deserializer: D) -> Result<HashSet<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
     struct RunningSessions;
 
     impl<'de> Visitor<'de> for RunningSessions {
-        type Value = usize;
+        type Value = HashSet<String>;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             formatter.write_str("a map of running session IDs")
         }
 
-        fn visit_map<M>(self, mut map: M) -> Result<usize, M::Error>
+        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
         where
             M: MapAccess<'de>,
         {
@@ -81,69 +85,34 @@ where
                 }
                 map.next_value::<JsonObject<ActiveSession>>()?;
             }
-            Ok(ids.len())
+            Ok(ids)
         }
     }
 
     deserializer.deserialize_map(RunningSessions)
 }
 
-fn active_sessions_command(binary: &Path) -> Command {
-    let mut command = Command::new(binary);
-    command
-        .args(["api", "session.active"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    command
-}
-
-/// Queries only the server resolved by the CLI, which may auto-start its local service.
+/// Queries only the selected local service; Shared mode may bootstrap through the CLI.
 /// This is not a machine-wide inventory of OpenCode processes or servers.
 pub fn active_sessions_via_cli() -> Result<usize, AppError> {
-    let candidates = opencode_candidates();
-    let mut last_error = None;
-    for (index, binary) in candidates.iter().enumerate() {
-        if !binary.exists() && index + 1 < candidates.len() {
-            continue;
-        }
-        match active_sessions_command(binary).spawn() {
-            Ok(child) => return collect_active_sessions(child, ACTIVE_SESSIONS_TIMEOUT),
-            Err(error) => last_error = Some(error.kind()),
-        }
-    }
-    Err(AppError::configuration(format!(
-        "failed to run opencode CLI for session.active ({last_error:?}). Install OpenCode V2 and ensure it is on PATH, or set OPENCODE_BIN."
-    )))
+    let deadline = Instant::now() + ACTIVE_SESSIONS_TIMEOUT;
+    active_sessions(&transport::connect(deadline)?, deadline)
 }
 
-fn collect_active_sessions(child: Child, timeout: Duration) -> Result<usize, AppError> {
-    active_sessions_result(collect_output(
-        child,
-        timeout,
+pub(super) fn active_sessions(
+    connection: &ManagedConnection,
+    deadline: Instant,
+) -> Result<usize, AppError> {
+    let envelope: JsonObject<ActiveSessionsEnvelope> = connection.get_json(
+        &["session", "active"],
+        &[],
+        deadline,
         ACTIVE_SESSIONS_MAX_BYTES,
         "opencode session.active",
         "1 MiB",
-    )?)
-}
-
-fn active_sessions_result(output: Output) -> Result<usize, AppError> {
-    if !output.status.success() {
-        return Err(AppError::configuration(format!(
-            "opencode session.active failed ({}). This requires OpenCode V2 with the session.active API; update the CLI if this endpoint is unsupported.",
-            output.status
-        )));
-    }
-    let envelope: JsonObject<ActiveSessionsEnvelope> =
-        serde_json::from_slice(&output.stdout).map_err(|error| {
-            // Do not expose identifiers, response contents, or serde's untrusted error text.
-            AppError::configuration(format!(
-                "invalid opencode session.active response: expected the V2 data map of running sessions ({:?} at line {}, column {}).",
-                error.classify(), error.line(), error.column()
-            ))
-        })?;
+    )?;
     Ok(envelope.0.data)
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests;

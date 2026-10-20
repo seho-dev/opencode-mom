@@ -19,17 +19,29 @@ path = "src/lib.rs"
 tauri-build = { version = "2.5.3", features = [] }
 
 [dependencies]
-tauri = { version = "2.10.2", default-features = false, features = ["wry"] }
+tauri = { version = "2.10.2", default-features = false, features = ["wry", "macos-private-api"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 jsonc-parser = { version = "=0.33.0", features = ["cst", "serde_json"] }
 dirs = "6.0"
 tauri-plugin-single-instance = "2.3.4"
+tauri-plugin-dialog = "=2.8.1"
 time = { version = "0.3", features = ["formatting", "parsing", "serde-well-known"] }
 uuid = { version = "1.11", features = ["serde", "v4"] }
-reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "query", "rustls"] }
 percent-encoding = "2"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "=0.6.1"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "NSAccessibility", "NSAnimation", "NSAnimationContext", "NSEvent", "NSResponder", "NSScreen", "NSTrackingArea", "NSView", "NSWindow", "NSWorkspace"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
+
+[dev-dependencies]
+tauri = { version = "2.10.2", default-features = false, features = ["test"] }
+tempfile = "3"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 tauri = { version = "2.10.2", default-features = false, features = ["tray-icon"] }
@@ -41,4 +53,4 @@ tauri-plugin-autostart = "=2.5.1"
 libc = "=0.2.186"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemServices"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemServices"] }

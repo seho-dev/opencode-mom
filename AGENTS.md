@@ -37,15 +37,18 @@ shared/                # Builtin agent catalog JSON imported by the frontend
 
 ## Managed Config Paths
 
-- App data: `~/.config/opencode-mom/config.json` (groups, selection, write metadata, backups).
+- App data: `~/.config/opencode-mom/config.json` (groups, projects, selection, preferences and Island enable state).
 - Targets: `~/.omo/omo.jsonc`, `~/.config/opencode/oh-my-opencode-slim.json`, `~/.config/opencode/opencode.jsonc` (fallback `opencode.json`); `OPENCODE_CONFIG_DIR` and `OPENCODE_CONFIG` override discovery.
-- Writes are one-to-one key patches through `jsonc`/`document` helpers: preserve residual keys and remove only keys owned by the changed group. Plain config writes have no backups or locking; recovery `.bak` files exist only for MCP/skill replacement via `resource_file::replace`.
+- Group projection uses one-to-one `jsonc` key patches: preserve residual keys and remove only keys owned by the changed group. General `document::write_file`/`JsoncDoc::save` target writes remain plain, without backups or locking.
+- AppConfig read/modify/write operations share the existing in-process mutex; `save_config` stages in the destination directory, syncs and atomically renames, without `.bak` backups.
+- Existing-file inline agent CRUD, Markdown agent updates, MCP replacements and local skill updates use `resource_file::replace`; recovery `.bak` files are retained on failure and cleaned up on success. Static Global symlinks are supported with stale-source checks, not a symlink-race security guarantee.
 
 ## Conventions
 
 - **Svelte 5 runes only**: `$state`/`$derived`/`$props`/`$effect`; no Svelte stores.
 - **IPC boundary**: UI never calls `invoke` directly. Extend `CommandAdapter` (`src/config/adapter.ts`), read state via the config store (`getConfig()`), and register new handlers in `src-tauri/src/lib.rs`.
 - **Wire compatibility**: persisted `group.type` values are frozen (`opencode` / `slim` / `oh-my-openagent`); convert to canonical types at the adapter boundary only.
+- **Agent edits**: Freeze the draft's source snapshot; echo backend `sources[].resolvedPath`/`content` as `mutation.expectedPath`/`expectedContent`, never regenerate content from JavaScript raw JSON. Missing update snapshots are rejected; create payloads are unchanged.
 - **Imports**: use the `$src/*` alias with explicit `.js` extensions; there is no `src/lib`.
 - **i18n**: route every user-visible string through keys in `en.ts` and `zh.ts`; keep both dictionaries in sync. Code comments in English.
 - **Backend errors**: return `AppError` codes (`not_found`, `references_blocked`, `validation_failed`, `configuration_failed`); the frontend `CommandError` mirrors them.

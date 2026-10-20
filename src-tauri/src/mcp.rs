@@ -77,6 +77,7 @@ fn validate_effective_server(
 }
 
 pub fn list(paths: &ConfigPaths) -> Result<McpList, AppError> {
+    paths.validate_resource_root()?;
     let mut result = McpList::default();
     let mut entries = BTreeMap::<String, (Value, Vec<String>)>::new();
     for path in paths.global_config_files() {
@@ -184,6 +185,7 @@ pub fn get(paths: &ConfigPaths, name: &str) -> Result<McpServer, AppError> {
 }
 
 pub fn delete(paths: &ConfigPaths, name: &str) -> Result<(), AppError> {
+    paths.ensure_global_write()?;
     delete_inner(paths, name, |_| {}, |_| {})
 }
 
@@ -380,6 +382,7 @@ fn saved_server(name: String, config: Map<String, Value>, source_paths: Vec<Stri
 }
 
 pub fn create(paths: &ConfigPaths, draft: McpDraft) -> Result<McpServer, AppError> {
+    paths.ensure_global_write()?;
     validate_draft(&draft.name, &draft.config)?;
     let mut documents = managed_documents(paths)?;
     for (_, _, document) in &documents {
@@ -415,6 +418,7 @@ pub fn create(paths: &ConfigPaths, draft: McpDraft) -> Result<McpServer, AppErro
 }
 
 pub fn update(paths: &ConfigPaths, draft: McpUpdate) -> Result<McpServer, AppError> {
+    paths.ensure_global_write()?;
     validate_draft(&draft.name, &draft.config)?;
     let mut documents = managed_documents(paths)?;
     let index = documents

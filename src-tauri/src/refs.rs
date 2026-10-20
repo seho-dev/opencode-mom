@@ -1,10 +1,14 @@
 use serde_json::Value;
 
 use crate::agents::{self, AgentReference, AgentReferenceIndex, AgentReferenceKind};
+use crate::document::JsoncDoc;
 use crate::error::AppError;
 use crate::models::AppConfig;
 use crate::paths::ConfigPaths;
 use crate::providers::ModelRef;
+
+// OMO stores OpenCode-specific mappings under the literal `opencode` object.
+const OMO_OPENCODE_BLOCK: &str = "opencode";
 
 /// Where a model reference was found. Displayed to users when deletions are blocked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -118,8 +122,87 @@ pub fn collect_model_references(paths: &ConfigPaths) -> Result<ModelReferenceInd
             }
         }
     }
-    references.extend(crate::replacement::scan_plugin_references(paths)?);
+    references.extend(scan_plugin_references(paths)?);
     Ok(ModelReferenceIndex::new(references))
+}
+
+/// Scans Slim and OMO files for model references used by deletion protection.
+pub fn scan_plugin_references(paths: &ConfigPaths) -> Result<Vec<ModelReference>, AppError> {
+    let mut references = Vec::new();
+    if let Some(content) = crate::document::read_text(&paths.slim_file())? {
+        let document = JsoncDoc::parse(&content)?;
+        scan_slim(&document, &mut references)?;
+    }
+    if let Some(content) = crate::document::read_text(&paths.omo_file())? {
+        let document = JsoncDoc::parse(&content)?;
+        scan_omo(&document, &mut references)?;
+    }
+    references.sort();
+    Ok(references)
+}
+
+fn scan_slim(document: &JsoncDoc, references: &mut Vec<ModelReference>) -> Result<(), AppError> {
+    let Some(presets) = document.raw().get("presets") else {
+        return Ok(());
+    };
+    let presets = presets
+        .as_object()
+        .ok_or_else(|| AppError::validation("Slim presets must be an object"))?;
+    for (preset, entries) in presets {
+        let entries = entries.as_object().ok_or_else(|| {
+            AppError::validation(format!("Slim presets.{preset} must be an object"))
+        })?;
+        for (agent, entry) in entries {
+            let entry = entry.as_object().ok_or_else(|| {
+                AppError::validation(format!("Slim presets.{preset}.{agent} must be an object"))
+            })?;
+            if let Some(model) = entry.get("model").and_then(Value::as_str) {
+                if !model.is_empty() {
+                    references.push(ModelReference {
+                        source: ReferenceSource::SlimPreset,
+                        location: format!("presets.{preset}.{agent}.model"),
+                        model_ref: ModelRef::parse(model)?,
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn scan_omo(document: &JsoncDoc, references: &mut Vec<ModelReference>) -> Result<(), AppError> {
+    let Some(opencode) = document.raw().get(OMO_OPENCODE_BLOCK) else {
+        return Ok(());
+    };
+    let opencode = opencode
+        .as_object()
+        .ok_or_else(|| AppError::validation("OMO opencode must be an object"))?;
+    for (key, source) in [
+        ("agents", ReferenceSource::OmoAgent),
+        ("categories", ReferenceSource::OmoCategory),
+    ] {
+        let Some(entries) = opencode.get(key) else {
+            continue;
+        };
+        let entries = entries
+            .as_object()
+            .ok_or_else(|| AppError::validation(format!("OMO opencode.{key} must be an object")))?;
+        for (name, entry) in entries {
+            let entry = entry.as_object().ok_or_else(|| {
+                AppError::validation(format!("OMO opencode.{key}.{name} must be an object"))
+            })?;
+            if let Some(model) = entry.get("model").and_then(Value::as_str) {
+                if !model.is_empty() {
+                    references.push(ModelReference {
+                        source,
+                        location: format!("{OMO_OPENCODE_BLOCK}.{key}.{name}.model"),
+                        model_ref: ModelRef::parse(model)?,
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn add_group_references(
@@ -295,6 +378,9 @@ fn scan_permission_references(
         }
     }
     for (key, nested) in object {
+        if owner_prefix.is_empty() && key == "agents" {
+            continue;
+        }
         let nested_prefix = if owner_prefix.is_empty() {
             key.clone()
         } else {
@@ -304,18 +390,64 @@ fn scan_permission_references(
     }
 }
 
-/// Convenience wrapper used by provider deletion protection.
-pub fn provider_is_referenced(
-    paths: &ConfigPaths,
-    provider_id: &str,
-) -> Result<Vec<ModelReference>, AppError> {
-    Ok(collect_model_references(paths)?.for_provider(provider_id))
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
 
-/// Convenience wrapper used by model deletion protection.
-pub fn model_is_referenced(
-    paths: &ConfigPaths,
-    model_ref: &ModelRef,
-) -> Result<Vec<ModelReference>, AppError> {
-    Ok(collect_model_references(paths)?.for_model(model_ref))
+    struct TestEnv {
+        home: PathBuf,
+        paths: ConfigPaths,
+    }
+
+    impl TestEnv {
+        fn new() -> Self {
+            let home = std::env::temp_dir()
+                .join(format!("opencode-mom-refs-test-{}", uuid::Uuid::new_v4()));
+            let paths = ConfigPaths::for_home(&home);
+            fs::create_dir_all(paths.config_file().parent().unwrap()).unwrap();
+            fs::create_dir_all(paths.opencode_file().parent().unwrap()).unwrap();
+            Self { home, paths }
+        }
+    }
+
+    impl Drop for TestEnv {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.home);
+        }
+    }
+
+    #[test]
+    fn inline_agent_with_subagent_permission_produces_single_reference() {
+        let env = TestEnv::new();
+        fs::write(env.paths.config_file(), r#"{"groups":[]}"#).unwrap();
+        let opencode_content = serde_json::json!({
+            "agents": {
+                "caller": {
+                    "permissions": [
+                        {
+                            "action": "subagent",
+                            "resource": "worker"
+                        }
+                    ]
+                }
+            }
+        });
+        fs::write(env.paths.opencode_file(), opencode_content.to_string()).unwrap();
+
+        let references =
+            collect_agent_references(&env.paths).expect("collect agent references succeeds");
+        let worker_refs = references
+            .get("worker")
+            .expect("worker should be referenced");
+
+        assert_eq!(
+            worker_refs.len(),
+            1,
+            "worker should only be referenced once: {worker_refs:?}"
+        );
+        assert_eq!(worker_refs[0].owner, "agents.caller.inline.permissions[0]");
+        assert_eq!(worker_refs[0].kind, AgentReferenceKind::PermissionTask);
+    }
 }

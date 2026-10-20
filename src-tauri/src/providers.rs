@@ -82,8 +82,15 @@ pub fn is_custom_provider(opencode_file: &Path, provider_id: &str) -> Result<boo
     Ok(custom_provider_ids(opencode_file)?.contains(provider_id))
 }
 
-fn ensure_custom_provider(opencode_file: &Path, provider_id: &str) -> Result<(), AppError> {
-    if !is_custom_provider(opencode_file, provider_id)? {
+fn ensure_custom_provider_in_doc(
+    root: &Map<String, Value>,
+    provider_id: &str,
+) -> Result<(), AppError> {
+    let is_custom = root
+        .get("providers")
+        .and_then(Value::as_object)
+        .map_or(false, |providers| providers.contains_key(provider_id));
+    if !is_custom {
         return Err(AppError::validation(format!(
             "model operations are only allowed for custom providers: {provider_id}"
         )));
@@ -112,7 +119,7 @@ pub fn create_provider(
         return Err(AppError::validation("provider package is required"));
     }
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
-    let providers = providers_from_root(&document.raw().clone())?;
+    let providers = providers_from_root(document.raw())?;
     if providers.iter().any(|item| item.name == provider.name) {
         return Err(AppError::validation(format!(
             "provider already exists: {}",
@@ -133,7 +140,7 @@ pub fn update_provider(
 ) -> Result<ProviderDef, AppError> {
     validate_provider(&provider)?;
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
-    let providers = providers_from_root(&document.raw().clone())?;
+    let providers = providers_from_root(document.raw())?;
     let current = providers
         .iter()
         .find(|item| item.name == provider.name)
@@ -151,13 +158,13 @@ pub fn update_provider(
 
 pub fn delete_provider(opencode_file: &Path, provider_id: &str) -> Result<(), AppError> {
     validate_id(provider_id, IdKind::Provider)?;
-    let provider = get_provider(opencode_file, provider_id)?;
+    let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
+    let provider = provider_from_root_value(document.raw(), provider_id)?;
     if !provider.models.is_empty() {
         return Err(AppError::validation(format!(
             "provider still contains models: {provider_id}"
         )));
     }
-    let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     document.patch(&["providers", provider_id], None)?;
     document.save(opencode_file)?;
     Ok(())
@@ -171,13 +178,9 @@ pub fn create_model(
     validate_id(provider_id, IdKind::Provider)?;
     validate_id(&model.id, IdKind::Model)?;
     let model = with_model_name(model);
-    ensure_custom_provider(opencode_file, provider_id)?;
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
-    let providers = providers_from_root(&document.raw().clone())?;
-    let provider = providers
-        .iter()
-        .find(|item| item.name == provider_id)
-        .ok_or_else(|| AppError::not_found(format!("provider not found: {provider_id}")))?;
+    ensure_custom_provider_in_doc(document.raw(), provider_id)?;
+    let provider = provider_from_root_value(document.raw(), provider_id)?;
     if provider.models.contains_key(&model.id) {
         return Err(AppError::validation(format!(
             "model already exists: {}/{}",
@@ -204,19 +207,19 @@ pub fn update_model(
             model.id
         )));
     }
-    ensure_custom_provider(opencode_file, &model_ref.provider_id)?;
     let model = with_model_name(model);
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
-    ensure_model_exists(&document.raw(), model_ref)?;
+    ensure_custom_provider_in_doc(document.raw(), &model_ref.provider_id)?;
+    ensure_model_exists(document.raw(), model_ref)?;
     apply_patches(&mut document, model_field_patches(model_ref, &model))?;
     document.save(opencode_file)?;
     Ok(model)
 }
 
 pub fn delete_model(opencode_file: &Path, model_ref: &ModelRef) -> Result<(), AppError> {
-    ensure_custom_provider(opencode_file, &model_ref.provider_id)?;
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
-    ensure_model_exists(&document.raw(), model_ref)?;
+    ensure_custom_provider_in_doc(document.raw(), &model_ref.provider_id)?;
+    ensure_model_exists(document.raw(), model_ref)?;
     let path = model_path_vec(model_ref);
     let segments: Vec<&str> = path.iter().map(String::as_str).collect();
     document.patch(&segments, None)?;
@@ -396,19 +399,45 @@ pub fn model_value(model: &ModelDef) -> Value {
 }
 
 fn provider_field_patches(provider: &ProviderDef) -> Vec<(Vec<String>, Option<Value>)> {
-    let base = vec!["providers".to_owned(), provider.name.clone()];
-    [
-        ("package", provider.package.clone().map(Value::String)),
-        ("settings", provider.settings.clone().and_then(to_value)),
-        ("headers", provider.headers.clone().and_then(to_value)),
-    ]
-    .into_iter()
-    .map(|(field, value)| {
-        let mut path = base.clone();
-        path.push(field.to_owned());
-        (path, value)
-    })
-    .collect()
+    let mut patches = vec![
+        (
+            vec![
+                "providers".to_owned(),
+                provider.name.clone(),
+                "package".to_owned(),
+            ],
+            provider.package.clone().map(Value::String),
+        ),
+        (
+            vec![
+                "providers".to_owned(),
+                provider.name.clone(),
+                "headers".to_owned(),
+            ],
+            provider.headers.clone().and_then(to_value),
+        ),
+    ];
+    if let Some(ref s) = provider.settings {
+        patches.push((
+            vec![
+                "providers".to_owned(),
+                provider.name.clone(),
+                "settings".to_owned(),
+                "apiKey".to_owned(),
+            ],
+            s.api_key.clone().map(Value::String),
+        ));
+        patches.push((
+            vec![
+                "providers".to_owned(),
+                provider.name.clone(),
+                "settings".to_owned(),
+                "baseURL".to_owned(),
+            ],
+            s.base_url.clone().map(Value::String),
+        ));
+    }
+    patches
 }
 
 const MODEL_FIELDS: &[&str] = &[
@@ -520,5 +549,90 @@ fn ensure_model_exists(root: &Map<String, Value>, model_ref: &ModelRef) -> Resul
             "model not found: {}",
             model_ref.as_str()
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    struct TempDir(std::path::PathBuf);
+    impl TempDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("opencode-mom-provider-{}", uuid::Uuid::new_v4()));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn update_provider_preserves_unknown_settings_fields() {
+        let temp_dir = TempDir::new();
+        let opencode_file = temp_dir.0.join("opencode.jsonc");
+        fs::write(
+            &opencode_file,
+            r#"{
+  "providers": {
+    "custom_llm": {
+      "package": "@pkg/old",
+      "settings": {
+        "apiKey": "sk-12345",
+        "baseURL": "https://old.api.com",
+        "vendorExtra": {
+          "customOption": "preserved_value"
+        }
+      },
+      "models": {}
+    }
+  }
+}"#,
+        )
+        .unwrap();
+
+        let mut provider = get_provider(&opencode_file, "custom_llm").unwrap();
+        provider.package = Some("@pkg/new".to_owned());
+        update_provider(&opencode_file, provider).unwrap();
+
+        let updated_doc = JsoncDoc::read(&opencode_file, OPENCODE_SCHEMA).unwrap();
+        let raw = updated_doc.raw();
+        let provider_val = raw
+            .get("providers")
+            .and_then(Value::as_object)
+            .and_then(|p| p.get("custom_llm"))
+            .and_then(Value::as_object)
+            .unwrap();
+
+        assert_eq!(
+            provider_val.get("package").and_then(Value::as_str),
+            Some("@pkg/new")
+        );
+
+        let settings = provider_val
+            .get("settings")
+            .and_then(Value::as_object)
+            .unwrap();
+        assert_eq!(
+            settings.get("apiKey").and_then(Value::as_str),
+            Some("sk-12345")
+        );
+        assert_eq!(
+            settings.get("baseURL").and_then(Value::as_str),
+            Some("https://old.api.com")
+        );
+        let vendor_extra = settings
+            .get("vendorExtra")
+            .and_then(Value::as_object)
+            .unwrap();
+        assert_eq!(
+            vendor_extra.get("customOption").and_then(Value::as_str),
+            Some("preserved_value")
+        );
     }
 }

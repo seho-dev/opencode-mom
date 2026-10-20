@@ -1,8 +1,7 @@
 use serde::Serialize;
 
-/// Error codes exposed to the frontend. `busy` and `conflict` no longer occur because the
-/// backend performs plain sequential file writes, but the codes stay reserved for the
-/// frontend type contract.
+/// Error codes exposed to the frontend. `busy` reports an ongoing guarded operation;
+/// `conflict` remains reserved in the frontend contract but is not emitted here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
@@ -10,6 +9,7 @@ pub enum ErrorCode {
     ReferencesBlocked,
     ValidationFailed,
     ConfigurationFailed,
+    Busy,
 }
 
 /// The single error type for every backend operation. It serializes directly into the

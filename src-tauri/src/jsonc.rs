@@ -22,15 +22,50 @@ pub fn parse_jsonc_object(input: &str) -> Result<Map<String, Value>, JsoncError>
 }
 
 pub fn patch(input: &str, path: &[&str], value: Option<Value>) -> Result<String, JsoncError> {
+    patch_with_effective(input, path, value).map(|(output, _)| output)
+}
+
+pub fn patch_with_effective(
+    input: &str,
+    path: &[&str],
+    value: Option<Value>,
+) -> Result<(String, Map<String, Value>), JsoncError> {
     if path.is_empty() || path.iter().any(|segment| segment.is_empty()) {
         return Err(JsoncError::MalformedJson);
     }
     let root = CstRootNode::parse(input, &options()).map_err(|_| JsoncError::MalformedJson)?;
     let object = root.object_value().ok_or(JsoncError::MalformedJson)?;
-    patch_object(&object, path, value);
+    patch_object(&object, path, value.clone());
     let output = root.to_string();
-    parse_jsonc_object(&output)?;
-    Ok(output)
+    let effective = parse_jsonc_object(&output)?;
+
+    match &value {
+        Some(expected) => {
+            if get_path(&effective, path) != Some(expected) {
+                return Err(JsoncError::MalformedJson);
+            }
+        }
+        None => {
+            if get_path(&effective, path).is_some() {
+                return Err(JsoncError::MalformedJson);
+            }
+        }
+    }
+
+    Ok((output, effective))
+}
+
+fn get_path<'a>(mut current: &'a Map<String, Value>, path: &[&str]) -> Option<&'a Value> {
+    for (i, segment) in path.iter().enumerate() {
+        if i == path.len() - 1 {
+            return current.get(*segment);
+        }
+        match current.get(*segment) {
+            Some(Value::Object(map)) => current = map,
+            _ => return None,
+        }
+    }
+    None
 }
 
 fn patch_object(object: &CstObject, path: &[&str], value: Option<Value>) {
@@ -83,5 +118,48 @@ fn options() -> ParseOptions {
         allow_single_quoted_strings: false,
         allow_hexadecimal_numbers: false,
         allow_unary_plus_numbers: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn duplicate_key_rejects_shadowed_modification() {
+        let input = r#"{"x": 1, "x": 2}"#;
+        let result = patch(input, &["x"], Some(json!(3)));
+        assert_eq!(result, Err(JsoncError::MalformedJson));
+    }
+
+    #[test]
+    fn duplicate_key_rejects_shadowed_deletion() {
+        let input = r#"{"x": 1, "x": 2}"#;
+        let result = patch(input, &["x"], None);
+        assert_eq!(result, Err(JsoncError::MalformedJson));
+    }
+
+    #[test]
+    fn normal_patch_and_patch_with_effective() {
+        let input = "{\n  // keep comment\n  \"x\": 1\n}";
+        let (output, effective) = patch_with_effective(input, &["x"], Some(json!(3))).unwrap();
+        assert_eq!(output, "{\n  // keep comment\n  \"x\": 3\n}");
+        assert_eq!(effective.get("x"), Some(&json!(3)));
+
+        let (output_deleted, effective_deleted) =
+            patch_with_effective(&output, &["x"], None).unwrap();
+        assert_eq!(effective_deleted.get("x"), None);
+        assert!(!output_deleted.contains("\"x\""));
+    }
+
+    #[test]
+    fn nested_duplicate_key_rejects_shadowed_modification_and_deletion() {
+        let input = r#"{"a": {"x": 1, "x": 2}}"#;
+        let modify_result = patch(input, &["a", "x"], Some(json!(3)));
+        assert_eq!(modify_result, Err(JsoncError::MalformedJson));
+
+        let delete_result = patch(input, &["a", "x"], None);
+        assert_eq!(delete_result, Err(JsoncError::MalformedJson));
     }
 }

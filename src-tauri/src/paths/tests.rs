@@ -2,10 +2,10 @@ use super::*;
 
 #[test]
 fn opencode_file_prefers_jsonc_then_falls_back_to_json() {
-    let tmp = std::env::temp_dir().join(format!("opencode-mom-paths-{}", std::process::id()));
-    let dir = tmp.join(".config").join("opencode");
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join(".config").join("opencode");
     std::fs::create_dir_all(&dir).unwrap();
-    let paths = || ConfigPaths::for_home(&tmp);
+    let paths = || ConfigPaths::for_home(tmp.path());
     // No file at all -> fall back to .json (opencode reads it too).
     assert_eq!(paths().opencode_file(), dir.join("opencode.json"));
     // Only opencode.json exists -> use it (the bug this guards against).
@@ -17,12 +17,12 @@ fn opencode_file_prefers_jsonc_then_falls_back_to_json() {
     std::fs::write(dir.join("oh-my-opencode-slim.jsonc"), "{}").unwrap();
     assert_eq!(paths().slim_file(), dir.join("oh-my-opencode-slim.json"));
     // Explicit OPENCODE_CONFIG always wins.
-    let explicit = tmp.join("custom.json");
+    let explicit = tmp.path().join("custom.json");
     assert_eq!(
-        ConfigPaths::with_parts(tmp.clone(), Some(explicit.clone()), None).opencode_file(),
+        ConfigPaths::with_parts(tmp.path().to_path_buf(), Some(explicit.clone()), None)
+            .opencode_file(),
         explicit
     );
-    std::fs::remove_dir_all(&tmp).unwrap();
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn arbitrary_explicit_config_is_last_and_relative_paths_use_working_directory() 
             explicit,
         ]
     );
-    assert_eq!(paths.resolve_skill_path("relative"), cwd.join("relative"));
+    assert_eq!(paths.resolve_skill_path("relative"), None);
 }
 
 #[test]
@@ -75,4 +75,52 @@ fn duplicate_explicit_source_keeps_its_last_precedence() {
             .count(),
         1
     );
+}
+
+#[test]
+fn missing_project_root_is_not_found_but_files_are_invalid() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let file = root.join("file");
+    fs::write(&file, "not a directory").unwrap();
+    assert_eq!(
+        canonical_project_directory(&root.join("missing"))
+            .unwrap_err()
+            .code,
+        crate::error::ErrorCode::NotFound
+    );
+    assert_eq!(
+        canonical_project_directory(&file).unwrap_err().code,
+        crate::error::ErrorCode::ValidationFailed
+    );
+}
+
+#[test]
+fn filesystem_root_is_invalid_without_imposing_a_project_depth_requirement() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let canonical = fs::canonicalize(root).unwrap();
+    let volume_root = canonical.ancestors().last().unwrap();
+    assert_eq!(
+        canonical_project_directory(volume_root).unwrap_err().code,
+        crate::error::ErrorCode::ValidationFailed
+    );
+    assert_eq!(canonical_project_directory(root).unwrap(), canonical);
+}
+
+#[test]
+fn is_within_boundary_detects_descendant_and_escapes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let child = root.join("child/sub");
+    fs::create_dir_all(&child).unwrap();
+
+    assert!(is_within_boundary(root, &child));
+    assert!(is_within_boundary(root, root));
+
+    let outside = tmp.path().parent().unwrap();
+    assert!(!is_within_boundary(root, outside));
+
+    let escape = root.join("../escape");
+    assert!(!is_within_boundary(root, &escape));
 }

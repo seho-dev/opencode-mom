@@ -327,7 +327,7 @@ fn create_final_discovery_bypasses_warm_cache_and_removes_owned_directory_on_sou
                     }
                     "configured source" => {
                         home.write("cwd/last/Wanted.md", "configured winner");
-                        home.configure(&[&server.url, "last"]);
+                        home.configure(&[&server.url, "~/cwd/last"]);
                     }
                     _ => unreachable!(),
                 }

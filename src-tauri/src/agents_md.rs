@@ -1,4 +1,4 @@
-﻿use std::collections::BTreeSet;
+use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
@@ -186,15 +186,11 @@ fn frontmatter_key_order<'a>(source: &str, keys: impl Iterator<Item = &'a String
     let available = keys.cloned().collect::<BTreeSet<_>>();
     let mut ordered = Vec::new();
     for line in source.lines() {
-        if line.starts_with([' ', '\t', '-']) {
-            continue;
-        }
-        let Some((key, _)) = line.split_once(':') else {
+        let Some(key) = top_level_key(line) else {
             continue;
         };
-        let key = key.trim();
-        if available.contains(key) && !ordered.iter().any(|known| known == key) {
-            ordered.push(key.to_owned());
+        if available.contains(&key) && !ordered.iter().any(|known| known == &key) {
+            ordered.push(key);
         }
     }
     for key in available {
@@ -301,7 +297,15 @@ fn top_level_key(line: &str) -> Option<String> {
         return None;
     }
     let (key, _) = line.split_once(':')?;
-    let key = key.trim();
+    let mut key = key.trim();
+    if (key.starts_with('"') && key.ends_with('"'))
+        || (key.starts_with('\'') && key.ends_with('\''))
+    {
+        if key.len() < 2 {
+            return None;
+        }
+        key = &key[1..key.len() - 1];
+    }
     (!key.is_empty()
         && key
             .chars()
@@ -360,5 +364,64 @@ fn render_scalar(value: &Value) -> String {
         Value::Array(_) | Value::Object(_) => {
             unreachable!("complex YAML values are rendered structurally")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quoted_key_prompt_only_update_preserves_section_without_duplicates() {
+        let input = "---\n\"description\": \"text\"\n---\noriginal prompt";
+        let mut doc = MarkdownAgentDocument::parse(input).expect("parse markdown document");
+        doc.prompt = "updated prompt".to_owned();
+        let serialized = doc.serialize();
+
+        assert_eq!(
+            serialized.matches("description").count(),
+            1,
+            "serialized document has duplicate description keys: {serialized}"
+        );
+        assert!(serialized.contains("\"description\": \"text\""));
+        assert!(serialized.ends_with("updated prompt"));
+
+        let reparsed =
+            MarkdownAgentDocument::parse(&serialized).expect("re-parse markdown document");
+        assert_eq!(
+            reparsed
+                .frontmatter
+                .get("description")
+                .and_then(|v| v.as_str()),
+            Some("text")
+        );
+        assert_eq!(reparsed.prompt, "updated prompt");
+    }
+
+    #[test]
+    fn single_quoted_key_prompt_only_update_preserves_section_without_duplicates() {
+        let input = "---\n'description': 'text'\n---\noriginal prompt";
+        let mut doc = MarkdownAgentDocument::parse(input).expect("parse markdown document");
+        doc.prompt = "updated prompt".to_owned();
+        let serialized = doc.serialize();
+
+        assert_eq!(
+            serialized.matches("description").count(),
+            1,
+            "serialized document has duplicate description keys: {serialized}"
+        );
+        assert!(serialized.contains("'description': 'text'"));
+        assert!(serialized.ends_with("updated prompt"));
+
+        let reparsed =
+            MarkdownAgentDocument::parse(&serialized).expect("re-parse markdown document");
+        assert_eq!(
+            reparsed
+                .frontmatter
+                .get("description")
+                .and_then(|v| v.as_str()),
+            Some("text")
+        );
+        assert_eq!(reparsed.prompt, "updated prompt");
     }
 }

@@ -16,7 +16,7 @@ pub fn project_slim_active(
         &mut document,
         &group.name,
         group.slim_agent_overrides.as_deref(),
-    );
+    )?;
     document.patch(&["preset"], Some(Value::String(group.name.clone())))?;
     Ok(document)
 }
@@ -28,7 +28,7 @@ pub fn update_slim_preset(
     overrides: Option<&[AgentModelBinding]>,
 ) -> Result<JsoncDoc, crate::error::AppError> {
     let mut document = source.clone();
-    merge_slim_preset(&mut document, name, overrides);
+    merge_slim_preset(&mut document, name, overrides)?;
     Ok(document)
 }
 
@@ -77,7 +77,11 @@ fn active_slim_preset(document: &JsoncDoc) -> Option<&str> {
     document.raw().get("preset").and_then(Value::as_str)
 }
 
-fn merge_slim_preset(document: &mut JsoncDoc, name: &str, overrides: Option<&[AgentModelBinding]>) {
+fn merge_slim_preset(
+    document: &mut JsoncDoc,
+    name: &str,
+    overrides: Option<&[AgentModelBinding]>,
+) -> Result<(), crate::error::AppError> {
     let bindings: Vec<(&str, Value)> = overrides
         .unwrap_or_default()
         .iter()
@@ -88,17 +92,14 @@ fn merge_slim_preset(document: &mut JsoncDoc, name: &str, overrides: Option<&[Ag
         .collect();
     if bindings.is_empty() {
         if slim_preset(document, name).is_none() {
-            document
-                .patch(&["presets", name], Some(Value::Object(Map::new())))
-                .expect("a parsed JSONC document accepts a preset creation");
+            document.patch(&["presets", name], Some(Value::Object(Map::new())))?;
         }
-        return;
+        return Ok(());
     }
     for (agent, value) in bindings {
-        document
-            .patch(&["presets", name, agent], Some(value))
-            .expect("a parsed JSONC document accepts a preset patch");
+        document.patch(&["presets", name, agent], Some(value))?;
     }
+    Ok(())
 }
 
 fn binding_value(binding: &AgentModelBinding) -> Value {

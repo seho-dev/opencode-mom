@@ -160,6 +160,7 @@ fn discover_until(
     cache: Option<&Mutex<TextCache>>,
     deadline: Instant,
 ) -> Result<(SkillList, BTreeMap<String, Snapshot>), AppError> {
+    paths.validate_resource_root()?;
     let mut result = SkillList::default();
     let mut entries = BTreeMap::new();
     let mut snapshots = BTreeMap::new();
@@ -202,9 +203,9 @@ fn discover_until(
                     }
                 }
             }
-        } else {
+        } else if let Some(root) = paths.resolve_skill_path(&source) {
             scan_root(
-                &paths.resolve_skill_path(&source),
+                &root,
                 only,
                 &mut entries,
                 &mut snapshots,
@@ -259,6 +260,7 @@ fn validate_content(content: &str) -> Result<(), AppError> {
 }
 
 pub fn create(paths: &ConfigPaths, draft: SkillDraft) -> Result<SkillEntry, AppError> {
+    paths.ensure_global_write()?;
     create_inner(paths, draft, |_| Ok(()))
 }
 
@@ -307,6 +309,7 @@ fn create_inner(
 }
 
 pub fn update(paths: &ConfigPaths, draft: SkillUpdate) -> Result<SkillEntry, AppError> {
+    paths.ensure_global_write()?;
     update_inner(paths, draft, || {})
 }
 
@@ -373,6 +376,9 @@ fn update_inner(
 }
 
 fn configured_sources(paths: &ConfigPaths, diagnostics: &mut Vec<String>) -> Vec<String> {
+    if paths.is_project() {
+        return Vec::new();
+    }
     let mut sources = Vec::new();
     for path in paths.global_config_files() {
         let parsed = (|| {

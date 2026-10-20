@@ -1,8 +1,9 @@
+use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::document::{JsoncDoc, OMO_SCHEMA, OPENCODE_SCHEMA, SLIM_SCHEMA};
 use crate::error::AppError;
-use crate::models::{self, AppConfig, AppSelectionState, GroupType, ModelGroup};
+use crate::models::{self, AppConfig, GroupType, ModelGroup};
 use crate::paths::ConfigPaths;
 use crate::projection;
 
@@ -33,6 +34,7 @@ pub fn save_group(
     paths: &ConfigPaths,
     mut group: ModelGroup,
 ) -> Result<(ModelGroup, AppConfig), AppError> {
+    let _write = models::config_write_lock();
     let mut config = load(paths)?;
     if config
         .groups
@@ -75,6 +77,7 @@ pub fn copy_group(
     id: Uuid,
     name: Option<String>,
 ) -> Result<(ModelGroup, AppConfig), AppError> {
+    let _write = models::config_write_lock();
     let mut config = load(paths)?;
     let source = config
         .groups
@@ -111,6 +114,7 @@ pub fn copy_group(
 /// Removes a group from opencode-mom's own config only. Target config files are left
 /// untouched, so their mappings stay behind as residual configuration.
 pub fn delete_group(paths: &ConfigPaths, id: Uuid) -> Result<AppConfig, AppError> {
+    let _write = models::config_write_lock();
     let mut config = load(paths)?;
     let index = config
         .groups
@@ -119,7 +123,8 @@ pub fn delete_group(paths: &ConfigPaths, id: Uuid) -> Result<AppConfig, AppError
         .ok_or_else(|| AppError::not_found("group not found"))?;
     let deleted = config.groups.remove(index);
     if config.state.selected_group_id == Some(deleted.id) {
-        config.state = AppSelectionState::default();
+        config.state.selected_group_id = None;
+        config.state.selected_group_name = None;
     }
     config.validate()?;
     models::save_config(&paths.config_file(), &config)?;
@@ -129,6 +134,7 @@ pub fn delete_group(paths: &ConfigPaths, id: Uuid) -> Result<AppConfig, AppError
 /// Switches the active selection and projects the group into the managed target files.
 /// Switching to the already-selected group is a no-op.
 pub fn switch_group(paths: &ConfigPaths, group_id: Uuid) -> Result<(), AppError> {
+    let _write = models::config_write_lock();
     let mut config = load(paths)?;
     let group = find_enabled_group(&config, group_id)?.clone();
     if config.state.selected_group_id == Some(group_id) {
@@ -158,16 +164,14 @@ pub fn switch_group(paths: &ConfigPaths, group_id: Uuid) -> Result<(), AppError>
         }
     }
 
-    config.state = AppSelectionState {
-        selected_group_id: Some(group.id),
-        selected_group_name: Some(group.name.clone()),
-        preferences: config.state.preferences,
-    };
+    config.state.selected_group_id = Some(group.id);
+    config.state.selected_group_name = Some(group.name.clone());
     models::save_config(&paths.config_file(), &config)
 }
 
-/// Persists a group mutation plus all dependent projections in plain sequential writes.
-/// Order matters only cosmetically: every write is independent.
+/// Persists a group mutation plus all dependent projections using a two-phase commit.
+/// Phase 1 (Plan / Preflight): in-memory read and transform of all target documents.
+/// Phase 2 (Publish): saves all planned documents and finally commits AppConfig.
 fn persist_group_lifecycle(
     paths: &ConfigPaths,
     previous: Option<&ModelGroup>,
@@ -175,6 +179,10 @@ fn persist_group_lifecycle(
     config: AppConfig,
 ) -> Result<(), AppError> {
     let selected = config.state.selected_group_id == Some(group.id);
+
+    let mut slim_plan: Option<(PathBuf, JsoncDoc)> = None;
+    let mut omo_plan: Option<(PathBuf, JsoncDoc)> = None;
+    let mut opencode_plan: Option<(PathBuf, JsoncDoc)> = None;
 
     if group.group_type == GroupType::Slim || switches_away_from_slim(previous, group) {
         let slim_file = paths.slim_file();
@@ -198,7 +206,7 @@ fn persist_group_lifecycle(
         } else if let Some(previous) = previous.filter(|item| item.group_type == GroupType::Slim) {
             document = projection::delete_slim_preset(&document, &previous.name)?;
         }
-        document.save(&slim_file)?;
+        slim_plan = Some((slim_file, document));
     }
 
     let switched_from_omo = selected
@@ -214,7 +222,7 @@ fn persist_group_lifecycle(
         } else {
             source.clone()
         };
-        document.save(&omo_file)?;
+        omo_plan = Some((omo_file, document));
     }
 
     let switched_from_native = selected
@@ -227,7 +235,7 @@ fn persist_group_lifecycle(
         let opencode_file = paths.opencode_file();
         let source = JsoncDoc::read(&opencode_file, OPENCODE_SCHEMA)?;
         let (document, _) = projection::project_opencode(group, &source)?;
-        document.save(&opencode_file)?;
+        opencode_plan = Some((opencode_file, document));
     } else if switched_from_native {
         if let Some(previous) =
             previous.filter(|item| projection::has_effective_opencode_overrides(item))
@@ -235,8 +243,18 @@ fn persist_group_lifecycle(
             let opencode_file = paths.opencode_file();
             let source = JsoncDoc::read(&opencode_file, OPENCODE_SCHEMA)?;
             let document = projection::remove_opencode_overrides(previous, &source)?;
-            document.save(&opencode_file)?;
+            opencode_plan = Some((opencode_file, document));
         }
+    }
+
+    if let Some((path, doc)) = slim_plan {
+        doc.save(&path)?;
+    }
+    if let Some((path, doc)) = omo_plan {
+        doc.save(&path)?;
+    }
+    if let Some((path, doc)) = opencode_plan {
+        doc.save(&path)?;
     }
 
     models::save_config(&paths.config_file(), &config)
@@ -328,4 +346,96 @@ fn unique_copy_group_name(source: &str, groups: &[ModelGroup]) -> String {
                 .any(|group| group.name.trim().eq_ignore_ascii_case(candidate))
         })
         .expect("unbounded copy suffix iterator")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn save_group_two_phase_commit_aborts_before_writing_when_target_is_corrupt() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let paths = ConfigPaths::for_home(temp_dir.path());
+
+        fs::create_dir_all(paths.opencode_file().parent().unwrap()).unwrap();
+        fs::write(
+            paths.opencode_file(),
+            r#"{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "acme": {
+      "models": {
+        "fast": {}
+      }
+    }
+  }
+}"#,
+        )
+        .unwrap();
+
+        fs::create_dir_all(paths.slim_file().parent().unwrap()).unwrap();
+        fs::write(paths.slim_file(), "{\n  \"presets\": {}\n}\n").unwrap();
+
+        fs::create_dir_all(paths.omo_file().parent().unwrap()).unwrap();
+        fs::write(paths.omo_file(), "{\n}\n").unwrap();
+
+        let slim_group = ModelGroup {
+            id: Uuid::new_v4(),
+            name: "test-slim".to_owned(),
+            description: "test".to_owned(),
+            group_type: GroupType::Slim,
+            open_code_agent_overrides: Vec::new(),
+            slim_agent_overrides: Some(vec![crate::models::AgentModelBinding {
+                agent_name: "reviewer".to_owned(),
+                model_ref: "acme/fast".to_owned(),
+                variant: None,
+            }]),
+            omo_agent_overrides: None,
+            omo_category_mappings: None,
+            is_enabled: true,
+            updated_at: time::OffsetDateTime::now_utc(),
+        };
+
+        let (saved_group, _) = save_group(&paths, slim_group).unwrap();
+        switch_group(&paths, saved_group.id).unwrap();
+
+        let slim_content_before = fs::read_to_string(paths.slim_file()).unwrap();
+        assert!(slim_content_before.contains("test-slim"));
+        assert!(slim_content_before.contains("acme/fast"));
+
+        // Corrupt OMO file so Phase 1 parsing will fail.
+        fs::write(paths.omo_file(), "{").unwrap();
+
+        // Switch selected group type from Slim to OMO.
+        let mut omo_group = saved_group.clone();
+        omo_group.group_type = GroupType::Omo;
+        omo_group.omo_agent_overrides = Some(vec![crate::models::AgentModelBinding {
+            agent_name: "reviewer".to_owned(),
+            model_ref: "acme/fast".to_owned(),
+            variant: None,
+        }]);
+
+        let result = save_group(&paths, omo_group);
+        assert!(
+            result.is_err(),
+            "save_group must fail on corrupt OMO target"
+        );
+
+        // Slim file must be completely untouched - preset preserved!
+        let slim_content_after = fs::read_to_string(paths.slim_file()).unwrap();
+        assert_eq!(
+            slim_content_after, slim_content_before,
+            "Slim preset must remain unmodified when commit aborts in Phase 1"
+        );
+
+        // AppConfig must still hold the original Slim group.
+        let config = models::load_config(&paths.config_file()).unwrap();
+        let group_in_config = config
+            .groups
+            .iter()
+            .find(|g| g.id == saved_group.id)
+            .expect("group exists in config");
+        assert_eq!(group_in_config.group_type, GroupType::Slim);
+    }
 }

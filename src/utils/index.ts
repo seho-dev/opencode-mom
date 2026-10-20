@@ -62,3 +62,36 @@ export function buildModelVariants(catalog: ModelOptionEntry[], models: ModelOpt
   const entry = catalog.find((entry) => entry.ref === current) ?? models.find((entry) => entry.ref === current);
   return entry?.variants?.map((variant) => variant.id) ?? [];
 }
+
+// Splits a V2 `provider/model#variant` selector into its form pieces.
+export function splitModelSelector(selector: string): { model: string; variant: string } {
+  const hash = selector.lastIndexOf('#');
+  if (hash <= 0) return { model: selector, variant: '' };
+  return { model: selector.slice(0, hash), variant: selector.slice(hash + 1) };
+}
+
+// Joins the form pieces back into one V2 selector; a variant without a model is dropped.
+export function joinModelSelector(model: string, variant: string): string {
+  if (!model) return '';
+  return variant ? `${model}#${variant}` : model;
+}
+
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function safeParseJsonObject(text: string): Record<string, unknown> | null {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    const value: unknown = JSON.parse(trimmed);
+    return isJsonObject(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function prettyJson(value: unknown): string {
+  return JSON.stringify(value ?? {}, null, 2);
+}

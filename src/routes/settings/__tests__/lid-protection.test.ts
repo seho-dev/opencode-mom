@@ -405,3 +405,109 @@ test.each([false, true])(
     expect(setLidProtection).toHaveBeenCalledTimes(errors ? 1 : 0);
   },
 );
+
+test('an idle target reload consumes its queue once and returns to a single 2s polling timer', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const latest = deferred();
+  const getLidProtection = vi
+    .fn()
+    .mockResolvedValueOnce(protectedState)
+    .mockReturnValueOnce(latest.promise)
+    .mockResolvedValue(disabled);
+  const view = mountTarget({ getLidProtection });
+  await settle();
+  await view.config.setOpenCodeServiceTarget(null);
+  await settle();
+  expect(getLidProtection).toHaveBeenCalledTimes(2);
+  expect(vi.getTimerCount()).toBe(0);
+  await vi.advanceTimersByTimeAsync(8000);
+  expect(getLidProtection).toHaveBeenCalledTimes(2);
+  latest.resolve(disabled);
+  await settle();
+  expect(vi.getTimerCount()).toBe(1);
+  await vi.advanceTimersByTimeAsync(1999);
+  expect(getLidProtection).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(getLidProtection).toHaveBeenCalledTimes(3);
+  expect(vi.getTimerCount()).toBe(1);
+  expect(view.adapter.setLidProtection).not.toHaveBeenCalled();
+});
+
+test.each(['read', 'save', 'read-first', 'save-first'] as const)(
+  'target reload stays queued through %s, drains once, then resumes the ordinary 2s poll',
+  async (operation) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const read = deferred();
+    const save = deferred();
+    const latest = deferred();
+    const getLidProtection = vi.fn().mockResolvedValueOnce(protectedState);
+    if (operation !== 'save') getLidProtection.mockReturnValueOnce(read.promise);
+    getLidProtection.mockReturnValueOnce(latest.promise).mockResolvedValue(disabled);
+    const view = mountTarget({ getLidProtection, setLidProtection: vi.fn().mockReturnValue(save.promise) });
+    await settle();
+    if (operation !== 'save') await vi.advanceTimersByTimeAsync(2000);
+    if (operation !== 'read') await fireEvent.click(view.toggle);
+    const beforeReload = getLidProtection.mock.calls.length;
+    await view.config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
+    await settle();
+    await view.config.setOpenCodeServiceTarget(null);
+    await settle();
+    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload);
+    expect(screen.getByRole('status').textContent).not.toContain('Protected');
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload);
+    expect(vi.getTimerCount()).toBe(0);
+
+    if (operation === 'read-first' || operation === 'save-first') {
+      if (operation === 'read-first') read.reject(new Error('Old target read failed'));
+      else save.reject(new Error('Old target preference write failed'));
+      await settle();
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(getLidProtection).toHaveBeenCalledTimes(beforeReload);
+      expect(vi.getTimerCount()).toBe(0);
+    }
+    read.resolve(protectedState);
+    save.resolve(protectedState);
+    await settle();
+    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload + 1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload + 1);
+    expect(vi.getTimerCount()).toBe(0);
+
+    latest.resolve(disabled);
+    await settle();
+    expect(screen.getByRole('status').textContent).toBe('Disabled');
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload + 1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload + 2);
+    expect(vi.getTimerCount()).toBe(1);
+    expect(view.adapter.setLidProtection).toHaveBeenCalledTimes(operation === 'read' ? 0 : 1);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload + 2);
+  },
+);
+
+test.each(['read', 'save'] as const)('unmount drops a queued target reload behind a pending %s', async (operation) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const pending = deferred();
+  const getLidProtection = vi
+    .fn()
+    .mockReturnValueOnce(operation === 'read' ? pending.promise : Promise.resolve(disabled));
+  const view = mountTarget({ getLidProtection, setLidProtection: vi.fn().mockReturnValue(pending.promise) });
+  await settle();
+  if (operation === 'save') await fireEvent.click(view.toggle);
+  await view.config.setOpenCodeServiceTarget(null);
+  await settle();
+  view.unmount();
+  pending.reject(new Error('Old target completed after unmount'));
+  await settle();
+  await vi.advanceTimersByTimeAsync(8000);
+  expect(getLidProtection).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+  expect(screen.queryByRole('status')).toBeNull();
+});

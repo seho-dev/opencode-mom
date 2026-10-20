@@ -45,8 +45,6 @@ test('island IPC and lazy store preserve exact arguments without config preload 
     for (const view of ['compact', 'peek', 'expanded']) {
       assert.strictEqual(await store.setIslandView(view), undefined);
     }
-    await store.setIslandExpanded(true);
-    await store.setIslandExpanded(false);
     assert.strictEqual(await store.islandMessages('ses_1', 7), messages);
     await store.islandSend('ses_1', 'Hello\nworld', 'msg_stable', 7);
     await store.islandReplyPermission('ses_1', 'perm_1', 'once', 7);
@@ -63,8 +61,6 @@ test('island IPC and lazy store preserve exact arguments without config preload 
       ['set_island_view', { view: 'compact' }],
       ['set_island_view', { view: 'peek' }],
       ['set_island_view', { view: 'expanded' }],
-      ['set_island_expanded', { expanded: true }],
-      ['set_island_expanded', { expanded: false }],
       ['island_messages', { sessionId: 'ses_1', expectedConnectionGeneration: 7 }],
       [
         'island_send',

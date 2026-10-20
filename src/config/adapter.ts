@@ -64,7 +64,6 @@ export interface CommandAdapter {
   removeProject(id: string): Result<void>;
   selectProject(id: string | null): Result<void>;
   listProviders(): Result<ProviderDef[]>;
-  listCustomProviders(): Result<ProviderDef[]>;
   opencodeListModels(provider?: string): Result<ModelCatalogEntry[]>;
   opencodeResolveBinary(): Result<string>;
   opencodeReload(): Result<void>;
@@ -98,7 +97,6 @@ export interface CommandAdapter {
   setIslandEnabled(enabled: boolean): Result<IslandState>;
   refreshIsland(): Result<IslandState>;
   setIslandView(view: IslandView): Result<void>;
-  setIslandExpanded(expanded: boolean): Result<void>;
   islandMessages(sessionId: string, expectedConnectionGeneration: number): Result<IslandMessage[]>;
   islandSend(sessionId: string, text: string, messageId: string, expectedConnectionGeneration: number): Result<void>;
   islandReplyPermission(
@@ -148,7 +146,6 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     removeProject: (id) => invoke('remove_project', { id }),
     selectProject: (id) => invoke('select_project', { id }),
     listProviders: () => invoke('list_providers'),
-    listCustomProviders: () => invoke('list_custom_providers'),
     opencodeListModels: (provider) => invoke('opencode_list_models', { provider }),
     opencodeResolveBinary: () => invoke('opencode_resolve_binary'),
     opencodeReload: () => invoke('opencode_reload'),
@@ -182,7 +179,6 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     setIslandEnabled: (enabled) => invoke('set_island_enabled', { enabled }),
     refreshIsland: () => invoke('refresh_island', {}),
     setIslandView: (view) => invoke('set_island_view', { view }),
-    setIslandExpanded: (expanded) => invoke('set_island_expanded', { expanded }),
     islandMessages: (sessionId, expectedConnectionGeneration) =>
       invoke('island_messages', { sessionId, expectedConnectionGeneration }),
     islandSend: (sessionId, text, messageId, expectedConnectionGeneration) =>

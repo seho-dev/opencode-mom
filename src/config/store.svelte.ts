@@ -513,9 +513,6 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     setIslandView(view: IslandView): Promise<void> {
       return adapter.setIslandView(view);
     },
-    setIslandExpanded(expanded: boolean): Promise<void> {
-      return adapter.setIslandExpanded(expanded);
-    },
     islandMessages(sessionId: string, expectedConnectionGeneration: number): Promise<IslandMessage[]> {
       return adapter.islandMessages(sessionId, expectedConnectionGeneration);
     },

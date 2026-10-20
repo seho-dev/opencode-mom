@@ -23,7 +23,8 @@ let { id }: { id?: string } = $props();
 type SourceSnapshot = {
   storage: AgentStorage;
   path?: string;
-  raw?: string;
+  resolvedPath?: string;
+  content?: string;
   prompt?: string;
   fields?: Record<string, unknown>;
 };
@@ -36,6 +37,8 @@ let source = $state<Exclude<AgentSource, 'both'>>('markdown');
 let storage = $state<AgentStorage>('inline');
 let initialized = $state('');
 let seenReset = $state(-1);
+// Keep the expected source bound to this draft across background refreshes.
+let draftSource = $state.raw<SourceSnapshot>();
 // svelte-ignore state_referenced_locally
 const form = createAgentForm(
   {
@@ -64,7 +67,8 @@ const snapshots = (value: AgentDefinition | undefined) => {
       return {
         storage: record['storage'] as AgentStorage,
         path: typeof record['path'] === 'string' ? record['path'] : undefined,
-        raw: typeof record['raw'] === 'string' ? record['raw'] : undefined,
+        resolvedPath: typeof record['resolvedPath'] === 'string' ? record['resolvedPath'] : undefined,
+        content: typeof record['content'] === 'string' ? record['content'] : undefined,
         prompt: typeof record['prompt'] === 'string' ? record['prompt'] : undefined,
         fields:
           record['fields'] && typeof record['fields'] === 'object' && !Array.isArray(record['fields'])
@@ -75,7 +79,8 @@ const snapshots = (value: AgentDefinition | undefined) => {
 };
 const selectedSource = $derived(snapshots(agent).find((entry) => entry.storage === storage));
 function loadSource() {
-  const fields = selectedSource?.fields ?? {};
+  draftSource = $state.snapshot(selectedSource);
+  const fields = draftSource?.fields ?? {};
   const selector =
     typeof fields['model'] === 'string' ? splitModelSelector(fields['model']) : { model: '', variant: '' };
   const rules = Array.isArray(fields['permissions']) ? fields['permissions'] : [];
@@ -89,7 +94,7 @@ function loadSource() {
     hidden: fields['hidden'] === true,
     color: typeof fields['color'] === 'string' ? fields['color'] : '',
     steps: typeof fields['steps'] === 'number' ? String(fields['steps']) : '',
-    prompt: selectedSource?.prompt ?? (typeof fields['system'] === 'string' ? fields['system'] : ''),
+    prompt: draftSource?.prompt ?? (typeof fields['system'] === 'string' ? fields['system'] : ''),
     permission: JSON.stringify(rules, null, 2),
   });
 }
@@ -106,25 +111,30 @@ $effect(() => {
   }
 });
 async function submit(values: AgentFormValues) {
-  if (edit && (!agent || !selectedSource)) {
+  if (edit && (!agent || !draftSource)) {
     toast({ variant: 'error', description: i18n.t('agents.sourceCannotEdit') });
     return;
   }
   try {
     const fields = agentMutationFields(values);
-    if (edit && agent && selectedSource) {
-      const original = selectedSource.fields ?? {};
+    if (edit && agent && draftSource) {
+      const original = draftSource.fields ?? {};
       const clearFields: string[] = ['model', 'mode', 'color', 'steps'].filter(
         (key) => fields[key] === undefined && key in original,
       );
       if (fields['permissions'] === undefined && 'permissions' in original) clearFields.push('permissions');
-      const hadPrompt = (selectedSource.prompt ?? '') !== '' || 'prompt' in original || 'system' in original;
+      const hadPrompt = (draftSource.prompt ?? '') !== '' || 'prompt' in original || 'system' in original;
       if (hadPrompt && !values.prompt) clearFields.push('prompt');
       await config.updateAgent({
         id: agent.id,
         source: agent.source,
         storage,
-        mutation: { fields, clearFields },
+        mutation: {
+          fields,
+          clearFields,
+          expectedPath: draftSource.resolvedPath,
+          expectedContent: draftSource.content,
+        },
       } as AgentWrite);
     } else {
       await config.createAgent({

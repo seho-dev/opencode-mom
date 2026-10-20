@@ -8,6 +8,7 @@ import Select from '$src/components/Select.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { McpServer } from '$src/types/mcp.js';
+import { prettyJson, safeParseJsonObject } from '$src/utils/index.js';
 
 let {
   source,
@@ -20,34 +21,24 @@ const initial = untrack(() =>
   source ? { ...source, config: JSON.parse(JSON.stringify(source.config)) as Record<string, unknown> } : undefined,
 );
 let name = $state(initial?.name ?? '');
-let text = $state(
-  JSON.stringify(initial?.config ?? { type: 'local', command: [''], environment: {}, disabled: false }, null, 2),
-);
+let text = $state(prettyJson(initial?.config ?? { type: 'local', command: [''], environment: {}, disabled: false }));
 let pending = $state(false);
 let error = $state('');
 let syntaxError = $state('');
 let active = true;
-const kind = $derived.by(() => {
-  try {
-    return JSON.parse(text)?.type ?? '';
-  } catch {
-    return '';
-  }
-});
+const kind = $derived.by(() => (safeParseJsonObject(text)?.type as string) ?? '');
 onDestroy(() => {
   active = false;
 });
 
 function parse(): Record<string, unknown> | null {
-  try {
-    const value = JSON.parse(text);
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
-    syntaxError = '';
-    return value;
-  } catch {
+  const value = safeParseJsonObject(text);
+  if (!value) {
     syntaxError = i18n.t('mcp.jsonError');
     return null;
   }
+  syntaxError = '';
+  return value;
 }
 function selectType(type: string) {
   const value = parse();
@@ -61,7 +52,7 @@ function selectType(type: string) {
     value.url = '';
     value.headers ??= {};
   }
-  text = JSON.stringify(value, null, 2);
+  text = prettyJson(value);
 }
 async function save() {
   if (pending) return;

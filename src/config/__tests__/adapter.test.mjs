@@ -145,6 +145,45 @@ test('deleteAgent passes storage through IPC when provided', async () => {
   }
 });
 
+test('updateAgent preserves both expected snapshots through store and IPC without retrying', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
+    const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
+    const calls = [];
+    const failure = { code: 'configuration_failed', message: 'Agent source changed' };
+    const store = createConfigStore(
+      createTauriAdapter(async (command, args) => {
+        calls.push([command, JSON.parse(JSON.stringify(args))]);
+        throw failure;
+      }),
+      false,
+      false,
+    );
+    for (const [storage, expectedContent] of [
+      [
+        'inline',
+        '{"description":"original","system":"body","temperature":1.0,"nested":{"float":1.0,"large":9007199254740993}}',
+      ],
+      ['global_markdown', '---\ndescription: original\n---\nbody'],
+    ]) {
+      const agent = {
+        id: 'helper',
+        source: storage === 'inline' ? 'inline' : 'markdown',
+        storage,
+        mutation: { fields: { description: 'draft' }, expectedPath: '/resolved/helper', expectedContent },
+      };
+      const before = calls.length;
+      await assert.rejects(store.updateAgent(agent), failure);
+      assert.equal(calls.length, before + 1);
+      assert.deepEqual(calls.at(-1), ['update_agent', { agent }]);
+      assert.equal(calls.at(-1)[1].agent.mutation.expectedContent, expectedContent);
+    }
+  } finally {
+    await vite.close();
+  }
+});
+
 test('app info, manual updates, and project pages preserve IPC names, payloads, results, and errors', async () => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   try {

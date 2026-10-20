@@ -8,6 +8,7 @@ import ResourceScopeNotice from '$src/components/ResourceScopeNotice.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { AgentDefinition } from '$src/types/agents.js';
+import { prettyJson } from '$src/utils/index.js';
 
 const config = getConfig();
 const i18n = getI18n();
@@ -51,7 +52,7 @@ $effect(() => {
   };
 });
 function text(value: unknown) {
-  return typeof value === 'string' ? value : (JSON.stringify(value, null, 2) ?? '—');
+  return typeof value === 'string' ? value : value == null ? '—' : prettyJson(value);
 }
 </script>
 

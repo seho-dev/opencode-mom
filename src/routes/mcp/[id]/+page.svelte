@@ -10,6 +10,7 @@ import ResourceScopeNotice from '$src/components/ResourceScopeNotice.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { McpServer } from '$src/types/mcp.js';
+import { prettyJson } from '$src/utils/index.js';
 import { maskConfig, maskTarget } from '../config-view.js';
 import DeleteMcpDialog from '../DeleteMcpDialog.svelte';
 import McpForm from '../McpForm.svelte';
@@ -162,7 +163,7 @@ $effect(() => {
             <dd class="m-0 min-w-0">
               <pre
                 class="m-0 whitespace-pre-wrap break-words font-[var(--font-primary)] text-xs leading-6 [overflow-wrap:anywhere]"
-              >{typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</pre>
+              >{typeof value === 'string' ? value : prettyJson(value)}</pre>
             </dd>
           </div>
         {:else}

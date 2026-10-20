@@ -12,6 +12,8 @@ export interface PermissionRule {
 export interface AgentSourcePreview {
   storage: AgentStorage;
   path?: string;
+  resolvedPath?: string;
+  content?: string;
   raw: unknown;
   fields: Record<string, unknown>;
   prompt?: string | null;
@@ -41,5 +43,10 @@ export interface AgentDefinition {
   steps?: number;
   permissions?: PermissionRule[];
 }
-export type AgentMutation = { fields: Record<string, unknown>; clearFields?: string[] };
+export type AgentMutation = {
+  fields: Record<string, unknown>;
+  clearFields?: string[];
+  expectedPath?: string;
+  expectedContent?: string;
+};
 export type AgentWrite = AgentDefinition & { mutation?: AgentMutation };

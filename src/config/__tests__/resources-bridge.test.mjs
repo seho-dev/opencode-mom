@@ -2,6 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer } from 'vite';
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
 test('resource facades stay lazy and MCP deletion does not refresh the global catalog', async () => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   try {
@@ -302,13 +312,6 @@ test('catalog and usage replies from an old service target cannot succeed or rep
   try {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
-    const deferred = () => {
-      let resolve;
-      const promise = new Promise((done) => {
-        resolve = done;
-      });
-      return { promise, resolve };
-    };
     const catalogRead = deferred();
     const usageRead = deferred();
     const save = deferred();
@@ -411,3 +414,210 @@ test('a failed pending target save cannot poison the catalog or unrelated state 
     await vite.close();
   }
 });
+
+for (const completion of ['resolve', 'reject']) {
+  test(`pending target saves block new reads and unconfirmed replies before save ${completion}`, async () => {
+    const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+    try {
+      const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
+      const catalog = [{ ref: 'provider/confirmed' }];
+      const records = [{ time: 1, input: 1, output: 1 }];
+      const catalogRead = deferred();
+      const usageRead = deferred();
+      const save = deferred();
+      const calls = [];
+      let pending = false;
+      const store = createConfigStore(
+        {
+          opencodeListModels: () => {
+            calls.push('catalog');
+            return pending ? catalogRead.promise : Promise.resolve(catalog);
+          },
+          opencodeTokenUsageRecords: () => {
+            calls.push('usage');
+            return pending ? usageRead.promise : Promise.resolve(records);
+          },
+          setOpenCodeServiceTarget: () => save.promise,
+        },
+        false,
+        false,
+      );
+      await store.loadCatalog();
+      pending = true;
+      const oldCatalog = assert.rejects(store.loadCatalog(), { code: 'conflict' });
+      const oldUsage = assert.rejects(store.loadTokenUsageRecords(), { code: 'conflict' });
+      const targetSave = store.setOpenCodeServiceTarget('http://127.0.0.1:5096');
+      const saveResult =
+        completion === 'resolve' ? targetSave : assert.rejects(targetSave, { code: 'validation_failed' });
+      assert.equal(store.serviceTargetVersion, 0);
+      // Native commit/probe may precede the save reply; unchanged frontend version is not proof of freshness.
+      catalogRead.resolve([{ ref: 'provider/unconfirmed' }]);
+      usageRead.resolve([{ time: 2, input: 999, output: 999 }]);
+      await Promise.all([oldCatalog, oldUsage]);
+      await assert.rejects(store.loadCatalog(), { code: 'conflict' });
+      await assert.rejects(store.loadTokenUsageRecords(), { code: 'conflict' });
+      assert.deepEqual(calls, ['catalog', 'catalog', 'usage']);
+      assert.deepEqual(store.catalog, catalog);
+      assert.equal(store.catalogLoading, false);
+      assert.equal(store.catalogError, null);
+      assert.equal(store.serviceTargetVersion, 0);
+      if (completion === 'resolve') save.resolve({ connected: false });
+      else save.reject({ code: 'validation_failed', message: 'private-save-failure' });
+      await saveResult;
+      assert.equal(store.serviceTargetVersion, completion === 'resolve' ? 1 : 0);
+      assert.deepEqual(store.catalog, completion === 'resolve' ? [] : catalog);
+      pending = false;
+      assert.deepEqual(await store.loadCatalog(), catalog);
+      assert.deepEqual(await store.loadTokenUsageRecords(), records);
+      for (const key of ['error', 'notice', 'draftRecovery', 'catalogError']) assert.equal(store[key], null);
+    } finally {
+      await vite.close();
+    }
+  });
+}
+
+test('reads spanning a failed save remain valid when they finish after the failure', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
+    const catalogRead = deferred();
+    const usageRead = deferred();
+    const save = deferred();
+    const catalog = [{ ref: 'provider/still-current' }];
+    const records = [{ time: 1, input: 1, output: 1 }];
+    const store = createConfigStore(
+      {
+        opencodeListModels: () => catalogRead.promise,
+        opencodeTokenUsageRecords: () => usageRead.promise,
+        setOpenCodeServiceTarget: () => save.promise,
+      },
+      false,
+      false,
+    );
+    const loadingCatalog = store.loadCatalog();
+    const loadingUsage = store.loadTokenUsageRecords();
+    const failedSave = assert.rejects(store.setOpenCodeServiceTarget(null), { code: 'busy' });
+    save.reject({ code: 'busy', message: 'private-save-failure' });
+    await failedSave;
+    catalogRead.resolve(catalog);
+    usageRead.resolve(records);
+    assert.deepEqual(await loadingCatalog, catalog);
+    assert.deepEqual(await loadingUsage, records);
+    assert.equal(store.serviceTargetVersion, 0);
+    assert.deepEqual(store.catalog, catalog);
+    assert.equal(store.catalogError, null);
+    assert.equal(store.catalogLoading, false);
+  } finally {
+    await vite.close();
+  }
+});
+
+test('reads launched during pending target saves never dispatch IPC, including after an earlier save succeeds', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
+    const firstSave = deferred();
+    const secondSave = deferred();
+    const catalog = [{ ref: 'provider/new-target' }];
+    const records = [{ time: 2, input: 2, output: 2 }];
+    const calls = [];
+    let saves = 0;
+    const store = createConfigStore(
+      {
+        opencodeListModels: async () => {
+          calls.push('catalog');
+          return catalog;
+        },
+        opencodeTokenUsageRecords: async () => {
+          calls.push('usage');
+          return records;
+        },
+        setOpenCodeServiceTarget: () => (++saves === 1 ? firstSave.promise : secondSave.promise),
+      },
+      false,
+      false,
+    );
+    const savingFirst = store.setOpenCodeServiceTarget('http://127.0.0.1:5096');
+    const savingSecond = assert.rejects(store.setOpenCodeServiceTarget(null), { code: 'busy' });
+    await assert.rejects(store.loadCatalog(), { code: 'conflict' });
+    await assert.rejects(store.loadTokenUsageRecords(), { code: 'conflict' });
+    assert.deepEqual(calls, []);
+    assert.equal(store.catalogLoading, false);
+    firstSave.resolve({ connected: false });
+    await savingFirst;
+    assert.equal(store.serviceTargetVersion, 1);
+    await assert.rejects(store.loadCatalog(), { code: 'conflict' });
+    await assert.rejects(store.loadTokenUsageRecords(), { code: 'conflict' });
+    assert.deepEqual(calls, []);
+    secondSave.reject({ code: 'busy', message: 'private-save-failure' });
+    await savingSecond;
+    assert.equal(store.serviceTargetVersion, 1);
+    assert.deepEqual(await store.loadCatalog(), catalog);
+    assert.deepEqual(await store.loadTokenUsageRecords(), records);
+    assert.deepEqual(calls, ['catalog', 'usage']);
+    assert.equal(store.catalogError, null);
+  } finally {
+    await vite.close();
+  }
+});
+
+for (const completion of ['resolve', 'reject']) {
+  test(`old-target ${completion} cannot overwrite the newest target catalog, loading or errors`, async () => {
+    const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+    try {
+      const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
+      const catalogs = [deferred(), deferred(), deferred()];
+      const usages = [deferred(), deferred(), deferred()];
+      let catalogCalls = 0;
+      let usageCalls = 0;
+      const store = createConfigStore(
+        {
+          opencodeListModels: () => catalogs[catalogCalls++].promise,
+          opencodeTokenUsageRecords: () => usages[usageCalls++].promise,
+          setOpenCodeServiceTarget: async () => ({ connected: false }),
+        },
+        false,
+        false,
+      );
+      const oldestCatalog = assert.rejects(store.loadCatalog());
+      const oldestUsage = assert.rejects(store.loadTokenUsageRecords());
+      await store.setOpenCodeServiceTarget('http://127.0.0.1:5096');
+      const middleCatalog = assert.rejects(store.loadCatalog());
+      const middleUsage = assert.rejects(store.loadTokenUsageRecords());
+      await store.setOpenCodeServiceTarget(null);
+      const latestCatalog = store.loadCatalog();
+      const latestUsage = store.loadTokenUsageRecords();
+      assert.equal(store.catalogLoading, true);
+      if (completion === 'resolve') {
+        catalogs[0].resolve([{ ref: 'provider/oldest' }]);
+        usages[0].resolve([{ time: 0, input: 999, output: 999 }]);
+      } else {
+        catalogs[0].reject(new Error('Oldest target failed'));
+        usages[0].reject(new Error('Oldest target failed'));
+      }
+      await Promise.all([oldestCatalog, oldestUsage]);
+      assert.equal(store.catalogLoading, true);
+      assert.equal(store.catalogError, null);
+      const catalog = [{ ref: 'provider/latest' }];
+      const records = [{ time: 2, input: 2, output: 2 }];
+      catalogs[2].resolve(catalog);
+      usages[2].resolve(records);
+      assert.deepEqual(await latestCatalog, catalog);
+      assert.deepEqual(await latestUsage, records);
+      if (completion === 'resolve') {
+        catalogs[1].resolve([{ ref: 'provider/middle' }]);
+        usages[1].resolve([{ time: 1, input: 999, output: 999 }]);
+      } else {
+        catalogs[1].reject(new Error('Middle target failed'));
+        usages[1].reject(new Error('Middle target failed'));
+      }
+      await Promise.all([middleCatalog, middleUsage]);
+      assert.equal(store.serviceTargetVersion, 2);
+      assert.deepEqual(store.catalog, catalog);
+      assert.equal(store.catalogLoading, false);
+      for (const key of ['error', 'notice', 'draftRecovery', 'catalogError']) assert.equal(store[key], null);
+    } finally {
+      await vite.close();
+    }
+  });
+}

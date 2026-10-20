@@ -23,7 +23,7 @@ utils/                            # Shared domain and presentation helpers
 | Responsibility | File | Description |
 | :--- | :--- | :--- |
 | Domain vocabulary | `constants.ts` | Defines readonly value tuples, derived unions, MessageKey labels, options, and OMO categories. |
-| Shared helpers | `index.ts` | Composes classes, maps the shared agent catalog, validates token strings, and builds model choices. |
+| Shared helpers | `index.ts` | Composes classes, maps the shared agent catalog, validates token strings, builds/splits/joins model choices, and formats/parses JSON objects. |
 | Dashboard calculations | `dashboard.ts` | Projects runtime bindings, aggregates timezone-aware daily usage, and builds period summaries. |
 
 ## Conventions

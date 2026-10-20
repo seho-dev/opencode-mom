@@ -97,6 +97,7 @@ test('built-in edit is read-only even when the agent exists in config', () => {
       sources: [
         {
           storage: 'inline',
+          content: '{"description":"Built-in description"}',
           raw: { description: 'Built-in description' },
           fields: { description: 'Built-in description' },
         },
@@ -122,6 +123,7 @@ test('edit waits for an initially missing agent and loads it when available', as
       sources: [
         {
           storage: 'inline',
+          content: '{"description":"Loaded description"}',
           raw: { description: 'Loaded description' },
           fields: { description: 'Loaded description' },
         },
@@ -141,7 +143,12 @@ test('edit switches agent snapshots when the route id changes without remounting
       id: 'helper',
       source: 'inline',
       sources: [
-        { storage: 'inline', raw: { description: 'First description' }, fields: { description: 'First description' } },
+        {
+          storage: 'inline',
+          content: '{"description":"First description"}',
+          raw: { description: 'First description' },
+          fields: { description: 'First description' },
+        },
       ],
     },
     {
@@ -150,6 +157,7 @@ test('edit switches agent snapshots when the route id changes without remounting
       sources: [
         {
           storage: 'inline',
+          content: '{"description":"Second description"}',
           raw: { description: 'Second description' },
           fields: { description: 'Second description' },
         },
@@ -221,12 +229,15 @@ test('edit loads the selected source snapshot and clears removed model and promp
     sources: [
       {
         storage: 'inline',
+        content: '{"description":"Inline description","model":"demo/fast#quick","prompt":"Inline prompt"}',
         raw: { description: 'Inline description', model: 'demo/fast#quick', prompt: 'Inline prompt' },
         prompt: 'Inline prompt',
         fields: { description: 'Inline description', model: 'demo/fast#quick', prompt: 'Inline prompt' },
       },
       {
         storage: 'global_markdown',
+        resolvedPath: '/resolved/helper.md',
+        content: '---\ndescription: Markdown description\nmodel: demo/fast\n---\n\nMarkdown prompt',
         raw: '---\ndescription: Markdown description\nmodel: demo/fast\n---\n\nMarkdown prompt',
         prompt: 'Markdown prompt',
         fields: { description: 'Markdown description', model: 'demo/fast' },
@@ -264,6 +275,8 @@ test('edit loads the selected source snapshot and clears removed model and promp
         prompt: undefined,
       },
       clearFields: ['model', 'prompt'],
+      expectedPath: '/resolved/helper.md',
+      expectedContent: '---\ndescription: Markdown description\nmodel: demo/fast\n---\n\nMarkdown prompt',
     },
   });
   await waitFor(() => expect(goto).toHaveBeenCalledWith('/agents'));
@@ -274,7 +287,12 @@ test('edit restores the source snapshot after formResetVersion changes', async (
     id: 'helper',
     source: 'inline',
     sources: [
-      { storage: 'inline', raw: { description: 'Saved description' }, fields: { description: 'Saved description' } },
+      {
+        storage: 'inline',
+        content: '{"description":"Saved description"}',
+        raw: { description: 'Saved description' },
+        fields: { description: 'Saved description' },
+      },
     ],
   };
   const { reset, updateAgent } = mount(EditAgent, [agent]);
@@ -295,6 +313,7 @@ test('edit source picker offers one Markdown choice for multiple alias previews'
       {
         storage: 'global_markdown',
         path: '/global/agent/helper.md',
+        content: '---\ndescription: Singular alias\n---\n\nFirst prompt',
         raw: '---\ndescription: Singular alias\n---\n\nFirst prompt',
         fields: { description: 'Singular alias' },
         prompt: 'First prompt',
@@ -302,6 +321,7 @@ test('edit source picker offers one Markdown choice for multiple alias previews'
       {
         storage: 'global_markdown',
         path: '/global/agents/helper.md',
+        content: '---\ndescription: Plural alias\n---\n\nSecond prompt',
         raw: '---\ndescription: Plural alias\n---\n\nSecond prompt',
         fields: { description: 'Plural alias' },
         prompt: 'Second prompt',
@@ -320,4 +340,100 @@ test('edit source picker offers one Markdown choice for multiple alias previews'
   expect(screen.getByLabelText<HTMLTextAreaElement>('Prompt').value).toBe('First prompt');
   expect(agent.sources).toHaveLength(2);
   expect(updateAgent).not.toHaveBeenCalled();
+});
+
+test.each(['inline', 'global_markdown'] as const)(
+  'edit keeps the original %s expected source across background refresh and failed saves',
+  async (storage) => {
+    const original = { description: 'Original description', model: 'demo/fast' };
+    const raw = storage === 'inline' ? original : '---\ndescription: Original description\nmodel: demo/fast\n---\nbody';
+    const content =
+      storage === 'inline' ? '{"description":"Original description","model":"demo/fast"}' : (raw as string);
+    const externalRaw =
+      storage === 'inline'
+        ? { description: 'External description' }
+        : '---\ndescription: External description\n---\nbody';
+    const externalContent = storage === 'inline' ? '{"description":"External description"}' : (externalRaw as string);
+    const source = {
+      storage,
+      path: `/global/${storage}/helper`,
+      resolvedPath: `/resolved/${storage}/helper`,
+      raw,
+      content,
+      fields: original,
+      prompt: storage === 'inline' ? null : 'body',
+    };
+    const agent: AgentDefinition = {
+      id: 'helper',
+      source: storage === 'inline' ? 'inline' : 'markdown',
+      sources: [source],
+    };
+    const { setAgents, updateAgent, reset } = mount(EditAgent, [agent]);
+    updateAgent.mockRejectedValue({ code: 'configuration_failed', message: 'Source changed' });
+    const description = screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ });
+    await waitFor(() => expect(description.value).toBe('Original description'));
+    await fireEvent.input(description, { target: { value: 'Draft description' } });
+    await choose('Model', 'Clear / inherit');
+    setAgents([
+      {
+        ...agent,
+        sources: [
+          {
+            ...source,
+            resolvedPath: '/new-target/helper',
+            raw: externalRaw,
+            content: externalContent,
+            fields: { description: 'External description' },
+          },
+        ],
+      },
+    ]);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      await waitFor(() => expect(updateAgent).toHaveBeenCalledTimes(attempt + 1));
+      expect(updateAgent.mock.calls[attempt]?.[0]).toMatchObject({
+        id: 'helper',
+        storage,
+        mutation: {
+          fields: { description: 'Draft description' },
+          clearFields: ['model'],
+          expectedPath: source.resolvedPath,
+          expectedContent: content,
+        },
+      });
+      expect(description.value).toBe('Draft description');
+    }
+    expect(goto).not.toHaveBeenCalled();
+    reset.set('version', 1);
+    await waitFor(() => expect(description.value).toBe('External description'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(updateAgent).toHaveBeenCalledTimes(3));
+    expect(updateAgent.mock.calls[2]?.[0]).toMatchObject({
+      mutation: {
+        fields: { description: 'External description' },
+        expectedPath: '/new-target/helper',
+        expectedContent: externalContent,
+      },
+    });
+  },
+);
+
+test('inline edit echoes backend content unchanged after JavaScript numeric normalization', async () => {
+  const content =
+    '{"description":"Original description","temperature":1.0,"nested":{"float":1.0,"large":9007199254740993},"array":[1.0,9007199254740995]}';
+  const wire = `{"id":"helper","source":"inline","sources":[{"storage":"inline","resolvedPath":"/resolved/helper","content":${JSON.stringify(content)},"raw":${content},"fields":${content}}]}`;
+  const agent: AgentDefinition = JSON.parse(JSON.stringify(JSON.parse(wire)));
+  expect(JSON.stringify(agent.sources?.[0]?.raw)).not.toBe(content);
+  const { updateAgent } = mount(EditAgent, [agent]);
+  const description = screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ });
+  await waitFor(() => expect(description.value).toBe('Original description'));
+  await fireEvent.input(description, { target: { value: 'Description edit' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(updateAgent).toHaveBeenCalledOnce());
+  const mutation = updateAgent.mock.calls[0]?.[0]?.mutation;
+  expect(mutation).toMatchObject({ expectedPath: '/resolved/helper', expectedContent: content });
+  expect(mutation).not.toHaveProperty('expectedRaw');
+  expect(mutation?.fields).not.toHaveProperty('temperature');
+  expect(mutation?.fields).not.toHaveProperty('nested');
+  expect(mutation?.fields).not.toHaveProperty('array');
 });

@@ -1,4 +1,5 @@
 import type { ModelDef, ModelModality, ModelVariant } from '$src/types/models.js';
+import { prettyJson, safeParseJsonObject } from '$src/utils/index.js';
 
 export type VariantRow = { key: string; json: string };
 
@@ -24,7 +25,6 @@ export type ModelFormValues = {
 
 export const MODALITIES: ModelModality[] = ['text', 'audio', 'image', 'video', 'pdf'];
 export const emptyVariant = (): VariantRow => ({ key: '', json: '{}' });
-const pretty = (value: unknown) => JSON.stringify(value ?? {}, null, 2);
 const numStr = (value: number | undefined) => (value === undefined ? '' : String(value));
 export const initMods = (values?: ModelModality[]) => {
   const selected: Record<ModelModality, boolean> = {
@@ -38,17 +38,8 @@ export const initMods = (values?: ModelModality[]) => {
   return selected;
 };
 
-export const parseObject = (text: string): Record<string, unknown> | undefined => {
-  if (!text.trim()) return {};
-  try {
-    const value: unknown = JSON.parse(text.trim());
-    return value !== null && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-};
+export const parseObject = (text: string): Record<string, unknown> | undefined =>
+  !text.trim() ? {} : (safeParseJsonObject(text) ?? undefined);
 export const anyFilled = (...values: string[]) => values.some((value) => value.trim() !== '');
 const num = (value: string) => (value.trim() === '' ? undefined : Number(value));
 
@@ -70,12 +61,12 @@ export function modelToFormValues(initial: ModelDef, providerId: string, default
     limitInput: numStr(initial.limit?.input),
     modalityInput: initMods(initial.capabilities?.input),
     modalityOutput: initMods(initial.capabilities?.output),
-    settings: pretty(initial.settings),
-    headers: pretty(initial.headers),
+    settings: prettyJson(initial.settings),
+    headers: prettyJson(initial.headers),
     variants: rows.length
       ? rows.map((entry) => {
           const { id: variantId, ...rest } = entry ?? {};
-          return { key: variantId ?? '', json: pretty(rest) };
+          return { key: variantId ?? '', json: prettyJson(rest) };
         })
       : [emptyVariant()],
   };

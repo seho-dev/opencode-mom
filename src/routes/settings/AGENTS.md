@@ -19,6 +19,7 @@ settings/
 ├── OpenCodeSettings.svelte        # Local CLI inspection, explicit checks, upgrade confirmation/readback
 ├── OpenCodeService.svelte         # Saved target, read-only connection probes, secret-local drafts
 └── __tests__/                     # Settings lifecycle coverage
+    ├── lid-protection.test.ts     # Deferred target reloads, 2s fake-timer polling, stale read/save and teardown
     ├── mini-island.test.ts        # Visibility, pending guards, readback, errors, teardown
     └── opencode-settings.test.ts  # Native reads, CLI confirmation, target drafts, safe errors and cross-panel guards
 ```
@@ -30,6 +31,7 @@ settings/
 - Keep the V2 Shared Service description explicit, including that enabling may start the service and closing the Island does not interrupt work.
 - Disabling calls only `setIslandEnabled(false)`; session interruption and request replies are never settings side effects.
 - Successful target saves increment the config facade's read-only `serviceTargetVersion`; Island and lid sections reread native state without remounting or toggling. Reject old-version read/save results, defer a latest read through pending operations, and never treat an old backend's protected count as current while refreshing. Failed target saves leave the version and confirmed states unchanged.
+- Lid status clears its queued target reload only when a read actually starts; pending read/save completion drains one latest read, then ordinary polling resumes after two seconds without overlapping reads. Teardown clears timers and prevents queued reads.
 - OpenCode CLI inspection first confirms native app info; browser mode makes no CLI or update calls. Mount and refresh are local reads only; release checks require a click.
 - App update check/retry, CLI refresh/check, inspection retry, and connection refresh are icon-only buttons with translated accessible names and title tooltips. CLI refresh/check share the updates header; installation path/current version appear only in upgrade confirmation.
 - Only checked, upgradeable installations expose Upgrade. The Bits UI confirmation snapshots the exact path, current version, and target version for the guarded command.

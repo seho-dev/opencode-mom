@@ -2,7 +2,10 @@ import { createForm } from '@tanstack/svelte-form';
 import { z } from 'zod';
 import type { PermissionRule } from '$src/types/agents.js';
 import type { PermissionParse, PermissionView } from '$src/types/ui.js';
-import { isBuiltinAgentId } from '$src/utils/index.js';
+import { isBuiltinAgentId, isJsonObject, joinModelSelector, prettyJson, splitModelSelector } from '$src/utils/index.js';
+
+export { joinModelSelector, splitModelSelector };
+export const pretty = prettyJson;
 
 export type AgentFieldValues = {
   model: string;
@@ -93,23 +96,6 @@ export function fieldError(errors: unknown[]): string {
     .join(', ');
 }
 
-export function pretty(value: unknown): string {
-  return JSON.stringify(value ?? {}, null, 2);
-}
-
-// Splits a V2 `provider/model#variant` selector into its form pieces.
-export function splitModelSelector(selector: string): { model: string; variant: string } {
-  const hash = selector.lastIndexOf('#');
-  if (hash <= 0) return { model: selector, variant: '' };
-  return { model: selector.slice(0, hash), variant: selector.slice(hash + 1) };
-}
-
-// Joins the form pieces back into one V2 selector; a variant without a model is dropped.
-export function joinModelSelector(model: string, variant: string): string {
-  if (!model) return '';
-  return variant ? `${model}#${variant}` : model;
-}
-
 export function agentMutationFields(values: AgentFormValues): Record<string, unknown> {
   const rules = permissionRules(values.permission);
   return {
@@ -126,11 +112,8 @@ export function agentMutationFields(values: AgentFormValues): Record<string, unk
 }
 
 const isRule = (value: unknown): value is PermissionRule => {
-  if (!value || Array.isArray(value) || typeof value !== 'object') return false;
-  const rule = value as Record<string, unknown>;
-  return (
-    typeof rule['action'] === 'string' && typeof rule['resource'] === 'string' && typeof rule['effect'] === 'string'
-  );
+  if (!isJsonObject(value)) return false;
+  return typeof value.action === 'string' && typeof value.resource === 'string' && typeof value.effect === 'string';
 };
 
 // Parses the V2 `permissions` array: `{action, resource, effect}` entries in order.

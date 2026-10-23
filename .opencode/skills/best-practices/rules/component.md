@@ -1,56 +1,38 @@
-# Component Rules
+# Component Architecture & Design Rules
+
+## Core Principles
+
+- **Unidirectional Data Flow**: Props flow down, events flow up. Components are view boundaries that project inputs into UI and emit user intent.
+- **Single Source of Truth**: State has one owner. Downstream components read values or emit events; they must never mirror parent state into local state just to keep them in sync.
+- **Pure Derivation**: Compute derived values synchronously on the fly. Do not sync derived state back to parent via callbacks or cache them in redundant local state.
+- **Behavioral Imperative Handles**: Reserve imperative handles (`ref`) for actions (focus, scroll, reset). Never expose raw state setters or duplicate state snapshots.
 
 ## MUST
 
-| Rule                             | Description                                                           |
-| -------------------------------- | --------------------------------------------------------------------- |
-| Function-style components        | Class components prohibited                                           |
-| Props destructuring              | `({ name, age }) => {}` not `(props) => {}`                           |
-| Explicit imperative handles      | Complex components expose handles through a documented API; direct DOM manipulation prohibited |
-| Consistent exports               | One export style per project                                          |
-| Single source of truth           | State has one owner; downstream reads or emits intent, never mirrors  |
-| Derived data via pure function   | Compute at the source; never mirror it into local state and sync with effects |
-| Callbacks report events only     | `onXxx` describes what happened; not a channel to replicate state     |
-| Prop ordering                    | Data → state → config → callbacks; `onXxx` last (see Prop Ordering)   |
+| Rule | Description |
+| ---- | ----------- |
+| Unidirectional flow | Parent owns state; child receives data and emits event callbacks |
+| Explicit prop destructuring | Destructure props with default parameters at the component signature |
+| No state mirroring | Never duplicate parent props into local state unless intentionally creating an isolated draft buffer |
+| No direct DOM queries | Direct DOM queries (`document.querySelector`, `getElementById`) are prohibited; use framework refs |
+| Behavior-only handles | Imperative handles expose actions (`focus()`, `reset()`), never internal state mutators |
+| Accessible tab navigation | Tabs must use `role="tablist"`/`tab`/`tabpanel`, roving `tabindex`, and arrow key roving |
+| Async action feedback & guards | Buttons must indicate state via `aria-busy`, disabled guard (`disabled={isPending || isSaving}`), and motion-safe indicator |
+| Context-aware action dispatch | Global/header actions in multi-tab or multi-scoped views must target the active context |
+| Standardized table empty states | Tables must use shared empty/loading row primitives; ad-hoc `<tr><td colspan>` prohibited |
+| Bounded raw content containers | Raw text, `<pre>`, logs, and JSON previews must have explicit max-bounds and overflow containment |
+| Form vs detail page frames | Constrained forms scroll only `.form-body` above pinned actions; read-only details preserve document flow |
 
 ## SHOULD
 
-| Rule                             | Description                                                                   |
-| -------------------------------- | ----------------------------------------------------------------------------- |
-| Stable handlers                  | Keep long or repeatedly passed handlers stable                       |
-| Event naming `handleXxx`         | `handleClick`, `handleSubmit`, `handleChange`                                 |
-| Request naming `fetchXxx/getXxx` | `fetchData`, `getUserInfo`                                                    |
-| Debug names                      | Preserve component names for debugging tools                         |
-| Early returns preferred          | Return loading/empty states before the main render                   |
+| Rule | Description |
+| ---- | ----------- |
+| Semantic prop ordering | Group props: identity/data → state/flags → event callbacks (`onXxx` last) |
+| Early returns | Return early for loading, empty, and error states before primary render |
+| Pure helper extraction | Stateless rendering helpers without closure dependencies should live outside the component |
 
-## Design Principles
-
-- A component is a boundary, not a data bus: inputs flow in, events flow out, and each piece of state has one owner.
-- Prefer a single source of truth. Downstream components should read values or emit intent; they should not mirror parent state just to stay in sync.
-- Keep derived data close to the source of truth. If a consumer needs another shape, expose a pure selector or derived prop, not a synchronization callback.
-- Use callbacks to report events and user intent. `onXxx` should describe what happened, not be a state replication channel.
-- Reserve imperative handles for actions such as focus, scroll, export, or reset—not raw state setters or duplicate snapshots.
-- Treat config objects as policy boundaries. Stable behavior belongs in config; changing runtime state belongs in state, context, or selectors.
-
-See [examples/component/patterns.md](../examples/component/patterns.md#unidirectional-data-flow) for good/bad flow examples and [examples/component/patterns.md](../examples/component/patterns.md#ownership-boundary) for state boundary examples.
-
-## Prop Ordering
-
-- Keep props grouped by meaning: data and identity first, state and derived values next, config and flags after that, and callbacks last.
-- Put `onXxx` callbacks together at the end of destructured props, runtime prop validation (if the project uses it), and call sites when practical.
-- Mirror the same ordering in runtime prop validation (if the project uses it) and default values so a component reads the same way in every file.
-- If a component grows too many props, split by semantic sub-objects instead of mixing unrelated groups.
-- Do not use object spreads to hide prop ordering. Make the shape explicit and readable.
-
-## Prohibited Patterns
-
-```text
-❌ Class-based component
-❌ Direct DOM manipulation: document.getElementById(...)
-❌ Multi-line inline handler instead of a named handler
-❌ Passing the whole props object instead of destructuring
-```
+---
 
 ## Examples
 
-See [examples/component/patterns.md](../examples/component/patterns.md)
+See [../examples/component.md](../examples/component.md) for concrete patterns and code examples.

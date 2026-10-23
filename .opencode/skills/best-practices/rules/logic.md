@@ -1,39 +1,30 @@
-# Logic Rules
+# Business Logic & Async Rules
+
+## Core Principles
+
+- **Separation of Presentation & Domain Logic**: Components focus on rendering and user interaction; business calculation, async orchestration, and state transitions belong in dedicated hooks, composables, or domain service functions.
+- **Explicit Lifecycle & Cleanup**: Side effects that establish listeners, timers, or ongoing network requests must be safely cleaned up on unmount or dependency change.
+- **Predictable Async States**: Asynchronous workflows must handle pending, fulfilled, and rejected outcomes explicitly.
 
 ## MUST
 
 | Rule | Description |
 | ---- | ----------- |
-| Naming | Reusable logic units follow the project convention (commonly useXxx) |
-| Order: third-party → shared state → local state → derived values → handlers → side effects | Keep logic in a consistent order at the component boundary |
-| Shared state via dedicated accessor | Direct shared-state access prohibited |
+| Separation of concerns | Complex business calculations and multi-step data transformations live outside UI components |
+| Effect cleanup | Clean up subscriptions, DOM event listeners, intervals, and pending network requests on teardown |
+| Error boundaries | Async functions must handle errors gracefully without unhandled promise rejections |
+| No stale closures | Effect and callback dependencies must remain accurate and synchronized |
 
 ## SHOULD
 
 | Rule | Description |
 | ---- | ----------- |
-| Async requests: shared state-machine logic | Unified FETCH/SUCCESS/FAILURE handling |
-| Lists: shared list-state reducer | Manage loading, pagination, search, data list |
-| Polling pauses when the page/tab is hidden | Avoid background requests |
-| Shared-state accessor fallback | Return a safe default when the value is missing |
+| Reusable logic abstraction | Abstract cross-cutting or shared logic into standard composables/hooks matching framework idioms |
+| Abortable requests | Pass `AbortSignal` to async requests when ongoing work should be canceled on re-trigger or unmount |
+| Return explicit states | Logic units handling async operations should expose state (`data`, `isLoading`, `error`) and actions |
 
-## Prohibited Patterns
-
-```text
-❌ Read shared state directly instead of using the dedicated accessor
-❌ Side effect reads stale data because its dependencies are not updated
-❌ Expose shared state without a dedicated accessor or safe default
-```
-
-## Shared State Pattern
-
-```text
-✅ Shared state + dedicated accessor
-  create shared state: AppConfig
-  expose it at the app boundary
-  access only through useAppConfig(), which returns a safe default
-```
+---
 
 ## Examples
 
-See [examples/logic/patterns.md](../examples/logic/patterns.md)
+See [../examples/logic.md](../examples/logic.md) for concrete patterns and code examples.

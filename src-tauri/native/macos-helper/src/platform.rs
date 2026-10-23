@@ -83,7 +83,9 @@ fn pmset(arguments: &[&str]) -> Result<Vec<u8>> {
     let result = (|| {
         let mut stdout = child.stdout.take().ok_or("Missing power tool output")?;
         let fd = stdout.as_raw_fd();
+        // SAFETY: stdout owns the live pipe fd; F_GETFL has no pointer argument.
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        // SAFETY: stdout keeps fd alive; F_SETFL takes the integer flags read above.
         if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
             return Err("Could not bound power tool output");
         }
@@ -185,11 +187,14 @@ impl Backend for System {
 fn peer(stream: &UnixStream, uid: u32, pid: i32) -> Result<()> {
     let mut peer_uid = 0;
     let mut peer_gid = 0;
+    // SAFETY: stream keeps its socket alive and both uid_t/gid_t outputs are writable.
     if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut peer_uid, &mut peer_gid) } != 0 {
         return Err("Could not verify the peer user");
     }
     let mut peer_pid: libc::pid_t = 0;
     let mut length = std::mem::size_of_val(&peer_pid) as libc::socklen_t;
+    // SAFETY: stream owns a live socket; peer_pid has exactly the advertised writable
+    // pid_t capacity and length is a writable socklen_t, both live for this call.
     if unsafe {
         libc::getsockopt(
             stream.as_raw_fd(),
@@ -212,11 +217,15 @@ struct Parent(OwnedFd);
 
 impl Parent {
     fn new(pid: i32) -> Result<Self> {
+        // SAFETY: kqueue takes no pointers or caller-provided resources.
         let fd = unsafe { libc::kqueue() };
         if fd < 0 {
             return Err("Could not monitor the app lifetime");
         }
+        // SAFETY: successful kqueue returned a fresh valid fd with no Rust owner;
+        // ownership is transferred exactly once and closed by OwnedFd on every return.
         let owned = unsafe { OwnedFd::from_raw_fd(fd) };
+        // SAFETY: owned keeps fd alive; F_SETFD accepts the integer FD_CLOEXEC flag.
         if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
             return Err("Could not protect the lifetime monitor");
         }
@@ -228,6 +237,8 @@ impl Parent {
             data: 0,
             udata: std::ptr::null_mut(),
         };
+        // SAFETY: owned keeps the queue alive; event is one initialized kevent,
+        // the output count is zero and the null timeout requests no timed wait.
         if unsafe { libc::kevent(fd, &event, 1, std::ptr::null_mut(), 0, std::ptr::null()) } < 0 {
             return Err("The authorized app has already exited");
         }
@@ -235,11 +246,15 @@ impl Parent {
     }
 
     fn alive(&self) -> bool {
+        // SAFETY: kevent is a C struct of integer fields and a raw pointer; all-zero
+        // is valid (including null udata) and is only used as the output buffer.
         let mut event: libc::kevent = unsafe { std::mem::zeroed() };
         let timeout = libc::timespec {
             tv_sec: 0,
             tv_nsec: 0,
         };
+        // SAFETY: self owns the queue; there are no input events, event has capacity
+        // for one output kevent, and timeout is a live initialized timespec.
         unsafe {
             libc::kevent(
                 self.0.as_raw_fd(),
@@ -262,6 +277,8 @@ fn set_timeouts(stream: &UnixStream, timeout: Duration) -> Result<()> {
 
 fn has_extra_bytes(stream: &UnixStream) -> bool {
     let mut byte = 0u8;
+    // SAFETY: stream owns a live socket; byte is writable for exactly the supplied
+    // one-byte capacity and recv does not retain its pointer.
     unsafe {
         libc::recv(
             stream.as_raw_fd(),
@@ -394,9 +411,11 @@ fn serve<B: Backend>(
 }
 
 fn run_inner(ready: &mut File) -> Result<()> {
+    // SAFETY: geteuid has no pointer arguments or caller preconditions.
     if unsafe { libc::geteuid() } != 0 {
         return Err("The helper requires administrator authorization");
     }
+    // SAFETY: umask takes only mode bits; this helper is single-threaded before serve.
     unsafe { libc::umask(0o077) };
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() != 3 {
@@ -412,6 +431,13 @@ fn run_inner(ready: &mut File) -> Result<()> {
     if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o7777 != 0o700 {
         return Err("Unsafe root directory");
     }
+    // SAFETY: fcntl accepts an arbitrary fd number (EBADF if absent) and an integer
+    // F_SETFD flag. Validate the bootstrap's descriptor before taking ownership.
+    if unsafe { libc::fcntl(3, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+        return Err("Missing root lock descriptor");
+    }
+    // SAFETY: fd 3 was verified open above and bootstrap transfers it to this
+    // single-threaded process; no other Rust owner or concurrent closer exists.
     let lock = unsafe { File::from_raw_fd(3) };
     trusted_file(&lock, 0o600)?;
     let lock_path = fs::symlink_metadata(LOCK).map_err(|_| "Missing root lock")?;
@@ -419,8 +445,8 @@ fn run_inner(ready: &mut File) -> Result<()> {
     if !lock_path.is_file()
         || lock_path.dev() != lock_fd.dev()
         || lock_path.ino() != lock_fd.ino()
+        // SAFETY: lock owns the live fd; flock takes only integer operation flags.
         || unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0
-        || unsafe { libc::fcntl(lock.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0
     {
         return Err("Another authorized helper is running");
     }
@@ -444,6 +470,8 @@ fn run_inner(ready: &mut File) -> Result<()> {
         .map_err(|_| "Could not protect root socket")?;
     // Only the authorized uid can connect; the root-owned parent is never user-writable.
     let socket_c = std::ffi::CString::new(SOCKET).unwrap();
+    // SAFETY: socket_c is a live NUL-terminated path; uid is the validated app uid
+    // and gid_t::MAX is chown's documented sentinel for preserving the group.
     if unsafe { libc::chown(socket_c.as_ptr(), uid, u32::MAX) } != 0 {
         return Err("Could not grant bounded app socket access");
     }
@@ -465,10 +493,14 @@ fn run_inner(ready: &mut File) -> Result<()> {
 }
 
 pub fn run() -> Result<()> {
-    let mut ready = unsafe { File::from_raw_fd(4) };
-    if unsafe { libc::fcntl(ready.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+    // SAFETY: fcntl accepts arbitrary fd numbers and integer F_SETFD flags; it fails
+    // with EBADF if the bootstrap did not provide the acknowledgment descriptor.
+    if unsafe { libc::fcntl(4, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
         return Err("Could not protect the launch acknowledgment");
     }
+    // SAFETY: fd 4 was verified open above; bootstrap transfers sole ownership to
+    // this single-threaded process, so File owns and closes it exactly once.
+    let mut ready = unsafe { File::from_raw_fd(4) };
     let result = run_inner(&mut ready);
     if result.is_err() {
         let _ = ready.write_all(b"ERROR\n");
@@ -540,6 +572,7 @@ mod tests {
                 let result = serve(
                     &listener,
                     || lifetime.load(Ordering::SeqCst),
+                    // SAFETY: geteuid takes no pointers and has no preconditions.
                     unsafe { libc::geteuid() },
                     std::process::id() as i32,
                     &[7; 32],
@@ -619,6 +652,7 @@ mod tests {
     fn kernel_peer_auth_checks_uid_pid_and_return_length() {
         let harness = Harness::new();
         let stream = UnixStream::connect(&harness.path).unwrap();
+        // SAFETY: geteuid takes no pointers and has no preconditions.
         let uid = unsafe { libc::geteuid() };
         let pid = std::process::id() as i32;
         assert!(peer(&stream, uid, pid).is_ok());

@@ -616,12 +616,14 @@ fn catalog_client() -> Result<&'static Client, AppError> {
         .map_err(Clone::clone)
 }
 
+type CatalogScan = Vec<(String, Result<SkillEntry, AppError>)>;
+
 fn scan_catalog(
     source: &str,
     only: Option<&str>,
     cache: Option<&Mutex<TextCache>>,
     deadline: Instant,
-) -> Result<Vec<(String, Result<SkillEntry, AppError>)>, AppError> {
+) -> Result<CatalogScan, AppError> {
     if Instant::now() >= deadline {
         return Err(AppError::configuration("Skill scan deadline exceeded"));
     }

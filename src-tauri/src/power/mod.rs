@@ -156,7 +156,7 @@ impl PowerService {
                     worker_effects,
                 );
                 run_worker(&mut engine, events);
-                let _ = finished.send(());
+                finish_worker(&mut engine, finished);
             })
             .map_err(|error| AppError::configuration(format!("Start power monitor: {error}")))?;
         Ok(Self {
@@ -203,7 +203,7 @@ impl PowerService {
     }
 
     pub fn set(&self, enabled: bool) -> Result<LidState, AppError> {
-        let _transition = crate::opencode_cli::target::transition()?;
+        let _transition = crate::opencode::target::transition()?;
         let mut shared = self
             .shared
             .lock()
@@ -256,6 +256,7 @@ impl PowerService {
 
 struct Engine<C: PowerController> {
     controller: C,
+    stopped: bool,
     shared: Arc<Mutex<Shared>>,
     effects: Arc<Mutex<()>>,
     generation: u64,
@@ -271,10 +272,33 @@ struct Engine<C: PowerController> {
     inflight: Option<u64>,
 }
 
+impl<C: PowerController> Drop for Engine<C> {
+    fn drop(&mut self) {
+        if !thread::panicking() || self.stopped {
+            return;
+        }
+        // The worker's guards have unwound; do not recover or reacquire poisoned locks.
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.controller.stop()));
+        let message = match result {
+            Ok(Ok(())) => return,
+            Ok(Err(_)) => "Lid controller unwind cleanup failed; native recovery remains required",
+            Err(payload) => {
+                // A custom panic payload may itself panic on drop during this unwind.
+                std::mem::forget(payload);
+                "Lid controller unwind cleanup panicked; native recovery remains required"
+            }
+        };
+        use std::io::Write;
+        let _ = writeln!(std::io::stderr(), "{message}");
+    }
+}
+
 impl<C: PowerController> Engine<C> {
     fn new(controller: C, shared: Arc<Mutex<Shared>>, effects: Arc<Mutex<()>>) -> Self {
         Self {
             controller,
+            stopped: false,
             shared,
             effects,
             generation: 0,
@@ -289,6 +313,21 @@ impl<C: PowerController> Engine<C> {
             query_at: Instant::now(),
             inflight: None,
         }
+    }
+
+    fn controller(&mut self) -> &mut C {
+        // A new effect can reacquire policy ownership even if it later fails or panics.
+        self.stopped = false;
+        &mut self.controller
+    }
+
+    fn stop(&mut self) -> Result<(), AppError> {
+        if self.stopped {
+            return Ok(());
+        }
+        let result = self.controller.stop();
+        self.stopped = result.is_ok();
+        result
     }
 
     fn current(&self) -> bool {
@@ -358,7 +397,7 @@ impl<C: PowerController> Engine<C> {
         self.prepared = false;
         self.protection = false;
         self.last_busy = None;
-        if let Err(error) = self.controller.stop() {
+        if let Err(error) = self.stop() {
             self.cleanup_failed = true;
             eprintln!("Restore after canceled lid operation: {error}");
         }
@@ -393,7 +432,7 @@ impl<C: PowerController> Engine<C> {
         drop(guard);
         if let Some(preparation) = preparation {
             // Interactive authorization holds neither transition, effects nor shared locks.
-            let result = self.controller.prepare();
+            let result = self.controller().prepare();
             let _guard = effects.lock().expect("power effects lock poisoned");
             let mut shared = self.shared.lock().expect("power monitor lock poisoned");
             if shared.desired.control_generation != self.control_generation {
@@ -439,11 +478,11 @@ impl<C: PowerController> Engine<C> {
             self.query_at = now;
             // An ordinary opt-out restores policy but keeps this run's authorized helper reusable.
             let restored = if shutdown {
-                self.controller.stop()
+                self.stop()
             } else if !control_changed && !enabled && !self.cleanup_failed {
                 Ok(())
             } else {
-                self.controller.idle()
+                self.controller().idle()
             };
             if self.stale_stop() {
                 return false;
@@ -457,7 +496,7 @@ impl<C: PowerController> Engine<C> {
         }
         if shutdown {
             if self.cleanup_failed {
-                if let Err(error) = self.controller.stop() {
+                if let Err(error) = self.stop() {
                     eprintln!("Restore lid protection on exit: {error}");
                 }
             }
@@ -465,7 +504,7 @@ impl<C: PowerController> Engine<C> {
         }
         if self.cleanup_failed {
             if now >= self.renew_at {
-                let result = self.controller.idle();
+                let result = self.controller().idle();
                 if self.stale_stop() {
                     return false;
                 }
@@ -473,7 +512,7 @@ impl<C: PowerController> Engine<C> {
                 if let Err(error) = result {
                     self.error(error);
                 } else {
-                    self.publish_ready(enabled, preference_error.clone());
+                    self.publish_ready(enabled, preference_error);
                 }
                 self.renew_at = now + POLL;
             }
@@ -496,12 +535,12 @@ impl<C: PowerController> Engine<C> {
                 .last_busy
                 .and_then(|busy| (busy + GRACE).checked_duration_since(now));
             if let Some(remaining) = remaining.filter(|duration| !duration.is_zero()) {
-                let result = self.controller.busy(LEASE.min(remaining));
+                let result = self.controller().busy(LEASE.min(remaining));
                 if self.stale_stop() {
                     return false;
                 }
                 if let Err(error) = result {
-                    let restored = self.controller.idle();
+                    let restored = self.controller().idle();
                     if self.stale_stop() {
                         return false;
                     }
@@ -514,7 +553,7 @@ impl<C: PowerController> Engine<C> {
                     }
                 }
             } else {
-                let result = self.controller.idle();
+                let result = self.controller().idle();
                 if self.stale_stop() {
                     return false;
                 }
@@ -583,7 +622,7 @@ impl<C: PowerController> Engine<C> {
             Err(error) => self.publish(LidPhase::Unknown, None, Some(error.to_string())),
             Ok(0) => {
                 self.last_busy = None;
-                let result = self.controller.idle();
+                let result = self.controller().idle();
                 if self.stale_stop() {
                     return;
                 }
@@ -597,7 +636,7 @@ impl<C: PowerController> Engine<C> {
                 self.renew_at = now + POLL;
             }
             Ok(count) => {
-                let result = self.controller.busy(LEASE);
+                let result = self.controller().busy(LEASE);
                 if self.stale_stop() {
                     return;
                 }
@@ -610,7 +649,7 @@ impl<C: PowerController> Engine<C> {
                     }
                     Err(error) => {
                         // A failed apply may have changed one field: restore, never claim protection.
-                        let restored = self.controller.idle();
+                        let restored = self.controller().idle();
                         if self.stale_stop() {
                             return;
                         }
@@ -630,6 +669,21 @@ impl<C: PowerController> Engine<C> {
     }
 }
 
+fn finish_worker<C: PowerController>(engine: &mut Engine<C>, finished: mpsc::Sender<()>) {
+    let effects = Arc::clone(&engine.effects);
+    match effects.lock() {
+        Ok(_guard) => {
+            if engine.stop().is_err() {
+                eprintln!("Lid controller final cleanup failed; native recovery remains required");
+            }
+        }
+        Err(_) => {
+            eprintln!("Lid controller final cleanup lock failed; native recovery remains required");
+        }
+    }
+    let _ = finished.send(());
+}
+
 fn run_worker<C: PowerController>(engine: &mut Engine<C>, wake: mpsc::Receiver<()>) {
     let (requests, queries) = mpsc::channel();
     let (results, observations) = mpsc::channel();
@@ -637,7 +691,7 @@ fn run_worker<C: PowerController>(engine: &mut Engine<C>, wake: mpsc::Receiver<(
         .name("lid-session-query".into())
         .spawn(move || {
             while let Ok(generation) = queries.recv() {
-                let result = crate::opencode_cli::active_sessions_via_cli();
+                let result = crate::opencode::active_sessions_via_service();
                 if results.send((generation, result)).is_err() {
                     break;
                 }
@@ -679,7 +733,11 @@ fn run_worker<C: PowerController>(engine: &mut Engine<C>, wake: mpsc::Receiver<(
         ) {
             let effects = Arc::clone(&engine.effects);
             let _guard = effects.lock().expect("power effects lock poisoned");
-            let _ = engine.controller.stop();
+            if engine.stop().is_err() {
+                eprintln!(
+                    "Lid controller disconnected cleanup failed; native recovery remains required"
+                );
+            }
             break;
         }
     }

@@ -118,7 +118,9 @@ fn authorize(source: &Path, token: &[u8; 32], uid: u32, pid: u32) -> Result<(), 
             .take()
             .ok_or_else(|| error("Missing authorization result"))?;
         let fd = stdout.as_raw_fd();
+        // SAFETY: stdout owns the live pipe fd; F_GETFL has no pointer argument.
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        // SAFETY: stdout keeps fd alive; F_SETFL takes the integer flags read above.
         if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
             return Err(error("Could not bound the authorization result"));
         }
@@ -194,11 +196,14 @@ fn verify_socket_path(uid: u32) -> Result<(), AppError> {
 fn verify_root_peer(stream: &UnixStream) -> Result<i32, AppError> {
     let mut uid = u32::MAX;
     let mut gid = u32::MAX;
+    // SAFETY: stream owns a live socket; uid and gid are writable uid_t/gid_t outputs.
     if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) } != 0 || uid != 0 {
         return Err(error("The control peer is not the authorized root helper"));
     }
     let mut pid: libc::pid_t = 0;
     let mut length = std::mem::size_of_val(&pid) as libc::socklen_t;
+    // SAFETY: stream keeps its fd alive; pid is writable for the advertised pid_t
+    // capacity and length is a writable socklen_t. Neither pointer escapes the call.
     if unsafe {
         libc::getsockopt(
             stream.as_raw_fd(),
@@ -217,23 +222,31 @@ fn verify_root_peer(stream: &UnixStream) -> Result<i32, AppError> {
 }
 
 fn connect_bounded() -> Result<UnixStream, AppError> {
+    // SAFETY: socket takes only valid AF_UNIX/SOCK_STREAM integer constants.
     let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0) };
     if fd < 0 {
         return Err(error("Could not create the helper control channel"));
     }
+    // SAFETY: successful socket returned a fresh stream fd with no Rust owner;
+    // this transfers ownership exactly once and closes it on all later errors.
     let stream = unsafe { UnixStream::from_raw_fd(fd) };
     stream
         .set_nonblocking(true)
         .map_err(|_| error("Could not bound the helper connection"))?;
+    // SAFETY: stream owns the live fd; F_SETFD takes the integer FD_CLOEXEC flag.
     if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
         return Err(error("Could not protect the helper connection"));
     }
+    // SAFETY: sockaddr_un consists solely of integer fields/bytes, so zero is valid
+    // and leaves a NUL terminator after the fixed socket path copied below.
     let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
     address.sun_family = libc::AF_UNIX as libc::sa_family_t;
     address.sun_len = std::mem::size_of_val(&address) as u8;
     for (destination, source) in address.sun_path.iter_mut().zip(SOCKET.as_bytes()) {
         *destination = *source as libc::c_char;
     }
+    // SAFETY: stream owns fd; address is a live initialized sockaddr_un of the exact
+    // supplied size and SOCKET fits sun_path with a remaining NUL terminator.
     let connected = unsafe {
         libc::connect(
             fd,
@@ -252,11 +265,15 @@ fn connect_bounded() -> Result<UnixStream, AppError> {
             events: libc::POLLOUT,
             revents: 0,
         };
+        // SAFETY: descriptor is one writable initialized pollfd and stream keeps its
+        // fd alive; the array count is one and the timeout is bounded.
         if unsafe { libc::poll(&mut descriptor, 1, 2000) } <= 0 {
             return Err(error("The helper connection timed out"));
         }
         let mut status: libc::c_int = 0;
         let mut length = std::mem::size_of_val(&status) as libc::socklen_t;
+        // SAFETY: stream owns fd; status has the advertised c_int output capacity
+        // and length is a live writable socklen_t; neither pointer is retained.
         if unsafe {
             libc::getsockopt(
                 fd,
@@ -373,6 +390,7 @@ impl PowerController for NativeController {
             ));
         }
         self.authorization_attempted = true;
+        // SAFETY: geteuid has no pointer arguments or caller preconditions.
         let uid = unsafe { libc::geteuid() };
         if uid == 0 {
             return Err(error("Run the desktop app as a regular user, not as root"));
@@ -423,12 +441,6 @@ impl PowerController for NativeController {
             self.stream.take();
         }
         result
-    }
-}
-
-impl Drop for NativeController {
-    fn drop(&mut self) {
-        let _ = self.stop();
     }
 }
 

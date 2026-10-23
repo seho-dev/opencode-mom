@@ -20,25 +20,34 @@ struct HoverIvars {
 }
 
 define_class!(
+    // SAFETY: NSObject is the actual superclass, all ivars are initialized before
+    // init, and MainThreadOnly confines Cell/RefCell state and AppKit to one thread.
     #[unsafe(super = NSObject)]
     #[name = "MOMIslandHoverObserver"]
     #[thread_kind = MainThreadOnly]
     #[ivars = HoverIvars]
     struct HoverObserver;
 
+    // SAFETY: the class inherits NSObject's protocol implementation without overrides.
     unsafe impl NSObjectProtocol for HoverObserver {}
 
     impl HoverObserver {
+        // SAFETY: matches AppKit's mouseEntered: ABI (one borrowed NSEvent, void);
+        // AppKit invokes this main-thread-only tracking owner while the event is live.
         #[unsafe(method(mouseEntered:))]
         fn mouse_entered(&self, _event: &NSEvent) {
             self.notify(true, false);
         }
 
+        // SAFETY: matches AppKit's mouseExited: ABI and borrows its live NSEvent
+        // only during the main-thread callback, without storing it.
         #[unsafe(method(mouseExited:))]
         fn mouse_exited(&self, _event: &NSEvent) {
             self.notify(false, false);
         }
 
+        // SAFETY: matches AppKit's mouseMoved: ABI and borrows its live NSEvent
+        // only during the main-thread callback, without storing it.
         #[unsafe(method(mouseMoved:))]
         fn mouse_moved(&self, _event: &NSEvent) {
             self.notify(true, true);
@@ -75,6 +84,8 @@ impl HoverObserver {
         let Ok(pointer) = window.ns_window() else {
             return;
         };
+        // SAFETY: Tauri returned this live window's NSWindow pointer; window stays
+        // alive for the borrow and HoverObserver's MainThreadOnly confines this call.
         let native = unsafe { &*pointer.cast::<NSWindow>() };
         if native.windowNumber() != ivars.window_number || !native.isVisible() {
             return;
@@ -143,6 +154,8 @@ pub(super) fn install(app: &AppHandle) -> Result<(), AppError> {
     let mtm = MainThreadMarker::new().ok_or_else(failure)?;
     let window = app.get_webview_window("island").ok_or_else(failure)?;
     let pointer = window.ns_window().map_err(|_| failure())?;
+    // SAFETY: Tauri returns an NSWindow for this live handle; window outlives this
+    // borrow and the MainThreadMarker above proves main-thread AppKit access.
     let native = unsafe { &*pointer.cast::<NSWindow>() };
     let view = native.contentView().ok_or_else(failure)?;
     let service = app.state::<IslandService>();
@@ -153,7 +166,12 @@ pub(super) fn install(app: &AppHandle) -> Result<(), AppError> {
         active: Cell::new(true),
         inside: Cell::new(false),
     });
+    // SAFETY: this is a freshly allocated main-thread NSObject subclass with all
+    // ivars initialized; inherited init returns the same owned +1 observer type.
     let owner: Retained<HoverObserver> = unsafe { msg_send![super(this), init] };
+    // SAFETY: owner implements the tracking selectors with AppKit's ABI; Tracking
+    // retains it and the area/view on the main thread, detaching the area before
+    // releasing owner because NSTrackingArea itself does not retain that pointer.
     let area = unsafe {
         NSTrackingArea::initWithRect_options_owner_userInfo(
             NSTrackingArea::alloc(),

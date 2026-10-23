@@ -324,7 +324,7 @@ fn create_inner(
 ) -> Result<AgentDefinition, AppError> {
     validate_agent_id(&request.id)?;
     validate_model(&request.fields)?;
-    let (fields, prompt, _) = normalize_mutation(&request.fields, request.prompt, Vec::new())?;
+    let (fields, prompt, _) = normalize_mutation(request.fields, request.prompt, Vec::new())?;
 
     match request.storage {
         AgentStorage::Inline => {
@@ -384,7 +384,7 @@ fn update_inner(
         invalid("agent update requires an expected source path and content; reload before saving")
     })?;
     let (fields, prompt, clear_fields) =
-        normalize_mutation(&mutation.fields, mutation.prompt, mutation.clear_fields)?;
+        normalize_mutation(mutation.fields, mutation.prompt, mutation.clear_fields)?;
 
     match storage {
         AgentStorage::Inline => {
@@ -893,12 +893,13 @@ fn invalid_model_ref(model: &str) -> AppError {
     ))
 }
 
+type NormalizedMutation = (Map<String, Value>, Option<String>, Vec<String>);
+
 fn normalize_mutation(
-    fields: &Map<String, Value>,
+    mut fields: Map<String, Value>,
     prompt: Option<String>,
     clear_fields: Vec<String>,
-) -> Result<(Map<String, Value>, Option<String>, Vec<String>), AppError> {
-    let mut fields = fields.clone();
+) -> Result<NormalizedMutation, AppError> {
     let frontmatter_prompt = fields.remove("prompt");
     let prompt = match (prompt, frontmatter_prompt) {
         (Some(prompt), _) => Some(prompt),

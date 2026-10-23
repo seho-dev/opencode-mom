@@ -57,11 +57,7 @@ fn invalid_model_ref(value: &str) -> AppError {
 }
 
 pub fn list_providers(opencode_file: &Path) -> Result<Vec<ProviderDef>, AppError> {
-    providers_from_root(
-        &JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?
-            .raw()
-            .clone(),
-    )
+    providers_from_root(JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?.raw())
 }
 
 pub fn custom_provider_ids(
@@ -89,7 +85,7 @@ fn ensure_custom_provider_in_doc(
     let is_custom = root
         .get("providers")
         .and_then(Value::as_object)
-        .map_or(false, |providers| providers.contains_key(provider_id));
+        .is_some_and(|providers| providers.contains_key(provider_id));
     if !is_custom {
         return Err(AppError::validation(format!(
             "model operations are only allowed for custom providers: {provider_id}"
@@ -114,7 +110,7 @@ pub fn create_provider(
     if provider
         .package
         .as_deref()
-        .map_or(true, |package| package.trim().is_empty())
+        .is_none_or(|package| package.trim().is_empty())
     {
         return Err(AppError::validation("provider package is required"));
     }
@@ -342,12 +338,12 @@ fn provider_value(provider: &ProviderDef) -> Value {
     put_optional(
         &mut value,
         "settings",
-        provider.settings.clone().and_then(to_value),
+        provider.settings.as_ref().and_then(to_value),
     );
     put_optional(
         &mut value,
         "headers",
-        provider.headers.clone().and_then(to_value),
+        provider.headers.as_ref().and_then(to_value),
     );
     let models = provider
         .models
@@ -376,24 +372,24 @@ pub fn model_value(model: &ModelDef) -> Value {
     put_optional(
         &mut value,
         "capabilities",
-        model.capabilities.clone().and_then(to_value),
+        model.capabilities.as_ref().and_then(to_value),
     );
-    put_optional(&mut value, "cost", model.cost.clone().and_then(to_value));
-    put_optional(&mut value, "limit", model.limit.clone().and_then(to_value));
+    put_optional(&mut value, "cost", model.cost.as_ref().and_then(to_value));
+    put_optional(&mut value, "limit", model.limit.as_ref().and_then(to_value));
     put_optional(
         &mut value,
         "settings",
-        model.settings.clone().and_then(to_value),
+        model.settings.as_ref().and_then(to_value),
     );
     put_optional(
         &mut value,
         "headers",
-        model.headers.clone().and_then(to_value),
+        model.headers.as_ref().and_then(to_value),
     );
     put_optional(
         &mut value,
         "variants",
-        model.variants.clone().and_then(to_value),
+        model.variants.as_ref().and_then(to_value),
     );
     Value::Object(value)
 }
@@ -414,7 +410,7 @@ fn provider_field_patches(provider: &ProviderDef) -> Vec<(Vec<String>, Option<Va
                 provider.name.clone(),
                 "headers".to_owned(),
             ],
-            provider.headers.clone().and_then(to_value),
+            provider.headers.as_ref().and_then(to_value),
         ),
     ];
     if let Some(ref s) = provider.settings {
@@ -521,11 +517,11 @@ enum IdKind {
 
 fn validate_id(value: &str, kind: IdKind) -> Result<(), AppError> {
     // V2 model IDs may contain `/` (e.g. openrouter/anthropic/claude) but never `#`.
-    if !value.is_empty()
-        && value.trim() == value
-        && !value.contains('#')
-        && !(matches!(kind, IdKind::Provider) && value.contains('/'))
-        && !value.chars().any(char::is_whitespace)
+    if !(value.is_empty()
+        || value.trim() != value
+        || value.contains('#')
+        || (matches!(kind, IdKind::Provider) && value.contains('/'))
+        || value.chars().any(char::is_whitespace))
     {
         return Ok(());
     }

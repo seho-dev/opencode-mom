@@ -13,6 +13,8 @@ pub enum Operation {
     Stop,
 }
 
+// Client encoder: this shared module is also compiled into the parent controller.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn hello(token: &[u8; 32]) -> [u8; HELLO_LEN] {
     let mut bytes = [0; HELLO_LEN];
     bytes[..8].copy_from_slice(HELLO_MAGIC);
@@ -20,6 +22,7 @@ pub fn hello(token: &[u8; 32]) -> [u8; HELLO_LEN] {
     bytes
 }
 
+// Server decoder: unused in the parent controller outside protocol tests.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn authenticate(bytes: &[u8], token: &[u8; 32]) -> bool {
     bytes.len() == HELLO_LEN
@@ -31,6 +34,8 @@ pub fn authenticate(bytes: &[u8], token: &[u8; 32]) -> bool {
             == 0
 }
 
+// Client encoder: unused in the standalone helper outside protocol/socket tests.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn request(seq: u64, operation: Operation) -> [u8; REQUEST_LEN] {
     let mut bytes = [0; REQUEST_LEN];
     bytes[0] = match operation {
@@ -45,6 +50,7 @@ pub fn request(seq: u64, operation: Operation) -> [u8; REQUEST_LEN] {
     bytes
 }
 
+// Server decoder: unused in the parent controller outside protocol tests.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn parse_request(bytes: &[u8], expected_seq: u64) -> Result<Operation, &'static str> {
     if bytes.len() != REQUEST_LEN || bytes[1..8] != [0; 7] {
@@ -63,6 +69,7 @@ pub fn parse_request(bytes: &[u8], expected_seq: u64) -> Result<Operation, &'sta
     }
 }
 
+// Server encoder: unused in the parent controller outside protocol/socket tests.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn ack(seq: u64, flag: Option<bool>, success: bool) -> [u8; ACK_LEN] {
     let mut bytes = [0; ACK_LEN];
@@ -72,6 +79,8 @@ pub fn ack(seq: u64, flag: Option<bool>, success: bool) -> [u8; ACK_LEN] {
     bytes
 }
 
+// Client validator: unused in the standalone helper outside protocol/socket tests.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn valid_ack(bytes: &[u8], seq: u64) -> bool {
     bytes.len() == ACK_LEN
         && bytes[0] <= 1
@@ -80,6 +89,8 @@ pub fn valid_ack(bytes: &[u8], seq: u64) -> bool {
         && u64::from_le_bytes(bytes[8..16].try_into().unwrap()) == seq
 }
 
+// Client decoder: unused in the standalone helper outside protocol/socket tests.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn parse_ack(bytes: &[u8], seq: u64) -> Result<bool, &'static str> {
     if !valid_ack(bytes, seq) {
         return Err("Invalid helper acknowledgment");
@@ -90,6 +101,7 @@ pub fn parse_ack(bytes: &[u8], seq: u64) -> Result<bool, &'static str> {
     Ok(bytes[1] == 1)
 }
 
+// Helper launch parser: unused in the parent controller outside protocol tests.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn decode_token(hex: &str) -> Result<[u8; 32], &'static str> {
     if hex.len() != 64 || !hex.bytes().all(|c| c.is_ascii_hexdigit()) {

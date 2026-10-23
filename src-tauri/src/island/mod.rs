@@ -8,7 +8,7 @@ use tokio::sync::watch;
 
 use crate::error::AppError;
 use crate::models::{self, AppPreferences};
-use crate::opencode_cli::island::{self as api, IslandApi, IslandChange, IslandSnapshot};
+use crate::opencode::island::{self as api, IslandApi, IslandChange, IslandSnapshot};
 use crate::paths::ConfigPaths;
 
 #[cfg(any(target_os = "macos", test))]
@@ -309,7 +309,7 @@ impl IslandService {
         };
         on_main(app, move |app| {
             let service = app.state::<IslandService>();
-            let _transition = crate::opencode_cli::target::transition()?;
+            let _transition = crate::opencode::target::transition()?;
             if !lock(&service.cache).current(generation) {
                 return Ok(());
             }
@@ -340,7 +340,7 @@ impl IslandService {
         paths: &ConfigPaths,
         enabled: bool,
     ) -> Result<(), AppError> {
-        let _transition = crate::opencode_cli::target::transition()?;
+        let _transition = crate::opencode::target::transition()?;
         if enabled && !cfg!(target_os = "macos") {
             return Err(AppError::validation(
                 "Mini Island is only supported on macOS",
@@ -467,7 +467,7 @@ impl IslandService {
                 {
                     let cache = Arc::downgrade(&self.cache);
                     let _ = app.run_on_main_thread(move || {
-                        let retired = cache.upgrade().map_or(true, |cache| {
+                        let retired = cache.upgrade().is_none_or(|cache| {
                             let cache = lock(&cache);
                             !cache.enabled && cache.generation == generation
                         });
@@ -615,7 +615,7 @@ impl IslandService {
     }
 
     fn retry_connection(&self, app: &AppHandle, generation: u64) -> Result<(), AppError> {
-        let _transition = crate::opencode_cli::target::transition()?;
+        let _transition = crate::opencode::target::transition()?;
         if !lock(&self.cache).current(generation) {
             return Err(disabled());
         }
@@ -827,16 +827,13 @@ async fn connected(
     let mut pending = Coalescer::default();
     loop {
         if let Some(wake) = pending.deadline {
-            match race(tokio::time::sleep_until(wake), events.next()).await {
-                Err(event) => {
-                    let state = lock(cache);
-                    if !state.current(generation) || state.api_generation != api_generation {
-                        return Err(disabled());
-                    }
-                    pending.record(event?, &state, tokio::time::Instant::now());
-                    continue;
+            if let Err(event) = race(tokio::time::sleep_until(wake), events.next()).await {
+                let state = lock(cache);
+                if !state.current(generation) || state.api_generation != api_generation {
+                    return Err(disabled());
                 }
-                Ok(_) => {}
+                pending.record(event?, &state, tokio::time::Instant::now());
+                continue;
             }
             if pending.snapshot {
                 let revision = next_revision(cache, generation)?;
@@ -896,11 +893,11 @@ pub(crate) fn setup(
             service.update_preferences(config.state.preferences);
             #[cfg(target_os = "macos")]
             if config.state.island_enabled {
-                let _transition = crate::opencode_cli::target::transition();
-                if service.apply_enabled(app, true).is_err() {
-                    if persist_enabled(paths, false).is_err() {
-                        eprintln!("failed to persist disabled Mini Island after startup failure");
-                    }
+                let _transition = crate::opencode::target::transition();
+                if service.apply_enabled(app, true).is_err()
+                    && persist_enabled(paths, false).is_err()
+                {
+                    eprintln!("failed to persist disabled Mini Island after startup failure");
                 }
             }
         }

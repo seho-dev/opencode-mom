@@ -120,12 +120,9 @@ impl MarkdownAgentDocument {
 }
 
 fn split_frontmatter(input: &str) -> Option<(&str, &str)> {
-    let Some(after_open) = input
+    let after_open = input
         .strip_prefix("---\n")
-        .or_else(|| input.strip_prefix("---\r\n"))
-    else {
-        return None;
-    };
+        .or_else(|| input.strip_prefix("---\r\n"))?;
     let start_offset = input.len() - after_open.len();
     let mut offset = start_offset;
     for line in after_open.split_inclusive(['\n']) {

@@ -50,6 +50,8 @@ pub(super) fn durable_write(path: &Path, value: &impl Serialize) -> Result<(), A
         };
         let source: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
         let destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        // SAFETY: both paths are NUL-terminated UTF-16 Vecs alive for this synchronous
+        // call; MoveFileExW does not retain the pointers and the flags are valid.
         if unsafe {
             MoveFileExW(
                 source.as_ptr(),

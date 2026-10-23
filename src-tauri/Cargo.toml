@@ -5,8 +5,24 @@ description = "Cross-platform desktop model group switcher"
 authors = ["opencode-mom contributors"]
 license = "MIT"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.90"
 default-run = "opencode-mom"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+correctness = { level = "deny", priority = -1 }
+undocumented_unsafe_blocks = "warn"
+redundant_clone = "warn"
+
+[[bin]]
+name = "opencode-mom"
+path = "src/main.rs"
+
+[[bin]]
+name = "mcp-test-peer"
+path = "src/mcp_proxy/test_peer.rs"
 
 [package.metadata]
 
@@ -31,7 +47,15 @@ time = { version = "0.3", features = ["formatting", "parsing", "serde-well-known
 uuid = { version = "1.11", features = ["serde", "v4"] }
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "query", "rustls"] }
 percent-encoding = "2"
-tokio = { version = "1", features = ["rt", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "sync", "time", "process", "io-util", "net"] }
+process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "process-group", "job-object", "kill-on-drop"] }
+rmcp = { version = "=3.6.0", default-features = false, features = ["client", "server", "transport-io", "transport-streamable-http-server"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+sha2 = "0.10"
+subtle = "2.6"
+rand = "0.8"
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "=0.6.1"
@@ -42,6 +66,8 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 [dev-dependencies]
 tauri = { version = "2.10.2", default-features = false, features = ["test"] }
 tempfile = "3"
+sse-stream = "=0.2.6"
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 tauri = { version = "2.10.2", default-features = false, features = ["tray-icon"] }

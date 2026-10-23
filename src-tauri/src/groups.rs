@@ -13,10 +13,7 @@ fn load(paths: &ConfigPaths) -> Result<AppConfig, AppError> {
     Ok(config)
 }
 
-fn find_enabled_group<'a>(
-    config: &'a AppConfig,
-    group_id: Uuid,
-) -> Result<&'a ModelGroup, AppError> {
+fn find_enabled_group(config: &AppConfig, group_id: Uuid) -> Result<&ModelGroup, AppError> {
     let group = config
         .groups
         .iter()
@@ -165,7 +162,7 @@ pub fn switch_group(paths: &ConfigPaths, group_id: Uuid) -> Result<(), AppError>
     }
 
     config.state.selected_group_id = Some(group.id);
-    config.state.selected_group_name = Some(group.name.clone());
+    config.state.selected_group_name = Some(group.name);
     models::save_config(&paths.config_file(), &config)
 }
 
@@ -187,7 +184,7 @@ fn persist_group_lifecycle(
     if group.group_type == GroupType::Slim || switches_away_from_slim(previous, group) {
         let slim_file = paths.slim_file();
         let source = JsoncDoc::read(&slim_file, SLIM_SCHEMA)?;
-        let mut document = source.clone();
+        let mut document = source;
         if group.group_type == GroupType::Slim {
             if let Some(previous) = previous.filter(|item| item.group_type == GroupType::Slim) {
                 if previous.name != group.name {
@@ -220,7 +217,7 @@ fn persist_group_lifecycle(
         } else if let Some(previous) = previous {
             projection::remove_omo_mappings(previous, &source)?
         } else {
-            source.clone()
+            source
         };
         omo_plan = Some((omo_file, document));
     }
@@ -293,7 +290,7 @@ fn validate_group_drafts(
     Ok(())
 }
 
-fn group_model_references<'a>(group: &'a ModelGroup) -> Vec<(&'static str, &'a str, &'a str)> {
+fn group_model_references(group: &ModelGroup) -> Vec<(&'static str, &str, &str)> {
     let mut references = Vec::new();
     references.extend(group.open_code_agent_overrides.iter().map(|binding| {
         (

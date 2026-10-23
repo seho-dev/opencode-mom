@@ -282,11 +282,16 @@ impl Backend for NativeBackend {
     fn active_scheme(&mut self) -> Result<Uuid, AppError> {
         use windows_sys::Win32::{Foundation::LocalFree, System::Power::PowerGetActiveScheme};
         let mut pointer = std::ptr::null_mut();
+        // SAFETY: null selects the default power store; pointer is a writable GUID*
+        // output slot. Success returns a LocalAlloc GUID owned exclusively below.
         let code = unsafe { PowerGetActiveScheme(std::ptr::null_mut(), &mut pointer) };
         if code != 0 {
             if !pointer.is_null() {
-                unsafe {
-                    LocalFree(pointer.cast());
+                // SAFETY: any nonnull API output belongs to LocalAlloc and has not
+                // been freed or exposed; match that allocator exactly once.
+                if !unsafe { LocalFree(pointer.cast()) }.is_null() {
+                    use std::io::Write;
+                    let _ = writeln!(std::io::stderr(), "Windows power-scheme cleanup failed");
                 }
             }
             win_result(code, "Get active power scheme")?;
@@ -296,9 +301,14 @@ impl Backend for NativeBackend {
                 "Windows returned no active power scheme",
             ));
         }
+        // SAFETY: success and the nonnull check establish a live initialized GUID;
+        // copy it before releasing the API's allocation.
         let guid = unsafe { *pointer };
-        unsafe {
-            LocalFree(pointer.cast());
+        // SAFETY: PowerGetActiveScheme allocated pointer with LocalAlloc; all reads
+        // are complete and this is its sole matching release.
+        if !unsafe { LocalFree(pointer.cast()) }.is_null() {
+            use std::io::Write;
+            let _ = writeln!(std::io::stderr(), "Windows power-scheme cleanup failed");
         }
         Ok(Uuid::from_fields(
             guid.data1,
@@ -311,8 +321,10 @@ impl Backend for NativeBackend {
         use windows_sys::Win32::System::Power::{PowerReadACValueIndex, PowerReadDCValueIndex};
         let guid = windows_sys::core::GUID::from_u128(scheme.as_u128());
         let mut value = 0;
-        let code = unsafe {
-            if battery {
+        let code = if battery {
+            // SAFETY: all three GUID references are live initialized inputs, value
+            // is a writable DWORD output, and the reserved root key must be null.
+            unsafe {
                 PowerReadDCValueIndex(
                     std::ptr::null_mut(),
                     &guid,
@@ -320,7 +332,11 @@ impl Backend for NativeBackend {
                     &ffi::LID,
                     &mut value,
                 )
-            } else {
+            }
+        } else {
+            // SAFETY: all three GUID references are live initialized inputs, value
+            // is a writable DWORD output, and the reserved root key must be null.
+            unsafe {
                 PowerReadACValueIndex(
                     std::ptr::null_mut(),
                     &guid,
@@ -336,10 +352,16 @@ impl Backend for NativeBackend {
     fn write(&mut self, scheme: Uuid, battery: bool, value: u32) -> Result<(), AppError> {
         use windows_sys::Win32::System::Power::{PowerWriteACValueIndex, PowerWriteDCValueIndex};
         let guid = windows_sys::core::GUID::from_u128(scheme.as_u128());
-        let code = unsafe {
-            if battery {
+        let code = if battery {
+            // SAFETY: all GUID references are live initialized inputs; value is a
+            // DWORD, and the reserved root key is null. No pointer is retained.
+            unsafe {
                 PowerWriteDCValueIndex(std::ptr::null_mut(), &guid, &ffi::BUTTONS, &ffi::LID, value)
-            } else {
+            }
+        } else {
+            // SAFETY: all GUID references are live initialized inputs; value is a
+            // DWORD, and the reserved root key is null. No pointer is retained.
+            unsafe {
                 PowerWriteACValueIndex(std::ptr::null_mut(), &guid, &ffi::BUTTONS, &ffi::LID, value)
             }
         };
@@ -351,6 +373,8 @@ impl Backend for NativeBackend {
         if self.active_scheme()? == scheme {
             let guid = windows_sys::core::GUID::from_u128(scheme.as_u128());
             win_result(
+                // SAFETY: guid is an initialized live GUID; null selects the default
+                // power store and PowerSetActiveScheme retains neither pointer.
                 unsafe { PowerSetActiveScheme(std::ptr::null_mut(), &guid) },
                 "Refresh active power scheme",
             )?;
@@ -362,6 +386,8 @@ impl Backend for NativeBackend {
             SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED,
         };
         let flags = ES_CONTINUOUS | if busy { ES_SYSTEM_REQUIRED } else { 0 };
+        // SAFETY: only documented flags are passed, with no pointers; Engine calls
+        // both acquisition and release on its single owning controller thread.
         if unsafe { SetThreadExecutionState(flags) } == 0 {
             Err(AppError::configuration(format!(
                 "Set idle execution request: {}",

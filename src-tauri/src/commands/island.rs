@@ -3,7 +3,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::error::AppError;
 use crate::island::{IslandService, IslandState, IslandView};
-use crate::opencode_cli::island::IslandMessage;
+use crate::opencode::island::IslandMessage;
 use crate::paths::ConfigPaths;
 
 #[tauri::command]

@@ -130,7 +130,7 @@ pub struct JsoncDoc {
 impl JsoncDoc {
     pub fn parse(input: &str) -> Result<Self, AppError> {
         let raw = parse_jsonc_object(input)
-            .map_err(|_| AppError::validation("malformed JSONC document"))?;
+            .map_err(|error| AppError::validation(format!("malformed JSONC document: {error}")))?;
         Ok(Self {
             content: input.to_owned(),
             raw,
@@ -147,14 +147,15 @@ impl JsoncDoc {
     /// document that is only persisted on the next write.
     pub fn read(path: &Path, schema: &str) -> Result<Self, AppError> {
         match read_text(path)? {
-            Some(content) => JsoncDoc::parse(&content),
+            Some(content) => JsoncDoc::parse(&content)
+                .map_err(|error| AppError::validation(format!("{}: {error}", path.display()))),
             None => Ok(Self::bootstrap(schema)),
         }
     }
 
     pub fn patch(&mut self, path: &[&str], value: Option<Value>) -> Result<(), AppError> {
         let (content, raw) = patch_with_effective(&self.content, path, value)
-            .map_err(|_| AppError::validation("malformed JSONC document"))?;
+            .map_err(|error| AppError::validation(format!("malformed JSONC document: {error}")))?;
         self.content = content;
         self.raw = raw;
         Ok(())
@@ -177,6 +178,30 @@ impl JsoncDoc {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn jsonc_read_reports_safe_path_and_syntax_position_without_changing_wire_shape() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.jsonc");
+        fs::write(
+            &path,
+            "{\n  \"apiKey\": \"PRIVATE_TOKEN\",\n  \"broken\" true\n}\n",
+        )
+        .unwrap();
+
+        let error = JsoncDoc::read(&path, OPENCODE_SCHEMA).unwrap_err();
+        let wire = serde_json::to_value(&error).unwrap();
+
+        assert_eq!(wire["code"], "validation_failed");
+        assert_eq!(wire["message"], error.message);
+        assert_eq!(wire.as_object().unwrap().len(), 2);
+        assert!(error.message.contains(&path.display().to_string()));
+        assert!(error.message.contains("expected colon"), "{error}");
+        assert!(error.message.contains("line 3"), "{error}");
+        assert!(error.message.contains("column "), "{error}");
+        assert!(!format!("{error:?}").contains("PRIVATE_TOKEN"));
+        assert!(!wire.to_string().contains("PRIVATE_TOKEN"));
+    }
 
     #[test]
     fn write_file_atomically_creates_and_overwrites() {

@@ -257,7 +257,7 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
                 || command.iter().any(|value| !value.is_string())
                 || command[0]
                     .as_str()
-                    .map_or(true, |value| value.trim().is_empty())
+                    .is_none_or(|value| value.trim().is_empty())
             {
                 return Err(invalid());
             }
@@ -292,7 +292,7 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
         for field in ["startup", "catalog", "execution"] {
             if timeout
                 .get(field)
-                .is_some_and(|value| value.as_u64().map_or(true, |value| value == 0))
+                .is_some_and(|value| value.as_u64().is_none_or(|value| value == 0))
             {
                 return Err(invalid());
             }
@@ -302,7 +302,7 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
         if let Some(value) = config.get(field) {
             if value
                 .as_object()
-                .map_or(true, |map| map.values().any(|value| !value.is_string()))
+                .is_none_or(|map| map.values().any(|value| !value.is_string()))
             {
                 return Err(invalid());
             }
@@ -325,7 +325,7 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
             if oauth.get("callback_port").is_some_and(|value| {
                 value
                     .as_u64()
-                    .map_or(true, |value| !(1..=65535).contains(&value))
+                    .is_none_or(|value| !(1..=65535).contains(&value))
             }) {
                 return Err(invalid());
             }
@@ -343,8 +343,8 @@ fn managed_documents(
         .map(|path| {
             let snapshot = Snapshot::read(path)?;
             let document = match &snapshot {
-                Some(snapshot) => JsoncDoc::parse(&snapshot.content).map_err(|_| {
-                    AppError::validation(format!("{}: malformed JSONC document", path.display()))
+                Some(snapshot) => JsoncDoc::parse(&snapshot.content).map_err(|error| {
+                    AppError::validation(format!("{}: {error}", path.display()))
                 })?,
                 None => JsoncDoc::bootstrap(crate::document::OPENCODE_SCHEMA),
             };
@@ -489,20 +489,20 @@ fn persist_document(
             Ok(())
         })
     } else {
+        let filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| AppError::validation("MCP config filename must be valid UTF-8"))?;
         let parent = Directory::ensure(path.parent().unwrap())?;
-        parent.create_file_checked(
-            path.file_name().unwrap().to_str().unwrap(),
-            document.content(),
-            || {
-                for (path, snapshot, _) in documents {
-                    match snapshot {
-                        Some(snapshot) => snapshot.validate()?,
-                        None => resource_file::absent(path)?,
-                    }
+        parent.create_file_checked(filename, document.content(), || {
+            for (path, snapshot, _) in documents {
+                match snapshot {
+                    Some(snapshot) => snapshot.validate()?,
+                    None => resource_file::absent(path)?,
                 }
-                Ok(())
-            },
-        )
+            }
+            Ok(())
+        })
     }
 }
 

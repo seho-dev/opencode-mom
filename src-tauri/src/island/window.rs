@@ -46,6 +46,9 @@ fn native_window(app: &AppHandle) -> Result<Retained<NSWindow>, AppError> {
     let _mtm = MainThreadMarker::new().ok_or_else(failure)?;
     let window = app.get_webview_window("island").ok_or_else(failure)?;
     let pointer = window.ns_window().map_err(|_| failure())?;
+    // SAFETY: Tauri supplies a live NSWindow owned by window; the main-thread check
+    // excludes concurrent AppKit destruction, and retain acquires our own +1 owner
+    // before window is released. NSWindow remains main-thread-only in this module.
     unsafe { Retained::retain(pointer.cast::<NSWindow>()) }.ok_or_else(failure)
 }
 
@@ -251,6 +254,9 @@ fn start_transition(app: &AppHandle, token: Token) {
             animation_completed(&notifications, token, selected, target, view);
         });
         let changes = RcBlock::new(move |context: std::ptr::NonNull<NSAnimationContext>| {
+            // SAFETY: runAnimationGroup invokes this block synchronously on the
+            // calling main thread with its live nonnull NSAnimationContext; this
+            // borrow is used only during the invocation and never retained.
             unsafe { context.as_ref() }.setDuration(duration);
             if current(app, token) {
                 native
@@ -452,9 +458,14 @@ fn destroyed(window: WindowId) -> bool {
 }
 
 pub(super) fn event_is_current(window: &tauri::Window) -> bool {
+    if MainThreadMarker::new().is_none() {
+        return false;
+    }
     let Ok(pointer) = window.ns_window() else {
         return false;
     };
+    // SAFETY: Tauri's live window owns the returned NSWindow; the marker above
+    // ensures main-thread access and this borrow ends after the identity read.
     let native = unsafe { &*pointer.cast::<NSWindow>() };
     let window = identity(native);
     TRANSITIONS.with(|slot| slot.borrow().window == Some(window))
@@ -549,6 +560,7 @@ fn open_new_window(
 }
 
 pub(super) fn open(app: &AppHandle, mode: IslandView) -> Result<Placement, AppError> {
+    MainThreadMarker::new().ok_or_else(failure)?;
     open_new_window(app.get_webview_window("island").is_some(), || {
         let target = placement(screen()?, mode);
         let window = WebviewWindowBuilder::new(app, "island", WebviewUrl::App("/island".into()))
@@ -570,11 +582,11 @@ pub(super) fn open(app: &AppHandle, mode: IslandView) -> Result<Placement, AppEr
         let pointer = window.ns_window().map_err(|_| failure())?;
         let target = resize(app, mode)?;
         // Tauri show() makes macOS windows key; orderFront keeps automatic startup non-activating.
-        unsafe {
-            let native = &*pointer.cast::<NSWindow>();
-            native.orderFront(None);
-            readback(native, screen()?, target, mode, "after-orderFront")?;
-        }
+        // SAFETY: this newly built Tauri window owns the live NSWindow; the marker
+        // at entry proves main-thread access and window outlives this short borrow.
+        let native = unsafe { &*pointer.cast::<NSWindow>() };
+        native.orderFront(None);
+        readback(native, screen()?, target, mode, "after-orderFront")?;
         super::hover::install(app)?;
         let native = native_window(app)?;
         let identity = identity(&native);

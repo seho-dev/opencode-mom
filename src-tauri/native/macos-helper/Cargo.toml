@@ -7,6 +7,14 @@ publish = false
 
 [workspace]
 
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+correctness = { level = "deny", priority = -1 }
+undocumented_unsafe_blocks = "warn"
+redundant_clone = "warn"
+
 [dependencies]
 libc = "=0.2.186"
 

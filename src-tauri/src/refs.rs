@@ -81,7 +81,7 @@ pub fn collect_model_references(paths: &ConfigPaths) -> Result<ModelReferenceInd
         let group_name = group.name.clone();
         add_group_references(
             &mut references,
-            group.open_code_agent_overrides.into_iter(),
+            group.open_code_agent_overrides,
             group_id,
             &group_name,
             "openCodeAgentOverrides",
@@ -89,7 +89,7 @@ pub fn collect_model_references(paths: &ConfigPaths) -> Result<ModelReferenceInd
         if let Some(bindings) = group.slim_agent_overrides {
             add_group_references(
                 &mut references,
-                bindings.into_iter(),
+                bindings,
                 group_id,
                 &group_name,
                 "slimAgentOverrides",
@@ -98,7 +98,7 @@ pub fn collect_model_references(paths: &ConfigPaths) -> Result<ModelReferenceInd
         if let Some(bindings) = group.omo_agent_overrides {
             add_group_references(
                 &mut references,
-                bindings.into_iter(),
+                bindings,
                 group_id,
                 &group_name,
                 "omoAgentOverrides",

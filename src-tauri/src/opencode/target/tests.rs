@@ -1,9 +1,10 @@
+use std::fs;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
 
 use super::*;
-use crate::opencode_cli::token_usage::transport;
+use crate::opencode::transport;
 
 struct Fixture(PathBuf);
 
@@ -162,9 +163,7 @@ fn malformed_oversized_nonprivate_and_nonregular_configuration_fail_closed() {
         br#"{}"#.to_vec(),
         br#"{"url":"http://localhost:1234","url":null,"password":null}"#.to_vec(),
     ] {
-        let mut file = private_file(&path).unwrap();
-        file.write_all(&bytes).unwrap();
-        drop(file);
+        private_file::publish(&path, &bytes).unwrap();
         let error = load(&path).err().unwrap();
         assert!(!error.message.contains("PRIVATE"));
         assert!(fixture.runtime().snapshot().is_err());
@@ -179,6 +178,7 @@ fn malformed_oversized_nonprivate_and_nonregular_configuration_fail_closed() {
         assert!(load(&path).is_err());
         fs::remove_file(&path).unwrap();
         let name = CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: name owns a NUL-terminated path for this call; mkfifo retains no pointer.
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         let now = Instant::now();
         assert!(load(&path).is_err());
@@ -186,6 +186,55 @@ fn malformed_oversized_nonprivate_and_nonregular_configuration_fail_closed() {
     }
     for password in ["PRIVATE\nPASSWORD".into(), "x".repeat(4097)] {
         assert!(updated(None, Some("http://localhost:1234".into()), Some(password)).is_err());
+    }
+}
+
+#[cfg(not(windows))]
+#[test]
+fn temporary_target_bytes_are_wiped_after_load_and_failed_persist() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("target.json");
+    let wiped = || crate::protected_data::WIPED_BYTES.with(std::cell::Cell::get);
+    let selection = Selection {
+        url: Some("http://127.0.0.1:1234".into()),
+        password: Some("private-test-password".into()),
+    };
+    let before = wiped();
+    persist(&path, &selection).unwrap();
+    assert!(wiped() > before, "serialized target buffer must be wiped");
+    let length = fs::metadata(&path).unwrap().len() as usize;
+    let before = wiped();
+    let loaded = load(&path).unwrap();
+    assert_eq!(loaded.password, selection.password);
+    assert_eq!(wiped() - before, length);
+    private_file::publish(&path, b"invalid private target").unwrap();
+    let before = wiped();
+    assert!(load(&path).is_err());
+    assert_eq!(wiped() - before, b"invalid private target".len());
+    fs::remove_file(&path).unwrap();
+    fs::create_dir(&path).unwrap();
+    let before = wiped();
+    assert!(persist(&path, &selection).is_err());
+    assert!(
+        wiped() > before,
+        "failed publication must wipe its serialized buffer"
+    );
+}
+
+#[test]
+fn temporary_decrypted_target_password_is_wiped_on_success_and_validation_failure() {
+    let bytes = br#"{"url":"http://localhost:1234","encryptedPassword":[1]}"#;
+    let wiped = || crate::protected_data::WIPED_BYTES.with(std::cell::Cell::get);
+    for plaintext in [
+        b"private-test-password".to_vec(),
+        vec![255],
+        vec![b'x'; 4097],
+    ] {
+        let length = plaintext.len();
+        let before = wiped();
+        let result = windows::decode(bytes, |_| Ok(plaintext));
+        assert_eq!(result.is_ok(), length == b"private-test-password".len());
+        assert_eq!(wiped() - before, length);
     }
 }
 
@@ -209,8 +258,8 @@ fn missing_shared_status_does_not_bootstrap_and_always_serializes_nulls() {
 
 #[test]
 fn fixed_offline_save_succeeds_and_current_directory_is_captured_in_catalog_query() {
-    use crate::opencode_cli::models;
-    use crate::opencode_cli::token_usage::tests::{healthy_response, respond, FakeApi};
+    use crate::opencode::models;
+    use crate::opencode::token_usage::tests::{healthy_response, respond, FakeApi};
     let fixture = Fixture::new();
     let runtime = fixture.runtime();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -262,8 +311,8 @@ fn fixed_offline_save_succeeds_and_current_directory_is_captured_in_catalog_quer
 
 #[test]
 fn stale_long_read_and_old_async_connection_cannot_return_or_write_after_target_change() {
-    use crate::opencode_cli::active;
-    use crate::opencode_cli::token_usage::tests::{healthy_response, respond, FakeApi};
+    use crate::opencode::active;
+    use crate::opencode::token_usage::tests::{healthy_response, respond, FakeApi};
     let fixture = Fixture::new();
     let runtime = fixture.runtime();
     let changed = runtime.clone();
@@ -321,6 +370,233 @@ fn dispatch_lock_wait_is_bounded_by_operation_deadline() {
 }
 
 #[test]
+fn async_reservation_connect_yields_and_cancelled_worker_retains_guard() {
+    use crate::opencode::token_usage::tests::{healthy_response, FakeApi};
+
+    let fixture = Fixture::new();
+    let target = fixture.runtime();
+    let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let release_rx = std::sync::Mutex::new(release_rx);
+    let api = FakeApi::new(move |path, stream| {
+        assert_eq!(path, "/api/info");
+        entered_tx.send(()).unwrap();
+        release_rx
+            .lock()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        healthy_response(stream);
+    });
+    let snapshot = target
+        .set(Some(api.url()), Some("private".into()), || Ok(()))
+        .unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let guard = transition().unwrap();
+    let heartbeat = runtime.block_on(async {
+        let mut connecting = Box::pin(crate::opencode::island::connect_snapshot(
+            snapshot,
+            Instant::now() + Duration::from_secs(1),
+        ));
+        let pending = futures::poll!(&mut connecting).is_pending();
+        tokio::task::yield_now().await;
+        drop(connecting);
+        drop(guard);
+        if !pending {
+            return false;
+        }
+        tokio::time::timeout(Duration::from_secs(2), entered_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(target.in_flight.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            target.set(None, None, || Ok(())).err().unwrap().code,
+            ErrorCode::Busy
+        );
+        release_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while target.in_flight.load(Ordering::SeqCst) != 0 || Arc::strong_count(&target) != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        true
+    });
+    assert!(
+        heartbeat,
+        "connect reservation blocked the current-thread heartbeat"
+    );
+    target.set(None, None, || Ok(())).unwrap();
+}
+
+#[test]
+fn async_reservation_pending_write_yields_and_drops_unclaimed_guard() {
+    use crate::opencode::token_usage::tests::{healthy_response, FakeApi};
+
+    let fixture = Fixture::new();
+    let target = fixture.runtime();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let api = FakeApi::new(move |path, stream| {
+        assert_eq!(path, "/api/info");
+        count.fetch_add(1, Ordering::SeqCst);
+        healthy_response(stream);
+    });
+    let snapshot = target
+        .set(Some(api.url()), Some("private".into()), || Ok(()))
+        .unwrap();
+    let connection = transport::connect_target(
+        snapshot,
+        &target.registration,
+        Instant::now() + Duration::from_secs(2),
+        |_| panic!("fake fixed target must not bootstrap"),
+    )
+    .unwrap()
+    .into_async()
+    .unwrap();
+    let owners = Arc::strong_count(&target);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let guard = transition().unwrap();
+    let heartbeat = runtime.block_on(async {
+        let mut prepare =
+            Box::pin(connection.prepare_write(Instant::now() + Duration::from_secs(1)));
+        let pending = futures::poll!(&mut prepare).is_pending();
+        tokio::task::yield_now().await;
+        drop(prepare);
+        let owned = Arc::strong_count(&target) > owners;
+        drop(guard);
+        if !pending {
+            return false;
+        }
+        assert!(
+            owned,
+            "cancelled waiter must leave the blocking snapshot owned"
+        );
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while target.in_flight.load(Ordering::SeqCst) != 0
+                || Arc::strong_count(&target) != owners
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        true
+    });
+    assert!(
+        heartbeat,
+        "write reservation blocked the current-thread heartbeat"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "cancelled acquisition must not dispatch health"
+    );
+    target.set(None, None, || Ok(())).unwrap();
+}
+
+#[test]
+fn async_reservation_write_covers_health_and_request_until_completion_or_cancel() {
+    use crate::opencode::token_usage::tests::{healthy_response, respond, FakeApi};
+    use std::io::Read;
+
+    for cancel in [false, true] {
+        let fixture = Fixture::new();
+        let target = fixture.runtime();
+        let health = Arc::new(AtomicUsize::new(0));
+        let count = health.clone();
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let release_rx = std::sync::Mutex::new(release_rx);
+        let api = FakeApi::new(move |path, stream| {
+            if path == "/api/info" {
+                if count.fetch_add(1, Ordering::SeqCst) > 0 {
+                    entered_tx.send("health").unwrap();
+                    release_rx
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(5))
+                        .unwrap();
+                }
+                healthy_response(stream);
+            } else {
+                assert_eq!(path, "/api/session/ses_fake/prompt");
+                let mut body = vec![
+                    0;
+                    serde_json::to_vec(&json!({
+                        "id": "msg_fake", "text": "fake text", "delivery": "queue",
+                    }))
+                    .unwrap()
+                    .len()
+                ];
+                stream.read_exact(&mut body).unwrap();
+                entered_tx.send("request").unwrap();
+                release_rx
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
+                respond(stream, 200, "", b"null");
+            }
+        });
+        let snapshot = target
+            .set(Some(api.url()), Some("private".into()), || Ok(()))
+            .unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let api = crate::opencode::island::connect_snapshot(
+                snapshot,
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap();
+            assert_eq!(target.in_flight.load(Ordering::SeqCst), 0);
+            let waiter =
+                tokio::spawn(async move { api.send("ses_fake", "fake text", "msg_fake").await });
+            for phase in ["health", "request"] {
+                assert_eq!(
+                    tokio::time::timeout(Duration::from_secs(2), entered_rx.recv())
+                        .await
+                        .unwrap()
+                        .unwrap(),
+                    phase
+                );
+                assert_eq!(target.in_flight.load(Ordering::SeqCst), 1);
+                assert_eq!(
+                    target.set(None, None, || Ok(())).err().unwrap().code,
+                    ErrorCode::Busy
+                );
+                if phase == "health" {
+                    release_tx.send(()).unwrap();
+                }
+            }
+            if cancel {
+                waiter.abort();
+                assert!(waiter.await.unwrap_err().is_cancelled());
+                assert_eq!(target.in_flight.load(Ordering::SeqCst), 0);
+                release_tx.send(()).unwrap();
+            } else {
+                release_tx.send(()).unwrap();
+                waiter.await.unwrap().unwrap();
+                assert_eq!(target.in_flight.load(Ordering::SeqCst), 0);
+            }
+        });
+        target.set(None, None, || Ok(())).unwrap();
+    }
+}
+
+#[test]
 fn reservation_blocks_save_without_holding_transition_and_rejects_stale_dispatch() {
     let fixture = Fixture::new();
     let runtime = fixture.runtime();
@@ -351,7 +627,7 @@ fn reservation_blocks_save_without_holding_transition_and_rejects_stale_dispatch
 
 #[test]
 fn in_flight_reload_post_rejects_target_save_before_prepare() {
-    use crate::opencode_cli::token_usage::tests::{healthy_response, respond, FakeApi};
+    use crate::opencode::token_usage::tests::{healthy_response, respond, FakeApi};
 
     let fixture = Fixture::new();
     let runtime = fixture.runtime();
@@ -615,8 +891,8 @@ fn native_dpapi_roundtrip_corruption_and_legacy_repair_are_fail_closed() {
     disk["encryptedPassword"] = json!([1, 2, 3, 4]);
     fs::write(&runtime.path, serde_json::to_vec(&disk).unwrap()).unwrap();
     assert!(load(&runtime.path).is_err());
-    assert!(windows::unprotect(&[]).is_err());
-    assert!(windows::unprotect(&[1, 2, 3]).is_err());
+    assert!(crate::protected_data::unprotect(&[]).is_err());
+    assert!(crate::protected_data::unprotect(&[1, 2, 3]).is_err());
     fs::write(
         &runtime.path,
         br#"{"url":"http://localhost:1234","password":"local-secret"}"#,
@@ -633,6 +909,86 @@ fn native_dpapi_roundtrip_corruption_and_legacy_repair_are_fail_closed() {
         .unwrap();
     assert!(!cleared.selection.public().has_password);
     assert!(load(&runtime.path).unwrap().password.is_none());
+}
+
+#[test]
+fn private_publication_failure_preserves_original_and_cleans_owned_temporary() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("target.json");
+    fs::write(&path, b"original bytes").unwrap();
+    let result = private_file::publish_with(
+        &path,
+        b"replacement bytes",
+        |_, _| Err(std::io::Error::other("injected")),
+        || Ok(()),
+    );
+    assert_eq!(result, Err(private_file::PublishError::Publication));
+    assert_eq!(fs::read(&path).unwrap(), b"original bytes");
+    assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn private_publication_reports_directory_sync_failure_after_commit() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("target.json");
+    let outcome = private_file::publish_with(
+        &path,
+        b"committed bytes",
+        |source, destination| fs::rename(source, destination),
+        || Err(std::io::Error::other("injected")),
+    )
+    .unwrap();
+    assert_eq!(outcome, private_file::PublishOutcome::CommittedWithWarning);
+    assert_eq!(fs::read(&path).unwrap(), b"committed bytes");
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let metadata = fs::metadata(&path).unwrap();
+    assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+    // SAFETY: geteuid has no pointer arguments or preconditions and only reads process identity.
+    assert_eq!(metadata.uid(), unsafe { libc::geteuid() });
+}
+
+#[cfg(unix)]
+#[test]
+fn failed_target_save_keeps_existing_private_file_bytes_and_runtime_selection() {
+    // SAFETY: geteuid has no pointer arguments or preconditions and only reads process identity.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    let runtime = fixture.runtime();
+    runtime
+        .set(
+            Some("http://localhost:1234".into()),
+            Some("private".into()),
+            || Ok(()),
+        )
+        .unwrap();
+    let original = fs::read(&runtime.path).unwrap();
+    let directory_mode = fs::metadata(&fixture.0).unwrap().permissions().mode() & 0o777;
+    fs::set_permissions(&fixture.0, fs::Permissions::from_mode(0o500)).unwrap();
+    let result = runtime.set(
+        Some("http://localhost:1235".into()),
+        Some("replacement".into()),
+        || Ok(()),
+    );
+    fs::set_permissions(&fixture.0, fs::Permissions::from_mode(directory_mode)).unwrap();
+    assert!(result.is_err());
+    assert_eq!(fs::read(&runtime.path).unwrap(), original);
+    assert_eq!(
+        runtime.snapshot().unwrap().selection.url.as_deref(),
+        Some("http://127.0.0.1:1234")
+    );
+    assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 1);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn non_windows_data_protection_stub_fails_closed_without_claiming_dpapi() {
+    let error = crate::protected_data::protect(b"bytes").unwrap_err();
+    assert!(error.message.contains("unavailable"));
+    assert!(crate::protected_data::unprotect(b"bytes").is_err());
 }
 
 #[test]
@@ -678,7 +1034,7 @@ fn invalid_selection_prepare_failure_and_failed_persist_never_invalidate_monitor
 
 #[test]
 fn commit_publishes_then_invalidates_under_guards_and_finish_precedes_probe_without_transition() {
-    use crate::opencode_cli::token_usage::tests::{healthy_response, FakeApi};
+    use crate::opencode::token_usage::tests::{healthy_response, FakeApi};
     use std::sync::atomic::AtomicBool;
 
     let fixture = Fixture::new();
@@ -736,7 +1092,7 @@ fn commit_publishes_then_invalidates_under_guards_and_finish_precedes_probe_with
 
 #[test]
 fn post_commit_status_race_returns_saved_public_target_not_an_error_or_later_target() {
-    use crate::opencode_cli::token_usage::tests::{healthy_response, FakeApi};
+    use crate::opencode::token_usage::tests::{healthy_response, FakeApi};
 
     let fixture = Fixture::new();
     let runtime = fixture.runtime();

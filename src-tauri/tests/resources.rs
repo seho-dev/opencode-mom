@@ -334,7 +334,7 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
         serde_json::from_value(json!({"id":"new", "source":"inline", "storage":"inline"})).unwrap();
     for id in [project.id, uuid::Uuid::new_v4()] {
         let state = || app.state::<ConfigPaths>();
-        let errors = vec![
+        let errors = [
             commands::create_agent(state(), agent.clone(), Some(id)).unwrap_err(),
             commands::update_agent(state(), agent.clone(), Some(id)).unwrap_err(),
             commands::delete_agent(state(), "helper".to_owned(), None, Some(id)).unwrap_err(),
@@ -409,7 +409,7 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
     assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
     assert!(!paths.native_global_skills_dir().exists());
     let response = commands::load_app_state(app.state()).unwrap();
-    assert_eq!(response.projects, [project.clone()]);
+    assert_eq!(response.projects.as_slice(), std::slice::from_ref(&project));
     assert_eq!(response.selected_project_id, Some(project.id));
     assert_eq!(response.agents.len(), 1);
     assert_eq!(commands::list_agents(app.state(), None).unwrap().len(), 1);
@@ -708,6 +708,7 @@ fn project_scope_rejects_pinned_fixed_config_but_not_an_unrelated_explicit_filen
 #[test]
 fn unrelated_unreadable_global_resources_do_not_block_project_browsing() {
     use std::os::unix::fs::PermissionsExt;
+    // SAFETY: geteuid takes no pointers and only reads the effective UID to skip root's permission bypass.
     if unsafe { libc::geteuid() } == 0 {
         return;
     }

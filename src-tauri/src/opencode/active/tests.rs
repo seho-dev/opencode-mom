@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use super::*;
-use crate::opencode_cli::token_usage::tests::{connection, healthy_response, respond, FakeApi};
+use crate::opencode::token_usage::tests::{connection, healthy_response, respond, FakeApi};
 
 fn parse(bytes: &[u8]) -> Result<usize, AppError> {
     transport::decode_json::<JsonObject<ActiveSessionsEnvelope>>(bytes, "opencode session.active")

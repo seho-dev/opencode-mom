@@ -142,7 +142,7 @@ fn snapshot_rejects_final_mode_and_identity_drift_keeps_private_backup_and_remov
         let mut backups = 0;
         for entry in fs::read_dir(&fixture.0).unwrap() {
             let path = entry.unwrap().path();
-            assert!(!path.extension().is_some_and(|extension| extension == "tmp"));
+            assert!(path.extension().is_none_or(|extension| extension != "tmp"));
             if path.extension().is_some_and(|extension| extension == "bak") {
                 backups += 1;
                 assert_eq!(fs::read_to_string(&path).unwrap(), "private original body");
@@ -226,7 +226,7 @@ fn failed_multi_file_publish_retains_all_private_complete_backups() {
         let mut originals = Vec::new();
         for entry in fs::read_dir(&fixture.0).unwrap() {
             let path = entry.unwrap().path();
-            assert!(!path.extension().is_some_and(|extension| extension == "tmp"));
+            assert!(path.extension().is_none_or(|extension| extension != "tmp"));
             if path.extension().is_some_and(|extension| extension == "bak") {
                 originals.push(fs::read_to_string(&path).unwrap());
                 assert_eq!(

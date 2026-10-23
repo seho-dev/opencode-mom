@@ -102,7 +102,7 @@ fn add_project_ipc_rejects_global_overlaps_before_persistence_without_opening_pi
         fs::canonicalize(&valid).unwrap().to_str().unwrap()
     );
     let mut config = models::load_config(&paths.config_file()).unwrap();
-    assert_eq!(config.projects, [project.clone()]);
+    assert_eq!(config.projects.as_slice(), std::slice::from_ref(&project));
     assert_eq!(config.state.selected_project_id, Some(project.id));
     config.state.island_enabled = true;
     config.state.preferences.locale = models::LocalePreference::Zh;

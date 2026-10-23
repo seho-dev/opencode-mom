@@ -242,7 +242,7 @@ fn write_urls_bodies_and_decisions_are_exact_and_not_retried() {
 #[test]
 fn post_reserves_target_until_completion_or_local_cancellation_without_transition_lock() {
     use crate::error::ErrorCode;
-    use crate::opencode_cli::target::{self, TargetRuntime};
+    use crate::opencode::target::{self, TargetRuntime};
 
     for cancel in [false, true] {
         let directory =

@@ -140,6 +140,153 @@ fn observe(engine: &mut Engine<Mock>, result: Result<usize, AppError>, now: Inst
     engine.observation(generation, result, now);
 }
 
+#[test]
+fn worker_unwind_attempts_cleanup_without_panicking_or_recovering_poison() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    struct UnwindMock {
+        stops: Arc<AtomicUsize>,
+        unlocked: Arc<AtomicBool>,
+        effects: Arc<Mutex<()>>,
+        stop_failure: u8,
+    }
+
+    impl PowerController for UnwindMock {
+        fn prepare(&mut self) -> Result<(), AppError> {
+            Ok(())
+        }
+        fn busy(&mut self, _: Duration) -> Result<(), AppError> {
+            panic!("injected controller unwind");
+        }
+        fn idle(&mut self) -> Result<(), AppError> {
+            Ok(())
+        }
+        fn stop(&mut self) -> Result<(), AppError> {
+            self.stops.fetch_add(1, Ordering::SeqCst);
+            self.unlocked.store(
+                !matches!(
+                    self.effects.try_lock(),
+                    Err(std::sync::TryLockError::WouldBlock)
+                ),
+                Ordering::SeqCst,
+            );
+            match self.stop_failure {
+                0 => Ok(()),
+                1 => Err(AppError::configuration("injected cleanup failure")),
+                _ => panic!("injected cleanup unwind"),
+            }
+        }
+    }
+
+    for stop_failure in 0..3 {
+        let fixture = engine(true);
+        let stops = Arc::new(AtomicUsize::new(0));
+        let unlocked = Arc::new(AtomicBool::new(false));
+        let controller = UnwindMock {
+            stops: Arc::clone(&stops),
+            unlocked: Arc::clone(&unlocked),
+            effects: Arc::clone(&fixture.effects),
+            stop_failure,
+        };
+        let shared = Arc::clone(&fixture.shared);
+        let effects = Arc::clone(&fixture.effects);
+        let unwind = std::panic::catch_unwind(move || {
+            let mut worker = Engine::new(controller, shared, effects);
+            let now = Instant::now();
+            worker.tick(now);
+            let generation = worker.start_query(now).unwrap();
+            worker.observation(generation, Ok(1), now);
+        });
+        assert!(unwind.is_err());
+        assert_eq!(stops.load(Ordering::SeqCst), 1);
+        assert!(unlocked.load(Ordering::SeqCst));
+        assert!(fixture.effects.is_poisoned());
+    }
+
+    let fixture = engine(true);
+    let stops = Arc::new(AtomicUsize::new(0));
+    let unlocked = Arc::new(AtomicBool::new(false));
+    let controller = UnwindMock {
+        stops: Arc::clone(&stops),
+        unlocked: Arc::clone(&unlocked),
+        effects: Arc::clone(&fixture.effects),
+        stop_failure: 0,
+    };
+    let shared = Arc::clone(&fixture.shared);
+    let effects = Arc::clone(&fixture.effects);
+    let unwind = std::panic::catch_unwind(move || {
+        let mut worker = Engine::new(controller, shared, effects);
+        assert!(worker.stop().is_ok());
+        panic!("injected post-stop unwind");
+    });
+    assert!(unwind.is_err());
+    assert_eq!(stops.load(Ordering::SeqCst), 1);
+    assert!(unlocked.load(Ordering::SeqCst));
+}
+
+#[test]
+fn disconnected_worker_final_cleanup_retries_before_completion_and_deduplicates_success() {
+    struct StopMock {
+        fail_initial: bool,
+        stops: usize,
+        effects: Arc<Mutex<()>>,
+        completion: mpsc::Receiver<()>,
+    }
+
+    impl PowerController for StopMock {
+        fn prepare(&mut self) -> Result<(), AppError> {
+            panic!("disabled worker must not prepare");
+        }
+        fn busy(&mut self, _: Duration) -> Result<(), AppError> {
+            panic!("disabled worker must not protect");
+        }
+        fn idle(&mut self) -> Result<(), AppError> {
+            Ok(())
+        }
+        fn stop(&mut self) -> Result<(), AppError> {
+            assert!(matches!(
+                self.effects.try_lock(),
+                Err(std::sync::TryLockError::WouldBlock)
+            ));
+            assert!(matches!(
+                self.completion.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+            self.stops += 1;
+            if self.fail_initial && self.stops == 1 {
+                Err(AppError::configuration("injected first stop failure"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    for fail_initial in [true, false] {
+        let fixture = engine(false);
+        let (finished, completion) = mpsc::channel();
+        let controller = StopMock {
+            fail_initial,
+            stops: 0,
+            effects: Arc::clone(&fixture.effects),
+            completion,
+        };
+        let mut worker = Engine::new(
+            controller,
+            Arc::clone(&fixture.shared),
+            Arc::clone(&fixture.effects),
+        );
+        let (wake, events) = mpsc::channel();
+        drop(wake);
+        run_worker(&mut worker, events);
+        assert_eq!(worker.controller.stops, 1);
+        finish_worker(&mut worker, finished);
+        assert_eq!(worker.controller.stops, if fail_initial { 2 } else { 1 });
+        assert!(worker.stopped);
+        assert_eq!(worker.controller.completion.try_recv(), Ok(()));
+        assert!(fixture.effects.try_lock().is_ok());
+    }
+}
+
 fn set(engine: &Engine<Mock>, enabled: bool) {
     let mut shared = engine.shared.lock().unwrap();
     shared.desired.enabled = enabled;

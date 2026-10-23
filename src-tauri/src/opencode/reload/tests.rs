@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::opencode_cli::token_usage::tests::{connection, healthy_response, respond, FakeApi};
+use crate::opencode::token_usage::tests::{connection, healthy_response, respond, FakeApi};
 
 #[test]
 fn reload_accepts_204_and_never_retries_or_exposes_errors() {

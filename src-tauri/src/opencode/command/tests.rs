@@ -75,6 +75,7 @@ impl FakeCli {
     fn assert_direct_reaped_and_descendant_alive(&self) {
         let mut status = 0;
         assert_eq!(
+            // SAFETY: status is writable and live; the recorded direct-child PID selects only that child.
             unsafe { libc::waitpid(self.direct_pid, &mut status, libc::WNOHANG) },
             -1
         );
@@ -82,6 +83,7 @@ impl FakeCli {
             io::Error::last_os_error().raw_os_error(),
             Some(libc::ECHILD)
         );
+        // SAFETY: signal 0 only probes the fixture-reported numeric PID and takes no pointers.
         assert_eq!(unsafe { libc::kill(self.descendant_pid.unwrap(), 0) }, 0);
     }
 }
@@ -93,7 +95,8 @@ impl Drop for FakeCli {
             let _ = child.wait();
         }
         if let Some(pid) = self.descendant_pid {
-            // This fixture's sleep stays alive until cleanup; never signal a process group.
+            // SAFETY: pid is the positive PID reported by this fixture; SIGKILL takes no pointers.
+            // Cleanup is best-effort: a numeric PID does not rule out exit and reuse before this call.
             let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
         }
         let _ = fs::remove_dir_all(&self.directory);
@@ -189,7 +192,7 @@ fn collector_repeated_inherited_stdout_closes_all_reader_fds() {
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "opencode_cli::command::tests::collector_repeated_inherited_stdout_closes_all_reader_fds",
+                "opencode::command::tests::collector_repeated_inherited_stdout_closes_all_reader_fds",
                 "--test-threads=1",
             ])
             .env(PROBE_ENV, "1")

@@ -4,6 +4,62 @@ use std::os::unix::fs::{symlink, PermissionsExt};
 use super::*;
 use crate::error::ErrorCode;
 
+#[test]
+fn create_rejects_non_utf8_config_filename_before_creating_directories() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let home = tempfile::tempdir().unwrap();
+    let parent = home.path().join("missing-parent");
+    let target = parent.join(OsString::from_vec(b"config-\xff.jsonc".to_vec()));
+    let paths = ConfigPaths::with_resource_parts(
+        home.path().to_owned(),
+        Some(target.clone()),
+        None,
+        home.path().join(".config"),
+        home.path().join("cwd"),
+    );
+    let error = create(
+        &paths,
+        McpDraft {
+            name: "new".to_owned(),
+            config: serde_json::from_value(serde_json::json!({
+                "type": "local",
+                "command": ["run"]
+            }))
+            .unwrap(),
+        },
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code, ErrorCode::ValidationFailed);
+    assert!(!target.exists());
+    assert!(!parent.exists());
+    assert_eq!(fs::read_dir(home.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn managed_document_error_retains_safe_jsonc_position() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = ConfigPaths::for_home(home.path());
+    let path = paths.opencode_file();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        "{\n  \"secret\": \"PRIVATE_TOKEN\",\n  \"mcp\" []\n}\n",
+    )
+    .unwrap();
+
+    let error = managed_documents(&paths).err().unwrap();
+
+    assert_eq!(error.code, ErrorCode::ValidationFailed);
+    assert!(error.message.contains(&path.display().to_string()));
+    assert!(error.message.contains("expected colon"), "{error}");
+    assert!(error.message.contains("line 3"), "{error}");
+    assert!(error.message.contains("column "), "{error}");
+    assert!(!format!("{error:?}").contains("PRIVATE_TOKEN"));
+}
+
 const ORIGINAL: &str = r#"{"mcp":{"servers":{"secret":{"type":"local","command":["run"],"environment":{"TOKEN":"private"}}}},"model":"keep"}"#;
 
 struct Fixture {

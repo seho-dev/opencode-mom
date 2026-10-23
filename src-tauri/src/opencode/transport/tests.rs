@@ -8,10 +8,10 @@ use std::thread;
 use serde_json::{json, Value};
 
 use super::*;
-use crate::opencode_cli::token_usage::tests::{
+use crate::opencode::token_usage::tests::{
     connection, deadline, healthy_response, page, respond, FakeApi,
 };
-use crate::opencode_cli::token_usage::{Message, Session};
+use crate::opencode::token_usage::{Message, Session};
 
 struct Fixture(PathBuf);
 
@@ -146,12 +146,13 @@ fn fifo_and_symlink_fifo_registrations_fail_without_waiting_or_bootstrap() {
     let fixture = Fixture::new();
     let fifo = fixture.0.join("PRIVATE_FIFO_CONTENT_PASSWORD");
     let path = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    // SAFETY: path owns a NUL-terminated path for this call; mkfifo retains no pointer.
     assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
     symlink(&fifo, fixture.registration()).unwrap();
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "opencode_cli::token_usage::transport::tests::fifo_and_symlink_fifo_registrations_fail_without_waiting_or_bootstrap",
+            "opencode::transport::tests::fifo_and_symlink_fifo_registrations_fail_without_waiting_or_bootstrap",
             "--test-threads=1",
         ])
         .env(PROBE_ENV, &fixture.0)
@@ -317,8 +318,8 @@ fn health_unauthorized_fails_closed_without_bootstrap() {
 
 #[test]
 fn fixed_target_selects_b_for_active_catalog_reload_usage_and_async_island_never_registered_a() {
-    use crate::opencode_cli::target::{Selection, Snapshot};
-    use crate::opencode_cli::{active, models, token_usage};
+    use crate::opencode::target::{Selection, Snapshot};
+    use crate::opencode::{active, models, token_usage};
 
     let a_calls = Arc::new(AtomicUsize::new(0));
     let calls = a_calls.clone();
@@ -383,7 +384,7 @@ fn fixed_target_selects_b_for_active_catalog_reload_usage_and_async_island_never
 
 #[test]
 fn explicit_unreachable_unauthorized_redirect_and_invalid_info_never_bootstrap_or_fallback() {
-    use crate::opencode_cli::target::{Selection, Snapshot};
+    use crate::opencode::target::{Selection, Snapshot};
     let fixture = Fixture::new();
     let a_calls = Arc::new(AtomicUsize::new(0));
     let count = a_calls.clone();
@@ -653,7 +654,7 @@ fn managed_api_does_not_send_requests_to_environment_proxies() {
         let mut command = Command::new(std::env::current_exe().unwrap());
         command.args([
             "--exact",
-            "opencode_cli::token_usage::transport::tests::managed_api_does_not_send_requests_to_environment_proxies",
+            "opencode::transport::tests::managed_api_does_not_send_requests_to_environment_proxies",
             "--test-threads=1",
         ]).env(PROBE_ENV, "1").env("NO_PROXY", "").env("no_proxy", "");
         for name in [
@@ -862,6 +863,8 @@ mod bootstrap {
         assert!(started.elapsed() < Duration::from_secs(2));
         let mut status = 0;
         assert_eq!(
+            // SAFETY: pid is the spawned fixture child's positive PID; status is writable
+            // for this call, and WNOHANG cannot block while checking that it was reaped.
             unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) },
             -1
         );

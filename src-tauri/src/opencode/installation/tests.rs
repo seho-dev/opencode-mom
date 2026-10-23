@@ -6,7 +6,7 @@ use std::net::TcpListener;
 use std::thread;
 
 use super::*;
-use crate::opencode_cli::binary::resolve_path_command_in;
+use crate::opencode::binary::resolve_path_command_in;
 
 #[cfg(unix)]
 thread_local! {
@@ -436,6 +436,7 @@ fn metadata_cannot_block_on_fifo_or_follow_symlink() {
     let fixture = Fixture::new();
     let fifo = fixture.0.join("fifo");
     let name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    // SAFETY: name is a live NUL-terminated CString for a path inside this temporary fixture.
     assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
     let started = Instant::now();
     assert!(bounded_file(&fifo, 1024).is_none());
@@ -747,7 +748,10 @@ fn native_upgrade_failures_discard_diagnostics_and_success_does_not_signal_reape
     .unwrap();
     run_upgrade(&mut command(), PROCESS_TIMEOUT).unwrap();
     let pid: i32 = fs::read_to_string(pidfile).unwrap().parse().unwrap();
+    // SAFETY: signal 0 only probes the fixture-reported numeric PID and takes no pointers.
     let alive = unsafe { libc::kill(pid, 0) };
+    // SAFETY: the fixture records its spawned sleep PID; SIGKILL takes only scalar arguments.
+    // This is best-effort fixture cleanup, not an identity guarantee against PID reuse.
     let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
     assert_eq!(
         alive, 0,
@@ -783,12 +787,15 @@ fn upgrade_timeout_cleans_its_group_without_touching_an_existing_service() {
     let error = run_upgrade(&mut command, Duration::from_secs(1)).unwrap_err();
     assert!(error.message.contains("timed out"));
     assert!(started.elapsed() < Duration::from_secs(3));
+    // SAFETY: signal 0 takes no pointers and only probes the PID held by the unreaped fixture Child.
     assert_eq!(unsafe { libc::kill(outside.0.id() as libc::pid_t, 0) }, 0);
     let pid: i32 = fs::read_to_string(pidfile).unwrap().parse().unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
+    // SAFETY: signal 0 only probes this recorded numeric PID; it sends no signal and takes no pointers.
     while unsafe { libc::kill(pid, 0) } == 0 && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(10));
     }
+    // SAFETY: signal 0 only probes the same numeric PID; it does not establish process identity.
     assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
 }
 

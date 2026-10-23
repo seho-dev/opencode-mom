@@ -1,5 +1,5 @@
 use super::*;
-use crate::opencode_cli::token_usage::tests::{connection, healthy_response, respond, FakeApi};
+use crate::opencode::token_usage::tests::{connection, healthy_response, respond, FakeApi};
 
 #[test]
 fn model_route_uses_provider_model_identity_and_preserves_disabled_config_metadata() {

@@ -152,6 +152,7 @@ fn save_config_publishes_new_bytes_without_truncating_the_previous_file() {
 #[test]
 fn save_config_staging_failure_keeps_the_previous_bytes() {
     use std::os::unix::fs::PermissionsExt;
+    // SAFETY: geteuid takes no pointers and only reads the effective UID to skip root's permission bypass.
     if unsafe { libc::geteuid() } == 0 {
         return;
     }
@@ -239,11 +240,12 @@ fn save_config_partial_write_failure_preserves_original_bytes() {
         rlim_cur: 64,
         rlim_max: 64,
     };
-    // The file-size fault is process-local; never constrain the parent test runner.
     assert_ne!(
+        // SAFETY: SIG_IGN is a valid disposition for SIGXFSZ; this isolated child installs no Rust handler.
         unsafe { libc::signal(libc::SIGXFSZ, libc::SIG_IGN) },
         libc::SIG_ERR
     );
+    // SAFETY: limit is a live, initialized rlimit; only this disposable child gets the file-size limit.
     assert_eq!(unsafe { libc::setrlimit(libc::RLIMIT_FSIZE, &limit) }, 0);
     let error = save_config(&path, &AppConfig::default()).unwrap_err();
     assert_eq!(error.code, crate::error::ErrorCode::ConfigurationFailed);
@@ -253,7 +255,7 @@ fn save_config_partial_write_failure_preserves_original_bytes() {
     // Control: a raw in-place write loses the original under the same fault.
     assert!(fs::write(
         &path,
-        &serde_json::to_vec_pretty(&AppConfig::default()).unwrap()
+        serde_json::to_vec_pretty(&AppConfig::default()).unwrap()
     )
     .is_err());
     assert_ne!(fs::read(&path).unwrap(), original);

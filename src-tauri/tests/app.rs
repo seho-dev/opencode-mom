@@ -144,11 +144,10 @@ fn provider_crud_round_trip() {
         &providers::ModelRef::new("acme", "turbo").unwrap(),
     )
     .unwrap();
-    assert!(providers::get_provider(&opencode, "acme")
+    assert!(!providers::get_provider(&opencode, "acme")
         .unwrap()
         .models
-        .get("turbo")
-        .is_none());
+        .contains_key("turbo"));
 
     // Delete with models is blocked.
     let error = providers::delete_provider(&opencode, "acme").unwrap_err();
@@ -577,7 +576,7 @@ fn project_folder_lifecycle_preserves_files_and_normalizes_stale_selection() {
         added
     );
     let config = load_config(&home);
-    assert_eq!(config.projects, [added.clone()]);
+    assert_eq!(config.projects.as_slice(), std::slice::from_ref(&added));
     assert_eq!(config.state.selected_project_id, Some(added.id));
     models::select_project(&config_file, None).unwrap();
     assert_eq!(load_config(&home).state.selected_project_id, None);
@@ -641,6 +640,7 @@ fn project_folder_symlink_dedup_unreadable_and_non_utf8_validation() {
     );
     let scoped = home.paths.for_project(Some(added.id)).unwrap();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o0)).unwrap();
+    // SAFETY: geteuid takes no pointers and only reads the effective UID for this fixture's permission check.
     let privileged = unsafe { libc::geteuid() } == 0;
     let unreadable_add = models::add_project(&home.paths.config_file(), root.to_str().unwrap());
     let unreadable_read = opencode_mom_tauri::agents::list(&scoped);
@@ -679,7 +679,7 @@ fn group_lifecycle_preserves_selected_project_and_preferences() {
     groups::copy_group(&home.paths, saved.id, None).unwrap();
     groups::delete_group(&home.paths, saved.id).unwrap();
     let config = load_config(&home);
-    assert_eq!(config.projects, [project.clone()]);
+    assert_eq!(config.projects.as_slice(), std::slice::from_ref(&project));
     assert_eq!(config.state.selected_project_id, Some(project.id));
     assert_eq!(
         config.state.preferences.locale,
@@ -706,8 +706,10 @@ fn global_agent_aliases_retain_paths_and_refuse_ambiguous_mutations() {
     .unwrap();
     assert_eq!(agents::list(&home.paths).unwrap().len(), 1);
     assert_eq!(
-        agents::collect_markdown_files_in_roots(&home.paths).unwrap(),
-        [singular.clone()]
+        agents::collect_markdown_files_in_roots(&home.paths)
+            .unwrap()
+            .as_slice(),
+        std::slice::from_ref(&singular)
     );
     assert_eq!(agents::model_references(&home.paths).unwrap().len(), 1);
     agents::update(

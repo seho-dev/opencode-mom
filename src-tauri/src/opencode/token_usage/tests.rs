@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use super::*;
 
-pub(super) fn deadline() -> Instant {
+pub(in crate::opencode) fn deadline() -> Instant {
     Instant::now() + SCAN_TIMEOUT
 }
 
@@ -40,7 +40,7 @@ fn copied(mut message: Value, id: &str) -> Value {
     message
 }
 
-pub(super) fn page(data: Vec<Value>, next: Option<&str>) -> Value {
+pub(in crate::opencode) fn page(data: Vec<Value>, next: Option<&str>) -> Value {
     json!({ "data": data, "cursor": { "previous": null, "next": next } })
 }
 
@@ -434,13 +434,22 @@ fn fork_zero_owned_prefix_and_child_with_old_timestamp_are_not_time_filtered() {
 }
 
 #[test]
-fn fork_missing_origin_boundary_prefix_mismatch_and_cycle_fail_closed() {
+fn fork_missing_origin_falls_back_to_root() {
+    let a = usage("a", "assistant", 2, 10, 1);
+    let records = fixture_records(
+        vec![fork("fork", "missing", "a", "through")],
+        vec![vec![copied(a, "copy")]],
+    )
+    .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].input, 10);
+    assert_eq!(records[0].output, 1);
+}
+
+#[test]
+fn fork_missing_boundary_prefix_mismatch_and_cycle_fail_closed() {
     let a = usage("a", "assistant", 2, 10, 1);
     for (sessions, timelines) in [
-        (
-            vec![fork("fork", "missing", "a", "through")],
-            vec![vec![copied(a.clone(), "copy")]],
-        ),
         (
             vec![session("root"), fork("fork", "root", "missing", "before")],
             vec![vec![a.clone()], vec![]],
@@ -643,14 +652,14 @@ fn oversized_page_metadata_is_rejected_before_unbounded_allocation() {
     assert!(serde_json::from_value::<Page<Session>>(page(items, None)).is_err());
 }
 
-pub(in crate::opencode_cli) struct FakeApi {
+pub(in crate::opencode) struct FakeApi {
     pub(super) address: SocketAddr,
     stopping: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
 }
 
 impl FakeApi {
-    pub(in crate::opencode_cli) fn new(
+    pub(in crate::opencode) fn new(
         handler: impl Fn(&str, &mut TcpStream) + Send + Sync + 'static,
     ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -707,7 +716,7 @@ impl FakeApi {
         }
     }
 
-    pub(in crate::opencode_cli) fn url(&self) -> String {
+    pub(in crate::opencode) fn url(&self) -> String {
         format!("http://{}", self.address)
     }
 }
@@ -720,7 +729,7 @@ impl Drop for FakeApi {
     }
 }
 
-pub(in crate::opencode_cli) fn respond(
+pub(in crate::opencode) fn respond(
     stream: &mut TcpStream,
     status: u16,
     headers: &str,
@@ -734,11 +743,11 @@ pub(in crate::opencode_cli) fn respond(
     let _ = stream.write_all(body);
 }
 
-pub(in crate::opencode_cli) fn healthy_response(stream: &mut TcpStream) {
+pub(in crate::opencode) fn healthy_response(stream: &mut TcpStream) {
     respond(stream, 200, "", br#"{"version":"2.0.22","pid":42}"#);
 }
 
-pub(in crate::opencode_cli) fn connection(api: &FakeApi) -> ManagedConnection {
+pub(in crate::opencode) fn connection(api: &FakeApi) -> ManagedConnection {
     transport::test_connection(&api.url(), deadline())
 }
 
@@ -766,7 +775,7 @@ fn official_http_paging_workers_large_message_and_fork_aggregation() {
             ),
             "/api/session?limit=1000&cursor=sessions-next" => page(vec![], None),
             "/api/session/root/message?limit=100&order=asc" => {
-                page(vec![user.clone(), a.clone()], Some("root-next"))
+                page(vec![user, a.clone()], Some("root-next"))
             }
             "/api/session/root/message?limit=100&cursor=root-next" => {
                 page(vec![usage("c", "compaction", 3, 20, 2)], None)
@@ -929,10 +938,10 @@ mod process {
     use super::*;
 
     #[test]
-    #[ignore = "Read-only live OpenCode scan; run explicitly after reviewing the managed CLI target"]
+    #[ignore = "Read-only live OpenCode scan; run explicitly after reviewing the selected service target"]
     fn read_only_live_scan() {
         let started = Instant::now();
-        let result = token_usage_records_via_cli().unwrap();
+        let result = token_usage_records_via_service().unwrap();
         let input: u64 = result.iter().map(|record| record.input).sum();
         let output: u64 = result.iter().map(|record| record.output).sum();
         println!(

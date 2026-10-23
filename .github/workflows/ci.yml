@@ -37,10 +37,10 @@ jobs:
         run: |
           node --input-type=module -e 'import { verifyVersions } from "./scripts/release-version.mjs"; import { appendFileSync } from "node:fs"; appendFileSync(process.env.GITHUB_OUTPUT, `version=${verifyVersions(process.cwd())}\n`);'
 
-      - name: Setup Rust 1.96.0 with rustfmt
+      - name: Setup Rust 1.96.0 with rustfmt and Clippy
         uses: dtolnay/rust-toolchain@1.96.0
         with:
-          components: rustfmt
+          components: rustfmt, clippy
 
       - name: Cache Rust build outputs
         uses: Swatinem/rust-cache@v2
@@ -58,6 +58,12 @@ jobs:
 
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Lint Rust backend
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Run Rust backend tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
 
       - name: Build Windows Tauri package
         run: npm run tauri -- build --ci --target x86_64-pc-windows-msvc --bundles nsis -- --locked
@@ -102,10 +108,10 @@ jobs:
         run: |
           node --input-type=module -e 'import { verifyVersions } from "./scripts/release-version.mjs"; import { appendFileSync } from "node:fs"; appendFileSync(process.env.GITHUB_OUTPUT, `version=${verifyVersions(process.cwd())}\n`);'
 
-      - name: Setup Rust 1.96.0 with rustfmt
+      - name: Setup Rust 1.96.0 with rustfmt and Clippy
         uses: dtolnay/rust-toolchain@1.96.0
         with:
-          components: rustfmt
+          components: rustfmt, clippy
 
       - name: Cache Rust build outputs
         uses: Swatinem/rust-cache@v2
@@ -121,13 +127,32 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Fetch macOS helper dependencies
+        run: cargo fetch --manifest-path src-tauri/native/macos-helper/Cargo.toml --locked --target aarch64-apple-darwin
+
+      - name: Check macOS helper formatting
+        run: cargo fmt --manifest-path src-tauri/native/macos-helper/Cargo.toml --all -- --check
+
+      - name: Check macOS helper
+        run: cargo check --manifest-path src-tauri/native/macos-helper/Cargo.toml --all-targets --offline --locked
+
+      - name: Test macOS helper
+        run: cargo test --manifest-path src-tauri/native/macos-helper/Cargo.toml --offline --locked
+
+      - name: Lint macOS helper
+        run: cargo clippy --manifest-path src-tauri/native/macos-helper/Cargo.toml --all-targets --offline --locked -- -D warnings
+
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
+      - name: Lint Rust backend
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Run Rust backend tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
       - name: Build macOS Tauri packages
-        run: |
-          cargo fetch --manifest-path src-tauri/native/macos-helper/Cargo.toml --locked --target aarch64-apple-darwin
-          npm run tauri -- build --ci --target aarch64-apple-darwin --bundles app,dmg -- --locked
+        run: npm run tauri -- build --ci --target aarch64-apple-darwin --bundles app,dmg -- --locked
 
       - name: Assert exact macOS app and DMG artifacts
         shell: bash
@@ -145,3 +170,36 @@ jobs:
           path: |
             src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/opencode-mom_${{ steps.version.outputs.version }}_aarch64.dmg
           if-no-files-found: error
+
+  rust-msrv:
+    name: Rust minimum supported versions
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup helper Rust 1.77.2
+        uses: dtolnay/rust-toolchain@1.77.2
+
+      - name: Setup backend Rust 1.90.0
+        uses: dtolnay/rust-toolchain@1.90.0
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+            src-tauri/native/macos-helper -> target
+
+      - name: Fetch macOS helper dependencies
+        run: cargo +1.90.0 fetch --manifest-path src-tauri/native/macos-helper/Cargo.toml --locked --target aarch64-apple-darwin
+
+      - name: Check Rust backend MSRV
+        run: cargo +1.90.0 check --manifest-path src-tauri/Cargo.toml --all-targets --locked
+
+      - name: Check macOS helper MSRV
+        run: cargo +1.77.2 check --manifest-path src-tauri/native/macos-helper/Cargo.toml --all-targets --offline --locked
+
+      - name: Test macOS helper MSRV
+        run: cargo +1.77.2 test --manifest-path src-tauri/native/macos-helper/Cargo.toml --offline --locked

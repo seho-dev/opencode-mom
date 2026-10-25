@@ -406,6 +406,8 @@ impl<C: PowerController> Engine<C> {
 
     fn tick(&mut self, now: Instant) -> bool {
         let effects = Arc::clone(&self.effects);
+        // Poison is fatal to this worker: unwind restores via Engine::drop, never
+        // resume a potentially half-applied policy by recovering either mutex.
         let guard = effects.lock().expect("power effects lock poisoned");
         if self.tick_locked(now) {
             return true;

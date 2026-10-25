@@ -141,6 +141,54 @@ fn observe(engine: &mut Engine<Mock>, result: Result<usize, AppError>, now: Inst
 }
 
 #[test]
+fn poisoned_worker_locks_unwind_to_cleanup_without_recovering_policy_state() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct StopMock(Arc<AtomicUsize>);
+    impl PowerController for StopMock {
+        fn prepare(&mut self) -> Result<(), AppError> {
+            panic!("poisoned worker must not prepare");
+        }
+        fn busy(&mut self, _: Duration) -> Result<(), AppError> {
+            panic!("poisoned worker must not protect");
+        }
+        fn idle(&mut self) -> Result<(), AppError> {
+            panic!("poisoned worker must not resume policy state");
+        }
+        fn stop(&mut self) -> Result<(), AppError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    for poison_effects in [true, false] {
+        let fixture = engine(true);
+        let shared = Arc::clone(&fixture.shared);
+        let effects = Arc::clone(&fixture.effects);
+        assert!(std::panic::catch_unwind(|| {
+            if poison_effects {
+                let _guard = effects.lock().unwrap();
+                panic!("injected effects poison");
+            } else {
+                let _guard = shared.lock().unwrap();
+                panic!("injected shared poison");
+            }
+        })
+        .is_err());
+        let stops = Arc::new(AtomicUsize::new(0));
+        let controller = StopMock(Arc::clone(&stops));
+        assert!(std::panic::catch_unwind(move || {
+            let mut worker = Engine::new(controller, shared, effects);
+            worker.tick(Instant::now());
+        })
+        .is_err());
+        assert_eq!(stops.load(Ordering::SeqCst), 1);
+        assert!(fixture.effects.is_poisoned());
+        assert_eq!(fixture.shared.is_poisoned(), !poison_effects);
+    }
+}
+
+#[test]
 fn worker_unwind_attempts_cleanup_without_panicking_or_recovering_poison() {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 

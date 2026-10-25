@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 pub const ROOT: &str = "/private/var/db/opencode-mom-lid";
@@ -68,69 +68,76 @@ pub fn parse_pmset(bytes: &[u8]) -> Result<bool> {
     flag.ok_or("Global SleepDisabled is unavailable on this Mac")
 }
 
-fn pmset(arguments: &[&str]) -> Result<Vec<u8>> {
-    let mut child = Command::new("/usr/bin/pmset")
-        .args(arguments)
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
-        .env("LANG", "C")
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| "Could not start the power policy tool")?;
-    let result = (|| {
-        let mut stdout = child.stdout.take().ok_or("Missing power tool output")?;
-        let fd = stdout.as_raw_fd();
-        // SAFETY: stdout owns the live pipe fd; F_GETFL has no pointer argument.
-        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-        // SAFETY: stdout keeps fd alive; F_SETFL takes the integer flags read above.
-        if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
-            return Err("Could not bound power tool output");
+struct ReapOnDrop(Child);
+
+impl Drop for ReapOnDrop {
+    fn drop(&mut self) {
+        if !matches!(self.0.try_wait(), Ok(Some(_))) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
         }
-        let deadline = Instant::now() + PMSET_TIMEOUT;
-        let mut output = Vec::new();
-        let mut exited = None;
-        let mut eof = false;
-        loop {
-            let mut buffer = [0; 1024];
-            match stdout.read(&mut buffer) {
-                Ok(0) => eof = true,
-                Ok(count) => {
-                    if output.len() + count > 16_384 {
-                        return Err("Power tool output exceeded its limit");
-                    }
-                    output.extend_from_slice(&buffer[..count]);
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => return Err("Could not read power tool output"),
-            }
-            if exited.is_none() {
-                exited = child
-                    .try_wait()
-                    .map_err(|_| "Could not collect power tool")?;
-            }
-            if let Some(status) = exited {
-                if !status.success() {
-                    return Err("Power policy operation failed");
-                }
-                if eof {
-                    return Ok(output);
-                }
-            }
-            if Instant::now() >= deadline {
-                return Err("Power policy operation timed out");
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    })();
-    if result.is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
     }
-    result
+}
+
+fn pmset(arguments: &[&str]) -> Result<Vec<u8>> {
+    let mut child = ReapOnDrop(
+        Command::new("/usr/bin/pmset")
+            .args(arguments)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+            .env("LANG", "C")
+            .env("LC_ALL", "C")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| "Could not start the power policy tool")?,
+    );
+    let mut stdout = child.0.stdout.take().ok_or("Missing power tool output")?;
+    let fd = stdout.as_raw_fd();
+    // SAFETY: stdout owns the live pipe fd; F_GETFL has no pointer argument.
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    // SAFETY: stdout keeps fd alive; F_SETFL takes the integer flags read above.
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return Err("Could not bound power tool output");
+    }
+    let deadline = Instant::now() + PMSET_TIMEOUT;
+    let mut output = Vec::new();
+    let mut exited = None;
+    let mut eof = false;
+    loop {
+        let mut buffer = [0; 1024];
+        match stdout.read(&mut buffer) {
+            Ok(0) => eof = true,
+            Ok(count) => {
+                if output.len() + count > 16_384 {
+                    return Err("Power tool output exceeded its limit");
+                }
+                output.extend_from_slice(&buffer[..count]);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return Err("Could not read power tool output"),
+        }
+        if exited.is_none() {
+            exited = child
+                .0
+                .try_wait()
+                .map_err(|_| "Could not collect power tool")?;
+        }
+        if let Some(status) = exited {
+            if !status.success() {
+                return Err("Power policy operation failed");
+            }
+            if eof {
+                return Ok(output);
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err("Power policy operation timed out");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 struct System;
@@ -513,6 +520,27 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn power_tool_owner_reaps_fake_child_during_unwind_without_running_pmset() {
+        let child = Command::new("/bin/sleep").arg("60").spawn().unwrap();
+        let pid = child.id() as libc::pid_t;
+        assert!(std::panic::catch_unwind(move || {
+            let _owner = ReapOnDrop(child);
+            panic!("injected power-tool unwind");
+        })
+        .is_err());
+        let mut status = 0;
+        assert_eq!(
+            // SAFETY: status is writable and pid identifies only the fake direct child.
+            unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) },
+            -1
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
+    }
 
     #[derive(Default)]
     struct MockState {

@@ -6,7 +6,7 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 #[path = "../../native/macos-helper/src/protocol.rs"]
@@ -80,6 +80,17 @@ impl Drop for StagedSource {
     }
 }
 
+struct Authorization(Child);
+
+impl Drop for Authorization {
+    fn drop(&mut self) {
+        if !matches!(self.0.try_wait(), Ok(Some(_))) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
+
 fn authorize(source: &Path, token: &[u8; 32], uid: u32, pid: u32) -> Result<(), AppError> {
     let source = source
         .to_str()
@@ -100,78 +111,75 @@ fn authorize(source: &Path, token: &[u8; 32], uid: u32, pid: u32) -> Result<(), 
         "do shell script {} with administrator privileges",
         applescript_quote(&command)
     );
-    let mut child = Command::new("/usr/bin/osascript")
-        .arg("-e")
-        .arg(script)
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
-        .env("LANG", "C")
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| error("Could not request administrator authorization"))?;
-    let result = (|| {
-        let mut stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| error("Missing authorization result"))?;
-        let fd = stdout.as_raw_fd();
-        // SAFETY: stdout owns the live pipe fd; F_GETFL has no pointer argument.
-        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-        // SAFETY: stdout keeps fd alive; F_SETFL takes the integer flags read above.
-        if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
-            return Err(error("Could not bound the authorization result"));
-        }
-        let deadline = Instant::now() + AUTH_TIMEOUT;
-        let mut output = Vec::new();
-        let mut exited = None;
-        let mut eof = false;
-        loop {
-            let mut buffer = [0; 128];
-            match stdout.read(&mut buffer) {
-                Ok(0) => eof = true,
-                Ok(count) => {
-                    if output.len() + count > 128 {
-                        return Err(error("The authorization result exceeded its limit"));
-                    }
-                    output.extend_from_slice(&buffer[..count]);
-                }
-                Err(io) if io.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(io) if io.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => return Err(error("Could not read the authorization result")),
-            }
-            if exited.is_none() {
-                exited = child
-                    .try_wait()
-                    .map_err(|_| error("Could not collect administrator authorization"))?;
-            }
-            if let Some(status) = exited {
-                if !status.success() {
-                    return Err(error(
-                        "Administrator authorization or safe helper launch failed",
-                    ));
-                }
-                if eof {
-                    return if output == b"READY\n" || output == b"READY\r\n" {
-                        Ok(())
-                    } else {
-                        Err(error("The authorized helper did not confirm readiness"))
-                    };
-                }
-            }
-            if Instant::now() >= deadline {
-                return Err(error("Administrator authorization timed out"));
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        }
-    })();
-    if result.is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
+    let mut child = Authorization(
+        Command::new("/usr/bin/osascript")
+            .arg("-e")
+            .arg(script)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+            .env("LANG", "C")
+            .env("LC_ALL", "C")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| error("Could not request administrator authorization"))?,
+    );
+    let mut stdout = child
+        .0
+        .stdout
+        .take()
+        .ok_or_else(|| error("Missing authorization result"))?;
+    let fd = stdout.as_raw_fd();
+    // SAFETY: stdout owns the live pipe fd; F_GETFL has no pointer argument.
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    // SAFETY: stdout keeps fd alive; F_SETFL takes the integer flags read above.
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return Err(error("Could not bound the authorization result"));
     }
-    result
+    let deadline = Instant::now() + AUTH_TIMEOUT;
+    let mut output = Vec::new();
+    let mut exited = None;
+    let mut eof = false;
+    loop {
+        let mut buffer = [0; 128];
+        match stdout.read(&mut buffer) {
+            Ok(0) => eof = true,
+            Ok(count) => {
+                if output.len() + count > 128 {
+                    return Err(error("The authorization result exceeded its limit"));
+                }
+                output.extend_from_slice(&buffer[..count]);
+            }
+            Err(io) if io.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(io) if io.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return Err(error("Could not read the authorization result")),
+        }
+        if exited.is_none() {
+            exited = child
+                .0
+                .try_wait()
+                .map_err(|_| error("Could not collect administrator authorization"))?;
+        }
+        if let Some(status) = exited {
+            if !status.success() {
+                return Err(error(
+                    "Administrator authorization or safe helper launch failed",
+                ));
+            }
+            if eof {
+                return if output == b"READY\n" || output == b"READY\r\n" {
+                    Ok(())
+                } else {
+                    Err(error("The authorized helper did not confirm readiness"))
+                };
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err(error("Administrator authorization timed out"));
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 fn verify_socket_path(uid: u32) -> Result<(), AppError> {
@@ -447,6 +455,27 @@ impl PowerController for NativeController {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn authorization_owner_reaps_only_a_fake_child_during_unwind() {
+        let child = Command::new("/bin/sleep").arg("60").spawn().unwrap();
+        let pid = child.id() as libc::pid_t;
+        assert!(std::panic::catch_unwind(move || {
+            let _owner = Authorization(child);
+            panic!("injected authorization unwind");
+        })
+        .is_err());
+        let mut status = 0;
+        assert_eq!(
+            // SAFETY: status is writable and this is only the fake direct-child PID.
+            unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) },
+            -1
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
+    }
 
     #[test]
     fn shell_and_applescript_quotes_cannot_end_the_literal() {

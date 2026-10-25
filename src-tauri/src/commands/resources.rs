@@ -7,50 +7,61 @@ use crate::paths::{reject_project_write, ConfigPaths};
 use crate::skills::{self, SkillDraft, SkillEntry, SkillList, SkillUpdate};
 
 #[tauri::command]
-pub fn list_mcps(
+pub async fn list_mcps(
     state: State<'_, ConfigPaths>,
     project_id: Option<Uuid>,
 ) -> Result<McpList, AppError> {
-    mcp::list(&state.inner().for_project(project_id)?)
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("MCP discovery", move || {
+        mcp::list(&paths.for_project(project_id)?)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn get_mcp(
+pub async fn get_mcp(
     state: State<'_, ConfigPaths>,
     name: String,
     project_id: Option<Uuid>,
 ) -> Result<McpServer, AppError> {
-    mcp::get(&state.inner().for_project(project_id)?, &name)
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Read MCP", move || {
+        mcp::get(&paths.for_project(project_id)?, &name)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn create_mcp(
+pub async fn create_mcp(
     state: State<'_, ConfigPaths>,
     draft: McpDraft,
     project_id: Option<Uuid>,
 ) -> Result<McpServer, AppError> {
     reject_project_write(project_id)?;
-    mcp::create(state.inner(), draft)
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Create MCP", move || mcp::create(&paths, draft)).await
 }
 
 #[tauri::command]
-pub fn update_mcp(
+pub async fn update_mcp(
     state: State<'_, ConfigPaths>,
     draft: McpUpdate,
     project_id: Option<Uuid>,
 ) -> Result<McpServer, AppError> {
     reject_project_write(project_id)?;
-    mcp::update(state.inner(), draft)
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Update MCP", move || mcp::update(&paths, draft)).await
 }
 
 #[tauri::command]
-pub fn delete_mcp(
+pub async fn delete_mcp(
     state: State<'_, ConfigPaths>,
     name: String,
     project_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     reject_project_write(project_id)?;
-    mcp::delete(state.inner(), &name)
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Delete MCP", move || mcp::delete(&paths, &name)).await
 }
 
 #[tauri::command]
@@ -58,8 +69,11 @@ pub async fn list_skills(
     state: State<'_, ConfigPaths>,
     project_id: Option<Uuid>,
 ) -> Result<SkillList, AppError> {
-    let paths = state.inner().for_project(project_id)?;
-    super::spawn_blocking_task("Skill discovery", move || skills::list(&paths)).await
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Skill discovery", move || {
+        skills::list(&paths.for_project(project_id)?)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -68,8 +82,11 @@ pub async fn get_skill(
     id: String,
     project_id: Option<Uuid>,
 ) -> Result<SkillEntry, AppError> {
-    let paths = state.inner().for_project(project_id)?;
-    super::spawn_blocking_task("Read skill", move || skills::get(&paths, &id)).await
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Read skill", move || {
+        skills::get(&paths.for_project(project_id)?, &id)
+    })
+    .await
 }
 
 #[tauri::command]

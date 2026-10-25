@@ -213,105 +213,121 @@ fn unsigned_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<u64>
 }
 
 #[tauri::command]
-pub fn list_agents(
+pub async fn list_agents(
     state: State<'_, ConfigPaths>,
     project_id: Option<Uuid>,
 ) -> CommandResult<Vec<AgentDefinitionDto>> {
-    let agents = agents::list(&state.inner().for_project(project_id)?)?;
-    Ok(agents.into_iter().map(Into::into).collect())
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Agent discovery", move || {
+        let agents = agents::list(&paths.for_project(project_id)?)?;
+        Ok(agents.into_iter().map(Into::into).collect())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn get_agent(
+pub async fn get_agent(
     state: State<'_, ConfigPaths>,
     id: String,
     project_id: Option<Uuid>,
 ) -> CommandResult<AgentDefinitionDto> {
-    agents::get(&state.inner().for_project(project_id)?, &id).map(Into::into)
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Read agent", move || {
+        agents::get(&paths.for_project(project_id)?, &id).map(Into::into)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn create_agent(
+pub async fn create_agent(
     state: State<'_, ConfigPaths>,
     agent: AgentDefinitionDto,
     project_id: Option<Uuid>,
 ) -> CommandResult<AgentDefinitionDto> {
     reject_project_write(project_id)?;
-    let paths = state.inner();
-    let storage = agent.storage.map(Into::into).ok_or_else(|| {
-        AppError::validation("agent creation requires an explicit storage target")
-    })?;
-    let mutation = agent.mutation.unwrap_or_default();
-    validate_agent_model_reference(paths, &mutation.fields)?;
-    agents::create(
-        paths,
-        AgentCreate {
-            id: agent.id,
-            storage,
-            fields: mutation.fields,
-            prompt: mutation.prompt,
-        },
-    )
-    .map(Into::into)
-}
-
-#[tauri::command]
-pub fn update_agent(
-    state: State<'_, ConfigPaths>,
-    agent: AgentDefinitionDto,
-    project_id: Option<Uuid>,
-) -> CommandResult<AgentDefinitionDto> {
-    reject_project_write(project_id)?;
-    let paths = state.inner();
-    let storage = agent
-        .storage
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Create agent", move || {
+        let storage = agent.storage.map(Into::into).ok_or_else(|| {
+            AppError::validation("agent creation requires an explicit storage target")
+        })?;
+        let mutation = agent.mutation.unwrap_or_default();
+        validate_agent_model_reference(&paths, &mutation.fields)?;
+        agents::create(
+            &paths,
+            AgentCreate {
+                id: agent.id,
+                storage,
+                fields: mutation.fields,
+                prompt: mutation.prompt,
+            },
+        )
         .map(Into::into)
-        .ok_or_else(|| AppError::validation("agent update requires an explicit storage target"))?;
-    let mutation = agent.mutation.unwrap_or_default();
-    validate_agent_model_reference(paths, &mutation.fields)?;
-    agents::update(paths, &agent.id, storage, mutation).map(Into::into)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn delete_agent(
+pub async fn update_agent(
+    state: State<'_, ConfigPaths>,
+    agent: AgentDefinitionDto,
+    project_id: Option<Uuid>,
+) -> CommandResult<AgentDefinitionDto> {
+    reject_project_write(project_id)?;
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Update agent", move || {
+        let storage = agent.storage.map(Into::into).ok_or_else(|| {
+            AppError::validation("agent update requires an explicit storage target")
+        })?;
+        let mutation = agent.mutation.unwrap_or_default();
+        validate_agent_model_reference(&paths, &mutation.fields)?;
+        agents::update(&paths, &agent.id, storage, mutation).map(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_agent(
     state: State<'_, ConfigPaths>,
     id: String,
     storage: Option<AgentStorageDto>,
     project_id: Option<Uuid>,
 ) -> CommandResult<()> {
     reject_project_write(project_id)?;
-    let paths = state.inner();
-    let storage: AgentStorage = match storage {
-        Some(storage) => storage.into(),
-        None => {
-            let current: AgentDefinition = agents::get(paths, &id)?;
-            match current.source {
-                AgentSource::Inline => AgentStorage::Inline,
-                AgentSource::Both => {
-                    return Err(AppError::validation(
-                        "agent has multiple sources; provide an explicit storage target",
-                    ));
-                }
-                AgentSource::Markdown => {
-                    let mut storages = current.markdown.iter().map(|source| source.storage);
-                    let first = storages.next().ok_or_else(|| {
-                        AppError::validation(
-                            "agent has multiple sources; provide an explicit storage target",
-                        )
-                    })?;
-                    if storages.all(|candidate| candidate == first) {
-                        first
-                    } else {
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Delete agent", move || {
+        let storage: AgentStorage = match storage {
+            Some(storage) => storage.into(),
+            None => {
+                let current: AgentDefinition = agents::get(&paths, &id)?;
+                match current.source {
+                    AgentSource::Inline => AgentStorage::Inline,
+                    AgentSource::Both => {
                         return Err(AppError::validation(
                             "agent has multiple sources; provide an explicit storage target",
                         ));
                     }
+                    AgentSource::Markdown => {
+                        let mut storages = current.markdown.iter().map(|source| source.storage);
+                        let first = storages.next().ok_or_else(|| {
+                            AppError::validation(
+                                "agent has multiple sources; provide an explicit storage target",
+                            )
+                        })?;
+                        if storages.all(|candidate| candidate == first) {
+                            first
+                        } else {
+                            return Err(AppError::validation(
+                                "agent has multiple sources; provide an explicit storage target",
+                            ));
+                        }
+                    }
                 }
             }
-        }
-    };
-    let references: AgentReferenceIndex = refs::collect_agent_references(paths)?;
-    agents::delete(paths, &id, storage, &references).map(|_| ())
+        };
+        let references: AgentReferenceIndex = refs::collect_agent_references(&paths)?;
+        agents::delete(&paths, &id, storage, &references).map(|_| ())
+    })
+    .await
 }
 
 fn validate_agent_model_reference(

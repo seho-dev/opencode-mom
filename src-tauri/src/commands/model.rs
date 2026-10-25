@@ -9,43 +9,58 @@ use crate::refs;
 type CommandResult<T> = Result<T, AppError>;
 
 #[tauri::command]
-pub fn list_models(state: State<'_, ConfigPaths>) -> CommandResult<Vec<ProviderDef>> {
-    providers::list_providers(&state.inner().opencode_file())
+pub async fn list_models(state: State<'_, ConfigPaths>) -> CommandResult<Vec<ProviderDef>> {
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Model discovery", move || {
+        providers::list_providers(&paths.opencode_file())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn create_model(
+pub async fn create_model(
     state: State<'_, ConfigPaths>,
     provider_id: String,
     model: ModelDef,
 ) -> CommandResult<ModelDef> {
-    providers::create_model(&state.inner().opencode_file(), &provider_id, model)
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Create model", move || {
+        providers::create_model(&paths.opencode_file(), &provider_id, model)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn update_model(
+pub async fn update_model(
     state: State<'_, ConfigPaths>,
     provider_id: String,
     model: ModelDef,
 ) -> CommandResult<ModelDef> {
-    let model_ref = ModelRef::new(&provider_id, &model.id)?;
-    providers::update_model(&state.inner().opencode_file(), &model_ref, model)
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Update model", move || {
+        let model_ref = ModelRef::new(&provider_id, &model.id)?;
+        providers::update_model(&paths.opencode_file(), &model_ref, model)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn delete_model(state: State<'_, ConfigPaths>, model_ref: String) -> CommandResult<()> {
-    let paths = state.inner();
-    let model_ref = ModelRef::parse(&model_ref)?;
-    let references = refs::collect_model_references(paths)?.for_model(&model_ref);
-    if !references.is_empty() {
-        return Err(AppError::references(
-            format!(
-                "{} is referenced by {} location(s)",
-                model_ref.as_str(),
-                references.len()
-            ),
-            refs::model_reference_locations(&references),
-        ));
-    }
-    providers::delete_model(&paths.opencode_file(), &model_ref)
+pub async fn delete_model(state: State<'_, ConfigPaths>, model_ref: String) -> CommandResult<()> {
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Delete model", move || {
+        let model_ref = ModelRef::parse(&model_ref)?;
+        let references = refs::collect_model_references(&paths)?.for_model(&model_ref);
+        if !references.is_empty() {
+            return Err(AppError::references(
+                format!(
+                    "{} is referenced by {} location(s)",
+                    model_ref.as_str(),
+                    references.len()
+                ),
+                refs::model_reference_locations(&references),
+            ));
+        }
+        providers::delete_model(&paths.opencode_file(), &model_ref)
+    })
+    .await
 }

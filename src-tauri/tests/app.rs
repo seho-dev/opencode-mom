@@ -1123,8 +1123,12 @@ fn agent_ipc_forwards_expected_source_and_rejects_stale_payloads() {
         write_file(&path, original.as_bytes()).unwrap();
         let app = tauri::test::mock_app();
         app.manage(home.paths.clone());
-        let loaded =
-            commands::get_agent(app.state::<ConfigPaths>(), "helper".to_owned(), None).unwrap();
+        let loaded = tauri::async_runtime::block_on(commands::get_agent(
+            app.state::<ConfigPaths>(),
+            "helper".to_owned(),
+            None,
+        ))
+        .unwrap();
         let preview = &loaded.sources[0];
         assert_eq!(preview.path.as_deref(), path.to_str());
         let resolved = fs::canonicalize(&path).unwrap();
@@ -1143,11 +1147,20 @@ fn agent_ipc_forwards_expected_source_and_rejects_stale_payloads() {
                 "expectedPath": preview.resolved_path, "expectedContent": preview.content},
         }))
         .unwrap();
-        let saved =
-            commands::update_agent(app.state::<ConfigPaths>(), draft.clone(), None).unwrap();
+        let saved = tauri::async_runtime::block_on(commands::update_agent(
+            app.state::<ConfigPaths>(),
+            draft.clone(),
+            None,
+        ))
+        .unwrap();
         assert_eq!(saved.description.as_deref(), Some("draft"));
         let before = fs::read(&path).unwrap();
-        let error = commands::update_agent(app.state::<ConfigPaths>(), draft, None).unwrap_err();
+        let error = tauri::async_runtime::block_on(commands::update_agent(
+            app.state::<ConfigPaths>(),
+            draft,
+            None,
+        ))
+        .unwrap_err();
         assert_eq!(error.code, ErrorCode::ConfigurationFailed);
         assert_eq!(fs::read(&path).unwrap(), before);
     }
@@ -1213,8 +1226,12 @@ fn agent_inline_javascript_roundtrip_preserves_numeric_snapshots_and_disk_fields
     let app = tauri::test::mock_app();
     app.manage(home.paths.clone());
     let draft = |description: &str| {
-        let loaded =
-            commands::get_agent(app.state::<ConfigPaths>(), "helper".to_owned(), None).unwrap();
+        let loaded = tauri::async_runtime::block_on(commands::get_agent(
+            app.state::<ConfigPaths>(),
+            "helper".to_owned(),
+            None,
+        ))
+        .unwrap();
         let mut node = Command::new("node")
             .args([
                 "--input-type=module",
@@ -1251,7 +1268,12 @@ process.stdout.write(JSON.stringify({id:agent.id,source:agent.source,storage:'in
         serde_json::from_slice::<AgentDefinitionDto>(&output.stdout).unwrap()
     };
 
-    let saved = commands::update_agent(app.state::<ConfigPaths>(), draft("draft"), None).unwrap();
+    let saved = tauri::async_runtime::block_on(commands::update_agent(
+        app.state::<ConfigPaths>(),
+        draft("draft"),
+        None,
+    ))
+    .unwrap();
     assert_eq!(saved.description.as_deref(), Some("draft"));
     let saved_content = fs::read_to_string(&path).unwrap();
     assert!(saved_content.contains("\"temperature\":1.0"));
@@ -1267,7 +1289,12 @@ process.stdout.write(JSON.stringify({id:agent.id,source:agent.source,storage:'in
         fs::write(&path, &saved_content).unwrap();
         let stale = draft("stale draft");
         fs::write(&path, &external).unwrap();
-        let error = commands::update_agent(app.state::<ConfigPaths>(), stale, None).unwrap_err();
+        let error = tauri::async_runtime::block_on(commands::update_agent(
+            app.state::<ConfigPaths>(),
+            stale,
+            None,
+        ))
+        .unwrap_err();
         assert_eq!(error.code, ErrorCode::ConfigurationFailed);
         assert_eq!(fs::read_to_string(&path).unwrap(), external);
         assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
@@ -1280,7 +1307,12 @@ process.stdout.write(JSON.stringify({id:agent.id,source:agent.source,storage:'in
         saved_content.replace("\"other\":\"keep\"", "\"other\":\"external\""),
     )
     .unwrap();
-    let saved = commands::update_agent(app.state::<ConfigPaths>(), unrelated, None).unwrap();
+    let saved = tauri::async_runtime::block_on(commands::update_agent(
+        app.state::<ConfigPaths>(),
+        unrelated,
+        None,
+    ))
+    .unwrap();
     assert_eq!(saved.description.as_deref(), Some("second draft"));
     let content = fs::read_to_string(&path).unwrap();
     assert!(content.contains("\"other\":\"external\""));

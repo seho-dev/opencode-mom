@@ -7,23 +7,28 @@ use crate::opencode::island::IslandMessage;
 use crate::paths::ConfigPaths;
 
 #[tauri::command]
-pub(crate) fn get_island_state(service: State<'_, IslandService>) -> Result<IslandState, AppError> {
-    Ok(service.state())
+pub(crate) async fn get_island_state(app: AppHandle) -> Result<IslandState, AppError> {
+    super::spawn_blocking_task("Read Mini Island state", move || {
+        Ok(app.state::<IslandService>().state())
+    })
+    .await
 }
 
 #[tauri::command]
-pub(crate) fn set_island_enabled(
+pub(crate) async fn set_island_enabled(
     app: AppHandle,
     paths: State<'_, ConfigPaths>,
     enabled: bool,
 ) -> Result<IslandState, AppError> {
     let paths = paths.inner().clone();
-    crate::island::on_main(&app, move |app| {
-        use tauri::Manager;
-        let service = app.state::<IslandService>();
-        service.set_enabled(app, &paths, enabled)?;
-        Ok(service.state())
+    super::spawn_blocking_task("Set Mini Island enabled", move || {
+        crate::island::on_main(&app, move |app| {
+            let service = app.state::<IslandService>();
+            service.set_enabled(app, &paths, enabled)?;
+            Ok(service.state())
+        })
     })
+    .await
 }
 
 #[tauri::command]
@@ -37,10 +42,13 @@ pub(crate) async fn refresh_island(
 
 #[tauri::command]
 pub(crate) async fn set_island_view(app: AppHandle, view: IslandView) -> Result<(), AppError> {
-    let generation = app.state::<IslandService>().enabled_generation()?;
-    let receiver = crate::island::on_main(&app, move |app| {
-        app.state::<IslandService>().set_view(app, view, generation)
-    })?;
+    let receiver = super::spawn_blocking_task("Set Mini Island view", move || {
+        let generation = app.state::<IslandService>().enabled_generation()?;
+        crate::island::on_main(&app, move |app| {
+            app.state::<IslandService>().set_view(app, view, generation)
+        })
+    })
+    .await?;
     receiver
         .await
         .map_err(|_| AppError::configuration("Mini Island native transition closed"))?

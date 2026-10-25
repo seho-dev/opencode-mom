@@ -45,6 +45,10 @@ impl Drop for Home {
     }
 }
 
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    tauri::async_runtime::block_on(future)
+}
+
 #[test]
 fn global_paths_include_aliases_in_override_order_and_skip_relative_skills() {
     let home = Home::new();
@@ -335,26 +339,32 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
     for id in [project.id, uuid::Uuid::new_v4()] {
         let state = || app.state::<ConfigPaths>();
         let errors = [
-            commands::create_agent(state(), agent.clone(), Some(id)).unwrap_err(),
-            commands::update_agent(state(), agent.clone(), Some(id)).unwrap_err(),
-            commands::delete_agent(state(), "helper".to_owned(), None, Some(id)).unwrap_err(),
-            commands::create_mcp(
+            block_on(commands::create_agent(state(), agent.clone(), Some(id))).unwrap_err(),
+            block_on(commands::update_agent(state(), agent.clone(), Some(id))).unwrap_err(),
+            block_on(commands::delete_agent(
+                state(),
+                "helper".to_owned(),
+                None,
+                Some(id),
+            ))
+            .unwrap_err(),
+            block_on(commands::create_mcp(
                 state(),
                 mcp_draft("new", json!({"type":"local","command":["run"]})),
                 Some(id),
-            )
+            ))
             .unwrap_err(),
-            commands::update_mcp(
+            block_on(commands::update_mcp(
                 state(),
                 mcp_update(
                     &mcp::get(&paths, "server").unwrap(),
                     json!({"type":"local","command":["changed"]}),
                 ),
                 Some(id),
-            )
+            ))
             .unwrap_err(),
-            commands::delete_mcp(state(), "server".to_owned(), Some(id)).unwrap_err(),
-            tauri::async_runtime::block_on(commands::create_skill(
+            block_on(commands::delete_mcp(state(), "server".to_owned(), Some(id))).unwrap_err(),
+            block_on(commands::create_skill(
                 state(),
                 skills::SkillDraft {
                     id: "new".to_owned(),
@@ -363,7 +373,7 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
                 Some(id),
             ))
             .unwrap_err(),
-            tauri::async_runtime::block_on(commands::update_skill(
+            block_on(commands::update_skill(
                 state(),
                 skills::SkillUpdate {
                     id: "new".to_owned(),
@@ -408,55 +418,81 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
     assert_eq!(fs::read_to_string(project_file).unwrap(), "{}");
     assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
     assert!(!paths.native_global_skills_dir().exists());
-    let response = commands::load_app_state(app.state()).unwrap();
+    let response = block_on(commands::load_app_state(app.state())).unwrap();
     assert_eq!(response.projects.as_slice(), std::slice::from_ref(&project));
     assert_eq!(response.selected_project_id, Some(project.id));
     assert_eq!(response.agents.len(), 1);
-    assert_eq!(commands::list_agents(app.state(), None).unwrap().len(), 1);
-    assert!(commands::list_agents(app.state(), Some(project.id))
-        .unwrap()
-        .is_empty());
-    assert!(commands::get_agent(app.state(), "helper".to_owned(), Some(project.id)).is_err());
-    assert!(commands::get_mcp(app.state(), "server".to_owned(), Some(project.id)).is_err());
-    assert!(tauri::async_runtime::block_on(commands::get_skill(
+    assert_eq!(
+        block_on(commands::list_agents(app.state(), None))
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        block_on(commands::list_agents(app.state(), Some(project.id)))
+            .unwrap()
+            .is_empty()
+    );
+    assert!(block_on(commands::get_agent(
+        app.state(),
+        "helper".to_owned(),
+        Some(project.id)
+    ))
+    .is_err());
+    assert!(block_on(commands::get_mcp(
+        app.state(),
+        "server".to_owned(),
+        Some(project.id)
+    ))
+    .is_err());
+    assert!(block_on(commands::get_skill(
         app.state(),
         "Global".to_owned(),
         Some(project.id)
     ))
     .is_err());
-    assert!(commands::list_mcps(app.state(), Some(project.id))
+    assert!(block_on(commands::list_mcps(app.state(), Some(project.id)))
         .unwrap()
         .data
         .is_empty());
     assert!(
-        tauri::async_runtime::block_on(commands::list_skills(app.state(), Some(project.id)))
+        block_on(commands::list_skills(app.state(), Some(project.id)))
             .unwrap()
             .data
             .is_empty()
     );
-    commands::select_project(app.state(), None).unwrap();
+    block_on(commands::select_project(app.state(), None)).unwrap();
     assert_eq!(
-        commands::load_app_state(app.state())
+        block_on(commands::load_app_state(app.state()))
             .unwrap()
             .selected_project_id,
         None
     );
     fs::remove_dir_all(&root).unwrap();
-    commands::select_project(app.state(), Some(project.id)).unwrap();
+    block_on(commands::select_project(app.state(), Some(project.id))).unwrap();
     assert_eq!(
-        commands::load_app_state(app.state())
+        block_on(commands::load_app_state(app.state()))
             .unwrap()
             .selected_project_id,
         Some(project.id)
     );
     for error in [
-        commands::list_agents(app.state(), Some(project.id)).unwrap_err(),
-        commands::get_agent(app.state(), "helper".to_owned(), Some(project.id)).unwrap_err(),
-        commands::list_mcps(app.state(), Some(project.id)).unwrap_err(),
-        commands::get_mcp(app.state(), "server".to_owned(), Some(project.id)).unwrap_err(),
-        tauri::async_runtime::block_on(commands::list_skills(app.state(), Some(project.id)))
-            .unwrap_err(),
-        tauri::async_runtime::block_on(commands::get_skill(
+        block_on(commands::list_agents(app.state(), Some(project.id))).unwrap_err(),
+        block_on(commands::get_agent(
+            app.state(),
+            "helper".to_owned(),
+            Some(project.id),
+        ))
+        .unwrap_err(),
+        block_on(commands::list_mcps(app.state(), Some(project.id))).unwrap_err(),
+        block_on(commands::get_mcp(
+            app.state(),
+            "server".to_owned(),
+            Some(project.id),
+        ))
+        .unwrap_err(),
+        block_on(commands::list_skills(app.state(), Some(project.id))).unwrap_err(),
+        block_on(commands::get_skill(
             app.state(),
             "Global".to_owned(),
             Some(project.id),
@@ -465,8 +501,8 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
     ] {
         assert_eq!(error.code, ErrorCode::NotFound);
     }
-    commands::remove_project(app.state(), project.id).unwrap();
-    assert!(commands::load_app_state(app.state())
+    block_on(commands::remove_project(app.state(), project.id)).unwrap();
+    assert!(block_on(commands::load_app_state(app.state()))
         .unwrap()
         .projects
         .is_empty());
@@ -474,7 +510,7 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
     config.state.selected_project_id = Some(uuid::Uuid::new_v4());
     models::save_config(&paths.config_file(), &config).unwrap();
     assert_eq!(
-        commands::load_app_state(app.state())
+        block_on(commands::load_app_state(app.state()))
             .unwrap()
             .selected_project_id,
         None
@@ -495,25 +531,28 @@ fn explicit_global_resource_ipc_remains_writable_while_a_project_is_selected() {
     let app = tauri::test::mock_app();
     app.manage(paths.clone());
     let state = || app.state::<ConfigPaths>();
-    let server = commands::create_mcp(
+    let server = block_on(commands::create_mcp(
         state(),
         mcp_draft("global", json!({"type":"local","command":["created"]})),
         None,
-    )
+    ))
     .unwrap();
-    let updated = commands::update_mcp(
+    let updated = block_on(commands::update_mcp(
         state(),
         mcp_update(&server, json!({"type":"local","command":["updated"]})),
         None,
-    )
+    ))
     .unwrap();
     assert_eq!(
-        commands::get_mcp(state(), "global".to_owned(), None).unwrap(),
+        block_on(commands::get_mcp(state(), "global".to_owned(), None)).unwrap(),
         updated
     );
-    commands::delete_mcp(state(), "global".to_owned(), None).unwrap();
-    assert!(commands::list_mcps(state(), None).unwrap().data.is_empty());
-    let skill = tauri::async_runtime::block_on(commands::create_skill(
+    block_on(commands::delete_mcp(state(), "global".to_owned(), None)).unwrap();
+    assert!(block_on(commands::list_mcps(state(), None))
+        .unwrap()
+        .data
+        .is_empty());
+    let skill = block_on(commands::create_skill(
         state(),
         skills::SkillDraft {
             id: "Global".to_owned(),
@@ -522,7 +561,7 @@ fn explicit_global_resource_ipc_remains_writable_while_a_project_is_selected() {
         None,
     ))
     .unwrap();
-    let updated = tauri::async_runtime::block_on(commands::update_skill(
+    let updated = block_on(commands::update_skill(
         state(),
         skill_update(&skill, "updated"),
         None,
@@ -530,33 +569,30 @@ fn explicit_global_resource_ipc_remains_writable_while_a_project_is_selected() {
     .unwrap();
     assert_eq!(updated.content, "updated");
     assert_eq!(
-        tauri::async_runtime::block_on(commands::get_skill(state(), "Global".to_owned(), None,))
-            .unwrap(),
+        block_on(commands::get_skill(state(), "Global".to_owned(), None,)).unwrap(),
         updated
     );
-    assert!(commands::list_mcps(state(), Some(project.id))
+    assert!(block_on(commands::list_mcps(state(), Some(project.id)))
         .unwrap()
         .data
         .is_empty());
-    assert!(
-        tauri::async_runtime::block_on(commands::list_skills(state(), Some(project.id)))
-            .unwrap()
-            .data
-            .is_empty()
-    );
+    assert!(block_on(commands::list_skills(state(), Some(project.id)))
+        .unwrap()
+        .data
+        .is_empty());
     assert_eq!(
         fs::read_to_string(&project_file).unwrap(),
         "{\"project\":true}"
     );
     fs::remove_dir_all(&root).unwrap();
-    commands::create_mcp(
+    block_on(commands::create_mcp(
         state(),
         mcp_draft(
             "missing-project-global",
             json!({"type":"local","command":["run"]}),
         ),
         None,
-    )
+    ))
     .unwrap();
     assert_eq!(fs::read(paths.config_file()).unwrap(), config_before);
     assert_eq!(

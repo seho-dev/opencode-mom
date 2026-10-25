@@ -1,5 +1,7 @@
 # Configuration Boundary and State
 
+`getMomHttpSettings` / `setMomHttpSettings` are lazy, untracked pass-throughs for application-wide `{ port, allowLan }`. MCP proxy settings exclude these fields and retain their own revision guard; neither HTTP nor proxy saves refresh global config or retain failed drafts.
+
 ## Overview
 
 This directory connects typed command calls to shared application state and Svelte context. The adapter translates backend payloads; the store coordinates initialization, mutations, refreshes, preferences, and failed-draft recovery. Resource, app metadata, and manual-update facades remain lazy rather than becoming part of the global configuration snapshot.
@@ -16,6 +18,7 @@ src/config/                         # Command translation and shared state
     ├── config-refresh.test.mjs     # Initialization, reload, races, selection, and drafts
     ├── projects.test.mjs           # Explicit resource scope, project persistence, and snapshot freshness
     ├── resources-bridge.test.mjs   # Lazy facades, secret drafts, pending-save guards and newest-target freshness
+    ├── mcp-proxy-adapter.test.mjs  # Proxy/listener IPC payloads and lazy, secret-free store facades
     └── island.test.mjs             # Island IPC arguments and no-preload store behavior
 ```
 
@@ -38,14 +41,15 @@ src/config/                         # Command translation and shared state
 - **Agent snapshots**: Store/adapter forward `mutation.expectedPath`/`expectedContent` unchanged from the form's frozen backend preview (`sources[].resolvedPath`/`content`). Never rebuild the content token from JavaScript raw JSON; update requires both fields, create is unchanged.
 - **Request ownership**: Preserve separate state/catalog sequence counters; only the newest response updates values or errors. State loading uses an outstanding-request count; catalog loading belongs to its latest request.
 - **Refresh failures**: Automatic refresh tolerates catalog failure after a successful mutation. `refreshAll` rejects catalog failure through `refreshAllError`; failed catalog loads retain the previous catalog.
-- **Reload lifecycle**: `reloadOpencode` invokes the CLI before refreshing, prevents overlapping reloads, and holds the splash until completion. Initialization also waits for its catalog attempt.
+- **Reload lifecycle**: `reloadOpencode` invokes the selected service configuration reload before refreshing, prevents overlapping reloads, and holds the splash until completion. Initialization also waits for its catalog attempt.
 - **Draft recovery**: Snapshot non-secret failed payloads with `structuredClone`; `reloadKeepingDraft` preserves recovery and form versions, while discard refresh clears recovery and increments `formResetVersion`.
 - **Secret drafts**: MCP/skill create/update failures retain no payload or error detail and use a generic message; leave sensitive content in its original form.
 - **Selection**: Apply `selectedGroupId` from app state, defaulting missing values to `null`; do not infer selection from `Group.isEnabled` or update it before refreshed state arrives.
-- **Project browsing**: `projects` defaults to `[]`; `selectedProjectId` defaults to `null` and stale IDs normalize to Global. Picker calls are lazy pass-through; add/remove/select use independent `projectSaving` guarding and commit state only after persistence succeeds, without CLI/catalog refresh or draft recovery. Project versions protect local commits from older global snapshot reads.
+- **Project browsing**: `projects` defaults to `[]`; `selectedProjectId` defaults to `null` and stale IDs normalize to Global. Picker calls are lazy pass-through; add/remove/select use independent `projectSaving` guarding and commit state only after persistence succeeds, without service reload/catalog refresh or draft recovery. Project versions protect local commits from older global snapshot reads.
 - **Resource scope**: Agent/MCP/skill facades take an optional explicit project ID; absent/null means Global and leaves existing IPC payloads unchanged. Never infer scope from shared selection or replace global `agents` with project reads. Resource writes may forward an explicit project ID for backend rejection; global writes retain their existing lifecycle.
 - **Preferences**: Apply theme/locale optimistically to state and the document; restore both when preference persistence fails.
 - **Regression harness**: Tests use `node:test`, injected adapters, and Vite `ssrLoadModule`; close each Vite server in `finally`. Pass `false` to `createConfigStore` when catalog work is intentionally excluded.
+- **MCP Proxy facade**: MCP Proxy commands (`getMcpProxyState`, `getMcpProxySettings`, `saveMcpProxySettings`, `rotateMcpProxyKey`, `getMcpProxyServer`, `createMcpProxyServer`, `updateMcpProxyServer`, `deleteMcpProxyServer`, `importMcpProxyServer`, `closeMcpProxyUnit`) and MOM HTTP listener commands (`getMomHttpSettings`, `setMomHttpSettings`) stay lazy pass-throughs to the adapter. They never use `run()`, never join `AppState`, global `draftRecovery`, or localStorage, and do not trigger catalog or configuration refreshes. Listener writes carry only `{ settings: { port, allowLan } }`; proxy writes carry only enabled, idleTimeout, maxUnits, revision, and expectedRevision.
 - **Island facade**: Island commands remain lazy and do not use global config mutations; pass `initialize = false` to avoid startup app/catalog reads, and apply island-provided preferences without persistence. `setIslandView` forwards the shared `IslandView` (`compact`/`peek`/`expanded`) to `set_island_view` with `{ view }`. Permission decisions use the shared `once`/`always`/`reject` type; Always is explicit user consent, with pending identity/save-rule validation owned by the backend and no custom rule payload or MOM persistence. Propagate ambiguous/409 failures unchanged; never retry writes or convert conflicts to success.
 - **Island generation guard**: Messages/send/permission reply/question reply/cancel/interruption require the caller's displayed generation as their final numeric argument; adapter IPC forwards exact `expectedConnectionGeneration`, without defaults or current-state autofill. Backend rejects stale epochs before reading/mutating the selected target; propagate conflict unchanged and never retry against a new generation. Cache snapshot, refresh and view calls remain unchanged.
 - **Lid target readback**: A successful target version change immediately masks previous protection/counts and clears target-local errors while preserving the confirmed enabled preference; only current-version native readback can restore a protected claim.

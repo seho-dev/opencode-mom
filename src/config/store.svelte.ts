@@ -22,6 +22,14 @@ import type {
   IslandView,
 } from '$src/types/island.js';
 import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
+import type {
+  CloseMcpProxyUnitRequest,
+  ImportMcpProxyServerRequest,
+  McpProxyServerDto,
+  McpProxySettingsDto,
+  McpProxyStateDto,
+  MomHttpSettings,
+} from '$src/types/mcp-proxy.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
 import type { LidState } from '$src/types/power.js';
 import type { ProviderDef } from '$src/types/providers.js';
@@ -86,7 +94,7 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
   let notice = $state<string | null>(null);
   let draftRecovery = $state<DraftRecovery | null>(null);
   let formResetVersion = $state(0);
-  // New: opencode CLI model catalog (builtin + custom), fetched via wrapper
+  // OpenCode service model catalog, fetched through the command adapter.
   let catalog = $state<ModelCatalogEntry[]>([]);
   let catalogLoading = $state(false);
   let catalogError = $state<CommandError | null>(null);
@@ -545,6 +553,42 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     },
     islandInterrupt(sessionId: string, expectedConnectionGeneration: number): Promise<void> {
       return adapter.islandInterrupt(sessionId, expectedConnectionGeneration);
+    },
+    getMcpProxyState(): Promise<McpProxyStateDto> {
+      return adapter.getMcpProxyState();
+    },
+    getMomHttpSettings(): Promise<MomHttpSettings> {
+      return adapter.getMomHttpSettings();
+    },
+    setMomHttpSettings(settings: MomHttpSettings): Promise<void> {
+      return adapter.setMomHttpSettings(settings);
+    },
+    getMcpProxySettings(): Promise<McpProxySettingsDto> {
+      return adapter.getMcpProxySettings();
+    },
+    saveMcpProxySettings(settings: McpProxySettingsDto, expectedRevision: number): Promise<void> {
+      return adapter.saveMcpProxySettings(settings, expectedRevision);
+    },
+    rotateMcpProxyKey(): Promise<string> {
+      return adapter.rotateMcpProxyKey();
+    },
+    getMcpProxyServer(id: string): Promise<McpProxyServerDto> {
+      return adapter.getMcpProxyServer(id);
+    },
+    createMcpProxyServer(server: McpProxyServerDto, expectedRevision: number): Promise<McpProxyServerDto> {
+      return adapter.createMcpProxyServer(server, expectedRevision);
+    },
+    updateMcpProxyServer(server: McpProxyServerDto, expectedRevision: number): Promise<McpProxyServerDto> {
+      return adapter.updateMcpProxyServer(server, expectedRevision);
+    },
+    deleteMcpProxyServer(id: string, expectedRevision: number): Promise<void> {
+      return adapter.deleteMcpProxyServer(id, expectedRevision);
+    },
+    importMcpProxyServer(request: ImportMcpProxyServerRequest): Promise<McpProxyServerDto> {
+      return adapter.importMcpProxyServer(request);
+    },
+    closeMcpProxyUnit(request: CloseMcpProxyUnitRequest): Promise<void> {
+      return adapter.closeMcpProxyUnit(request);
     },
     async saveGroup(value: Group) {
       await run('saveGroup', value, () => adapter.saveGroup(value));

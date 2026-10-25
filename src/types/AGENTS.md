@@ -1,5 +1,7 @@
 # Domain and Command Types
 
+`mcp-proxy.ts` also exports `MomHttpSettings` (`port`, `allowLan`) for the shared application HTTP listener. These fields are absent from `McpProxySettingsDto`; `McpProxyStateDto` retains read-only HTTP network metadata alongside proxy state.
+
 ## Overview
 
 This directory defines frontend domain records, command DTOs, and small UI result unions, with one file per domain area. It describes data exchanged by configuration actions and consumed by pages without implementing persistence, validation, or state management.
@@ -12,6 +14,7 @@ src/types/            # Domain contracts without runtime implementations
 ├── app.ts            # App snapshot, projects, preferences, app/CLI/target metadata, updates, command errors
 ├── groups.ts         # Group records, agent bindings, and category mappings
 ├── mcp.ts            # MCP entries, lists, drafts, and guarded updates
+├── mcp-proxy.ts      # MCP Proxy state, settings, server DTOs, and lifecycle requests
 ├── models.ts         # Model references, definitions, variants, and catalog entries
 ├── power.ts          # Lid-protection state and phases
 ├── providers.ts      # Provider settings and model dictionaries
@@ -32,6 +35,7 @@ src/types/            # Domain contracts without runtime implementations
 | Model contract | `models.ts` | `ModelRef`, `ModelDef`, and `ModelCatalogEntry`; catalog limits and variants have distinct optional/nullable shapes. |
 | Agent contract | `agents.ts` | `AgentDefinition`, typed optional `AgentSourcePreview[]` and `AgentFieldOverride[]`, permissive source records, permission rules, and `AgentWrite` mutation metadata. |
 | Resource writes | `mcp.ts`, `skills.ts` | Separate saved entries, creation drafts, and updates carrying expected source/content snapshots. |
+| MCP Proxy contract | `mcp-proxy.ts` | Gateway state, proxy-only settings, MOM HTTP listener settings, proxy server DTOs, import request, and unit close request. |
 
 ## Conventions
 
@@ -44,6 +48,8 @@ src/types/            # Domain contracts without runtime implementations
 - **Manual updates**: `AppInfo.platform` is `macos`/`windows`/`linux`/`other`; `UpdateCheck.latestVersion` is required but nullable when no stable release exists. `ProjectPage` limits browser destinations to `repository`/`releases`; metadata/check results are not part of `AppState`.
 - **CLI updates**: Keep installation method and upgrade-reason unions wire-compatible. `OpenCodeInstallation.binaryPath`, `version`, `upgradeReason`, and `manualCommand` are required nullable fields; `OpenCodeUpdateCheck.latestVersion` is non-null. Backend values are authoritative; do not infer version ordering or upgrade capability in the frontend.
 - **Service target**: Target mode is `shared`/`explicit`, url is required nullable, and `hasPassword` is the only credential metadata. Status connected/url/pid/version/error remain separate from target and local CLI metadata; nullable identity/error fields are required. Never add passwords to returned DTOs or AppState. Preserve `busy`/`conflict` command error codes for guarded operations.
+- **MCP Proxy state**: `actual`/`desired` and `desiredState` are booleans; `actualState` is `running`/`stopped`. Keep `boundAddr` required nullable and expose separate numeric `activeUnits` and `activeSessions` counters.
+- **MOM HTTP settings**: `MomHttpSettings` contains port and allowLan only; `McpProxySettingsDto` contains enabled, idleTimeout, maxUnits, and revision. Keep listener settings separate from revision-guarded proxy writes.
 - **Guarded updates**: Keep `expectedConfig`/`expectedSourcePath` on `McpUpdate` and `expectedContent`/`expectedPath` on `SkillUpdate`. Agent `mutation.expectedPath`/`expectedContent` echo the frozen preview's `resolvedPath`/`content`; backend updates reject missing snapshots with `validation_failed`. Agent create payloads remain unchanged and need no expected fields.
 - **Open-ended data**: Retain `Record<string, unknown>` for raw/config/settings objects, `unknown` for variant bodies and error detail, and open strings for agent modes and permission effects.
 - **Permission results**: Preserve the `ok` discriminator in `PermissionParse` and `mode` discriminator in `PermissionView`; only successful/rules branches carry rules.

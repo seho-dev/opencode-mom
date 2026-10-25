@@ -20,6 +20,14 @@ import type {
   IslandView,
 } from '$src/types/island.js';
 import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
+import type {
+  CloseMcpProxyUnitRequest,
+  ImportMcpProxyServerRequest,
+  McpProxyServerDto,
+  McpProxySettingsDto,
+  McpProxyStateDto,
+  MomHttpSettings,
+} from '$src/types/mcp-proxy.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
 import type { LidState } from '$src/types/power.js';
 import type { ProviderDef } from '$src/types/providers.js';
@@ -113,6 +121,18 @@ export interface CommandAdapter {
   ): Result<void>;
   islandCancelQuestion(sessionId: string, formId: string, expectedConnectionGeneration: number): Result<void>;
   islandInterrupt(sessionId: string, expectedConnectionGeneration: number): Result<void>;
+  getMcpProxyState(): Result<McpProxyStateDto>;
+  getMomHttpSettings(): Result<MomHttpSettings>;
+  setMomHttpSettings(settings: MomHttpSettings): Result<void>;
+  getMcpProxySettings(): Result<McpProxySettingsDto>;
+  saveMcpProxySettings(settings: McpProxySettingsDto, expectedRevision: number): Result<void>;
+  rotateMcpProxyKey(): Result<string>;
+  getMcpProxyServer(id: string): Result<McpProxyServerDto>;
+  createMcpProxyServer(server: McpProxyServerDto, expectedRevision: number): Result<McpProxyServerDto>;
+  updateMcpProxyServer(server: McpProxyServerDto, expectedRevision: number): Result<McpProxyServerDto>;
+  deleteMcpProxyServer(id: string, expectedRevision: number): Result<void>;
+  importMcpProxyServer(request: ImportMcpProxyServerRequest): Result<McpProxyServerDto>;
+  closeMcpProxyUnit(request: CloseMcpProxyUnitRequest): Result<void>;
   saveGroup(value: Group): Result<Group>;
   copyGroup(id: string, name: string): Result<Group>;
   deleteGroup(id: string): Result<void>;
@@ -191,6 +211,19 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
       invoke('island_cancel_question', { sessionId, formId, expectedConnectionGeneration }),
     islandInterrupt: (sessionId, expectedConnectionGeneration) =>
       invoke('island_interrupt', { sessionId, expectedConnectionGeneration }),
+    getMcpProxyState: () => invoke('get_mcp_proxy_state'),
+    getMomHttpSettings: () => invoke('get_mom_http_settings'),
+    setMomHttpSettings: (settings) => invoke('set_mom_http_settings', { settings }),
+    getMcpProxySettings: () => invoke('get_mcp_proxy_settings'),
+    saveMcpProxySettings: (settings, expectedRevision) =>
+      invoke('save_mcp_proxy_settings', { settings, expectedRevision }),
+    rotateMcpProxyKey: () => invoke('rotate_mcp_proxy_key'),
+    getMcpProxyServer: (id) => invoke('get_mcp_proxy_server', { id }),
+    createMcpProxyServer: (server, expectedRevision) => invoke('create_mcp_proxy_server', { server, expectedRevision }),
+    updateMcpProxyServer: (server, expectedRevision) => invoke('update_mcp_proxy_server', { server, expectedRevision }),
+    deleteMcpProxyServer: (id, expectedRevision) => invoke('delete_mcp_proxy_server', { id, expectedRevision }),
+    importMcpProxyServer: (request) => invoke('import_mcp_proxy_server', { request }),
+    closeMcpProxyUnit: (request) => invoke('close_mcp_proxy_unit', { request }),
     saveGroup: async (value) => readGroup(await invoke<Group>('save_group', { group: writeGroup(value) })),
     copyGroup: async (id, name) => readGroup(await invoke<Group>('copy_group', { id, name })),
     deleteGroup: (id) => invoke('delete_group', { id }),

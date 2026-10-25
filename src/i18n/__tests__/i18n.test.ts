@@ -16,8 +16,9 @@ test('interpolates translations, follows locale changes, and falls back for miss
   expect(i18n.t('missing.key' as MessageKey)).toBe('missing.key');
 });
 
-test('tray dictionaries cover matching keys and interpolation parameters in both locales', () => {
-  const keys = Object.keys(en).filter((key) => key.startsWith('tray.')) as MessageKey[];
+test('dictionaries cover matching keys and interpolation parameters in both locales', () => {
+  const keys = Object.keys(en) as MessageKey[];
+  expect(Object.keys(zh).sort()).toEqual([...keys].sort());
   expect(keys.length).toBeGreaterThan(0);
   for (const key of keys) {
     expect(zh[key]).toBeTruthy();

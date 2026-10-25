@@ -134,7 +134,7 @@ test('startup, save, and full refresh use the correct splash and reload paths', 
   }
 });
 
-test('OpenCode reload invokes CLI before full refresh and skips refresh on failure', async () => {
+test('OpenCode reload invokes the selected service before full refresh and skips refresh on failure', async () => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   try {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
@@ -180,8 +180,8 @@ test('OpenCode reload invokes CLI before full refresh and skips refresh on failu
     reload = deferred();
     const failure = store.reloadOpencode();
     assert.equal(store.splashLoading, true);
-    reload.reject({ code: 'configuration_failed', message: 'CLI reload failed' });
-    await assert.rejects(failure, { code: 'configuration_failed', message: 'CLI reload failed' });
+    reload.reject({ code: 'configuration_failed', message: 'OpenCode reload failed' });
+    await assert.rejects(failure, { code: 'configuration_failed', message: 'OpenCode reload failed' });
     assert.deepEqual(commands, [
       'opencode_list_models',
       'load_app_state',
@@ -190,7 +190,7 @@ test('OpenCode reload invokes CLI before full refresh and skips refresh on failu
       'load_app_state',
       'opencode_reload',
     ]);
-    assert.equal(store.refreshAllError?.message, 'CLI reload failed');
+    assert.equal(store.refreshAllError?.message, 'OpenCode reload failed');
     assert.equal(store.splashLoading, false);
     assert.equal(store.reloading, false);
 
@@ -492,7 +492,7 @@ test('latest catalog request owns catalog, loading, and errors despite stale com
   }
 });
 
-test('tray configuration skips CLI catalog work and latest state read wins over a hidden startup response', async () => {
+test('tray configuration skips service catalog work and latest state read wins over a hidden startup response', async () => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   try {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');

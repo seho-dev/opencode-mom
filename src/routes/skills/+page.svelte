@@ -123,11 +123,21 @@ function href(id: string, scope: string | null) {
 <svelte:head><title>{i18n.t('skills.metaTitle')}</title></svelte:head>
 <PageHead eyebrow={i18n.t('skills.eyebrow')} title={i18n.t('skills.title')}>
   <div class="flex flex-wrap justify-end gap-2">
-    <Button variant="outline" disabled={loading || globalLoading || config.saving} onclick={refresh}
-      ><RefreshCw size={14} />{i18n.t('configuration.refresh')}</Button
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={loading || globalLoading || config.saving}
+      aria-busy={loading || globalLoading}
+      onclick={refresh}
     >
+      <RefreshCw
+        size={14}
+        class={loading || globalLoading ? 'animate-spin motion-reduce:animate-none' : ''}
+        aria-hidden="true"
+      /> {i18n.t('configuration.refresh')}
+    </Button>
     {#if projectId === null}
-      <Button href="/skills/new"><Plus size={14} />{i18n.t('skills.newTitle')}</Button>
+      <Button size="sm" href="/skills/new"><Plus size={14} />{i18n.t('skills.newTitle')}</Button>
     {/if}
   </div>
 </PageHead>

@@ -173,14 +173,19 @@ async function remove() {
     <div class="flex flex-wrap justify-end gap-2">
       <Button
         variant="outline"
+        size="sm"
         disabled={config.loading || config.saving || refreshing || projectLoading || comparisonLoading}
         aria-busy={refreshing || projectLoading || comparisonLoading}
         onclick={refresh}
       >
-        <RefreshCw size={14} aria-hidden="true" /> {i18n.t('configuration.refresh')}
+        <RefreshCw
+          size={14}
+          class={refreshing || projectLoading || comparisonLoading ? 'animate-spin motion-reduce:animate-none' : ''}
+          aria-hidden="true"
+        /> {i18n.t('configuration.refresh')}
       </Button>
       {#if activeTab === 'custom' && projectId === null}
-        <Button href="/agents/new"><Plus size={14} /> {i18n.t('agents.new')}</Button>
+        <Button size="sm" href="/agents/new"><Plus size={14} /> {i18n.t('agents.new')}</Button>
       {/if}
     </div>
   {/snippet}</PageHead
@@ -313,9 +318,7 @@ async function remove() {
       </thead>
       <tbody>
         {#if projectId !== null ? projectLoading : config.loading}
-          <tr>
-            <td colspan="5" class="empty-table-row">{i18n.t('agents.loading')}</td>
-          </tr>
+          <EmptyTableRow colspan={5} message={i18n.t('agents.loading')} />
         {:else if projectError}
           <EmptyTableRow colspan={5} message={i18n.t('agents.loadFailed')} />
         {:else if !agents.length}

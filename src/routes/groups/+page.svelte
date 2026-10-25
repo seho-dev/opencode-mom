@@ -5,6 +5,7 @@ import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import { Switch } from '$src/components/switch/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import {
@@ -21,6 +22,7 @@ const i18n = getI18n();
 let query = $state('');
 let deleting = $state<string | null>(null);
 let refreshing = $state(false);
+let changingGroup = $state<string | null>(null);
 let switchedGroup = $state<string | null>(null);
 let activeTab = $state<GroupType>(GROUP_TYPE_NATIVE);
 let nativeTabEl = $state<HTMLButtonElement | null>(null);
@@ -37,6 +39,9 @@ const groups = $derived(
 const maxPage = $derived(Math.max(1, Math.ceil(groups.length / pageSize)));
 const currentPage = $derived(Math.min(page, maxPage));
 const pagedGroups = $derived(groups.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+const busy = $derived(
+  refreshing || changingGroup !== null || config.loading || config.saving || config.switching || config.reloading,
+);
 $effect(() => {
   // Reset to the first page whenever the filtered row count changes (search or delete).
   void groups.length;
@@ -51,18 +56,19 @@ function tabElement(tab: GroupType) {
 }
 function onTabKeys(event: KeyboardEvent) {
   const index = tabOrder.indexOf(activeTab);
-  let next: GroupType;
-  if (event.key === 'ArrowRight') next = tabOrder[(index + 1) % tabOrder.length]!;
-  else if (event.key === 'ArrowLeft') next = tabOrder[(index - 1 + tabOrder.length) % tabOrder.length]!;
-  else if (event.key === 'Home') next = tabOrder[0]!;
-  else if (event.key === 'End') next = tabOrder[tabOrder.length - 1]!;
+  let next: GroupType | undefined;
+  if (event.key === 'ArrowRight') next = tabOrder[(index + 1) % tabOrder.length];
+  else if (event.key === 'ArrowLeft') next = tabOrder[(index - 1 + tabOrder.length) % tabOrder.length];
+  else if (event.key === 'Home') next = tabOrder[0];
+  else if (event.key === 'End') next = tabOrder[tabOrder.length - 1];
   else return;
+  if (!next) return;
   event.preventDefault();
   selectTab(next);
   tabElement(next)?.focus();
 }
 async function refresh() {
-  if (config.loading || config.saving || refreshing) return;
+  if (busy) return;
   refreshing = true;
   try {
     await config.refresh(true);
@@ -70,24 +76,45 @@ async function refresh() {
     refreshing = false;
   }
 }
+async function toggleEnabled(id: string) {
+  if (busy) return;
+  const group = config.groups.find((group) => group.id === id);
+  if (!group || group.id === config.selectedGroupId) return;
+  changingGroup = id;
+  try {
+    await config.saveGroup({ ...$state.snapshot(group), isEnabled: !group.isEnabled });
+  } catch {
+    /* global feedback; retain the confirmed state */
+  } finally {
+    changingGroup = null;
+  }
+}
 async function remove() {
-  if (!deleting) return;
+  if (!deleting || busy) return;
+  changingGroup = deleting;
   try {
     await config.deleteGroup(deleting);
     deleting = null;
   } catch {
     /* global feedback */
+  } finally {
+    changingGroup = null;
   }
 }
 async function activate(id: string, name: string, type: GroupType) {
+  if (busy || !config.groups.find((group) => group.id === id)?.isEnabled) return;
+  changingGroup = id;
   try {
     await config.switchGroup(id);
     if (type === GROUP_TYPE_SLIM || type === GROUP_TYPE_OMO) switchedGroup = name;
   } catch {
     /* global feedback */
+  } finally {
+    changingGroup = null;
   }
 }
 async function reloadNow() {
+  if (busy) return;
   try {
     await config.reloadOpencode();
     switchedGroup = null;
@@ -101,15 +128,11 @@ async function reloadNow() {
 <PageHead eyebrow={i18n.t('groups.eyebrow')} title={i18n.t('groups.title')}
   >{#snippet children()}
     <div class="flex flex-wrap justify-end gap-2">
-      <Button
-        variant="outline"
-        disabled={config.loading || config.saving || refreshing}
-        aria-busy={refreshing}
-        onclick={refresh}
-      >
-        <RefreshCw size={14} aria-hidden="true" /> {i18n.t('configuration.refresh')}
+      <Button variant="outline" size="sm" disabled={busy} aria-busy={refreshing} onclick={refresh}>
+        <RefreshCw size={14} class={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />
+        {i18n.t('configuration.refresh')}
       </Button>
-      <Button href="/groups/new"><Plus size={14} /> {i18n.t('groups.new')}</Button>
+      <Button size="sm" href="/groups/new" disabled={busy}><Plus size={14} /> {i18n.t('groups.new')}</Button>
     </div>
   {/snippet}</PageHead
 >
@@ -169,14 +192,12 @@ async function reloadNow() {
       </tr>
     </thead>
     <tbody>
-      {#if config.loading}
-        <tr>
-          <td colspan="5" class="empty-table-row">{i18n.t('groups.loading')}</td>
-        </tr>
+      {#if config.loading && !groups.length}
+        <EmptyTableRow colspan={5} message={i18n.t('groups.loading')} />
       {:else if !groups.length}
         <EmptyTableRow colspan={5} message={i18n.t('empty.groups')} />
       {:else}
-        {#each pagedGroups as group}
+        {#each pagedGroups as group (group.id)}
           <tr>
             <td class="model-name">
               {group.name}
@@ -189,7 +210,21 @@ async function reloadNow() {
                 (group.omoAgentOverrides?.length ?? 0) +
                 (group.omoCategoryMappings?.length ?? 0)}
             </td>
-            <td>{group.isEnabled ? i18n.t('groups.enabled') : i18n.t('groups.disabled')}</td>
+            <td>
+              <div class="flex items-center">
+                <Switch
+                  checked={group.isEnabled}
+                  disabled={busy || group.id === config.selectedGroupId}
+                  aria-label={i18n.t(group.isEnabled ? 'groups.disableAria' : 'groups.enableAria', { name: group.name })}
+                  aria-busy={changingGroup === group.id}
+                  title={group.id === config.selectedGroupId ? i18n.t('dashboard.selected') : undefined}
+                  onclick={(event) => {
+                    event.preventDefault();
+                    void toggleEnabled(group.id);
+                  }}
+                />
+              </div>
+            </td>
             <td class="row-actions">
               <Button
                 variant="ghost"
@@ -197,19 +232,21 @@ async function reloadNow() {
                 aria-label={i18n.t('groups.switchTo', { name: group.name })}
                 title={i18n.t('groups.switchTitle')}
                 onclick={() => activate(group.id, group.name, group.type)}
-                disabled={config.switching || config.reloading}
+                disabled={busy || !group.isEnabled}
                 ><Play size={14} /></Button
               ><Button
                 href={`/groups/${group.id}/edit`}
                 variant="ghost"
                 size="icon-sm"
+                disabled={busy}
                 aria-label={i18n.t('groups.editAria', { name: group.name })}
                 ><Pencil size={14} /></Button
               ><Button
                 variant="ghost"
                 size="icon-sm"
+                disabled={busy}
                 aria-label={i18n.t('groups.deleteAria', { name: group.name })}
-                onclick={() => (deleting = group.id)}
+                onclick={() => { if (!busy) deleting = group.id; }}
                 ><Trash2 size={14} /></Button
               >
             </td>
@@ -222,30 +259,34 @@ async function reloadNow() {
 <Dialog.Root
   open={deleting !== null}
   onOpenChange={(open) => {
-    if (!open) deleting = null;
+    if (!open && !busy) deleting = null;
   }}
 >
-  <Dialog.Content>
+  <Dialog.Content
+    aria-busy={busy}
+    onEscapeKeydown={(event) => { if (busy) event.preventDefault(); }}
+    onInteractOutside={(event) => { if (busy) event.preventDefault(); }}
+  >
     <Dialog.Header>
       <Dialog.Title>{i18n.t('groups.deleteTitle')}</Dialog.Title>
       <Dialog.Description>{i18n.t('groups.deleteConfirm', { name: deleting ?? '' })}</Dialog.Description>
     </Dialog.Header>
     <Dialog.Footer>
-      <Button variant="outline" onclick={() => (deleting = null)}>{i18n.t('common.cancel')}</Button>
-      <Button variant="destructive" onclick={remove}>{i18n.t('common.delete')}</Button>
+      <Button variant="outline" disabled={busy} onclick={() => (deleting = null)}>{i18n.t('common.cancel')}</Button>
+      <Button variant="destructive" disabled={busy} onclick={remove}>{i18n.t('common.delete')}</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
 <Dialog.Root
   open={switchedGroup !== null}
   onOpenChange={(open) => {
-    if (!open && !config.reloading) switchedGroup = null;
+    if (!open && !busy) switchedGroup = null;
   }}
 >
   <Dialog.Content
     aria-busy={config.reloading}
-    onEscapeKeydown={(event) => { if (config.reloading) event.preventDefault(); }}
-    onInteractOutside={(event) => { if (config.reloading) event.preventDefault(); }}
+    onEscapeKeydown={(event) => { if (busy) event.preventDefault(); }}
+    onInteractOutside={(event) => { if (busy) event.preventDefault(); }}
   >
     <Dialog.Header>
       <Dialog.Title>{i18n.t('groups.reloadTitle')}</Dialog.Title>
@@ -258,13 +299,11 @@ async function reloadNow() {
       {/if}
     </Dialog.Header>
     <Dialog.Footer>
-      <Button variant="ghost" disabled={config.reloading} onclick={() => (switchedGroup = null)}
-        >{i18n.t('common.cancel')}</Button
-      >
-      <Button variant="outline" disabled={config.reloading} onclick={() => (switchedGroup = null)}
+      <Button variant="ghost" disabled={busy} onclick={() => (switchedGroup = null)}>{i18n.t('common.cancel')}</Button>
+      <Button variant="outline" disabled={busy} onclick={() => (switchedGroup = null)}
         >{i18n.t('groups.reloadLater')}</Button
       >
-      <Button disabled={config.reloading} onclick={reloadNow}
+      <Button disabled={busy} onclick={reloadNow}
         >{i18n.t(config.reloading ? 'groups.reloading' : 'groups.reloadNow')}</Button
       >
     </Dialog.Footer>

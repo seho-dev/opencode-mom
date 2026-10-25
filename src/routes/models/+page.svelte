@@ -48,6 +48,29 @@ $effect(() => {
   page = 1;
 });
 
+type ModelTab = 'custom' | 'builtin';
+const tabOrder: ModelTab[] = ['custom', 'builtin'];
+let customTabEl = $state<HTMLButtonElement | null>(null);
+let builtinTabEl = $state<HTMLButtonElement | null>(null);
+
+function selectTab(tab: ModelTab) {
+  activeTab = tab;
+}
+
+function onTabKeys(event: KeyboardEvent) {
+  const current = tabOrder.indexOf(activeTab);
+  let next: ModelTab | undefined;
+  if (event.key === 'ArrowRight') next = tabOrder[(current + 1) % tabOrder.length];
+  else if (event.key === 'ArrowLeft') next = tabOrder[(current - 1 + tabOrder.length) % tabOrder.length];
+  else if (event.key === 'Home') next = tabOrder[0];
+  else if (event.key === 'End') next = tabOrder[tabOrder.length - 1];
+  if (!next) return;
+  event.preventDefault();
+  selectTab(next);
+  if (next === 'custom') customTabEl?.focus();
+  else if (next === 'builtin') builtinTabEl?.focus();
+}
+
 async function refresh() {
   if (config.loading || config.saving || refreshing) return;
   refreshing = true;
@@ -81,80 +104,104 @@ async function remove() {
     <div class="flex flex-wrap justify-end gap-2">
       <Button
         variant="outline"
+        size="sm"
         disabled={config.loading || config.saving || refreshing}
         aria-busy={refreshing}
         onclick={refresh}
       >
-        <RefreshCw size={14} aria-hidden="true" /> {i18n.t('configuration.refresh')}
+        <RefreshCw size={14} class={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />
+        {i18n.t('configuration.refresh')}
       </Button>
-      <Button href="/models/new"><Plus size={14} /> {i18n.t('models.new')}</Button>
+      <Button size="sm" href="/models/new"><Plus size={14} /> {i18n.t('models.new')}</Button>
     </div>
   {/snippet}</PageHead
 >
 <div class="search-toolbar">
   <input aria-label={i18n.t('models.searchLabel')} bind:value={query} placeholder={i18n.t('models.searchPlaceholder')}>
 </div>
-<div class="flex gap-2 mb-3">
-  <Button variant={activeTab === 'custom' ? 'default' : 'outline'} size="sm" onclick={() => (activeTab = 'custom')}
-    >{i18n.t('models.tabCustom', { count: customModels.length })}</Button
+<div class="flex gap-2 mb-3" role="tablist" aria-label={i18n.t('models.title')}>
+  <Button
+    bind:ref={customTabEl}
+    id="models-tab-custom"
+    role="tab"
+    variant={activeTab === 'custom' ? 'default' : 'outline'}
+    size="sm"
+    aria-selected={activeTab === 'custom'}
+    aria-controls="models-tabpanel-custom"
+    tabindex={activeTab === 'custom' ? 0 : -1}
+    onclick={() => selectTab('custom')}
+    onkeydown={onTabKeys}
   >
-  <Button variant={activeTab === 'builtin' ? 'default' : 'outline'} size="sm" onclick={() => (activeTab = 'builtin')}
-    >{i18n.t('models.tabBuiltin', { count: builtinModels.length })}</Button
+    {i18n.t('models.tabCustom', { count: customModels.length })}
+  </Button>
+  <Button
+    bind:ref={builtinTabEl}
+    id="models-tab-builtin"
+    role="tab"
+    variant={activeTab === 'builtin' ? 'default' : 'outline'}
+    size="sm"
+    aria-selected={activeTab === 'builtin'}
+    aria-controls="models-tabpanel-builtin"
+    tabindex={activeTab === 'builtin' ? 0 : -1}
+    onclick={() => selectTab('builtin')}
+    onkeydown={onTabKeys}
   >
+    {i18n.t('models.tabBuiltin', { count: builtinModels.length })}
+  </Button>
 </div>
-<DataTable label={i18n.t('models.tableLabel')} total={visibleModels.length} bind:page {pageSize}
-  ><thead>
-    <tr>
-      <th>{i18n.t('models.colProvider')}</th>
-      <th>{i18n.t('models.colName')}</th>
-      <th>{i18n.t('models.colContext')}</th>
-      <th class="th-actions">{i18n.t('models.colActions')}</th>
-    </tr>
-  </thead>
-  <tbody>
-    {#if config.catalogLoading}
+<div id={`models-tabpanel-${activeTab}`} role="tabpanel" aria-labelledby={`models-tab-${activeTab}`}>
+  <DataTable label={i18n.t('models.tableLabel')} total={visibleModels.length} bind:page {pageSize}
+    ><thead>
       <tr>
-        <td colspan="4" class="empty-table-row">{i18n.t('models.loadingConfiguration')}</td>
+        <th>{i18n.t('models.colProvider')}</th>
+        <th>{i18n.t('models.colName')}</th>
+        <th>{i18n.t('models.colContext')}</th>
+        <th class="th-actions">{i18n.t('models.colActions')}</th>
       </tr>
-    {:else if !visibleModels.length}
-      <EmptyTableRow
-        colspan={4}
-        message={activeTab === 'custom' ? i18n.t('empty.modelsCustomShort') : i18n.t('empty.modelsBuiltinShort')}
-      />
-    {:else}
-      {#each pagedModels as model}
-        <tr>
-          <td>{model.providerId}</td>
-          <td>{model.name ?? i18n.t('common.unnamed')}</td>
-          <td>{(model.limit as { context?: number })?.context ?? i18n.t('common.unset')}</td>
-          <td class="row-actions">
-            {#if model.isCustom}
-              <Button
-                href={`/models/${encodeURIComponent(model.ref)}/edit`}
-                variant="ghost"
-                size="icon-sm"
-                title={i18n.t('models.editTitle')}
-                aria-label={i18n.t('models.editAria', { ref: model.ref })}
-                ><Pencil size={14} /></Button
-              ><Button
-                variant="ghost"
-                size="icon-sm"
-                title={i18n.t('models.deleteTitle')}
-                aria-label={i18n.t('models.deleteAria', { ref: model.ref })}
-                onclick={() => {
+    </thead>
+    <tbody>
+      {#if config.catalogLoading}
+        <EmptyTableRow colspan={4} message={i18n.t('models.loadingConfiguration')} />
+      {:else if !visibleModels.length}
+        <EmptyTableRow
+          colspan={4}
+          message={activeTab === 'custom' ? i18n.t('empty.modelsCustomShort') : i18n.t('empty.modelsBuiltinShort')}
+        />
+      {:else}
+        {#each pagedModels as model}
+          <tr>
+            <td>{model.providerId}</td>
+            <td>{model.name ?? i18n.t('common.unnamed')}</td>
+            <td>{(model.limit as { context?: number })?.context ?? i18n.t('common.unset')}</td>
+            <td class="row-actions">
+              {#if model.isCustom}
+                <Button
+                  href={`/models/${encodeURIComponent(model.ref)}/edit`}
+                  variant="ghost"
+                  size="icon-sm"
+                  title={i18n.t('models.editTitle')}
+                  aria-label={i18n.t('models.editAria', { ref: model.ref })}
+                  ><Pencil size={14} /></Button
+                ><Button
+                  variant="ghost"
+                  size="icon-sm"
+                  title={i18n.t('models.deleteTitle')}
+                  aria-label={i18n.t('models.deleteAria', { ref: model.ref })}
+                  onclick={() => {
                   deleting = model.ref;
                 }}
-                ><Trash2 size={14} /></Button
-              >
-            {:else}
-              <span class="text-xs text-muted-foreground">{i18n.t('common.readOnly')}</span>
-            {/if}
-          </td>
-        </tr>
-      {/each}
-    {/if}
-  </tbody></DataTable
->
+                  ><Trash2 size={14} /></Button
+                >
+              {:else}
+                <span class="text-xs text-muted-foreground">{i18n.t('common.readOnly')}</span>
+              {/if}
+            </td>
+          </tr>
+        {/each}
+      {/if}
+    </tbody></DataTable
+  >
+</div>
 <Dialog.Root
   open={deleting !== null}
   onOpenChange={(open) => {

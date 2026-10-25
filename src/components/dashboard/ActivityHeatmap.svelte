@@ -76,7 +76,7 @@ function navigate(event: KeyboardEvent, index: number) {
 </script>
 
 <section
-  class="heatmap rounded-[3px] border border-[var(--border-default)] bg-[var(--surface-panel)] p-5"
+  class="heatmap flex h-full flex-col rounded-[3px] border border-[var(--border-default)] bg-[var(--surface-panel)] p-5"
   aria-labelledby="activity-title"
   aria-busy={loading}
 >
@@ -280,7 +280,7 @@ function navigate(event: KeyboardEvent, index: number) {
         </fieldset>
       </div>
     </section>
-    <div class="mt-2 flex min-h-7 items-center justify-end text-[10px]">
+    <div class="mt-auto flex min-h-7 items-center justify-end pt-2 text-[10px]">
       <div class="flex items-center gap-2 text-[var(--text-secondary)]">
         <span>{i18n.t('dashboard.less')}</span>
         <div class="flex gap-1" aria-hidden="true">

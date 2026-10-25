@@ -4,8 +4,11 @@ import { flushSync } from 'svelte';
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest';
 import type { ConfigStore } from '$src/config/store.svelte.js';
 import { createConfigStore } from '$src/config/store.svelte.js';
+import { en } from '$src/i18n/dictionaries/en.js';
+import { zh } from '$src/i18n/dictionaries/zh.js';
 import Harness from '$src/test-utils/harness.svelte';
 import type { Group } from '$src/types/groups.js';
+import type { McpProxyStateDto } from '$src/types/mcp-proxy.js';
 import type { TokenUsageRecord } from '$src/types/stats.js';
 import { formatTokensM } from '$src/utils/dashboard.js';
 import Dashboard from '../+page.svelte';
@@ -443,7 +446,8 @@ test.each([
     await select('Usage period', period);
     await select('Heatmap period', period);
     expectTokens(input, output);
-    const total = screen.getByText(period === 'Year' ? '2024 total' : `Total · ${caption}`);
+    const heatmap = screen.getByRole('region', { name: /token usage heatmap/i });
+    const total = within(heatmap).getByText(period === 'Year' ? '2024 total' : `Total · ${caption}`);
     expect(total.querySelector('strong')?.getAttribute('title')).toBe((input + output).toLocaleString('en-US'));
     const dates = screen.getAllByLabelText(/ tokens$/, { selector: 'button' }) as HTMLButtonElement[];
     expect(dates.filter((cell) => cell.tabIndex === 0)).toHaveLength(1);
@@ -637,4 +641,71 @@ test('unmounted dashboards ignore late shared-read success and failure', async (
     expect(screen.queryByRole('alert')).toBeNull();
     expect(loadTokenUsageRecords).toHaveBeenCalledExactlyOnceWith();
   }
+});
+
+test('quick actions link to creation routes and MCP proxy status shows unknown on failure without fake zero', async () => {
+  const getMcpProxyState = vi.fn().mockRejectedValueOnce(new Error('Proxy offline'));
+  const view = mount({ getMcpProxyState });
+  await screen.findByText('2024 total');
+
+  const quickActionsRegion = screen.getByRole('region', { name: 'Quick actions' });
+  const quickLinks = within(quickActionsRegion)
+    .getAllByRole('link')
+    .map((link) => [link.textContent?.trim(), link.getAttribute('href')]);
+  expect(quickLinks).toEqual([
+    ['New group', '/groups/new'],
+    ['New provider', '/providers/new'],
+    ['New model', '/models/new'],
+    ['New agent', '/agents/new'],
+  ]);
+
+  const proxyHeading = screen.getByRole('heading', { name: 'MCP proxy' });
+  const proxyCard = proxyHeading.closest('a') as HTMLAnchorElement;
+  expect(proxyCard.getAttribute('href')).toBe('/mcp?tab=proxy');
+  await waitFor(() => expect(within(proxyCard).getByText('Unavailable')).toBeTruthy());
+  expect(within(proxyCard).getByText('—')).toBeTruthy();
+  expect(proxyCard.textContent).not.toContain('0 services');
+  expect(getMcpProxyState).toHaveBeenCalledExactlyOnceWith();
+  view.unmount();
+});
+
+test.each([
+  ['en', 'running'],
+  ['en', 'stopped'],
+  ['zh', 'running'],
+  ['zh', 'stopped'],
+] as const)('proxy status shows %s locale with %s state', async (locale, state) => {
+  const dictionary = locale === 'en' ? en : zh;
+  const fullDto = {
+    actual: state === 'running',
+    desired: true,
+    desiredState: true,
+    actualState: state as 'running' | 'stopped',
+    boundAddr: '127.0.0.1:18765',
+    port: 18765,
+    allowLan: false,
+    enabledServices: state === 'running' ? 2 : 0,
+    totalServices: 2,
+    activeUnits: 1,
+    activeSessions: 3,
+    availableUnits: 2,
+    maxUnits: 4,
+    securityErrors: [],
+    services: [],
+    revision: 1,
+    generation: 1,
+  } as const satisfies McpProxyStateDto;
+  const getMcpProxyState = vi.fn().mockResolvedValue(fullDto);
+  mount({ preferences: { locale, theme: 'dark' }, getMcpProxyState });
+
+  const proxyHeading = screen.getByRole('heading', { name: dictionary['dashboard.mcpProxy'] });
+  const proxyAnchor = proxyHeading.closest('a') as HTMLAnchorElement;
+  expect(proxyAnchor.getAttribute('href')).toBe('/mcp?tab=proxy');
+
+  expect(await within(proxyAnchor).findByText(dictionary[`mcp.proxy.${state}` as keyof typeof en])).toBeTruthy();
+
+  const countText = dictionary['dashboard.proxyServicesCount'].replace('{count}', String(fullDto.enabledServices));
+  expect(within(proxyAnchor).getByText(countText)).toBeTruthy();
+  expect(proxyAnchor.textContent).not.toMatch(/(?:settings|mcp)\.proxy\.(?:running|stopped)/);
+  expect(getMcpProxyState).toHaveBeenCalledExactlyOnceWith();
 });

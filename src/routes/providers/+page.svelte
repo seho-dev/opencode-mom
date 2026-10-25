@@ -52,13 +52,15 @@ async function remove() {
     <div class="flex flex-wrap justify-end gap-2">
       <Button
         variant="outline"
+        size="sm"
         disabled={config.loading || config.saving || refreshing}
         aria-busy={refreshing}
         onclick={refresh}
       >
-        <RefreshCw size={14} aria-hidden="true" /> {i18n.t('configuration.refresh')}
+        <RefreshCw size={14} class={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />
+        {i18n.t('configuration.refresh')}
       </Button>
-      <Button href="/providers/new"><Plus size={14} /> {i18n.t('providers.new')}</Button>
+      <Button size="sm" href="/providers/new"><Plus size={14} /> {i18n.t('providers.new')}</Button>
     </div>
   {/snippet}</PageHead
 >
@@ -81,9 +83,7 @@ async function remove() {
   </thead>
   <tbody>
     {#if config.loading}
-      <tr>
-        <td colspan="5" class="empty-table-row">{i18n.t('providers.loading')}</td>
-      </tr>
+      <EmptyTableRow colspan={5} message={i18n.t('providers.loading')} />
     {:else if !filtered.length}
       <EmptyTableRow colspan={5} message={i18n.t('empty.providersShort')} />
     {:else}

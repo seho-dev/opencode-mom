@@ -422,7 +422,7 @@ fn sse_frames_handle_fragmentation_multiline_crlf_comments_and_bounds() {
     for piece in source.chunks(3) {
         for byte in piece {
             if let Some(data) = frame.byte(*byte).unwrap() {
-                result.push(data);
+                result.push(data.to_vec());
             }
         }
     }
@@ -432,6 +432,45 @@ fn sse_frames_handle_fragmentation_multiline_crlf_comments_and_bounds() {
         frame.byte(b'x').unwrap();
     }
     assert!(frame.byte(b'x').is_err());
+}
+
+#[test]
+fn sse_frame_data_is_reused_without_carrying_over_previous_events() {
+    let mut frame = events::Frame::default();
+    let mut first = None;
+    for source in [b"data: first\r\n\r\n".as_slice(), b"data: later\n\n"] {
+        for byte in source {
+            if let Some(data) = frame.byte(*byte).unwrap() {
+                if let Some(pointer) = first {
+                    assert_eq!(data, b"later");
+                    assert_eq!(data.as_ptr(), pointer);
+                } else {
+                    assert_eq!(data, b"first");
+                    first = Some(data.as_ptr());
+                }
+            }
+        }
+    }
+    assert!(first.is_some());
+}
+
+#[test]
+fn snapshot_byte_count_matches_json_encoding_including_escapes_and_utf8() {
+    let snapshot = IslandSnapshot {
+        sessions: vec![IslandSession {
+            id: "ses_a".into(),
+            title: "界\n\"\\".repeat(1024),
+            directory: "/project".into(),
+            updated_at: JS_MAX_DATE,
+            parent_id: None,
+            status: "running".into(),
+        }],
+        ..IslandSnapshot::default()
+    };
+    assert_eq!(
+        projection::encoded_len(&snapshot).unwrap(),
+        serde_json::to_vec(&snapshot).unwrap().len()
+    );
 }
 
 #[test]

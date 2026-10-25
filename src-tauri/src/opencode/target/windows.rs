@@ -3,7 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::protected_data::SecretBytes;
 
-use super::{failure, nullable_string, validate_selection, AppError, Selection};
+use super::{failure, nullable_string, password_valid, validate_selection, AppError, Selection};
 
 pub(super) const MAX_FILE_BYTES: usize = 32 * 1024;
 const MAX_CIPHER_BYTES: usize = 8192;
@@ -56,11 +56,20 @@ pub(super) fn encode(
     selection: &Selection,
     protect: impl FnOnce(&[u8]) -> Result<Vec<u8>, AppError>,
 ) -> Result<Vec<u8>, AppError> {
-    let selection = validate_selection(selection.clone())?;
+    let normalized = validate_selection(Selection {
+        url: selection.url.clone(),
+        password: None,
+    })?;
     let encrypted_password = selection
         .password
         .as_deref()
         .map(|password| {
+            if normalized.url.is_none() {
+                return Err(failure("shared target cannot contain a password"));
+            }
+            if password.is_empty() || !password_valid(password) {
+                return Err(failure("invalid configured password"));
+            }
             let bytes =
                 protect(password.as_bytes()).map_err(|_| failure("password protection failed"))?;
             if bytes.is_empty() || bytes.len() > MAX_CIPHER_BYTES {
@@ -70,7 +79,7 @@ pub(super) fn encode(
         })
         .transpose()?;
     let bytes = serde_json::to_vec(&WindowsSelection {
-        url: selection.url,
+        url: normalized.url,
         encrypted_password,
     })
     .map_err(|_| failure("configuration serialization failed"))?;
@@ -103,11 +112,12 @@ pub(super) fn decode(
         if plaintext.0.len() > MAX_PASSWORD_BYTES {
             return Err(failure("invalid decrypted password size"));
         }
-        selection.password = Some(
-            std::str::from_utf8(&plaintext.0)
-                .map(str::to_owned)
-                .map_err(|_| failure("invalid decrypted password"))?,
-        );
+        let password =
+            std::str::from_utf8(&plaintext.0).map_err(|_| failure("invalid decrypted password"))?;
+        if password.is_empty() || !password_valid(password) {
+            return Err(failure("invalid decrypted password"));
+        }
+        selection.password = Some(password.to_owned());
     }
-    validate_selection(selection)
+    Ok(selection)
 }

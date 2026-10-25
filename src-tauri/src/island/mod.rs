@@ -54,7 +54,7 @@ struct Cache {
     selected_session: Option<String>,
     connection: Option<&'static str>,
     error: Option<String>,
-    snapshot: IslandSnapshot,
+    snapshot: Arc<IslandSnapshot>,
     api: Option<IslandApi>,
     api_generation: u64,
     cancel: Option<watch::Sender<bool>>,
@@ -111,7 +111,7 @@ impl Cache {
         self.collapse();
         self.connection = None;
         self.error = None;
-        self.snapshot = IslandSnapshot::default();
+        self.snapshot = Arc::default();
         self.invalidate_api();
         self.notch_width = 0.0;
         self.top_inset = 0.0;
@@ -125,7 +125,7 @@ impl Cache {
             return false;
         }
         self.published = revision;
-        self.snapshot = snapshot;
+        self.snapshot = Arc::new(snapshot);
         self.connection = Some("connected");
         self.error = None;
         true
@@ -136,7 +136,7 @@ impl Cache {
             return false;
         }
         self.invalidate_api();
-        self.snapshot = IslandSnapshot::default();
+        self.snapshot = Arc::default();
         self.connection = Some("error");
         self.error = Some("OpenCode connection unavailable; retrying".into());
         true
@@ -164,7 +164,7 @@ impl Cache {
         }
         self.generation = self.generation.wrapping_add(1);
         self.invalidate_api();
-        self.snapshot = IslandSnapshot::default();
+        self.snapshot = Arc::default();
         self.connection = Some("connecting");
         self.error = None;
         if let Some(cancel) = self.cancel.take() {
@@ -275,19 +275,25 @@ impl IslandService {
 
     pub(crate) fn state(&self) -> IslandState {
         let cache = lock(&self.cache);
-        IslandState {
+        let snapshot = Arc::clone(&cache.snapshot);
+        let mut state = IslandState {
             supported: cfg!(target_os = "macos"),
             enabled: cache.enabled,
             connection: cache.connection.unwrap_or("disabled"),
             connection_generation: cache.generation,
             error: cache.error.clone(),
-            sessions: cache.snapshot.sessions.clone(),
-            permissions: cache.snapshot.permissions.clone(),
-            questions: cache.snapshot.questions.clone(),
+            sessions: Vec::new(),
+            permissions: Vec::new(),
+            questions: Vec::new(),
             preferences: cache.preferences,
             notch_width: cache.notch_width,
             top_inset: cache.top_inset,
-        }
+        };
+        drop(cache);
+        state.sessions = snapshot.sessions.clone();
+        state.permissions = snapshot.permissions.clone();
+        state.questions = snapshot.questions.clone();
+        state
     }
 
     pub(crate) fn update_preferences(&self, preferences: AppPreferences) {

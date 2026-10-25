@@ -5,15 +5,28 @@ use std::time::{Duration, Instant};
 
 use crate::error::AppError;
 
+pub(super) struct ReapOnDrop(pub(super) Child);
+
+impl Drop for ReapOnDrop {
+    fn drop(&mut self) {
+        if !matches!(self.0.try_wait(), Ok(Some(_))) {
+            // Only reap this CLI child; a descendant may be the persistent OpenCode service.
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
+
 pub(super) fn collect_output(
-    mut child: Child,
+    child: Child,
     timeout: Duration,
     max_bytes: u64,
     operation: &str,
     limit: &str,
 ) -> Result<Output, AppError> {
+    let mut child = ReapOnDrop(child);
     let started = Instant::now();
-    let mut stdout = child.stdout.take();
+    let mut stdout = child.0.stdout.take();
     let result = (|| {
         let stdout = stdout.as_mut().ok_or_else(|| {
             AppError::configuration(format!("failed to read {operation}: stdout is not piped"))
@@ -29,7 +42,7 @@ pub(super) fn collect_output(
         let mut read_error = None;
         loop {
             if status.is_none() {
-                status = child.try_wait().map_err(|error| {
+                status = child.0.try_wait().map_err(|error| {
                     AppError::configuration(format!(
                         "failed to wait for {operation}: {:?}",
                         error.kind()
@@ -87,11 +100,6 @@ pub(super) fn collect_output(
         }
     })();
     drop(stdout);
-    if result.is_err() && child.try_wait().ok().flatten().is_none() {
-        // Only reap this CLI child; a descendant may be the persistent OpenCode service.
-        let _ = child.kill();
-        let _ = child.wait();
-    }
     result
 }
 

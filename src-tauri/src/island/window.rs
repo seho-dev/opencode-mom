@@ -464,10 +464,12 @@ pub(super) fn event_is_current(window: &tauri::Window) -> bool {
     let Ok(pointer) = window.ns_window() else {
         return false;
     };
-    // SAFETY: Tauri's live window owns the returned NSWindow; the marker above
-    // ensures main-thread access and this borrow ends after the identity read.
-    let native = unsafe { &*pointer.cast::<NSWindow>() };
-    let window = identity(native);
+    // SAFETY: Tauri owns this NSWindow; main-thread access excludes concurrent
+    // destruction. retain accepts null and acquires our owner before any AppKit call.
+    let Some(native) = (unsafe { Retained::retain(pointer.cast::<NSWindow>()) }) else {
+        return false;
+    };
+    let window = identity(&native);
     TRANSITIONS.with(|slot| slot.borrow().window == Some(window))
 }
 
@@ -579,14 +581,11 @@ pub(super) fn open(app: &AppHandle, mode: IslandView) -> Result<Placement, AppEr
             .background_color(tauri::window::Color(0, 0, 0, 0))
             .build()
             .map_err(|_| failure())?;
-        let pointer = window.ns_window().map_err(|_| failure())?;
+        let native = native_window(app)?;
         let target = resize(app, mode)?;
         // Tauri show() makes macOS windows key; orderFront keeps automatic startup non-activating.
-        // SAFETY: this newly built Tauri window owns the live NSWindow; the marker
-        // at entry proves main-thread access and window outlives this short borrow.
-        let native = unsafe { &*pointer.cast::<NSWindow>() };
         native.orderFront(None);
-        readback(native, screen()?, target, mode, "after-orderFront")?;
+        readback(&native, screen()?, target, mode, "after-orderFront")?;
         super::hover::install(app)?;
         let native = native_window(app)?;
         let identity = identity(&native);

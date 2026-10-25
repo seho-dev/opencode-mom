@@ -130,10 +130,10 @@ fn list_models(
             name,
             is_custom,
             limit: config_model
-                .and_then(|model| model.limit.clone())
+                .and_then(|model| model.limit.as_ref())
                 .and_then(|limit| serde_json::to_value(limit).ok()),
             variants: config_model
-                .and_then(|model| model.variants.clone())
+                .and_then(|model| model.variants.as_ref())
                 .and_then(|variants| serde_json::to_value(variants).ok()),
         });
     }

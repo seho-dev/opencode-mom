@@ -237,8 +237,7 @@ impl IslandApi {
         let missing: Vec<_> = active
             .data
             .iter()
-            .filter(|id| !sessions.iter().any(|session| &session.id == *id))
-            .cloned()
+            .filter(|id| !seen.contains(*id))
             .collect();
         if sessions.len() + missing.len() > MAX_SESSIONS {
             return Err(failure("session display limit exceeded"));
@@ -246,8 +245,8 @@ impl IslandApi {
         let details: Vec<_> = missing
             .into_iter()
             .map(|id| async move {
-                let session: Data<Session> = self.read(&["session", &id], &[]).await?;
-                if session.data.id != id {
+                let session: Data<Session> = self.read(&["session", id], &[]).await?;
+                if &session.data.id != id {
                     return Err(invalid("session identity"));
                 }
                 session.data.public(true)
@@ -262,23 +261,17 @@ impl IslandApi {
             sessions,
             ..IslandSnapshot::default()
         };
-        let mut retained_bytes = serde_json::to_vec(&snapshot)
-            .map_err(|_| failure("snapshot encoding failed"))?
-            .len();
+        let mut retained_bytes = encoded_len(&snapshot)?;
         if retained_bytes > MAX_BYTES {
             return Err(failure("snapshot retained byte limit exceeded"));
         }
         // Recent roots are checked once too: pending work is not inferred from connection state.
-        let ids: Vec<_> = snapshot
+        let pending: Vec<_> = snapshot
             .sessions
             .iter()
-            .map(|session| session.id.clone())
-            .collect();
-        let pending: Vec<_> = ids
-            .into_iter()
-            .map(|id| async move {
-                let permissions = self.permissions(&id).await?;
-                let questions = self.questions(&id).await?;
+            .map(|session| async move {
+                let permissions = self.permissions(&session.id).await?;
+                let questions = self.questions(&session.id).await?;
                 Ok((permissions, questions))
             })
             .collect();
@@ -291,9 +284,7 @@ impl IslandApi {
             {
                 return Err(failure("pending request display limit exceeded"));
             }
-            retained_bytes += serde_json::to_vec(&(&permissions, &questions))
-                .map_err(|_| failure("snapshot encoding failed"))?
-                .len();
+            retained_bytes += encoded_len(&(&permissions, &questions))?;
             if retained_bytes > MAX_BYTES {
                 return Err(failure("snapshot retained byte limit exceeded"));
             }
@@ -341,6 +332,25 @@ impl IslandApi {
             .await?;
         public_messages(messages.data)
     }
+}
+
+pub(super) fn encoded_len(value: &impl Serialize) -> Result<usize, AppError> {
+    struct Count(usize);
+
+    impl std::io::Write for Count {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 += bytes.len();
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut count = Count(0);
+    serde_json::to_writer(&mut count, value).map_err(|_| failure("snapshot encoding failed"))?;
+    Ok(count.0)
 }
 
 pub(super) fn public_question(form: &Value, session_id: &str) -> Result<IslandQuestion, AppError> {

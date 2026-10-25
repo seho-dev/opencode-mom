@@ -6,9 +6,21 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::collect_output;
+use super::{collect_output, ReapOnDrop};
 
 const TIMEOUT: Duration = Duration::from_millis(150);
+
+#[test]
+fn collector_owner_reaps_direct_child_on_unwind_without_signaling_service_descendant() {
+    let mut cli = FakeCli::new("exec sleep 60");
+    let child = cli.child.take().unwrap();
+    let unwind = std::panic::catch_unwind(move || {
+        let _owner = ReapOnDrop(child);
+        panic!("injected collector unwind");
+    });
+    assert!(unwind.is_err());
+    cli.assert_direct_reaped_and_descendant_alive();
+}
 
 struct FakeCli {
     directory: PathBuf,

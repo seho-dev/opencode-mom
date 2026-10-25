@@ -24,7 +24,10 @@ pub(super) struct Frame {
 }
 
 impl Frame {
-    pub(super) fn byte(&mut self, byte: u8) -> Result<Option<Vec<u8>>, AppError> {
+    pub(super) fn byte(&mut self, byte: u8) -> Result<Option<&[u8]>, AppError> {
+        if self.size == 0 {
+            self.data.clear();
+        }
         if self.skip_lf {
             self.skip_lf = false;
             if byte == b'\n' {
@@ -45,7 +48,7 @@ impl Frame {
             if self.data.last() == Some(&b'\n') {
                 self.data.pop();
             }
-            return Ok(Some(std::mem::take(&mut self.data)));
+            return Ok(Some(&self.data));
         }
         if let Some(data) = self.line.strip_prefix(b"data:") {
             self.data
@@ -99,7 +102,7 @@ impl IslandEvents {
                 self.offset += 1;
                 if let Some(data) = self.frame.byte(byte)? {
                     if !data.is_empty() {
-                        if let Some(change) = classify(&data)? {
+                        if let Some(change) = classify(data)? {
                             return Ok(change);
                         }
                     }

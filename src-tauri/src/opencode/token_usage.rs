@@ -473,18 +473,20 @@ fn fork_offsets(
                         };
                     let child = &timelines[index];
                     // Native forks copy eligible projected prefixes with new IDs, not a timestamp cutoff.
-                    let expected = origin[..prefix]
+                    let mut copied = 0;
+                    for original in origin[..prefix]
                         .iter()
-                        .filter(|message| message.copied_by_fork());
-                    let copied = expected.clone().count();
-                    if child.len() < copied
-                        || !expected
-                            .zip(&child[..copied])
-                            .all(|(original, copied)| original.same_projection(copied))
+                        .filter(|message| message.copied_by_fork())
                     {
-                        return Err(failure(
-                            "fork provenance unavailable: copied prefix mismatch",
-                        ));
+                        if !child
+                            .get(copied)
+                            .is_some_and(|message| original.same_projection(message))
+                        {
+                            return Err(failure(
+                                "fork provenance unavailable: copied prefix mismatch",
+                            ));
+                        }
+                        copied += 1;
                     }
                     offsets[index] = copied;
                 }

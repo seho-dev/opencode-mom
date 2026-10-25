@@ -761,6 +761,37 @@ fn native_upgrade_failures_discard_diagnostics_and_success_does_not_signal_reape
 
 #[cfg(unix)]
 #[test]
+fn upgrade_owner_reaps_fake_process_during_unwind() {
+    use std::os::unix::process::CommandExt;
+
+    let child = Command::new("/bin/sleep")
+        .arg("60")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let pid = child.id() as libc::pid_t;
+    assert!(std::panic::catch_unwind(move || {
+        let _owner = UpgradeProcess {
+            child,
+            reaped: false,
+        };
+        panic!("injected upgrade unwind");
+    })
+    .is_err());
+    let mut status = 0;
+    assert_eq!(
+        // SAFETY: status is writable and pid is only this fake direct-child process.
+        unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) },
+        -1
+    );
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ECHILD)
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn upgrade_timeout_cleans_its_group_without_touching_an_existing_service() {
     use std::process::Child;
     struct Sleep(Child);

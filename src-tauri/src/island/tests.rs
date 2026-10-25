@@ -321,7 +321,7 @@ fn explicit_views_clear_hidden_selection_but_never_reply_to_pending() {
     let mut cache = Cache {
         enabled: true,
         connection: Some("connected"),
-        snapshot: permission_snapshot(),
+        snapshot: permission_snapshot().into(),
         ..Default::default()
     };
     let generation = cache.generation;
@@ -353,7 +353,7 @@ fn blur_collapse_and_disable_keep_generation_and_privacy_guards() {
     let mut cache = Cache {
         enabled: true,
         connection: Some("connected"),
-        snapshot: permission_snapshot(),
+        snapshot: permission_snapshot().into(),
         cancel: Some(cancel),
         ..Default::default()
     };
@@ -460,7 +460,7 @@ fn disable_clears_private_snapshot_and_rejects_stale_generation() {
         generation: 7,
         connection: Some("connected"),
         cancel: Some(cancel),
-        snapshot: IslandSnapshot {
+        snapshot: Arc::new(IslandSnapshot {
             sessions: vec![api::IslandSession {
                 id: "ses_private".into(),
                 title: "private".into(),
@@ -470,7 +470,7 @@ fn disable_clears_private_snapshot_and_rejects_stale_generation() {
                 status: "running".into(),
             }],
             ..Default::default()
-        },
+        }),
         ..Default::default()
     };
     cache.stop();
@@ -559,7 +559,7 @@ fn message_invalidations_do_not_fetch_snapshots_or_change_bounds() {
         view: IslandView::Expanded,
         selected_session: Some("ses_a".into()),
         connection: Some("connected"),
-        snapshot: permission_snapshot(),
+        snapshot: permission_snapshot().into(),
         ..Default::default()
     };
     let screen = geometry::Screen {
@@ -920,7 +920,7 @@ fn target_refresh_guard_drop_leaves_connection_and_private_state_unchanged() {
         cache.view = IslandView::Expanded;
         cache.selected_session = Some("ses_a".into());
         cache.connection = Some("connected");
-        cache.snapshot = permission_snapshot();
+        cache.snapshot = permission_snapshot().into();
         cache.cancel = Some(monitor);
         cache.start_actions();
         cache.action_cancel.as_ref().unwrap().subscribe()
@@ -937,6 +937,23 @@ fn target_refresh_guard_drop_leaves_connection_and_private_state_unchanged() {
     assert!(!*receiver.borrow());
     assert!(!*action.borrow());
     assert!(lock(&service.task).is_none());
+}
+
+#[test]
+fn state_snapshot_stays_coherent_after_cache_replacement() {
+    let service = IslandService::default();
+    let snapshot = {
+        let mut cache = lock(&service.cache);
+        cache.enabled = true;
+        assert!(cache.publish(0, 1, permission_snapshot()));
+        Arc::clone(&cache.snapshot)
+    };
+    let state = service.state();
+    assert!(Arc::ptr_eq(&snapshot, &lock(&service.cache).snapshot));
+    assert_eq!(state.permissions[0].id, "per_pending");
+    lock(&service.cache).stop();
+    assert!(service.state().permissions.is_empty());
+    assert_eq!(state.permissions[0].id, snapshot.permissions[0].id);
 }
 
 #[test]
@@ -966,8 +983,8 @@ fn target_refresh_preserves_enabled_view_preferences_and_geometry_but_clears_pri
             cache.selected_session = Some("ses_a".into());
             cache.connection = Some("connected");
             cache.error = Some("old error".into());
-            cache.snapshot = permission_snapshot();
-            cache.snapshot.sessions.push(api::IslandSession {
+            let mut snapshot = permission_snapshot();
+            snapshot.sessions.push(api::IslandSession {
                 id: "ses_a".into(),
                 title: "private".into(),
                 directory: "/private/project".into(),
@@ -975,13 +992,14 @@ fn target_refresh_preserves_enabled_view_preferences_and_geometry_but_clears_pri
                 parent_id: None,
                 status: "running".into(),
             });
-            cache.snapshot.questions.push(api::IslandQuestion {
+            snapshot.questions.push(api::IslandQuestion {
                 id: "form_a".into(),
                 session_id: "ses_a".into(),
                 title: "private".into(),
                 answerable: false,
                 fields: Vec::new(),
             });
+            cache.snapshot = snapshot.into();
             cache.cancel = Some(monitor);
             cache.notch_width = 209.0;
             cache.top_inset = 38.0;
@@ -1188,8 +1206,8 @@ fn all_island_data_ipcs_require_an_unsigned_expected_connection_generation() {
         cache.enabled = true;
         cache.generation = 7;
         cache.view = IslandView::Expanded;
-        cache.snapshot = permission_snapshot();
-        cache.snapshot.sessions.push(api::IslandSession {
+        let mut snapshot = permission_snapshot();
+        snapshot.sessions.push(api::IslandSession {
             id: "ses_a".into(),
             title: "shared".into(),
             directory: "/synthetic".into(),
@@ -1197,17 +1215,18 @@ fn all_island_data_ipcs_require_an_unsigned_expected_connection_generation() {
             parent_id: None,
             status: "running".into(),
         });
-        cache.snapshot.questions.push(api::IslandQuestion {
+        snapshot.questions.push(api::IslandQuestion {
             id: "frm_a".into(),
             session_id: "ses_a".into(),
             title: "shared".into(),
             answerable: true,
             fields: Vec::new(),
         });
+        cache.snapshot = snapshot.into();
         cache.connection = Some("connected");
         cache.start_actions();
         cache.api = Some(api_a);
-        cache.snapshot.clone()
+        (*cache.snapshot).clone()
     };
     assert_eq!(
         tauri::async_runtime::block_on(service.messages("ses_a".into(), 7)).unwrap()[0].text,

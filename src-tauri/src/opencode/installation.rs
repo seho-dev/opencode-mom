@@ -733,30 +733,53 @@ fn upgrade_command(detected: &Detected, target: &str) -> Result<Command, AppErro
 }
 
 #[cfg(unix)]
+struct UpgradeProcess {
+    child: std::process::Child,
+    reaped: bool,
+}
+
+#[cfg(unix)]
+impl Drop for UpgradeProcess {
+    fn drop(&mut self) {
+        if !self.reaped {
+            let group = self.child.id() as libc::pid_t;
+            // SAFETY: scalar arguments select only the group created by process_group(0).
+            // This child is not known reaped; external reaping/PID reuse is not excluded.
+            let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
+}
+
+#[cfg(unix)]
 fn run_upgrade(command: &mut Command, timeout: Duration) -> Result<(), AppError> {
     use std::os::unix::process::CommandExt;
 
     command.process_group(0);
-    let mut child = command.spawn().map_err(|error| {
-        AppError::configuration(format!(
-            "OpenCode upgrade could not start: {:?}",
-            error.kind()
-        ))
-    })?;
-    let group = child.id() as libc::pid_t;
+    let mut child = UpgradeProcess {
+        child: command.spawn().map_err(|error| {
+            AppError::configuration(format!(
+                "OpenCode upgrade could not start: {:?}",
+                error.kind()
+            ))
+        })?,
+        reaped: false,
+    };
     let deadline = Instant::now() + timeout;
     loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => return Ok(()),
+        match child.child.try_wait() {
             Ok(Some(status)) => {
+                child.reaped = true;
+                if status.success() {
+                    return Ok(());
+                }
                 return Err(AppError::configuration(format!(
                     "OpenCode upgrade failed (exit {:?}); use the installation's manual command",
                     status.code()
-                )))
+                )));
             }
             Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
                 return Err(AppError::configuration(format!(
                     "OpenCode upgrade wait failed: {:?}",
                     error.kind()
@@ -765,11 +788,6 @@ fn run_upgrade(command: &mut Command, timeout: Duration) -> Result<(), AppError>
             Ok(None) => {}
         }
         if Instant::now() >= deadline {
-            // SAFETY: kill takes scalar arguments; the negative spawned PID selects the group requested
-            // by process_group(0). This Child is unreaped here, but external reaping/PID reuse is not excluded.
-            let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
-            let _ = child.kill();
-            let _ = child.wait();
             return Err(AppError::configuration(
                 "OpenCode upgrade timed out; check the selected installation before trying again",
             ));

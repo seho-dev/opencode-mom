@@ -84,9 +84,11 @@ impl HoverObserver {
         let Ok(pointer) = window.ns_window() else {
             return;
         };
-        // SAFETY: Tauri returned this live window's NSWindow pointer; window stays
-        // alive for the borrow and HoverObserver's MainThreadOnly confines this call.
-        let native = unsafe { &*pointer.cast::<NSWindow>() };
+        // SAFETY: Tauri owns this NSWindow and MainThreadOnly confines this call;
+        // retain accepts null and keeps the object alive across reentrant AppKit calls.
+        let Some(native) = (unsafe { Retained::retain(pointer.cast::<NSWindow>()) }) else {
+            return;
+        };
         if native.windowNumber() != ivars.window_number || !native.isVisible() {
             return;
         }
@@ -154,9 +156,9 @@ pub(super) fn install(app: &AppHandle) -> Result<(), AppError> {
     let mtm = MainThreadMarker::new().ok_or_else(failure)?;
     let window = app.get_webview_window("island").ok_or_else(failure)?;
     let pointer = window.ns_window().map_err(|_| failure())?;
-    // SAFETY: Tauri returns an NSWindow for this live handle; window outlives this
-    // borrow and the MainThreadMarker above proves main-thread AppKit access.
-    let native = unsafe { &*pointer.cast::<NSWindow>() };
+    // SAFETY: Tauri owns this NSWindow and the marker proves main-thread access;
+    // retain accepts null and keeps it alive across reentrant AppKit calls below.
+    let native = unsafe { Retained::retain(pointer.cast::<NSWindow>()) }.ok_or_else(failure)?;
     let view = native.contentView().ok_or_else(failure)?;
     let service = app.state::<IslandService>();
     let this = HoverObserver::alloc(mtm).set_ivars(HoverIvars {

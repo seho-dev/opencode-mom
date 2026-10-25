@@ -34,6 +34,8 @@ macos-helper/       # Standalone binary workspace
 
 - **Build boundary**: `src-tauri/build.rs` builds this manifest with `--release --offline --locked`, ad-hoc signs and verifies the artifact, then hashes the signed bytes before embedding in `src-tauri/src/power/macos.rs`.
 - **Validation scope**: Run helper checks and tests against this manifest separately; its policy, watchdog, and platform test modules belong to this binary, not the parent app's test targets.
+- **Toolchain and lints**: Keep MSRV 1.77.2 independently of the parent crate. CI checks/tests that version and runs formatting plus all-target strict Clippy on 1.96.0. The helper manifest enforces explicit unsafe operations, documented unsafe blocks and correctness lints; shared protocol client/server-only helpers use explained per-function dead-code allowances.
+- **Descriptor ownership**: Validate inherited bootstrap descriptors 3/4 with `fcntl` before constructing their sole owning `File`; local socket/kqueue descriptors transfer once into `UnixStream`/`OwnedFd`. Keep SAFETY proofs local to FFI calls.
 - **Shared protocol**: The parent macOS controller imports `src/protocol.rs` directly; keep encoders, parsers, and frame constants compatible on both sides.
 - **Framing**: Preserve the 40-byte hello, 24-byte request, and 16-byte acknowledgment. Busy leases are 1–10,000 ms; requests start at sequence 1, advance consecutively, and reject zero or `u64::MAX`.
 - **Policy ownership**: Save the durable journal before applying changes; verify application and restoration by readback. Preserve external changes and retain the journal when restoration fails.

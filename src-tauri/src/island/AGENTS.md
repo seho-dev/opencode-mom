@@ -6,7 +6,7 @@ macOS-only capsule window, cached IPC state, and one cancellable OpenCode SSE ta
 
 ## Structure
 
-- `mod.rs`: managed `IslandService`, shared explicit `IslandView`, generation-guarded requests, event coalescing, reconnect and shutdown.
+- `mod.rs`: managed `IslandService`, immutable `Arc` snapshots copied outside the cache lock, shared explicit `IslandView`, generation-guarded requests, event coalescing, reconnect and shutdown.
 - `window.rs`: macOS public `NSScreen` safe-area discovery, public window policy, main-thread-local native transition slot and `NSAnimationContext`/`NSWindow.animator()` frames with completion readback; no runtime class replacement or global input monitors.
 - `transition.rs`: pure serial/generation/native-window identity guards, one active/latest pending lifecycle, duration selection and final-frame verification.
 - `hover.rs`: public `NSTrackingArea` with a separate main-thread owner for non-key hover, weak notification/cache references, window-lifetime teardown and pure tracking-policy tests.

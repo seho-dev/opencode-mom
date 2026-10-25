@@ -7,7 +7,7 @@ Cross-platform desktop app for switching Oh My OpenAgent model groups. It stores
 ## Stack
 
 - Frontend: SvelteKit 2, Svelte 5 (runes), TypeScript strict, Tailwind CSS 4, Bits UI, Vitest, Biome.
-- Backend: Tauri 2, Rust edition 2021 (`rust-version = 1.77.2`; CI/release pin 1.96.0).
+- Backend: Tauri 2, Rust edition 2021 (main crate MSRV 1.90; standalone macOS helper MSRV 1.77.2; CI/release pin 1.96.0).
 - Toolchain: Node 22.23.0 and npm. SvelteKit uses the static adapter with `ssr = false` (SPA fallback `index.html`).
 
 ## Commands
@@ -16,9 +16,11 @@ Cross-platform desktop app for switching Oh My OpenAgent model groups. It stores
 - `npm run check` / `npm run check:fix` - Biome format + lint (2-space, single quotes, semicolons, trailing commas, 120 cols).
 - `npm run test:components` - Vitest component tests (`src/**/__tests__/*.test.ts`, jsdom).
 - `npm run test:unit` - `node --test` unit tests (`src/**/__tests__/*.test.mjs`).
-- `cargo fmt|check|test --manifest-path src-tauri/Cargo.toml` - Rust backend (fmt uses `--all -- --check`).
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` - Rust backend formatting.
+- `cargo check|test --manifest-path src-tauri/Cargo.toml --locked` - Rust backend validation.
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings` - strict Rust lint gate on macOS and Windows.
 - `npm run tauri dev` / `npm run tauri build` - run / package the native app.
-- macOS helper is a separate locked workspace: `cargo fmt|check|test --manifest-path src-tauri/native/macos-helper/Cargo.toml --offline --locked`; on a fresh cache run `cargo fetch --manifest-path src-tauri/native/macos-helper/Cargo.toml --locked` first.
+- macOS helper is a separate locked workspace: run `cargo fmt --manifest-path src-tauri/native/macos-helper/Cargo.toml --all -- --check`, `cargo check|test --manifest-path src-tauri/native/macos-helper/Cargo.toml --offline --locked`, and `cargo clippy --manifest-path src-tauri/native/macos-helper/Cargo.toml --all-targets --offline --locked -- -D warnings`. Before the first parent or helper build on a fresh cache, run `cargo fetch --manifest-path src-tauri/native/macos-helper/Cargo.toml --locked`.
 
 ## Layout
 
@@ -30,7 +32,7 @@ src/components/        # Bits UI wrappers + shared components (button, dialog, c
 src/types/             # Shared wire and domain types
 src/utils/             # Domain constants (single source for unions/options) + helpers
 src/i18n/              # en/zh dictionaries, locale context
-src-tauri/src/         # groups, projection, document/jsonc, replacement (backups), refs, paths, power/, opencode_cli/, tray, agents, mcp, skills
+src-tauri/src/         # groups, projection, document/jsonc, replacement (backups), refs, paths, power/, opencode/, tray, agents, mcp, skills
 src-tauri/src/commands/# Tauri IPC handlers, registered in lib.rs
 shared/                # Builtin agent catalog JSON imported by the frontend
 ```
@@ -58,7 +60,7 @@ shared/                # Builtin agent catalog JSON imported by the frontend
 ## Verification
 
 - Frontend: run `npm run check` and the narrowest affected test; run `npm run build` when routing, IPC, or build output changes.
-- Rust: run `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` and `cargo check`; add `cargo test` when behavior changes.
+- Rust: run the backend formatting, locked check and strict Clippy commands above; add locked tests when behavior changes. On macOS, validate helper formatting/check/test/Clippy separately. CI also checks the main crate with `cargo +1.90.0 check --manifest-path src-tauri/Cargo.toml --all-targets --locked` and the helper with Rust 1.77.2 check/test; never run the parent with the helper's older toolchain.
 - Never edit generated output: `build/`, `.svelte-kit/`, `src-tauri/target/`, `src-tauri/gen/`.
 
 ## Safety

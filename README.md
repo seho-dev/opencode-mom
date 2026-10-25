@@ -44,7 +44,7 @@ One window. Three runtimes — **Native**, **Slim**, **OMO**. One click to switc
 
 ![opencode-mom dashboard in light and dark themes](shared/app.png)
 
-*MOM at a glance — Native, Slim and OMO runtimes, live CLI status, token usage and an activity heatmap, in light and dark.*
+*MOM at a glance — Native, Slim and OMO runtimes, live OpenCode service status, token usage and an activity heatmap, in light and dark.*
 
 </div>
 
@@ -64,7 +64,7 @@ Model-group projection uses one-to-one key patches that leave keys the group doe
 
 - Named groups per runtime, with category mappings and per-agent model bindings, including `#variant` selection.
 - Switch from the **Dashboard**, the **Groups** page, or the **tray popup**; the selected group is projected immediately.
-- Live CLI health and working-session counts, plus a reload reminder after switches when OpenCode needs one.
+- Live OpenCode service health and working-session counts, plus a configuration reload reminder after switches when OpenCode needs one.
 - Non-destructive: hand-tuned keys are preserved, and changing a group's type removes only the keys that group owned.
 
 ### 🧠 Providers, models & agents
@@ -75,7 +75,7 @@ Model-group projection uses one-to-one key patches that leave keys the group doe
 
 ### 🔌 MCP & 📚 Skills
 
-- **MCP** — see every registered server across config sources, inspect diagnostics, keep credentials masked, edit raw JSON, and delete safely; failed file replacements retain recovery `.bak` snapshots.
+- **MCP** — see every registered server across config sources, inspect diagnostics, keep credentials masked, edit raw JSON, and delete safely; failed file replacements retain recovery `.bak` snapshots. Includes a built-in MCP HTTP Proxy gateway bridging local stdio MCP servers over HTTP/SSE for clients like OpenCode/Claude desktop with bearer token authentication and cross-platform process tree cleanup.
 - **Skills** — discover local and remote skills, view and edit content, watch diagnostics. Remote skills stay read-only.
 
 #### Global and saved project roots
@@ -100,9 +100,9 @@ Global recognizes native `agent` / `agents` and `skill` / `skills` directory ali
 
 ### 📊 Dashboard, usage & tray
 
-- Real-time status: active group and runtime, CLI health, running sessions.
+- Real-time status: active group and runtime, OpenCode service health, running sessions.
 - Token usage (input / output / cache) and an activity heatmap with daily, weekly, monthly and yearly views.
-- Tray popup: switch groups, reload the OpenCode CLI, open the app or settings, quit. Closing the window hides MOM to the tray.
+- Tray popup: switch groups, reload the OpenCode service configuration, open the app or settings, quit. Closing the window hides MOM to the tray.
 
 ### 🏝️ MOM Mini Island — first version (macOS only)
 
@@ -206,7 +206,7 @@ The Island switch is stored as `state.islandEnabled` (default `false`), outside 
 - **App config publication.** MOM's own config read/modify/write operations share the same in-process mutex. Saves stage a complete file in the destination directory, sync it, then publish by atomic rename; they create no `.bak`. General target-config writes remain plain writes without locks or backups.
 - **Resource recovery.** Existing-file inline agent CRUD, Markdown agent updates, MCP replacements and local skill updates use checked replacement with recovery `.bak` files retained on failure and cleaned up after success. Static Global symlinks remain supported; stale content and detected retargets are rejected. Expected paths identify discovered sources, not arbitrary write destinations; these checks do not eliminate filesystem races.
 - **Overrides.** `OPENCODE_CONFIG_DIR` overrides the OpenCode config directory and `OPENCODE_CONFIG` pins an explicit managed file — which is also the highest-priority source for Global MCP and Skills discovery. Project browsing uses only the selected root's paths above.
-- **Resource boundaries.** Project resources are read-only. New Global Markdown agents and skills use plural `agents` / `skills` directories; older directories are not migrated, and updates use the original paths or report ambiguity for duplicate sources. Saving or selecting roots does not migrate or rename files, reload the CLI, execute plugins, or launch MCP servers.
+- **Resource boundaries.** Project resources are read-only. New Global Markdown agents and skills use plural `agents` / `skills` directories; older directories are not migrated, and updates use the original paths or report ambiguity for duplicate sources. Saving or selecting roots does not migrate or rename files, reload the OpenCode service configuration, execute plugins, or launch MCP servers.
 - **Skip when empty.** OpenCode sync is skipped when a group has no effective OpenCode overrides, so a missing OpenCode config only blocks operations that actually need it.
 
 ## 🛠️ Development
@@ -244,7 +244,7 @@ Never edit generated output (`build/`, `.svelte-kit/`, `src-tauri/target/`, `src
 4. In the disposable project, create safe test sessions, permission requests and forms. Check running/pending and active-child coverage, a plain-text message, allow-once/reject, supported string/multiselect/custom answers, read-only unsupported forms and explicit interrupt. Confirm new requests only update the compact indicator. Test Always with a nonempty `save` rule only after checking the displayed action/patterns and possible matching pending requests; no-save requests must not offer it. Resolve another request outside MOM and confirm it disappears.
 5. Disconnect/reconnect the Shared Service and use Refresh; check recovery without write retries. Rapidly toggle off/on, then quit/restart with Island enabled and verify restoration without stale state or focus theft.
    With lid protection off, save a different verified local backend while Island stays enabled: old messages/drafts must clear before the new target's data appears, even for matching session IDs. An offline fixed target must stay selected and show unavailable status. Repeat with Island off and confirm it remains off. Test combined power behavior only under the separate power acceptance procedure below.
-6. Disable and confirm the window disappears and the CLI's work continues; no request is automatically rejected. Allow for the bounded connection worker's possible 20-second finish. Finally choose **Quit** from the tray and confirm the Island monitor is cleared; closing the main window is not quitting.
+6. Disable and confirm the window disappears and OpenCode sessions continue working; no request is automatically rejected. Allow for the bounded connection worker's possible 20-second finish. Finally choose **Quit** from the tray and confirm the Island monitor is cleared; closing the main window is not quitting.
 
 </details>
 

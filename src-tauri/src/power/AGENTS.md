@@ -2,7 +2,7 @@
 
 ## Overview
 
-Owns opt-in lid protection through `PowerService`, a serialized controller state machine, and platform backends. It monitors running sessions in the CLI-connected OpenCode service, applies bounded protection, and restores owned policy changes. macOS delegates privileged policy and recovery to the embedded helper; Windows manages journaled AC/DC lid actions directly.
+Owns opt-in lid protection through `PowerService`, a serialized controller state machine, and platform backends. It monitors running sessions in the selected local OpenCode service, applies bounded protection, and restores owned policy changes. macOS delegates privileged policy and recovery to the embedded helper; Windows manages journaled AC/DC lid actions directly.
 
 ## Directory Structure
 
@@ -25,7 +25,7 @@ power/                 # Lid-protection service and platform controllers
 | Responsibility | File | Description |
 | --- | --- | --- |
 | Service lifecycle | `mod.rs` | `PowerService::new/get/set/shutdown`, guarded target refresh, and generation-scoped `Engine<C: PowerController>`. |
-| Session monitoring | `mod.rs` | Separate query worker calls `active_sessions_via_cli`; controller worker owns timers and mutations. |
+| Session monitoring | `mod.rs` | Separate query worker calls `active_sessions_via_service`; controller worker owns timers and mutations. |
 | macOS controller | `macos.rs` | Stages embedded bytes, requests authorization, verifies socket/peer, and checks sequenced acknowledgments. |
 | Windows policy | `windows.rs` | `Policy<B: Backend>` journals originals, applies zero AC/DC lid actions, and conditionally restores. |
 | Persistence | `settings.rs` | `power.json` preference; `durable_write` also persists the Windows journal. |
@@ -35,6 +35,7 @@ power/                 # Lid-protection service and platform controllers
 ## Conventions
 
 - **Controller boundary**: Keep native effects behind `PowerController::prepare/busy/idle/stop`. A shared effects mutex serializes busy/renew/idle/stop and their generation checks/publication against target commits; never hold the shared-state mutex during controller calls. Interactive prepare holds no transition/effects/shared lock; mark `Shared.preparing` until its result and any late stop are handled. Session queries hold no mutex during HTTP and have at most one actual request in flight.
+- **Controller cleanup**: `Engine` owns controller teardown. A successful explicit stop prevents duplicate cleanup until another effect runs. Disconnection logs a failed stop; after every normal `run_worker` return, owner finalization attempts stop under the effects lock before sending completion, preserving one last best-effort retry after failure. Worker unwinding attempts best-effort stop without reacquiring or recovering poisoned locks. Contain cleanup panics only at this unwind boundary; normal stop paths retain their `Result`. Tests inject controller and cleanup failures through mocks, never native policy.
 - **Generations**: Setting changes and shutdown increment both observation and control generations. Target refresh increments only observation generation, clears counts/grace, restores idle, and preserves enabled/authorization/preparation outcome. Never stop or reauthorize solely for a target change; failed/missing authorization remains an Error until explicit enablement. Publish only for the current generation and stop late control-change effects before publication.
 - **Target commit**: Under the target transition mutex, call `prepare_target_refresh` to hold effects then shared locks; active authorization returns `busy` without waiting. Dropping the guard leaves state unchanged. Only after persistence and target revision publication call its infallible `invalidate`; call `finish_target_refresh` outside the transition to queue a wake. A disconnected wake channel logs a fixed safe warning and never fails the committed save. It never writes preferences. Disabled monitors remain disabled without prepare/query.
 - **Monitoring scope**: Query every 2 seconds through the selected local service's bounded HTTP active endpoint, including running child sessions; this is not a machine-wide process inventory. Errors publish Unknown, never zero/idle. `PowerService::set` shares the target transition mutex. Refresh retains the old query's slot until its result arrives and rejects that result before any native effect.

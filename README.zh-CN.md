@@ -44,7 +44,7 @@
 
 ![opencode-mom 仪表盘（明暗主题）](shared/app.png)
 
-*MOM 一览 —— Native、Slim、OMO 三套运行时，实时 CLI 状态、token 用量与活动热力图，含明暗主题。*
+*MOM 一览 —— Native、Slim、OMO 三套运行时，实时 OpenCode 服务状态、token 用量与活动热力图，含明暗主题。*
 
 </div>
 
@@ -64,7 +64,7 @@
 
 - 每种运行时对应命名组，包含 category 映射与逐 agent 的模型绑定，支持 `#variant` 选择。
 - 可从**仪表盘**、**Groups 页**或**托盘弹窗**切换，选中即生效。
-- 实时展示 CLI 健康状态与工作中的 session 数；切换后按需提醒重载 OpenCode。
+- 实时展示 OpenCode 服务健康状态与工作中的 session 数；切换后按需提醒重载 OpenCode 服务配置。
 - 非破坏式：手工调整过的键会保留；更改组的类型时，只移除该组曾拥有过的键。
 
 ### 🧠 Providers、Models 与 Agents
@@ -75,7 +75,7 @@
 
 ### 🔌 MCP 与 📚 Skills
 
-- **MCP** —— 跨配置源查看全部已注册 server、检查诊断信息、隐藏敏感凭据、编辑原始 JSON、安全删除；文件替换失败时保留恢复用 `.bak` 快照。
+- **MCP** —— 跨配置源查看全部已注册 server、检查诊断信息、隐藏敏感凭据、编辑原始 JSON、安全删除；文件替换失败时保留恢复用 `.bak` 快照。内置 MCP HTTP Proxy 网关，支持将本地 stdio MCP 服务器转为 HTTP/SSE 服务供 OpenCode/Claude 等客户端接入，具备 Bearer 令牌鉴权与跨平台进程树安全回收。
 - **Skills** —— 发现本地与远程 skill，查看并编辑内容、查看诊断信息。远程 skill 只读。
 
 #### Global 与已保存的项目根目录
@@ -100,9 +100,9 @@ Global 识别原生 `agent` / `agents` 与 `skill` / `skills` 目录别名，并
 
 ### 📊 仪表盘、用量与托盘
 
-- 实时状态：当前组与运行时、CLI 健康状态、运行中的 session。
+- 实时状态：当前组与运行时、OpenCode 服务健康状态、运行中的 session。
 - Token 用量（input / output / cache）与活动热力图，支持日 / 周 / 月 / 年视图。
-- 托盘弹窗：切换模型组、重载 OpenCode CLI、打开应用或设置、退出。关闭主窗口只会隐藏到托盘。
+- 托盘弹窗：切换模型组、重载 OpenCode 服务配置、打开应用或设置、退出。关闭主窗口只会隐藏到托盘。
 
 ### 🏝️ MOM Mini Island —— 首个版本（仅 macOS）
 
@@ -206,7 +206,7 @@ Island 开关保存为 `state.islandEnabled`（默认 `false`），独立于 the
 - **App 配置发布。** MOM 自有配置的 read/modify/write 仍共用同一进程内 mutex；保存时在目标同目录 staging 完整文件、sync，再以 atomic rename 发布，不创建 `.bak`。通用目标配置写入仍为不加锁、不备份的普通写入。
 - **资源恢复。** 已有文件中的 inline agent CRUD、Markdown agent 更新、MCP 替换和本地 skill 更新采用快照校验后替换；失败保留恢复用 `.bak`，成功后清理。Global 静态 symlink 仍受支持；过期内容与检测到的改指向会被拒绝。预期路径仅标识已发现的来源，不是任意写入目标；这些检查不消除 filesystem race。
 - **环境变量覆盖。** `OPENCODE_CONFIG_DIR` 覆盖 OpenCode 配置目录；`OPENCODE_CONFIG` 指定一个显式的受管文件 —— 它同时是 Global MCP 与 Skills 发现的最高优先级来源。项目浏览仅使用上方所选根目录的路径。
-- **资源边界。** 项目资源只读。新建的 Global Markdown agent 与 skill 使用复数 `agents` / `skills` 目录；不会迁移旧目录，更新时沿用原路径，或在来源重复时报告歧义。保存或选择根目录不会迁移或重命名文件、重载 CLI、执行 Plugin 或启动 MCP server。
+- **资源边界。** 项目资源只读。新建的 Global Markdown agent 与 skill 使用复数 `agents` / `skills` 目录；不会迁移旧目录，更新时沿用原路径，或在来源重复时报告歧义。保存或选择根目录不会迁移或重命名文件、重载 OpenCode 服务配置、执行 Plugin 或启动 MCP server。
 - **空则跳过。** 组内没有生效的 OpenCode override 时会跳过 OpenCode 同步，因此缺少 OpenCode 配置文件只会挡住真正需要它的操作。
 
 ## 🛠️ 开发
@@ -244,7 +244,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 4. 在可丢弃项目中创建安全的测试 session、权限请求和 form。检查 running/pending 与 active child 覆盖、纯文本消息、单次允许/拒绝、受支持的 string/multiselect/custom 回答、不支持 form 的只读状态和显式 interrupt。确认新请求只更新默认态标记；仅在核对显示的 action/模式及可能受影响的待审批请求后，测试非空 `save` 规则的 Always，无 `save` 时不得提供此选项。在 MOM 外解决另一请求，确认其消失。
 5. 断开/重新连接 Shared Service 并使用 Refresh，检查恢复且没有自动写重试。快速关闭/启用开关，再保持 Island enabled 退出并重启，确认恢复且无旧 state 覆写或抢焦点。
    保持合盖守护关闭、Island 开启，保存另一个已确认的本地 backend：旧消息和草稿必须清空，再展示新 target 数据，即使 session ID 相同。离线 fixed target 必须保持选中并显示不可用。Island 关闭时重复切换，确认不会被开启。两个监控联动的电源检查仅按下方独立合盖验收流程执行。
-6. 关闭开关，确认窗口消失但 CLI 工作继续，且不会自动拒绝请求；允许有界 connection worker 最多 20 秒的收尾时间。最后从托盘选择 **Quit**，确认 Island monitor 清理；关闭主窗口不算退出。
+6. 关闭开关，确认窗口消失但 OpenCode session 继续工作，且不会自动拒绝请求；允许有界 connection worker 最多 20 秒的收尾时间。最后从托盘选择 **Quit**，确认 Island monitor 清理；关闭主窗口不算退出。
 
 </details>
 

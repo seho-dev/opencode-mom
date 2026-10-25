@@ -207,7 +207,7 @@ pub fn update_model(
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     ensure_custom_provider_in_doc(document.raw(), &model_ref.provider_id)?;
     ensure_model_exists(document.raw(), model_ref)?;
-    apply_patches(&mut document, model_field_patches(model_ref, &model))?;
+    apply_patches(&mut document, model_field_patches(model_ref, &model)?)?;
     document.save(opencode_file)?;
     Ok(model)
 }
@@ -448,16 +448,18 @@ const MODEL_FIELDS: &[&str] = &[
     "variants",
 ];
 
+type FieldPatch = (Vec<String>, Option<Value>);
+
 fn model_field_patches(
     model_ref: &ModelRef,
     model: &ModelDef,
-) -> Vec<(Vec<String>, Option<Value>)> {
+) -> Result<Vec<FieldPatch>, AppError> {
     let base = model_path_vec(model_ref);
-    let updated = model_value(model)
+    let value = model_value(model);
+    let updated = value
         .as_object()
-        .expect("model value is an object")
-        .clone();
-    updated
+        .ok_or_else(|| AppError::configuration("model value must be an object"))?;
+    Ok(updated
         .iter()
         .map(|(field, value)| {
             let mut path = base.clone();
@@ -474,7 +476,7 @@ fn model_field_patches(
                     (path, None)
                 }),
         )
-        .collect()
+        .collect())
 }
 
 pub fn model_path_vec(model_ref: &ModelRef) -> Vec<String> {
@@ -552,6 +554,24 @@ fn ensure_model_exists(root: &Map<String, Value>, model_ref: &ModelRef) -> Resul
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn model_patches_set_present_fields_and_remove_absent_fields() {
+        let model_ref = ModelRef::parse("custom/nested/model").unwrap();
+        let model = model_from_value("nested/model", serde_json::json!({"name": "Model"})).unwrap();
+        let patches = model_field_patches(&model_ref, &model).unwrap();
+        assert_eq!(patches.len(), MODEL_FIELDS.len());
+        for field in MODEL_FIELDS {
+            let mut path = model_path_vec(&model_ref);
+            path.push((*field).to_owned());
+            let value = if *field == "name" {
+                Some(serde_json::json!("Model"))
+            } else {
+                None
+            };
+            assert!(patches.contains(&(path, value)), "{field}");
+        }
+    }
 
     struct TempDir(std::path::PathBuf);
     impl TempDir {

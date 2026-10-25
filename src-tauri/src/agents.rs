@@ -341,18 +341,21 @@ fn create_inner(
             }
             let mut document = MarkdownAgentDocument::empty();
             document.apply_fields(&fields, prompt)?;
-            let parent = Directory::ensure(path.parent().unwrap())?;
-            parent.create_file_checked(
-                path.file_name().unwrap().to_str().unwrap(),
-                &document.serialize(),
-                || {
-                    before_publish(&path);
-                    if markdown_path(paths, request.storage, &request.id, false)? != path {
-                        return Err(agent_changed());
-                    }
-                    resource_file::absent(&path)
-                },
+            let filename = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| invalid("Markdown agent filename must be valid UTF-8"))?;
+            let parent = Directory::ensure(
+                path.parent()
+                    .ok_or_else(|| invalid("Markdown agent path must have a parent"))?,
             )?;
+            parent.create_file_checked(filename, &document.serialize(), || {
+                before_publish(&path);
+                if markdown_path(paths, request.storage, &request.id, false)? != path {
+                    return Err(agent_changed());
+                }
+                resource_file::absent(&path)
+            })?;
         }
     }
     read_single(paths, &request.id)
@@ -394,7 +397,7 @@ fn update_inner(
                 .get(id)
                 .ok_or_else(|| not_found(id))?;
             validate_expected(
-                snapshot.as_ref().unwrap(),
+                snapshot.as_ref().ok_or_else(|| not_found(id))?,
                 &existing.to_string(),
                 expected_path,
                 expected_content,
@@ -480,10 +483,16 @@ pub fn delete(
         AgentStorage::GlobalMarkdown => {
             let path = markdown_path(paths, storage, id, true)?;
             let snapshot = Snapshot::read(&path)?.ok_or_else(|| not_found(id))?;
-            let parent = Directory::ensure(path.parent().unwrap())?;
+            let parent = Directory::ensure(
+                path.parent()
+                    .ok_or_else(|| invalid("Markdown agent path must have a parent"))?,
+            )?;
             snapshot.validate()?;
             parent.validate()?;
-            let resolved = parent.resolved.join(path.file_name().unwrap());
+            let resolved = parent.resolved.join(
+                path.file_name()
+                    .ok_or_else(|| invalid("Markdown agent path must have a filename"))?,
+            );
             fs::remove_file(&resolved).map_err(|error| AppError::io("remove", &path, error))?;
         }
     }
@@ -592,7 +601,10 @@ fn persist_inline(
             .file_name()
             .and_then(|name| name.to_str())
             .ok_or_else(|| invalid("invalid config filename"))?;
-        let parent = Directory::ensure(path.parent().unwrap())?;
+        let parent = Directory::ensure(
+            path.parent()
+                .ok_or_else(|| invalid("config path must have a parent"))?,
+        )?;
         parent.create_file_checked(name, document.content(), || {
             before_publish(path);
             resource_file::absent(path)
@@ -744,9 +756,10 @@ fn definition_from_sources(
     for markdown_source in &markdown {
         let fields = markdown_effective_fields(markdown_source);
         if let (Some(inline), Value::Object(markdown)) = (inline.as_ref(), &fields) {
-            let Value::Object(inline) = &inline.raw else {
-                unreachable!("checked above")
-            };
+            let inline = inline
+                .raw
+                .as_object()
+                .ok_or_else(|| invalid(format!("inline agent '{id}' must be an object")))?;
             for (field, markdown_value) in markdown {
                 if let Some(inline_value) = inline.get(field) {
                     overrides.push(AgentFieldOverride {
@@ -937,6 +950,53 @@ mod safety_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn markdown_create_handles_non_utf8_parent_directories() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let home = temporary
+            .path()
+            .join(std::ffi::OsString::from_vec(b"home-\xff".to_vec()));
+        let paths = crate::paths::ConfigPaths::for_home(&home);
+        let agent = create(
+            &paths,
+            AgentCreate {
+                id: "helper".to_owned(),
+                storage: AgentStorage::GlobalMarkdown,
+                fields: Map::new(),
+                prompt: Some("body".to_owned()),
+            },
+        )
+        .unwrap();
+        assert_eq!(agent.id, "helper");
+        assert!(
+            fs::read_to_string(paths.global_agents_dir().join("helper.md"))
+                .unwrap()
+                .ends_with("body")
+        );
+    }
+
+    #[test]
+    fn inline_update_without_source_returns_not_found() {
+        let home = tempfile::tempdir().unwrap();
+        let paths = crate::paths::ConfigPaths::for_home(home.path());
+        let error = update(
+            &paths,
+            "missing",
+            AgentStorage::Inline,
+            AgentMutation {
+                expected_path: Some(paths.opencode_file()),
+                expected_content: Some("{}".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::NotFound);
+        assert!(!paths.opencode_file().exists());
+    }
 
     #[test]
     fn validate_model_accepts_valid_selectors() {

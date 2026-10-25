@@ -139,8 +139,10 @@ impl JsoncDoc {
 
     /// An empty document carrying only the `$schema` marker for the given target file.
     pub fn bootstrap(schema: &str) -> Self {
-        let content = format!("{{\n  \"$schema\": \"{schema}\"\n}}\n");
-        Self::parse(&content).expect("constant JSONC bootstrap must parse")
+        let raw = Map::from_iter([("$schema".to_owned(), Value::String(schema.to_owned()))]);
+        let schema = serde_json::to_string(schema).expect("string serialization is infallible");
+        let content = format!("{{\n  \"$schema\": {schema}\n}}\n");
+        Self { content, raw }
     }
 
     /// Reads and parses a document from disk. A missing file yields an in-memory bootstrap
@@ -178,6 +180,15 @@ impl JsoncDoc {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn bootstrap_escapes_schema_text_and_keeps_raw_in_sync() {
+        for schema in [OPENCODE_SCHEMA, "quotes\" backslash\\ newline\n🦀"] {
+            let document = JsoncDoc::bootstrap(schema);
+            assert_eq!(document.raw().get("$schema"), Some(&json!(schema)));
+            assert_eq!(JsoncDoc::parse(document.content()).unwrap(), document);
+        }
+    }
 
     #[test]
     fn jsonc_read_reports_safe_path_and_syntax_position_without_changing_wire_shape() {

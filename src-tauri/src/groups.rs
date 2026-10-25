@@ -97,7 +97,7 @@ pub fn copy_group(
                 }
                 name
             }
-            None => unique_copy_group_name(&source.name, &config.groups),
+            None => unique_copy_group_name(&source.name, &config.groups)?,
         },
         updated_at: time::OffsetDateTime::now_utc(),
         ..source
@@ -323,7 +323,7 @@ fn group_model_references(group: &ModelGroup) -> Vec<(&'static str, &str, &str)>
     references
 }
 
-fn unique_copy_group_name(source: &str, groups: &[ModelGroup]) -> String {
+fn unique_copy_group_name(source: &str, groups: &[ModelGroup]) -> Result<String, AppError> {
     let base = if source.trim().is_empty() {
         "Copy".to_owned()
     } else {
@@ -333,22 +333,43 @@ fn unique_copy_group_name(source: &str, groups: &[ModelGroup]) -> String {
         .iter()
         .any(|group| group.name.trim().eq_ignore_ascii_case(&base))
     {
-        return base;
+        return Ok(base);
     }
-    (2..)
+    (2..=groups.len().saturating_add(2))
         .map(|number| format!("{base} {number}"))
         .find(|candidate| {
             !groups
                 .iter()
                 .any(|group| group.name.trim().eq_ignore_ascii_case(candidate))
         })
-        .expect("unbounded copy suffix iterator")
+        .ok_or_else(|| AppError::configuration("Could not find an available group copy name"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn copy_name_search_skips_existing_suffixes_case_insensitively() {
+        let groups = ["  Team Copy  ", "team copy 2", "TEAM COPY 3"].map(|name| ModelGroup {
+            id: Uuid::new_v4(),
+            name: name.to_owned(),
+            description: String::new(),
+            group_type: GroupType::Native,
+            open_code_agent_overrides: Vec::new(),
+            slim_agent_overrides: None,
+            omo_agent_overrides: None,
+            omo_category_mappings: None,
+            is_enabled: true,
+            updated_at: time::OffsetDateTime::now_utc(),
+        });
+        assert_eq!(
+            unique_copy_group_name("Team", &groups).unwrap(),
+            "Team Copy 4"
+        );
+        assert_eq!(unique_copy_group_name("  ", &[]).unwrap(), "Copy");
+    }
 
     #[test]
     fn save_group_two_phase_commit_aborts_before_writing_when_target_is_corrupt() {

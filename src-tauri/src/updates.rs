@@ -154,7 +154,8 @@ fn fetch_update(
         ));
     }
     let latest = stable_version(&release.tag_name)?;
-    result.latest_version = Some(format!("{}.{}.{}", latest[0], latest[1], latest[2]));
+    let [major, minor, patch] = latest;
+    result.latest_version = Some(format!("{major}.{minor}.{patch}"));
     result.update_available = latest > current;
     Ok(result)
 }

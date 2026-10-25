@@ -87,7 +87,7 @@ pub fn patch_with_effective(
     }
     let root = CstRootNode::parse(input, &options()).map_err(JsoncError::from)?;
     let object = root.object_value().ok_or(JsoncError::MalformedJson)?;
-    patch_object(&object, path, value.clone());
+    patch_object(&object, path, value.clone())?;
     let output = root.to_string();
     let effective = parse_jsonc_object(&output)?;
 
@@ -120,29 +120,31 @@ fn get_path<'a>(mut current: &'a Map<String, Value>, path: &[&str]) -> Option<&'
     None
 }
 
-fn patch_object(object: &CstObject, path: &[&str], value: Option<Value>) {
-    if path.len() == 1 {
-        match (object.get(path[0]), value) {
+fn patch_object(object: &CstObject, path: &[&str], value: Option<Value>) -> Result<(), JsoncError> {
+    let (key, rest) = path.split_first().ok_or(JsoncError::MalformedJson)?;
+    if rest.is_empty() {
+        match (object.get(key), value) {
             (Some(prop), Some(value)) => prop.set_value(to_cst(value)),
             (Some(prop), None) => prop.remove(),
             (None, Some(value)) => {
-                object.append(path[0], to_cst(value));
+                object.append(key, to_cst(value));
             }
             (None, None) => {}
         }
-        return;
+        return Ok(());
     }
     match value {
         Some(value) => {
-            let next = object.object_value_or_set(path[0]);
-            patch_object(&next, &path[1..], Some(value));
+            let next = object.object_value_or_set(key);
+            patch_object(&next, rest, Some(value))?;
         }
         None => {
-            if let Some(next) = object.object_value(path[0]) {
-                patch_object(&next, &path[1..], None);
+            if let Some(next) = object.object_value(key) {
+                patch_object(&next, rest, None)?;
             }
         }
     }
+    Ok(())
 }
 
 fn to_cst(value: Value) -> CstInputValue {
@@ -177,6 +179,27 @@ fn options() -> ParseOptions {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn patch_rejects_empty_paths_and_preserves_nested_unicode_keys() {
+        for path in [vec![], vec![""], vec!["parent", ""]] {
+            assert_eq!(
+                patch("{}", &path, Some(json!(1))),
+                Err(JsoncError::MalformedJson)
+            );
+        }
+        let path = ["配置", "🦀"];
+        let (output, effective) = patch_with_effective("{}", &path, Some(json!("值"))).unwrap();
+        assert_eq!(get_path(&effective, &path), Some(&json!("值")));
+        let (_, effective) = patch_with_effective(&output, &path, None).unwrap();
+        assert_eq!(get_path(&effective, &path), None);
+
+        let root = CstRootNode::parse("{}", &options()).unwrap();
+        assert_eq!(
+            patch_object(&root.object_value().unwrap(), &[], None),
+            Err(JsoncError::MalformedJson)
+        );
+    }
 
     #[test]
     fn string_parse_diagnostics_do_not_include_input_fragments() {

@@ -5,6 +5,68 @@ use super::*;
 use crate::error::ErrorCode;
 
 #[test]
+fn saved_server_rejects_malformed_ipc_targets_without_panicking() {
+    for config in [
+        serde_json::json!({}),
+        serde_json::json!({"type": false}),
+        serde_json::json!({"type": "unknown"}),
+        serde_json::json!({"type": "local"}),
+        serde_json::json!({"type": "local", "command": "run"}),
+        serde_json::json!({"type": "local", "command": []}),
+        serde_json::json!({"type": "local", "command": ["run", 1]}),
+        serde_json::json!({"type": "remote"}),
+        serde_json::json!({"type": "remote", "url": false}),
+    ] {
+        let error = saved_server(
+            "test".to_owned(),
+            config.as_object().unwrap().clone(),
+            Vec::new(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::ValidationFailed);
+    }
+    for (config, target) in [
+        (
+            serde_json::json!({"type": "local", "command": ["run", "--test"]}),
+            "run --test",
+        ),
+        (
+            serde_json::json!({"type": "remote", "url": "https://example.com/mcp"}),
+            "https://example.com/mcp",
+        ),
+    ] {
+        let server = saved_server(
+            "test".to_owned(),
+            config.as_object().unwrap().clone(),
+            vec!["config.jsonc".to_owned()],
+        )
+        .unwrap();
+        assert_eq!(server.target, target);
+        assert_eq!(server.source_path, "config.jsonc");
+    }
+}
+
+#[test]
+fn persist_document_rejects_invalid_indices_without_panicking() {
+    assert_eq!(
+        persist_document(&[], 0).unwrap_err().code,
+        ErrorCode::ConfigurationFailed,
+    );
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().join("config.jsonc");
+    let documents = vec![(
+        path.clone(),
+        None,
+        JsoncDoc::bootstrap(crate::document::OPENCODE_SCHEMA),
+    )];
+    assert_eq!(
+        persist_document(&documents, 1).unwrap_err().code,
+        ErrorCode::ConfigurationFailed,
+    );
+    assert!(!path.exists());
+}
+
+#[test]
 fn create_rejects_non_utf8_config_filename_before_creating_directories() {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;

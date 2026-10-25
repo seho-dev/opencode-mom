@@ -3,6 +3,19 @@ use std::os::unix::fs::symlink;
 use super::*;
 
 #[test]
+fn new_skill_ids_reject_reserved_names_without_ascii_indexing() {
+    for id in ["COM1", "com9", "LPT1", "lpt9", "COM🦀", "", "中文"] {
+        assert_eq!(
+            validate_new_id(id).unwrap_err().code,
+            crate::error::ErrorCode::ValidationFailed,
+        );
+    }
+    for id in ["COM", "COM0", "COM10", "LPT", "LPT0", "LPT10", "normal-id"] {
+        assert!(validate_new_id(id).is_ok(), "{id}");
+    }
+}
+
+#[test]
 fn update_rejects_identical_content_alias_retarget_after_discovery() {
     let home = std::env::temp_dir().join(format!(
         "opencode-mom-skill-rebound-{}",

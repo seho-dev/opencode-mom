@@ -253,10 +253,10 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
                 .get("command")
                 .and_then(Value::as_array)
                 .ok_or_else(invalid)?;
-            if command.is_empty()
-                || command.iter().any(|value| !value.is_string())
-                || command[0]
-                    .as_str()
+            if command.iter().any(|value| !value.is_string())
+                || command
+                    .first()
+                    .and_then(Value::as_str)
                     .is_none_or(|value| value.trim().is_empty())
             {
                 return Err(invalid());
@@ -354,20 +354,38 @@ fn managed_documents(
         .collect()
 }
 
-fn saved_server(name: String, config: Map<String, Value>, source_paths: Vec<String>) -> McpServer {
-    let server_type = config["type"].as_str().unwrap().to_owned();
-    let target = if server_type == "local" {
-        config["command"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_str().unwrap())
-            .collect::<Vec<_>>()
-            .join(" ")
-    } else {
-        config["url"].as_str().unwrap().to_owned()
+fn saved_server(
+    name: String,
+    config: Map<String, Value>,
+    source_paths: Vec<String>,
+) -> Result<McpServer, AppError> {
+    let invalid = || AppError::validation("Invalid MCP config: missing or invalid type or target");
+    let server_type = config
+        .get("type")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid)?
+        .to_owned();
+    let target = match server_type.as_str() {
+        "local" => config
+            .get("command")
+            .and_then(Value::as_array)
+            .filter(|command| !command.is_empty())
+            .and_then(|command| {
+                command
+                    .iter()
+                    .map(Value::as_str)
+                    .collect::<Option<Vec<_>>>()
+            })
+            .ok_or_else(invalid)?
+            .join(" "),
+        "remote" => config
+            .get("url")
+            .and_then(Value::as_str)
+            .ok_or_else(invalid)?
+            .to_owned(),
+        _ => return Err(invalid()),
     };
-    McpServer {
+    Ok(McpServer {
         name,
         r#type: server_type,
         disabled: config
@@ -378,7 +396,7 @@ fn saved_server(name: String, config: Map<String, Value>, source_paths: Vec<Stri
         source_path: source_paths.last().cloned().unwrap_or_default(),
         source_paths,
         config,
-    }
+    })
 }
 
 pub fn create(paths: &ConfigPaths, draft: McpDraft) -> Result<McpServer, AppError> {
@@ -395,14 +413,20 @@ pub fn create(paths: &ConfigPaths, draft: McpDraft) -> Result<McpServer, AppErro
     let index = documents
         .iter()
         .rposition(|(_, snapshot, _)| snapshot.is_some())
-        .unwrap_or(documents.len() - 1);
-    documents[index].2.patch(
+        .or_else(|| documents.len().checked_sub(1))
+        .ok_or_else(|| AppError::configuration("No managed MCP configuration files"))?;
+    let (_, _, document) = documents
+        .get_mut(index)
+        .ok_or_else(|| AppError::configuration("MCP configuration document is unavailable"))?;
+    document.patch(
         &["mcp", "servers", &draft.name],
         Some(Value::Object(draft.config.clone())),
     )?;
-    validate_effective_server(&documents[index].2, &draft.name, Some(&draft.config))?;
-    persist_document(&documents, index)?;
-    let source_paths = match &documents[index].1 {
+    validate_effective_server(document, &draft.name, Some(&draft.config))?;
+    let (path, snapshot, _) = documents
+        .get(index)
+        .ok_or_else(|| AppError::configuration("MCP configuration document is unavailable"))?;
+    let source_paths = match snapshot {
         Some(target) => documents
             .iter()
             .filter(|(_, snapshot, _)| {
@@ -412,9 +436,11 @@ pub fn create(paths: &ConfigPaths, draft: McpDraft) -> Result<McpServer, AppErro
             })
             .map(|(path, _, _)| path.display().to_string())
             .collect(),
-        None => vec![documents[index].0.display().to_string()],
+        None => vec![path.display().to_string()],
     };
-    Ok(saved_server(draft.name, draft.config, source_paths))
+    let server = saved_server(draft.name, draft.config, source_paths)?;
+    persist_document(&documents, index)?;
+    Ok(server)
 }
 
 pub fn update(paths: &ConfigPaths, draft: McpUpdate) -> Result<McpServer, AppError> {
@@ -430,14 +456,25 @@ pub fn update(paths: &ConfigPaths, draft: McpUpdate) -> Result<McpServer, AppErr
                 .is_some_and(|definitions| definitions.contains_key(&draft.name))
         })
         .ok_or_else(|| AppError::not_found("MCP server no longer exists"))?;
-    let current = servers(&documents[index].2)?.unwrap()[&draft.name].as_object();
+    let (path, _, document) = documents
+        .get_mut(index)
+        .ok_or_else(|| AppError::not_found("MCP server no longer exists"))?;
+    let current = servers(document)?
+        .and_then(|definitions| definitions.get(&draft.name))
+        .ok_or_else(|| AppError::not_found("MCP server no longer exists"))?
+        .as_object();
     if current != Some(&draft.expected_config)
-        || documents[index].0.display().to_string() != draft.expected_source_path
+        || path.display().to_string() != draft.expected_source_path
     {
         return Err(AppError::configuration(
             "MCP server changed; reload before saving",
         ));
     }
+    document.patch(
+        &["mcp", "servers", &draft.name],
+        Some(Value::Object(draft.config.clone())),
+    )?;
+    validate_effective_server(document, &draft.name, Some(&draft.config))?;
     let source_paths = documents
         .iter()
         .filter(|(_, _, document)| {
@@ -448,13 +485,9 @@ pub fn update(paths: &ConfigPaths, draft: McpUpdate) -> Result<McpServer, AppErr
         })
         .map(|(path, _, _)| path.display().to_string())
         .collect();
-    documents[index].2.patch(
-        &["mcp", "servers", &draft.name],
-        Some(Value::Object(draft.config.clone())),
-    )?;
-    validate_effective_server(&documents[index].2, &draft.name, Some(&draft.config))?;
+    let server = saved_server(draft.name, draft.config, source_paths)?;
     persist_document(&documents, index)?;
-    Ok(saved_server(draft.name, draft.config, source_paths))
+    Ok(server)
 }
 
 fn persist_document(
@@ -467,7 +500,9 @@ fn persist_document(
             None => resource_file::absent(path)?,
         }
     }
-    let (path, snapshot, document) = &documents[index];
+    let (path, snapshot, document) = documents
+        .get(index)
+        .ok_or_else(|| AppError::configuration("MCP configuration document is unavailable"))?;
     if let Some(snapshot) = snapshot {
         let mut snapshot = snapshot.clone();
         snapshot.aliases = documents
@@ -493,7 +528,10 @@ fn persist_document(
             .file_name()
             .and_then(|name| name.to_str())
             .ok_or_else(|| AppError::validation("MCP config filename must be valid UTF-8"))?;
-        let parent = Directory::ensure(path.parent().unwrap())?;
+        let parent = Directory::ensure(
+            path.parent()
+                .ok_or_else(|| AppError::validation("MCP config path must have a parent"))?,
+        )?;
         parent.create_file_checked(filename, document.content(), || {
             for (path, snapshot, _) in documents {
                 match snapshot {

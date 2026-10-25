@@ -240,9 +240,8 @@ fn validate_new_id(id: &str) -> Result<(), AppError> {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         || matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
         || ["COM", "LPT"].iter().any(|prefix| {
-            base.strip_prefix(prefix).is_some_and(|suffix| {
-                suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9')
-            })
+            base.strip_prefix(prefix)
+                .is_some_and(|suffix| matches!(suffix.as_bytes(), [b'1'..=b'9']))
         })
     {
         return Err(AppError::validation("New skill ID must be 1–128 ASCII letters, digits, hyphens or underscores, not a reserved Windows name"));

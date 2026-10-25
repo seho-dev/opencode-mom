@@ -128,7 +128,10 @@ fn split_frontmatter(input: &str) -> Option<(&str, &str)> {
     for line in after_open.split_inclusive(['\n']) {
         let trimmed = line.trim_end_matches(['\r', '\n']);
         if matches!(trimmed, "---" | "...") {
-            return Some((&input[start_offset..offset], &input[offset + line.len()..]));
+            return Some((
+                input.get(start_offset..offset)?,
+                input.get(offset + line.len()..)?,
+            ));
         }
         offset += line.len();
     }
@@ -301,7 +304,7 @@ fn top_level_key(line: &str) -> Option<String> {
         if key.len() < 2 {
             return None;
         }
-        key = &key[1..key.len() - 1];
+        key = key.get(1..key.len() - 1)?;
     }
     (!key.is_empty()
         && key
@@ -351,22 +354,39 @@ fn render_value(output: &mut String, value: &Value, indent: usize) {
 }
 
 fn render_scalar(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_owned(),
-        Value::Bool(value) => value.to_string(),
-        Value::Number(value) => value.to_string(),
-        Value::String(value) => {
-            serde_json::to_string(value).expect("string serialization is infallible")
-        }
-        Value::Array(_) | Value::Object(_) => {
-            unreachable!("complex YAML values are rendered structurally")
-        }
-    }
+    serde_json::to_string(value).expect("JSON value serialization is infallible")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frontmatter_preserves_unicode_and_short_quoted_keys_without_panicking() {
+        for newline in ["\n", "\r\n"] {
+            let frontmatter = format!("description: 中文🦀{newline}");
+            let input = format!("---{newline}{frontmatter}...{newline}提示🦀");
+            assert_eq!(
+                split_frontmatter(&input),
+                Some((frontmatter.as_str(), "提示🦀")),
+            );
+            let document = MarkdownAgentDocument::parse(&input).unwrap();
+            assert_eq!(
+                document.frontmatter.get("description"),
+                Some(&Value::String("中文🦀".to_owned()))
+            );
+            assert_eq!(document.serialize(), input);
+        }
+        for line in [
+            "': value",
+            "\": value",
+            "'': value",
+            "\"\": value",
+            "'🦀': value",
+        ] {
+            assert_eq!(top_level_key(line), None, "{line}");
+        }
+    }
 
     #[test]
     fn quoted_key_prompt_only_update_preserves_section_without_duplicates() {

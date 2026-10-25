@@ -29,7 +29,7 @@ styles/           # Shared sheets imported by src/app.css
 | Global defaults | `base.css` | Applies app surface/text/fonts, form font inheritance, and visible focus styling. |
 | Shell geometry | `layout.css` | Keeps shell/workspace viewport-height and makes `.content` the scrolling region. |
 | Table behavior | `table.css` | Uses separate borders and sticky rightmost action cells with opaque panel backgrounds. |
-| Form behavior | `forms.css` | Direct-child form selectors scroll `.form-grid` while keeping `.form-actions` pinned. |
+| Form behavior | `forms.css` | Explicit `.form-page` frames keep headings visible; only `.form-body` scrolls above in-flow `.form-actions`. Shared `.field-hint` and `.form-hint` style ordinary help. |
 | Adaptive overrides | `responsive.css` | Adjusts navigation/forms/tables at 760 px and reduces animation/transition duration. |
 
 ## Conventions
@@ -39,7 +39,8 @@ styles/           # Shared sheets imported by src/app.css
 - **Theme overrides**: Keep dark defaults in `:root` and light color overrides in the following `[data-theme="light"]` block; extend both when adding a color-bearing token.
 - **File ownership**: Extend the sheet matching the semantic selector's responsibility; keep page heading, search, feedback, form, table, and roster rules out of shell `layout.css`.
 - **Scroll boundaries**: Preserve `min-width: 0` on the workspace/content and `min-height: 0` on flexing scroll regions; shell/workspace hide overflow while `.content` scrolls vertically.
-- **Pinned forms**: The pinned footer depends on `.content > .form-panel > .form-grid` and sibling `.form-actions`; preserve this direct-child structure when relying on these rules.
+- **Pinned forms**: `.content > .form-page` fills the available workspace; `.form-panel` flexes between its heading and bottom edge. Its direct `.form-body` owns vertical scrolling and `.form-actions` stays in flow, never viewport-fixed. Nested `.form-grid` only arranges fields. Keep destination notices, help and validation feedback inside the body so short viewports retain usable field space. Dialog editors use the same body/actions boundary inside a height-constrained flex container.
+- **Help hierarchy**: Ordinary field help uses `.field-hint`, standalone form introductions use `.form-hint`: 11 px, 18 px line height, `--text-secondary`. Keep warning/error banners, credential notices, read-only state and overwrite risks separate; do not mute safety feedback into ordinary help. Keep copy short and action-oriented.
 - **Table actions**: Retain `border-collapse: separate`, zero border spacing, and sticky `th.th-actions`/`td.row-actions`; action buttons are spaced with sibling margins inside a plain table cell.
 - **Responsive overrides**: Keep shared mobile changes in the 760 px media query. Preserve the `.mobile-menu` display overrides with `!important`, which counter the Button primitive's `inline-flex` utility.
 - **Scrollbar coverage**: Update standard `scrollbar-*` rules and matching WebKit track/thumb/state selectors together when adding a shared scrolling container; drawer and textarea tracks use `--scrollbar-track-raised`.

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterAll, beforeAll, expect, test, vi } from 'vitest';
+import { en } from '$src/i18n/dictionaries/en.js';
 import Harness from '$src/test-utils/harness.svelte';
 import ResourceScope from '../ResourceScope.svelte';
 import { makeScopedConfig } from './scope-config.js';
@@ -70,7 +71,7 @@ test('manage only forgets folders, prevents pending dismissal/removal, and retur
   render(ResourceScope, {}, { wrapper: Harness, wrapperProps: { config } });
   await fireEvent.click(screen.getByRole('button', { name: 'Manage folders' }));
   const dialog = await screen.findByRole('dialog');
-  expect(within(dialog).getByText(/does not delete or change any files/)).toBeTruthy();
+  expect(within(dialog).getByText(en['scope.removeHint'])).toBeTruthy();
   await fireEvent.click(within(dialog).getByRole('button', { name: 'Remove folder /work/alpha from MOM' }));
   expect(
     (within(dialog).getByRole('button', { name: 'Remove folder /other/alpha from MOM' }) as HTMLButtonElement).disabled,

@@ -4,7 +4,7 @@ import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { Button } from '$src/components/button/index.js';
 import { isNotFound, readError } from '$src/components/configuration/read-error.js';
-import GlobalDestination from '$src/components/GlobalDestination.svelte';
+import FormPage from '$src/components/FormPage.svelte';
 import PageHead from '$src/components/PageHead.svelte';
 import ResourceScopeNotice from '$src/components/ResourceScopeNotice.svelte';
 import { getConfig } from '$src/config/context.js';
@@ -68,109 +68,119 @@ $effect(() => {
 </script>
 
 <svelte:head><title>{i18n.t('mcp.detailMetaTitle')}</title></svelte:head>
-<div class="[&_.page-head]:flex-wrap [&_.page-head>div]:min-w-0 [&_h1]:[overflow-wrap:anywhere]">
-  <PageHead eyebrow={i18n.t('mcp.eyebrow')} title={server?.name ?? i18n.t('mcp.detailTitle')}>
-    {#if !editing}
-      <div class="flex flex-wrap justify-end gap-2">
-        <Button href="/mcp" variant="outline" size="sm"><ArrowLeft size={14} />{i18n.t('mcp.title')}</Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={loading}
-          onclick={() => load(page.params.id ?? '')}
-          aria-label={i18n.t('configuration.refresh')}
-          ><RefreshCw size={14} /></Button
-        >
-        {#if server && !readonly}
-          <Button variant="outline" size="sm" onclick={() => { editing = true; saved = false; }}
-            ><Pencil size={14} />{i18n.t('configuration.edit')}</Button
+<FormPage active={editing && !readonly}>
+  <div class="[&_.page-head]:flex-wrap [&_.page-head>div]:min-w-0 [&_h1]:[overflow-wrap:anywhere]">
+    <PageHead eyebrow={i18n.t('mcp.eyebrow')} title={server?.name ?? i18n.t('mcp.detailTitle')}>
+      {#if !editing}
+        <div class="flex flex-wrap justify-end gap-2">
+          <Button href="/mcp" variant="outline" size="sm"><ArrowLeft size={14} />{i18n.t('mcp.title')}</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            aria-busy={loading}
+            onclick={() => load(page.params.id ?? '')}
+            aria-label={i18n.t('configuration.refresh')}
+            ><RefreshCw
+              size={14}
+              class={loading ? 'animate-spin motion-reduce:animate-none' : ''}
+              aria-hidden="true"
+            /></Button
           >
-          <Button variant="destructive" size="sm" onclick={() => (deleting = server)}
-            ><Trash2 size={14} />{i18n.t('common.delete')}</Button
-          >
-        {/if}
-      </div>
-    {/if}
-  </PageHead>
-</div>
-<ResourceScopeNotice {projectId} {readonly} />
-{#if editing}
-  <GlobalDestination />
-{/if}
-{#if !readonly && (saved || page.url.searchParams.get('saved') === '1')}
-  <div class="state-banner success" role="status">{i18n.t('configuration.saved')}</div>
-{/if}
-{#if loading}
-  <div class="state-banner" role="status">{i18n.t('common.loadingConfiguration')}</div>
-{:else if error}
-  <div class="state-banner error" role="alert">
-    <span class="min-w-0 break-words [overflow-wrap:anywhere]"
-      >{i18n.t(missing ? projectId !== null ? 'scope.notFound' : 'mcp.notFound' : 'mcp.loadFailed')} {error}</span
-    >
-    <Button variant="outline" size="sm" onclick={() => load(page.params.id ?? '')}
-      >{i18n.t('configuration.retry')}</Button
-    >
+          {#if server && !readonly}
+            <Button variant="outline" size="sm" onclick={() => { editing = true; saved = false; }}
+              ><Pencil size={14} />{i18n.t('configuration.edit')}</Button
+            >
+            <Button variant="destructive" size="sm" onclick={() => (deleting = server)}
+              ><Trash2 size={14} />{i18n.t('common.delete')}</Button
+            >
+          {/if}
+        </div>
+      {/if}
+    </PageHead>
   </div>
-{:else if server}
-  {#if editing && !readonly}
-    {#key identity}
-      <McpForm
-        source={server}
-        onCancel={() => { editing = false; }}
-        onSaved={(result) => { data = result; editing = false; saved = true; }}
-      />
-    {/key}
-  {:else}
-    <section class="panel min-w-0 p-4 sm:p-5" aria-label={i18n.t('mcp.detailTitle')}>
-      <dl class="m-0 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        <div class="min-w-0">
-          <dt class="text-xs text-[var(--text-muted)]">{i18n.t('common.type')}</dt>
-          <dd class="mt-2 ml-0">{i18n.t(server.type === 'local' ? 'mcp.local' : 'mcp.remote')}</dd>
-        </div>
-        <div>
-          <dt class="text-xs text-[var(--text-muted)]">{i18n.t('mcp.configuration')}</dt>
-          <dd class="mt-2 ml-0">{i18n.t(server.disabled ? 'common.disabled' : 'common.enabled')}</dd>
-        </div>
-        <div class="min-w-0 sm:col-span-2">
-          <dt class="text-xs text-[var(--text-muted)]">{i18n.t('mcp.target')}</dt>
-          <dd class="mt-2 ml-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-            {maskTarget(server) || '—'}
-          </dd>
-        </div>
-        <div class="min-w-0 sm:col-span-2">
-          <dt class="text-xs text-[var(--text-muted)]">
-            {i18n.t(projectId !== null ? 'configuration.source' : 'configuration.globalSources')}
-          </dt>
-          <dd class="mt-2 ml-0">
-            <ul class="m-0 pl-4 space-y-1 break-words [overflow-wrap:anywhere]">
-              {#each server.sourcePaths.length ? server.sourcePaths : [server.sourcePath] as path}
-                <li>{path}</li>
-              {/each}
-            </ul>
-          </dd>
-        </div>
-      </dl>
-    </section>
-    <section class="panel mt-4 min-w-0 p-4 sm:p-5" aria-labelledby="native-config-title">
-      <h2 id="native-config-title" class="mt-0 mb-2 font-[var(--font-heading)] text-base">
-        {i18n.t('mcp.nativeConfig')}
-      </h2>
-      <p class="mt-0 mb-5 text-xs text-[var(--text-secondary)]">{i18n.t('mcp.credentialHint')}</p>
-      <dl class="m-0 divide-y divide-[var(--border-subtle)]">
-        {#each fields as [key, value]}
-          <div class="grid min-w-0 gap-2 py-3 first:pt-0 sm:grid-cols-[160px_minmax(0,1fr)]">
-            <dt class="break-words text-xs text-[var(--text-muted)] [overflow-wrap:anywhere]">{key}</dt>
-            <dd class="m-0 min-w-0">
-              <pre
-                class="m-0 whitespace-pre-wrap break-words font-[var(--font-primary)] text-xs leading-6 [overflow-wrap:anywhere]"
-              >{typeof value === 'string' ? value : prettyJson(value)}</pre>
+  <ResourceScopeNotice {projectId} {readonly} />
+  {#if !readonly && (saved || page.url.searchParams.get('saved') === '1')}
+    <div class="state-banner success" role="status">{i18n.t('configuration.saved')}</div>
+  {/if}
+  {#if loading}
+    <div class="state-banner" role="status">{i18n.t('common.loadingConfiguration')}</div>
+  {:else if error}
+    <div class="state-banner error" role="alert">
+      <span class="min-w-0 break-words [overflow-wrap:anywhere]"
+        >{i18n.t(missing ? projectId !== null ? 'scope.notFound' : 'mcp.notFound' : 'mcp.loadFailed')} {error}</span
+      >
+      <Button variant="outline" size="sm" onclick={() => load(page.params.id ?? '')}
+        >{i18n.t('configuration.retry')}</Button
+      >
+    </div>
+  {:else if server}
+    {#if editing && !readonly}
+      {#key identity}
+        <McpForm
+          source={server}
+          onCancel={() => { editing = false; }}
+          onSaved={(result) => { data = result; editing = false; saved = true; }}
+        />
+      {/key}
+    {:else}
+      <section class="panel min-w-0 p-4 sm:p-5" aria-label={i18n.t('mcp.detailTitle')}>
+        <dl class="m-0 grid gap-x-8 gap-y-5 sm:grid-cols-2">
+          <div class="min-w-0">
+            <dt class="text-xs text-[var(--text-muted)]">{i18n.t('common.type')}</dt>
+            <dd class="mt-2 ml-0">{i18n.t(server.type === 'local' ? 'mcp.local' : 'mcp.remote')}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-[var(--text-muted)]">{i18n.t('mcp.configuration')}</dt>
+            <dd class="mt-2 ml-0">{i18n.t(server.disabled ? 'common.disabled' : 'common.enabled')}</dd>
+          </div>
+          <div class="min-w-0 sm:col-span-2">
+            <dt class="text-xs text-[var(--text-muted)]">{i18n.t('mcp.target')}</dt>
+            <dd class="mt-2 ml-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+              {maskTarget(server) || '—'}
             </dd>
           </div>
-        {:else}
-          <p class="muted">{i18n.t('mcp.noConfig')}</p>
-        {/each}
-      </dl>
-    </section>
+          <div class="min-w-0 sm:col-span-2">
+            <dt class="text-xs text-[var(--text-muted)]">
+              {i18n.t(projectId !== null ? 'configuration.source' : 'configuration.globalSources')}
+            </dt>
+            <dd class="mt-2 ml-0">
+              <ul class="m-0 pl-4 space-y-1 break-words [overflow-wrap:anywhere]">
+                {#each server.sourcePaths.length ? server.sourcePaths : [server.sourcePath] as path}
+                  <li>{path}</li>
+                {/each}
+              </ul>
+            </dd>
+          </div>
+        </dl>
+      </section>
+      <section class="panel mt-4 min-w-0 p-4 sm:p-5" aria-labelledby="native-config-title">
+        <h2 id="native-config-title" class="mt-0 mb-2 font-[var(--font-heading)] text-base">
+          {i18n.t('mcp.nativeConfig')}
+        </h2>
+        <p class="mt-0 mb-5 text-xs text-[var(--text-secondary)]">{i18n.t('mcp.credentialHint')}</p>
+        <dl class="m-0 divide-y divide-[var(--border-subtle)]">
+          {#each fields as [key, value]}
+            <div class="grid min-w-0 gap-2 py-3 first:pt-0 sm:grid-cols-[160px_minmax(0,1fr)]">
+              <dt class="break-words text-xs text-[var(--text-muted)] [overflow-wrap:anywhere]">{key}</dt>
+              <dd class="m-0 min-w-0">
+                <!-- biome-ignore-start lint/a11y/noNoninteractiveTabindex lint/a11y/useSemanticElements: Named scrollable previews retain preformatted content and keyboard access. -->
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable previews need keyboard access.) -->
+                <pre
+                  tabindex="0"
+                  role="region"
+                  aria-label={`${i18n.t('mcp.nativeConfig')}: ${key}`}
+                  class="m-0 max-h-96 overflow-y-auto whitespace-pre-wrap break-words font-[var(--font-primary)] text-xs leading-6 [overflow-wrap:anywhere]"
+                >{typeof value === 'string' ? value : prettyJson(value)}</pre>
+                <!-- biome-ignore-end lint/a11y/noNoninteractiveTabindex lint/a11y/useSemanticElements: Named scrollable previews retain preformatted content and keyboard access. -->
+              </dd>
+            </div>
+          {:else}
+            <p class="muted">{i18n.t('mcp.noConfig')}</p>
+          {/each}
+        </dl>
+      </section>
+    {/if}
   {/if}
-{/if}
-<DeleteMcpDialog bind:server={deleting} onDeleted={() => goto('/mcp?removed=1')} />
+  <DeleteMcpDialog bind:server={deleting} onDeleted={() => goto('/mcp?removed=1')} />
+</FormPage>

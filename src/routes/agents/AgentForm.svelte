@@ -2,6 +2,7 @@
 import { goto } from '$app/navigation';
 import { Button } from '$src/components/button/index.js';
 import FormActions from '$src/components/FormActions.svelte';
+import GlobalDestination from '$src/components/GlobalDestination.svelte';
 import Select from '$src/components/Select.svelte';
 import { Switch } from '$src/components/switch/index.js';
 import { getConfig } from '$src/config/context.js';
@@ -185,9 +186,6 @@ function changeModel(model: string) {
 {#if builtin}
   <div class="state-banner" role="status">{i18n.t('agents.builtinReadOnly')}</div>
 {:else if !edit || agent}
-  {#if edit}
-    <p class="muted">{i18n.t('agents.editNotice')}</p>
-  {/if}
   <form
     class="panel form-panel"
     novalidate
@@ -196,7 +194,11 @@ function changeModel(model: string) {
       form.handleSubmit();
     }}
   >
-    <div class="form-grid">
+    <div class="form-body form-grid">
+      <GlobalDestination />
+      {#if edit}
+        <p class="form-hint">{i18n.t('agents.editNotice')}</p>
+      {/if}
       {#if edit}
         <fieldset class="form-section">
           <legend>{i18n.t('agents.colSource')}</legend>
@@ -213,14 +215,14 @@ function changeModel(model: string) {
                 }))}
               />
               {#if selectedSource}
-                <small class="muted"
+                <small class="field-hint"
                   >{i18n.t('agents.pathLabel', { path: selectedSource.path ?? i18n.t('agents.noPath') })}</small
                 >
               {:else}
-                <small class="muted">{i18n.t('agents.sourceMissing')}</small>
+                <small class="field-hint">{i18n.t('agents.sourceMissing')}</small>
               {/if}
               {#if agent?.source === 'both'}
-                <small class="muted">{i18n.t('agents.effectiveOverrides')}</small>
+                <small class="field-hint">{i18n.t('agents.effectiveOverrides')}</small>
               {/if}
             </div>
           </div>
@@ -336,7 +338,7 @@ function changeModel(model: string) {
                   ]}
                 />
               {/snippet}
-            </form.Field><small class="muted">{variantHint}</small>
+            </form.Field><small class="field-hint">{variantHint}</small>
           </div>
         </div>
       </fieldset>
@@ -399,7 +401,7 @@ function changeModel(model: string) {
               </form.Field>
               <label for="agent-hidden">{i18n.t('agents.hidden')}</label>
             </div>
-            <small class="muted">{i18n.t('agents.hiddenHint')}</small>
+            <small class="field-hint">{i18n.t('agents.hiddenHint')}</small>
           </div>
         </div>
       </fieldset>
@@ -418,7 +420,7 @@ function changeModel(model: string) {
           </form.Field>
           <label for="agent-disabled">{i18n.t('agents.disable')}</label>
         </div>
-        <small class="muted">{i18n.t('agents.disableHint')}</small>
+        <small class="field-hint">{i18n.t('agents.disableHint')}</small>
       </fieldset>
       <fieldset class="form-section">
         <legend>{i18n.t('agents.legendPrompt')}</legend>
@@ -433,7 +435,7 @@ function changeModel(model: string) {
                 onblur={field.handleBlur}
               ></textarea>
             {/snippet}
-          </form.Field><small class="muted">{promptHint}</small>
+          </form.Field><small class="field-hint">{promptHint}</small>
         </div>
       </fieldset>
       <form.Field name="permission">

@@ -1,6 +1,7 @@
 <script lang="ts">
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
+import FormPage from '$src/components/FormPage.svelte';
 import PageHead from '$src/components/PageHead.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
@@ -18,18 +19,20 @@ async function update(providerId: string, value: ModelDef) {
 </script>
 
 <svelte:head><title>{i18n.t('models.editMetaTitle')}</title></svelte:head>
-<PageHead eyebrow={i18n.t('models.eyebrow')} title={i18n.t('models.editTitle')} />
-{#if found}
-  <ModelForm
-    mode="edit"
-    initial={found}
-    defaultProviderId={found.providerId}
-    saving={config.saving}
-    submitLabel={i18n.t('modelForm.saveChanges')}
-    onSave={update}
-  />
-{:else if !config.loading}
-  <div class="state-banner error" role="alert">
-    {i18n.t('models.notFound')}
-  </div>
-{/if}
+<FormPage>
+  <PageHead eyebrow={i18n.t('models.eyebrow')} title={i18n.t('models.editTitle')} />
+  {#if found}
+    <ModelForm
+      mode="edit"
+      initial={found}
+      defaultProviderId={found.providerId}
+      saving={config.saving}
+      submitLabel={i18n.t('modelForm.saveChanges')}
+      onSave={update}
+    />
+  {:else if !config.loading}
+    <div class="state-banner error" role="alert">
+      {i18n.t('models.notFound')}
+    </div>
+  {/if}
+</FormPage>

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Checkbox } from '$src/components/checkbox/index.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { IslandAnswer, IslandQuestion, IslandQuestionField } from '$src/types/island.js';
 
@@ -21,6 +22,7 @@ let invalid = $state(false);
 const answerable = $derived(
   question.answerable && question.fields.every((field) => field.type === 'string' || field.type === 'multiselect'),
 );
+const fieldDisabled = $derived(busy || !answerable);
 
 function choices(field: IslandQuestionField): string[] {
   const value = answers[field.key];
@@ -65,7 +67,7 @@ function submit(event: SubmitEvent) {
     <p class="m-0 text-xs leading-5 text-[#b6b6bd]">{i18n.t('island.questionReadOnly')}</p>
   {/if}
   {#each question.fields as field (field.key)}
-    <fieldset disabled={busy || !answerable} class="m-0 min-w-0 space-y-2 border-0 p-0">
+    <fieldset disabled={fieldDisabled} class="m-0 min-w-0 space-y-2 border-0 p-0">
       <legend class="mb-1 text-xs font-medium">
         {field.title ?? field.key}{field.required ? ` · ${i18n.t('island.required')}` : ''}
       </legend>
@@ -74,16 +76,24 @@ function submit(event: SubmitEvent) {
       {/if}
       {#each field.options as option (option.value)}
         {@const inputId = `${question.id}-${field.key}-${option.value}`}
-        <label for={inputId} class="flex cursor-pointer items-start gap-2 text-xs leading-5">
-          {#if field.type === 'multiselect'}
-            <input
+        {#if field.type === 'multiselect'}
+          <div class="flex items-start gap-2 text-xs leading-5">
+            <Checkbox
               id={inputId}
-              type="checkbox"
-              class="mt-1 accent-[#d8b66e]"
+              class="mt-0.5 border-[#35353a] bg-[#18181b] text-black hover:border-[#d8b66e] hover:bg-[#222226] focus-visible:border-[#d8b66e] focus-visible:outline-[#d8b66e] focus-visible:shadow-none data-[state=checked]:border-[#d8b66e] data-[state=checked]:bg-[#d8b66e] data-[state=checked]:hover:border-[#e2c687] data-[state=checked]:hover:bg-[#e2c687]"
+              disabled={fieldDisabled}
               checked={choices(field).includes(option.value)}
-              onchange={(event) => toggle(field, option.value, event.currentTarget.checked)}
+              onCheckedChange={(checked) => toggle(field, option.value, checked)}
+            />
+            <label for={inputId} class={fieldDisabled ? 'cursor-default' : 'cursor-pointer'}
+              >{option.label}
+              {#if option.description}
+                <span class="block text-[#b6b6bd]">{option.description}</span>
+              {/if}</label
             >
-          {:else}
+          </div>
+        {:else}
+          <label for={inputId} class="flex cursor-pointer items-start gap-2 text-xs leading-5">
             <input
               id={inputId}
               type="radio"
@@ -92,14 +102,14 @@ function submit(event: SubmitEvent) {
               checked={!custom[field.key] && answers[field.key] === option.value}
               onchange={() => { custom[field.key] = false; answers[field.key] = option.value; }}
             >
-          {/if}
-          <span
-            >{option.label}
-            {#if option.description}
-              <span class="block text-[#b6b6bd]">{option.description}</span>
-            {/if}</span
-          >
-        </label>
+            <span
+              >{option.label}
+              {#if option.description}
+                <span class="block text-[#b6b6bd]">{option.description}</span>
+              {/if}</span
+            >
+          </label>
+        {/if}
       {/each}
       {#if field.custom}
         {#if field.type === 'string'}
@@ -134,15 +144,20 @@ function submit(event: SubmitEvent) {
           {/if}
         </div>
         {#if field.type === 'multiselect'}
-          {#each choices(field).filter((value) => !field.options.some((option) => option.value === value)) as value (value)}
-            <label class="flex items-start gap-2 text-xs leading-5"
-              ><input
-                type="checkbox"
-                checked
-                class="mt-1 accent-[#d8b66e]"
-                onchange={() => toggle(field, value, false)}
-              ><span class="break-all">{value}</span></label
-            >
+          {#each choices(field).filter((value) => !field.options.some((option) => option.value === value)) as value, index (value)}
+            {@const customId = `${question.id}-${field.key}-custom-${index}`}
+            <div class="flex items-start gap-2 text-xs leading-5">
+              <Checkbox
+                id={customId}
+                checked={true}
+                disabled={fieldDisabled}
+                class="mt-0.5 border-[#35353a] bg-[#18181b] text-black hover:border-[#d8b66e] hover:bg-[#222226] focus-visible:border-[#d8b66e] focus-visible:outline-[#d8b66e] focus-visible:shadow-none data-[state=checked]:border-[#d8b66e] data-[state=checked]:bg-[#d8b66e] data-[state=checked]:hover:border-[#e2c687] data-[state=checked]:hover:bg-[#e2c687]"
+                onCheckedChange={() => toggle(field, value, false)}
+              />
+              <label for={customId} class={['break-all', fieldDisabled ? 'cursor-default' : 'cursor-pointer']}
+                >{value}</label
+              >
+            </div>
           {/each}
         {/if}
       {/if}

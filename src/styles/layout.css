@@ -63,6 +63,7 @@
   overflow: hidden;
 }
 .header {
+  flex-shrink: 0;
   height: 56px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;

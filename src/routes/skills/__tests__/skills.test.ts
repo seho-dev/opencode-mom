@@ -4,6 +4,7 @@ import { goto } from '$app/navigation';
 import { page as routePage } from '$app/state';
 import { makeScopedConfig } from '$src/components/__tests__/scope-config.js';
 import type { ConfigStore } from '$src/config/store.svelte.js';
+import { en } from '$src/i18n/dictionaries/en.js';
 import Harness from '$src/test-utils/harness.svelte';
 import type { SkillEntry } from '$src/types/skills.js';
 import SkillList from '../+page.svelte';
@@ -99,6 +100,10 @@ test('detail displays full Markdown safely as plain text with metadata', async (
   const { container } = render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig() } });
   await screen.findByRole('heading', { name: skill.name });
   expect(container.querySelector('pre')?.textContent).toBe(skill.content);
+  const preview = screen.getByRole('region', { name: `${en['skills.content']}: ${skill.name}` });
+  expect(preview.tabIndex).toBe(0);
+  preview.focus();
+  expect(document.activeElement).toBe(preview);
   expect(container.querySelector('script')).toBeNull();
   expect(container.querySelector('img')).toBeNull();
   expect(screen.getByText(skill.path)).toBeTruthy();
@@ -247,7 +252,7 @@ test('Remote detail rejects edit query and forged form entry without update IPC'
   const config = makeConfig({ getSkill: vi.fn().mockResolvedValue(remote), updateSkill });
   page.url = new URL('http://localhost/skills/docs?edit=1');
   const mounted = render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config } });
-  await screen.findByText(/This Remote skill is read-only/);
+  await screen.findByText(en['skills.remoteHint']);
   expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
   expect(screen.queryByRole('textbox')).toBeNull();
   mounted.unmount();
@@ -435,7 +440,7 @@ test('Skill Global comparison detail ignores edit query and says switch Global t
   expect(getSkill).toHaveBeenCalledExactlyOnceWith(skill.id);
   expect(screen.queryByRole('textbox')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
-  expect(screen.getByText(/Switch the list to Global to edit/)).toBeTruthy();
+  expect(screen.getByText(en['scope.globalReadOnly'])).toBeTruthy();
   expect(config.selectedProjectId).toBe('project-a');
 });
 

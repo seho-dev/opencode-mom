@@ -4,7 +4,7 @@ import { tv, type VariantProps } from 'tailwind-variants';
 import { cn, type WithElementRef } from '$src/utils/index.js';
 
 export const buttonVariants = tv({
-  base: 'group/button inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-[2px] border font-[var(--font-primary)] text-[11px] font-semibold leading-4 tracking-normal transition-[background-color,border-color,color,box-shadow,transform] duration-150 outline-none select-none focus-visible:border-[var(--accent-primary)] focus-visible:outline-1 focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:shadow-[var(--focus-glow)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-[var(--disabled-opacity)] disabled:shadow-none [&_svg]:pointer-events-none [&_svg]:size-[var(--icon-md)] [&_svg]:shrink-0',
+  base: 'group/button inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-[2px] border font-[var(--font-primary)] text-[11px] font-semibold leading-4 tracking-normal transition-[background-color,border-color,color,box-shadow,transform] duration-150 outline-none select-none focus-visible:border-[var(--accent-primary)] focus-visible:outline-1 focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:shadow-[var(--focus-glow)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-[var(--disabled-opacity)] disabled:shadow-none aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-[var(--disabled-opacity)] aria-disabled:shadow-none [&_svg]:pointer-events-none [&_svg]:size-[var(--icon-md)] [&_svg]:shrink-0',
   variants: {
     variant: {
       default:

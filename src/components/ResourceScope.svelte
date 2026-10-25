@@ -1,6 +1,7 @@
 <script lang="ts">
 import { FolderPlus, Globe, Settings2 } from '@lucide/svelte';
 import { Button } from '$src/components/button/index.js';
+import { Checkbox } from '$src/components/checkbox/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import * as Dialog from '$src/components/dialog/index.js';
 import Select from '$src/components/Select.svelte';
@@ -14,6 +15,7 @@ let managing = $state(false);
 let pending = $state(false);
 let error = $state('');
 let picker = $state('global');
+const showGlobalId = $props.id();
 const projects = $derived(config.projects ?? []);
 const selectedId = $derived(config.selectedProjectId ?? null);
 const selected = $derived(projects.find((project) => project.id === selectedId));
@@ -115,10 +117,15 @@ async function remove(id: string) {
         </p>
         <p class="mb-0 mt-1 text-[var(--text-muted)]">{i18n.t('scope.projectReadOnly')}</p>
       </div>
-      <label class="flex cursor-pointer items-center gap-2 text-[var(--text-secondary)]">
-        <input type="checkbox" bind:checked={showGlobal} disabled={busy} class="accent-[var(--accent-primary)]">
-        {i18n.t('scope.showGlobal')}
-      </label>
+      <div class="flex items-center gap-2 text-[var(--text-secondary)]">
+        <Checkbox id="scope-show-global-{showGlobalId}" bind:checked={showGlobal} disabled={busy} />
+        <label
+          for="scope-show-global-{showGlobalId}"
+          class={busy ? 'cursor-not-allowed opacity-[var(--disabled-opacity)]' : 'cursor-pointer'}
+        >
+          {i18n.t('scope.showGlobal')}
+        </label>
+      </div>
     </div>
   {/if}
   {#if error && !managing}

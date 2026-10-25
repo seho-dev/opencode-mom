@@ -4,6 +4,7 @@ import { goto } from '$app/navigation';
 import { page as routePage } from '$app/state';
 import { makeScopedConfig } from '$src/components/__tests__/scope-config.js';
 import type { ConfigStore } from '$src/config/store.svelte.js';
+import { en } from '$src/i18n/dictionaries/en.js';
 import Harness from '$src/test-utils/harness.svelte';
 import type { McpServer } from '$src/types/mcp.js';
 import McpList from '../+page.svelte';
@@ -192,6 +193,12 @@ test('detail masks secrets, confirms sources, blocks dismissal while deleting, a
   expect(document.body.textContent).not.toContain('secret-env');
   expect(document.body.textContent).not.toContain('secret-oauth');
   expect(document.body.textContent).toContain('public-id');
+  for (const key of Object.keys(server.config)) {
+    const preview = screen.getByRole('region', { name: `${en['mcp.nativeConfig']}: ${key}` });
+    expect(preview.tabIndex).toBe(0);
+    preview.focus();
+    expect(document.activeElement).toBe(preview);
+  }
   await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
   let dialog = await screen.findByRole('dialog');
   await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -588,7 +595,7 @@ test('MCP Global comparison detail rejects forged edit intent without selecting 
   expect(screen.queryByRole('textbox')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
-  expect(screen.getByText(/Switch the list to Global to edit/)).toBeTruthy();
+  expect(screen.getByText(en['scope.globalReadOnly'])).toBeTruthy();
   expect(config.selectedProjectId).toBe('project-a');
 });
 

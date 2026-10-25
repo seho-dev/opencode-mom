@@ -107,7 +107,7 @@ function add() {
       ><Plus size={14} /> {i18n.t('agents.addPermissionRule')}</Button
     >
   {:else if view.mode === 'json'}
-    <p class="muted">
+    <p class="form-hint">
       {i18n.t('agents.permissionsGlobHint')}
     </p>
   {/if}
@@ -125,6 +125,6 @@ function add() {
         >{error || i18n.t('agents.permissionsInvalid')}</small
       >
     {/if}
-    <small class="muted">{i18n.t('agents.permissionsHint')}</small>
+    <small class="field-hint">{i18n.t('agents.permissionsHint')}</small>
   </div>
 </fieldset>

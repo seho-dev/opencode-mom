@@ -4,6 +4,7 @@ import { goto } from '$app/navigation';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import FormActions from '$src/components/FormActions.svelte';
+import GlobalDestination from '$src/components/GlobalDestination.svelte';
 import Select from '$src/components/Select.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
@@ -104,12 +105,16 @@ async function save() {
   aria-busy={pending}
   onsubmit={(event) => { event.preventDefault(); void save(); }}
 >
-  {#if syntaxError || error}
-    <p id="mcp-config-error" class="field-error mb-4 shrink-0 break-words [overflow-wrap:anywhere]" role="alert">
-      {syntaxError || `${i18n.t('configuration.draftKept')} ${error}`}
-    </p>
-  {/if}
-  <div class="form-grid">
+  <div class="form-body form-grid">
+    <GlobalDestination />
+    {#if !initial}
+      <p class="form-hint">{i18n.t('mcp.newDescription')}</p>
+    {/if}
+    {#if syntaxError || error}
+      <p id="mcp-config-error" class="field-error break-words [overflow-wrap:anywhere]" role="alert">
+        {syntaxError || `${i18n.t('configuration.draftKept')} ${error}`}
+      </p>
+    {/if}
     <div class="field">
       <label for="mcp-name">{i18n.t('common.name')}</label>
       <input
@@ -120,7 +125,7 @@ async function save() {
         autocomplete="off"
         aria-describedby="mcp-name-hint"
       >
-      <small id="mcp-name-hint" class="muted">{i18n.t('mcp.nameHint')}</small>
+      <small id="mcp-name-hint" class="field-hint">{i18n.t('mcp.nameHint')}</small>
     </div>
     <div class="field">
       <label for="mcp-type">{i18n.t('common.type')}</label>
@@ -131,7 +136,7 @@ async function save() {
         onchange={selectType}
         options={[{ value: 'local', label: i18n.t('mcp.local') }, { value: 'remote', label: i18n.t('mcp.remote') }]}
       />
-      <small class="muted">{i18n.t('mcp.typeHint')}</small>
+      <small class="field-hint">{i18n.t('mcp.typeHint')}</small>
     </div>
     {#if initial}
       <div class="type-note !border-l-[var(--status-warning)] break-words [overflow-wrap:anywhere]">
@@ -151,8 +156,8 @@ async function save() {
         aria-invalid={!!syntaxError}
         aria-describedby={syntaxError ? 'mcp-config-hint mcp-config-error' : 'mcp-config-hint'}
       ></textarea>
-      <small id="mcp-config-hint" class="muted leading-5">{i18n.t('mcp.jsonHint')}</small>
-      <small class="muted leading-5">{i18n.t('mcp.v2ConfigHint')}</small>
+      <small id="mcp-config-hint" class="field-hint">{i18n.t('mcp.jsonHint')}</small>
+      <small class="field-hint">{i18n.t('mcp.v2ConfigHint')}</small>
     </div>
     <p class="type-note m-0">{i18n.t('configuration.manualReload')}</p>
   </div>

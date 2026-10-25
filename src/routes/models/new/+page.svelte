@@ -1,5 +1,6 @@
 <script lang="ts">
 import { goto } from '$app/navigation';
+import FormPage from '$src/components/FormPage.svelte';
 import PageHead from '$src/components/PageHead.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
@@ -15,11 +16,13 @@ async function create(providerId: string, value: ModelDef) {
 </script>
 
 <svelte:head><title>{i18n.t('models.newMetaTitle')}</title></svelte:head>
-<PageHead eyebrow={i18n.t('models.eyebrow')} title={i18n.t('models.newTitle')} />
-{#if !config.loading && config.providers.length === 0}
-  <div class="state-banner error" role="alert">
-    {i18n.t('models.noProvider')}
-  </div>
-{:else}
-  <ModelForm mode="new" providers={config.providers} saving={config.saving} onSave={create} />
-{/if}
+<FormPage>
+  <PageHead eyebrow={i18n.t('models.eyebrow')} title={i18n.t('models.newTitle')} />
+  {#if !config.loading && config.providers.length === 0}
+    <div class="state-banner error" role="alert">
+      {i18n.t('models.noProvider')}
+    </div>
+  {:else}
+    <ModelForm mode="new" providers={config.providers} saving={config.saving} onSave={create} />
+  {/if}
+</FormPage>

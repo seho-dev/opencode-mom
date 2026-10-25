@@ -5,7 +5,7 @@
 ```text
 island/
 ├── +page.svelte                 # Three-shape notch island, CSS content motion, quick permission queue, lazy sessions
-├── QuestionForm.svelte          # Field-key/option-value answers and read-only fallback
+├── QuestionForm.svelte          # Field-key/option-value answers, shared Checkbox multiselect and read-only fallback
 └── __tests__/
     ├── island.test.ts           # Interactions, presentation lifecycle, send recovery, event bounds and cleanup
     └── layout.test.ts           # Independent window without global preload
@@ -30,6 +30,7 @@ island/
 - Validation/not-found and HTTP 400/401/403/404/422 rejections leave drafts editable. Editing resets the ID; unchanged manual retry retains it.
 - Compact running counts require a connected snapshot. Writes also require `enabled === true`. Collapse, unmount and discard never reject requests or interrupt sessions.
 - All fixed copy uses `island.*` keys in both dictionaries; backend `answerable` owns form metadata and constraint validation.
+- QuestionForm multiselect options and custom values use the shared Checkbox with explicit `id`/`for`, Island gold styling and explicit busy/read-only disabled props. Preserve field keys and option values. Space toggles; Enter on either checkbox must not submit the form. Keyboard, ARIA state and explicit answer submission regression coverage lives in `../../components/checkbox/__tests__/checkbox.test.ts`.
 
 ## Sync
 

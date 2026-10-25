@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { page as routePage } from '$app/state';
 import { makeScopedConfig } from '$src/components/__tests__/scope-config.js';
+import { en } from '$src/i18n/dictionaries/en.js';
 import Harness from '$src/test-utils/harness.svelte';
 import type { AgentDefinition } from '$src/types/agents.js';
 import AgentDetail from '../[id]/+page.svelte';
@@ -65,6 +66,12 @@ test('agent detail loads explicit project, shows source and safe text, and offer
   expect(getAgent).toHaveBeenCalledExactlyOnceWith('helper', 'project-a');
   expect(screen.getByText('/work/alpha/.opencode/agents/helper.md')).toBeTruthy();
   expect(container.querySelector('pre')?.textContent).toContain('<script>unsafe()</script>');
+  const preview = screen.getByRole('region', {
+    name: `${en['agents.sourcePreview']}: /work/alpha/.opencode/agents/helper.md`,
+  });
+  expect(preview.tabIndex).toBe(0);
+  preview.focus();
+  expect(document.activeElement).toBe(preview);
   expect(container.querySelector('script')).toBeNull();
   expect(screen.queryByRole('button', { name: /Edit|Delete|Select configuration scope/ })).toBeNull();
   expect(config.selectedProjectId).toBe('project-b');
@@ -94,4 +101,36 @@ test('same resource ID with another scope ignores late detail and Global compari
   expect(getAgent).toHaveBeenLastCalledWith('helper');
   expect(screen.getByText(/Global comparison · read-only/)).toBeTruthy();
   expect(screen.queryByRole('link', { name: 'Edit helper' })).toBeNull();
+});
+
+test('source and prompt previews expose separate named keyboard entries without changing content', async () => {
+  const path = '/global/opencode.jsonc';
+  const raw = { mode: 'subagent' };
+  const prompt = 'Prompt body\n'.repeat(100);
+  const entry: AgentDefinition = {
+    ...agent,
+    sources: [{ storage: 'inline', path, raw, fields: raw, prompt }],
+  };
+  const getAgent = vi.fn().mockResolvedValue(entry);
+  render(AgentDetail, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig({ getAgent }) } });
+  await screen.findByRole('heading', { name: agent.id });
+  for (const [label, content] of [
+    [en['agents.sourcePreview'], JSON.stringify(raw, null, 2)],
+    [en['agents.prompt'], prompt],
+  ]) {
+    const preview = screen.getByRole('region', { name: `${label}: ${path}` });
+    expect(preview.textContent).toBe(content);
+    expect(preview.tabIndex).toBe(0);
+    preview.focus();
+    expect(document.activeElement).toBe(preview);
+  }
+});
+
+test('legacy source preview keeps a named keyboard entry', async () => {
+  const getAgent = vi.fn().mockResolvedValue({ ...agent, sources: [] });
+  render(AgentDetail, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig({ getAgent }) } });
+  const preview = await screen.findByRole('region', { name: `${en['agents.sourcePreview']}: ${agent.id}` });
+  expect(preview.tabIndex).toBe(0);
+  preview.focus();
+  expect(document.activeElement).toBe(preview);
 });

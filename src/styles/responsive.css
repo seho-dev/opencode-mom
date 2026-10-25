@@ -81,6 +81,21 @@
     grid-template-columns: 1fr;
   }
 }
+@media (max-height: 600px) {
+  .content:has(> .form-page) {
+    padding-block: 12px;
+  }
+  .form-page .page-head {
+    margin-bottom: 12px;
+  }
+  .form-page .form-panel {
+    padding-block: 12px;
+  }
+  .form-page .form-actions {
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   * {
     transition-duration: 0.01ms !important;

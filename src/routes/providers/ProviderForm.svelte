@@ -92,7 +92,7 @@ $effect(() => {
     form.handleSubmit();
   }}
 >
-  <div class="form-grid">
+  <div class="form-body form-grid">
     <div class="field">
       {#if source}
         <label for="provider-name">{i18n.t('providers.nameLabel')}</label>
@@ -210,7 +210,7 @@ $effect(() => {
         </Button>
       </div>
       {#if source}
-        <small class="muted">{i18n.t('providers.keepKeyHint')}</small>
+        <small class="field-hint">{i18n.t('providers.keepKeyHint')}</small>
       {/if}
     </div>
     <div class="field full">
@@ -234,7 +234,7 @@ $effect(() => {
           {/if}
         {/snippet}
       </form.Field>
-      <small class="muted">{i18n.t('providers.headersHint')}</small>
+      <small class="field-hint">{i18n.t('providers.headersHint')}</small>
     </div>
   </div>
   <FormActions>

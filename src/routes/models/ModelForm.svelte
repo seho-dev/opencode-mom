@@ -167,7 +167,7 @@ function removeVariant(index: number) {
     form.handleSubmit();
   }}
 >
-  <div class="form-grid">
+  <div class="form-body form-grid">
     <fieldset class="group-fieldset">
       <legend>{i18n.t('modelForm.identity')}</legend>
       <div class="form-grid">
@@ -276,7 +276,7 @@ function removeVariant(index: number) {
             >
             <label for="model-tools">{i18n.t('modelForm.toolCall')}</label>
           </div>
-          <small class="muted">{i18n.t('modelForm.capabilitiesHint')}</small>
+          <small class="field-hint">{i18n.t('modelForm.capabilitiesHint')}</small>
         </div>
         <div class="field full">
           <div class="grid grid-cols-2 gap-x-8">
@@ -406,7 +406,7 @@ function removeVariant(index: number) {
               >
             </div>
           </div>
-          <small class="muted">{i18n.t('modelForm.costHint')}</small>
+          <small class="field-hint">{i18n.t('modelForm.costHint')}</small>
         </div>
         <div class="field full">
           <p class="group-title">{i18n.t('modelForm.limits')}</p>
@@ -477,7 +477,7 @@ function removeVariant(index: number) {
               >
             </div>
           </div>
-          <small class="muted">{i18n.t('modelForm.limitsHint')}</small>
+          <small class="field-hint">{i18n.t('modelForm.limitsHint')}</small>
         </div>
       </div>
     </fieldset>
@@ -503,7 +503,7 @@ function removeVariant(index: number) {
               {/if}
             {/snippet}</form.Field
           >
-          <small class="muted">{i18n.t('modelForm.optionsHint')}</small>
+          <small class="field-hint">{i18n.t('modelForm.optionsHint')}</small>
         </div>
         <div class="field">
           <p class="group-title">{i18n.t('modelForm.headers')}</p>
@@ -523,7 +523,7 @@ function removeVariant(index: number) {
               {/if}
             {/snippet}</form.Field
           >
-          <small class="muted">{i18n.t('modelForm.headersHint')}</small>
+          <small class="field-hint">{i18n.t('modelForm.headersHint')}</small>
         </div>
         <div class="field full">
           <p class="group-title">{i18n.t('modelForm.variants')}</p>
@@ -576,7 +576,7 @@ function removeVariant(index: number) {
               ><Plus size={14} /> {i18n.t('modelForm.addVariant')}</Button
             >
           </div>
-          <small class="muted">{i18n.t('modelForm.variantsHint')}</small>
+          <small class="field-hint">{i18n.t('modelForm.variantsHint')}</small>
         </div>
       </div>
     </fieldset>

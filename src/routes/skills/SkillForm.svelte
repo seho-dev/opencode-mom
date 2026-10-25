@@ -4,6 +4,7 @@ import { goto } from '$app/navigation';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import FormActions from '$src/components/FormActions.svelte';
+import GlobalDestination from '$src/components/GlobalDestination.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { SkillEntry } from '$src/types/skills.js';
@@ -58,12 +59,16 @@ async function save() {
     aria-busy={pending}
     onsubmit={(event) => { event.preventDefault(); void save(); }}
   >
-    {#if error}
-      <p class="field-error mb-4 shrink-0 break-words [overflow-wrap:anywhere]" role="alert">
-        {i18n.t('configuration.draftKept')} {error}
-      </p>
-    {/if}
-    <div class="form-grid">
+    <div class="form-body form-grid">
+      <GlobalDestination />
+      {#if !initial}
+        <p class="form-hint">{i18n.t('skills.newDescription')}</p>
+      {/if}
+      {#if error}
+        <p class="field-error break-words [overflow-wrap:anywhere]" role="alert">
+          {i18n.t('configuration.draftKept')} {error}
+        </p>
+      {/if}
       <div class="field full">
         <label for="skill-id">{i18n.t('configuration.id')}</label>
         <input
@@ -74,9 +79,7 @@ async function save() {
           autocomplete="off"
           aria-describedby="skill-id-hint"
         >
-        <small id="skill-id-hint" class="muted leading-5"
-          >{i18n.t(initial ? 'skills.idImmutable' : 'skills.idHint')}</small
-        >
+        <small id="skill-id-hint" class="field-hint">{i18n.t(initial ? 'skills.idImmutable' : 'skills.idHint')}</small>
       </div>
       {#if initial}
         <div class="type-note break-words [overflow-wrap:anywhere]">
@@ -95,7 +98,7 @@ async function save() {
           autocomplete="off"
           aria-describedby="skill-document-hint"
         ></textarea>
-        <small id="skill-document-hint" class="muted leading-5">{i18n.t('skills.documentManagementHint')}</small>
+        <small id="skill-document-hint" class="field-hint">{i18n.t('skills.documentManagementHint')}</small>
       </div>
       <p class="type-note m-0">{i18n.t('configuration.manualReload')}</p>
     </div>

@@ -1,24 +1,25 @@
-/* Custom scrollbar styling for scrollable containers. */
-html,
-body,
+/* Custom scrollbar styling: WebKit and Firefox standard. */
 .workspace,
 .content,
-.form-panel > .form-grid,
+.form-body,
 .table-wrap,
 .drawer-panel,
-textarea {
+textarea,
+pre {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
+/* WebKit scrollbar styling. */
 html::-webkit-scrollbar,
 body::-webkit-scrollbar,
 .workspace::-webkit-scrollbar,
 .content::-webkit-scrollbar,
-.form-panel > .form-grid::-webkit-scrollbar,
+.form-body::-webkit-scrollbar,
 .table-wrap::-webkit-scrollbar,
 .drawer-panel::-webkit-scrollbar,
-textarea::-webkit-scrollbar {
+textarea::-webkit-scrollbar,
+pre::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
@@ -27,33 +28,37 @@ html::-webkit-scrollbar-track,
 body::-webkit-scrollbar-track,
 .workspace::-webkit-scrollbar-track,
 .content::-webkit-scrollbar-track,
-.form-panel > .form-grid::-webkit-scrollbar-track,
+.form-body::-webkit-scrollbar-track,
 .table-wrap::-webkit-scrollbar-track,
 .drawer-panel::-webkit-scrollbar-track,
-textarea::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
+textarea::-webkit-scrollbar-track,
+pre::-webkit-scrollbar-track {
+  background-color: var(--scrollbar-track);
 }
 
 .drawer-panel::-webkit-scrollbar-track,
-textarea::-webkit-scrollbar-track {
-  background: var(--scrollbar-track-raised);
+textarea::-webkit-scrollbar-track,
+pre::-webkit-scrollbar-track {
+  background-color: var(--scrollbar-track-raised);
 }
 
 html::-webkit-scrollbar-thumb,
 body::-webkit-scrollbar-thumb,
 .workspace::-webkit-scrollbar-thumb,
 .content::-webkit-scrollbar-thumb,
-.form-panel > .form-grid::-webkit-scrollbar-thumb,
+.form-body::-webkit-scrollbar-thumb,
 .table-wrap::-webkit-scrollbar-thumb,
 .drawer-panel::-webkit-scrollbar-thumb,
-textarea::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border: 1px solid var(--scrollbar-track);
-  border-radius: 2px;
+textarea::-webkit-scrollbar-thumb,
+pre::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border: 2px solid var(--scrollbar-track);
+  border-radius: 9999px;
 }
 
 .drawer-panel::-webkit-scrollbar-thumb,
-textarea::-webkit-scrollbar-thumb {
+textarea::-webkit-scrollbar-thumb,
+pre::-webkit-scrollbar-thumb {
   border-color: var(--scrollbar-track-raised);
 }
 
@@ -61,31 +66,34 @@ html::-webkit-scrollbar-thumb:hover,
 body::-webkit-scrollbar-thumb:hover,
 .workspace::-webkit-scrollbar-thumb:hover,
 .content::-webkit-scrollbar-thumb:hover,
-.form-panel > .form-grid::-webkit-scrollbar-thumb:hover,
+.form-body::-webkit-scrollbar-thumb:hover,
 .table-wrap::-webkit-scrollbar-thumb:hover,
 .drawer-panel::-webkit-scrollbar-thumb:hover,
-textarea::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
+textarea::-webkit-scrollbar-thumb:hover,
+pre::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
 }
 
 html::-webkit-scrollbar-thumb:active,
 body::-webkit-scrollbar-thumb:active,
 .workspace::-webkit-scrollbar-thumb:active,
 .content::-webkit-scrollbar-thumb:active,
-.form-panel > .form-grid::-webkit-scrollbar-thumb:active,
+.form-body::-webkit-scrollbar-thumb:active,
 .table-wrap::-webkit-scrollbar-thumb:active,
 .drawer-panel::-webkit-scrollbar-thumb:active,
-textarea::-webkit-scrollbar-thumb:active {
-  background: var(--scrollbar-thumb-active);
+textarea::-webkit-scrollbar-thumb:active,
+pre::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
 }
 
 html::-webkit-scrollbar-corner,
 body::-webkit-scrollbar-corner,
 .workspace::-webkit-scrollbar-corner,
 .content::-webkit-scrollbar-corner,
-.form-panel > .form-grid::-webkit-scrollbar-corner,
+.form-body::-webkit-scrollbar-corner,
 .table-wrap::-webkit-scrollbar-corner,
 .drawer-panel::-webkit-scrollbar-corner,
-textarea::-webkit-scrollbar-corner {
-  background: var(--scrollbar-track);
+textarea::-webkit-scrollbar-corner,
+pre::-webkit-scrollbar-corner {
+  background-color: var(--scrollbar-track);
 }

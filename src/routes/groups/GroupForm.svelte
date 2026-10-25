@@ -4,6 +4,7 @@ import { createForm } from '@tanstack/svelte-form';
 import { z } from 'zod';
 import { goto } from '$app/navigation';
 import { Button } from '$src/components/button/index.js';
+import { Checkbox } from '$src/components/checkbox/index.js';
 import { Combobox } from '$src/components/combobox/index.js';
 import * as Dialog from '$src/components/dialog/index.js';
 import FormActions from '$src/components/FormActions.svelte';
@@ -228,7 +229,7 @@ function remove(kind: MappingKind, index: number) {
     form.handleSubmit();
   }}
 >
-  <div class="form-grid">
+  <div class="form-body form-grid">
     <div class="field">
       <form.Field name="name">
         {#snippet children(field)}
@@ -266,15 +267,18 @@ function remove(kind: MappingKind, index: number) {
     </div>
     <form.Field name="isEnabled">
       {#snippet children(field)}
-        <label class="check-row full"
-          ><input
-            type="checkbox"
+        <div class="check-row full">
+          <Checkbox
+            id="group-enabled"
             name={field.name}
             checked={field.state.value}
-            onchange={(event) => field.handleChange(event.currentTarget.checked)}
+            onCheckedChange={(checked) => field.handleChange(checked)}
             onblur={field.handleBlur}
-          > {i18n.t('groupForm.enable')}</label
-        >
+          />
+          <label for="group-enabled" class="cursor-pointer text-[11px] text-[var(--text-secondary)]"
+            >{i18n.t('groupForm.enable')}</label
+          >
+        </div>
       {/snippet}
     </form.Field>
     <fieldset class="group-fieldset full">

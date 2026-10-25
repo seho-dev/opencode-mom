@@ -1,12 +1,24 @@
 /* Page heading blocks and descriptive intro text. */
 .page-head {
   display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 28px;
 }
+.page-head > div {
+  min-width: 0;
+}
+.page-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
 .page-head h1 {
+  overflow-wrap: anywhere;
   font-family: var(--font-heading);
   font-size: 28px;
   line-height: 36px;

@@ -511,3 +511,38 @@ test.each(['read', 'save'] as const)('unmount drops a queued target reload behin
   expect(vi.getTimerCount()).toBe(0);
   expect(screen.queryByRole('status')).toBeNull();
 });
+
+test.each(['read', 'save'] as const)(
+  'inactive completion of a pending %s keeps target reload queued until re-entry',
+  async (operation) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const pending = deferred();
+    const getLidProtection = vi.fn().mockResolvedValueOnce(protectedState);
+    if (operation === 'read') getLidProtection.mockReturnValueOnce(pending.promise);
+    getLidProtection.mockResolvedValue(disabled);
+    const view = mountTarget({ getLidProtection, setLidProtection: vi.fn().mockReturnValue(pending.promise) });
+    await settle();
+    if (operation === 'read') await vi.advanceTimersByTimeAsync(2000);
+    else await fireEvent.click(view.toggle);
+    await view.rerender({ active: false });
+    await view.config.setOpenCodeServiceTarget(null);
+    await settle();
+    const reads = getLidProtection.mock.calls.length;
+    pending.resolve(protectedState);
+    await settle();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(getLidProtection).toHaveBeenCalledTimes(reads);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(screen.getByRole('status').textContent).not.toContain('Protected');
+    await fireEvent.click(view.toggle);
+    expect(view.adapter.setLidProtection).toHaveBeenCalledTimes(operation === 'save' ? 1 : 0);
+    await view.rerender({ active: true });
+    await settle();
+    expect(getLidProtection).toHaveBeenCalledTimes(reads + 1);
+    expect(screen.getByRole('checkbox')).toBe(view.toggle);
+    expect(screen.getByRole('status').textContent).toBe('Disabled');
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(getLidProtection).toHaveBeenCalledTimes(reads + 2);
+  },
+);

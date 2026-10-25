@@ -1,6 +1,6 @@
 <script lang="ts">
 import { ExternalLink, RefreshCw, Star } from '@lucide/svelte';
-import { onDestroy, onMount } from 'svelte';
+import { onMount, untrack } from 'svelte';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import { getConfig } from '$src/config/context.js';
@@ -9,6 +9,7 @@ import type { AppInfo, ProjectPage, UpdateCheck } from '$src/types/app.js';
 
 const config = getConfig();
 const i18n = getI18n();
+let { active = true }: { active?: boolean } = $props();
 let appInfo = $state<AppInfo | null>(null);
 let infoLoading = $state(true);
 let infoError = $state('');
@@ -20,8 +21,10 @@ let openError = $state('');
 let infoRequest = 0;
 let checkRequest = 0;
 let openRequest = 0;
+let mounted = $state(false);
 
 async function loadInfo() {
+  if (!mounted || !active || (infoLoading && infoRequest > 0)) return;
   const seq = ++infoRequest;
   infoLoading = true;
   infoError = '';
@@ -36,7 +39,7 @@ async function loadInfo() {
 }
 
 async function check() {
-  if (checking) return;
+  if (!mounted || !active || checking) return;
   const seq = ++checkRequest;
   checking = true;
   checkError = '';
@@ -52,7 +55,7 @@ async function check() {
 }
 
 async function openProject(page: ProjectPage) {
-  if (opening) return;
+  if (!mounted || !active || opening) return;
   const seq = ++openRequest;
   opening = page;
   openError = '';
@@ -66,129 +69,145 @@ async function openProject(page: ProjectPage) {
 }
 
 onMount(() => {
-  void loadInfo();
+  mounted = true;
+  return () => {
+    mounted = false;
+    infoRequest += 1;
+    checkRequest += 1;
+    openRequest += 1;
+  };
 });
-onDestroy(() => {
-  infoRequest += 1;
-  checkRequest += 1;
-  openRequest += 1;
+$effect(() => {
+  if (mounted && active) untrack(() => void loadInfo());
 });
 </script>
 
-<div class="px-4 py-3 sm:px-5 sm:py-4">
-  <div class="flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-6">
-    <div class="min-w-0">
-      <h2 class="m-0 font-[var(--font-heading)] text-[13px] leading-5 font-semibold">
-        {i18n.t('settings.updates')}
-      </h2>
-      <p class="mt-1 mb-0 break-words text-xs leading-5 text-[var(--text-secondary)]">
-        {i18n.t('settings.installedVersion', {
+<section class="max-w-3xl" aria-labelledby="settings-app-updates">
+  <h2
+    id="settings-app-updates"
+    tabindex="-1"
+    class="mt-0 mb-2 font-[var(--font-heading)] text-sm leading-5 font-semibold"
+  >
+    {i18n.t('settings.updates')}
+  </h2>
+  <div class="panel rounded-[var(--radius)] px-4 py-3 sm:px-5 sm:py-4">
+    <div class="flex items-start justify-between gap-3 sm:gap-6">
+      <div class="min-w-0">
+        <p class="m-0 break-words text-xs leading-5 text-[var(--text-secondary)]">
+          {i18n.t('settings.installedVersion', {
           version: appInfo?.version ?? result?.currentVersion ?? i18n.t(infoLoading ? 'common.loading' : 'settings.versionUnavailable'),
         })}
-      </p>
-      <p class="mt-1 mb-0 text-xs leading-5 text-[var(--text-muted)]">{i18n.t('settings.updatesHint')}</p>
-    </div>
-    <Button
-      variant="outline"
-      size="icon"
-      disabled={checking}
-      aria-label={i18n.t(checking ? 'settings.checkingUpdates' : checkError ? 'settings.retryUpdates' : 'settings.checkUpdates')}
-      title={i18n.t(checking ? 'settings.checkingUpdates' : checkError ? 'settings.retryUpdates' : 'settings.checkUpdates')}
-      aria-busy={checking}
-      onclick={check}
-    >
-      <RefreshCw size={14} class={checking ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />
-    </Button>
-  </div>
-
-  {#if infoError}
-    <div class="mt-3 flex flex-wrap items-center gap-2 text-xs leading-5 text-[var(--status-error)]" role="alert">
-      <span class="min-w-0 break-words [overflow-wrap:anywhere]">{i18n.t('settings.appInfoFailed')} {infoError}</span>
-      <Button variant="outline" size="sm" disabled={infoLoading} onclick={loadInfo}
-        >{i18n.t('settings.retryAppInfo')}</Button
+        </p>
+        <p class="field-hint mt-1">{i18n.t('settings.updatesHint')}</p>
+      </div>
+      <Button
+        variant="outline"
+        size="icon"
+        disabled={checking}
+        aria-label={i18n.t(checking ? 'settings.checkingUpdates' : checkError ? 'settings.retryUpdates' : 'settings.checkUpdates')}
+        title={i18n.t(checking ? 'settings.checkingUpdates' : checkError ? 'settings.retryUpdates' : 'settings.checkUpdates')}
+        aria-busy={checking}
+        onclick={check}
       >
+        <RefreshCw size={14} class={checking ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />
+      </Button>
     </div>
-  {/if}
-  <div role="status" aria-live="polite" aria-atomic="true" class="text-xs leading-5">
-    {#if checking}
-      <p class="mt-3 mb-0 text-[var(--text-secondary)]">{i18n.t('settings.checkingUpdates')}</p>
-    {:else if result}
-      <p class={['mt-3 mb-0 break-words', result.updateAvailable && 'text-[var(--accent-primary)]']}>
-        {#if result.latestVersion === null}
-          {i18n.t('settings.noRelease')}
-        {:else if result.updateAvailable}
-          {i18n.t('settings.updateAvailable', { version: result.latestVersion })}
-        {:else}
-          {i18n.t('settings.upToDate', { version: result.currentVersion })}
-        {/if}
+
+    {#if infoError}
+      <div class="mt-3 flex flex-wrap items-center gap-2 text-xs leading-5 text-[var(--status-error)]" role="alert">
+        <span class="min-w-0 break-words [overflow-wrap:anywhere]">{i18n.t('settings.appInfoFailed')} {infoError}</span>
+        <Button variant="outline" size="sm" disabled={infoLoading} onclick={loadInfo}
+          >{i18n.t('settings.retryAppInfo')}</Button
+        >
+      </div>
+    {/if}
+    <div role="status" aria-live="polite" aria-atomic="true" class="text-xs leading-5">
+      {#if checking}
+        <p class="mt-3 mb-0 text-[var(--text-secondary)]">{i18n.t('settings.checkingUpdates')}</p>
+      {:else if result}
+        <p class={['mt-3 mb-0 break-words', result.updateAvailable && 'text-[var(--accent-primary)]']}>
+          {#if result.latestVersion === null}
+            {i18n.t('settings.noRelease')}
+          {:else if result.updateAvailable}
+            {i18n.t('settings.updateAvailable', { version: result.latestVersion })}
+          {:else}
+            {i18n.t('settings.upToDate', { version: result.currentVersion })}
+          {/if}
+        </p>
+      {/if}
+    </div>
+    {#if checkError}
+      <p
+        class="mt-3 mb-0 break-words text-xs leading-5 text-[var(--status-error)] [overflow-wrap:anywhere]"
+        role="alert"
+      >
+        {i18n.t('settings.updateCheckFailed')} {checkError}
+      </p>
+    {/if}
+    {#if result?.updateAvailable}
+      <Button
+        variant="outline"
+        size="sm"
+        class="mt-3"
+        disabled={opening !== null}
+        aria-busy={opening === 'releases'}
+        onclick={() => openProject('releases')}
+      >
+        <ExternalLink size={14} aria-hidden="true" />{i18n.t('settings.releaseDownloads')}
+      </Button>
+      {#if appInfo?.platform === 'macos'}
+        <details
+          open
+          class="mt-3 border border-[var(--border-default)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]"
+        >
+          <summary class="cursor-pointer font-semibold text-[var(--text-primary)]">
+            {i18n.t('settings.macInstallGuide')}
+          </summary>
+          <div class="mt-3 space-y-3">
+            <p class="m-0">{i18n.t('settings.macSigning')}</p>
+            <p class="m-0 text-[var(--status-warning)]">{i18n.t('settings.macTrustWarning')}</p>
+            <ol class="m-0 list-decimal space-y-1 pl-5">
+              <li>{i18n.t('settings.macDownloadOfficial')}</li>
+              <li>{i18n.t('settings.macReplaceApp')}</li>
+              <li>{i18n.t('settings.macOpenAnyway')}</li>
+            </ol>
+            <p class="m-0">{i18n.t('settings.macManualQuarantine')}</p>
+            <code
+              class="block select-text border border-[var(--border-subtle)] bg-[var(--surface-input)] px-3 py-2 font-mono whitespace-pre-wrap break-words text-[var(--text-primary)] [overflow-wrap:anywhere]"
+              >{i18n.t('settings.macQuarantineCommand')}</code
+            >
+            <p class="m-0 text-[var(--text-muted)]">{i18n.t('settings.macAuthorizationScope')}</p>
+          </div>
+        </details>
+      {/if}
+    {/if}
+
+    <div
+      class="mt-4 flex flex-col items-start justify-between gap-3 border-t border-[var(--border-default)] pt-4 sm:flex-row sm:gap-6"
+    >
+      <div class="min-w-0">
+        <h3 id="settings-support" tabindex="-1" class="m-0 font-[var(--font-heading)] text-xs leading-5 font-semibold">
+          {i18n.t('settings.supportProject')}
+        </h3>
+        <p class="field-hint mt-1">{i18n.t('settings.starRequest')}</p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={opening !== null}
+        aria-busy={opening === 'repository'}
+        onclick={() => openProject('repository')}
+      >
+        <Star size={14} aria-hidden="true" />{i18n.t('settings.starProject')}
+      </Button>
+    </div>
+    {#if openError}
+      <p
+        class="mt-3 mb-0 break-words text-xs leading-5 text-[var(--status-error)] [overflow-wrap:anywhere]"
+        role="alert"
+      >
+        {i18n.t('header.projectOpenFailed', { message: openError })}
       </p>
     {/if}
   </div>
-  {#if checkError}
-    <p class="mt-3 mb-0 break-words text-xs leading-5 text-[var(--status-error)] [overflow-wrap:anywhere]" role="alert">
-      {i18n.t('settings.updateCheckFailed')} {checkError}
-    </p>
-  {/if}
-  {#if result?.updateAvailable}
-    <Button
-      variant="outline"
-      size="sm"
-      class="mt-3"
-      disabled={opening !== null}
-      aria-busy={opening === 'releases'}
-      onclick={() => openProject('releases')}
-    >
-      <ExternalLink size={14} aria-hidden="true" />{i18n.t('settings.releaseDownloads')}
-    </Button>
-    {#if appInfo?.platform === 'macos'}
-      <details
-        open
-        class="mt-3 border border-[var(--border-default)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]"
-      >
-        <summary class="cursor-pointer font-semibold text-[var(--text-primary)]">
-          {i18n.t('settings.macInstallGuide')}
-        </summary>
-        <div class="mt-3 space-y-3">
-          <p class="m-0">{i18n.t('settings.macSigning')}</p>
-          <p class="m-0 text-[var(--status-warning)]">{i18n.t('settings.macTrustWarning')}</p>
-          <ol class="m-0 list-decimal space-y-1 pl-5">
-            <li>{i18n.t('settings.macDownloadOfficial')}</li>
-            <li>{i18n.t('settings.macReplaceApp')}</li>
-            <li>{i18n.t('settings.macOpenAnyway')}</li>
-          </ol>
-          <p class="m-0">{i18n.t('settings.macManualQuarantine')}</p>
-          <code
-            class="block select-text border border-[var(--border-subtle)] bg-[var(--surface-input)] px-3 py-2 font-mono whitespace-pre-wrap break-words text-[var(--text-primary)] [overflow-wrap:anywhere]"
-            >{i18n.t('settings.macQuarantineCommand')}</code
-          >
-          <p class="m-0 text-[var(--text-muted)]">{i18n.t('settings.macAuthorizationScope')}</p>
-        </div>
-      </details>
-    {/if}
-  {/if}
-
-  <div
-    class="mt-4 flex flex-col items-start justify-between gap-3 border-t border-[var(--border-subtle)] pt-4 sm:flex-row sm:gap-6"
-  >
-    <div class="min-w-0">
-      <h3 class="m-0 font-[var(--font-heading)] text-xs leading-5 font-semibold">
-        {i18n.t('settings.supportProject')}
-      </h3>
-      <p class="mt-1 mb-0 text-xs leading-5 text-[var(--text-secondary)]">{i18n.t('settings.starRequest')}</p>
-    </div>
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={opening !== null}
-      aria-busy={opening === 'repository'}
-      onclick={() => openProject('repository')}
-    >
-      <Star size={14} aria-hidden="true" />{i18n.t('settings.starProject')}
-    </Button>
-  </div>
-  {#if openError}
-    <p class="mt-3 mb-0 break-words text-xs leading-5 text-[var(--status-error)] [overflow-wrap:anywhere]" role="alert">
-      {i18n.t('header.projectOpenFailed', { message: openError })}
-    </p>
-  {/if}
-</div>
+</section>

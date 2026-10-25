@@ -21,7 +21,7 @@ const initial: IslandState = {
   notchWidth: 180,
   topInset: 32,
 };
-function mount(overrides: Record<string, unknown> = {}) {
+function mount(overrides: Record<string, unknown> = {}, active = true) {
   const config = {
     preferences: { theme: 'dark', locale: 'en' },
     getAppInfo: vi.fn().mockResolvedValue({ version: '2.0.0', platform: 'macos' }),
@@ -29,7 +29,11 @@ function mount(overrides: Record<string, unknown> = {}) {
     setIslandEnabled: vi.fn().mockResolvedValue({ ...initial, enabled: true, connection: 'connecting' }),
     ...overrides,
   };
-  const view = render(MiniIsland, {}, { wrapper: Harness, wrapperProps: { config: config as unknown as ConfigStore } });
+  const view = render(
+    MiniIsland,
+    { active },
+    { wrapper: Harness, wrapperProps: { config: config as unknown as ConfigStore } },
+  );
   return { ...view, config };
 }
 function mountTarget(overrides: Record<string, unknown> = {}) {
@@ -47,6 +51,63 @@ function mountTarget(overrides: Record<string, unknown> = {}) {
 }
 beforeEach(() => native.isTauri.mockReturnValue(true));
 
+test('inactive mount defers platform detection and a late macOS result waits until re-entry to read state', async () => {
+  let finish!: (info: { version: string; platform: string }) => void;
+  const getAppInfo = vi.fn().mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const view = mount({ getAppInfo }, false);
+  await tick();
+  expect(getAppInfo).not.toHaveBeenCalled();
+  await view.rerender({ active: true });
+  expect(getAppInfo).toHaveBeenCalledOnce();
+  await view.rerender({ active: false });
+  finish({ version: '2.0.0', platform: 'macos' });
+  await tick();
+  expect(view.config.getIslandState).not.toHaveBeenCalled();
+  await view.rerender({ active: true });
+  await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(false));
+  const control = screen.getByRole('checkbox');
+  expect(view.config.getIslandState).toHaveBeenCalledOnce();
+  await view.rerender({ active: false });
+  await fireEvent.click(control);
+  await view.rerender({ active: true });
+  await waitFor(() => expect(view.config.getIslandState).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole('checkbox')).toBe(control);
+  expect(getAppInfo).toHaveBeenCalledOnce();
+  expect(view.config.setIslandEnabled).not.toHaveBeenCalled();
+});
+
+test('platform failure retries only on re-entry and teardown prevents late platform readback', async () => {
+  const getAppInfo = vi.fn().mockRejectedValueOnce(new Error('Platform unavailable')).mockResolvedValueOnce({
+    version: '2.0.0',
+    platform: 'macos',
+  });
+  const view = mount({ getAppInfo });
+  await tick();
+  await tick();
+  expect(getAppInfo).toHaveBeenCalledOnce();
+  expect(view.config.getIslandState).not.toHaveBeenCalled();
+  await view.rerender({ active: false });
+  await view.rerender({ active: true });
+  await waitFor(() => expect(view.config.getIslandState).toHaveBeenCalledOnce());
+  view.unmount();
+  let finish!: (info: { version: string; platform: string }) => void;
+  const pending = mount({
+    getAppInfo: vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    ),
+  });
+  pending.unmount();
+  finish({ version: '2.0.0', platform: 'macos' });
+  await tick();
+  expect(pending.config.getIslandState).not.toHaveBeenCalled();
+});
+
 test('macOS switch reads independently, defaults off, guards pending and uses native readback immediately', async () => {
   let finish!: (value: IslandState) => void;
   const setIslandEnabled = vi.fn().mockImplementationOnce(
@@ -59,8 +120,8 @@ test('macOS switch reads independently, defaults off, guards pending and uses na
   const control = (await screen.findByRole('checkbox', { name: 'OpenCode mini island' })) as HTMLInputElement;
   await waitFor(() => expect(control.checked).toBe(false));
   await waitFor(() => expect(control.hasAttribute('disabled')).toBe(false));
-  expect(screen.getByText(/Shows local OpenCode V2 sessions and pending requests/).textContent).toContain(
-    'enabling may start that service',
+  expect(screen.getByText(/Local OpenCode V2 sessions and pending requests/).textContent).toContain(
+    'enabling may start Shared Service',
   );
   await fireEvent.click(control);
   await fireEvent.click(control);

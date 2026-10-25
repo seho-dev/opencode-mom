@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { tick } from 'svelte';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type { ConfigStore } from '$src/config/store.svelte.js';
+import { en } from '$src/i18n/dictionaries/en.js';
+import { zh } from '$src/i18n/dictionaries/zh.js';
 import Harness from '$src/test-utils/harness.svelte';
 import type { OpenCodeInstallation, OpenCodeServiceStatus, OpenCodeUpdateCheck } from '$src/types/app.js';
 import OpenCodeSettings from '../OpenCodeSettings.svelte';
@@ -384,7 +386,7 @@ test('upgrade is confirmed once, blocks dismissal and refresh, and reads CLI bac
   expect(config.getOpenCodeServiceStatus).toHaveBeenCalledTimes(2);
   expect(config.checkOpenCodeUpdate).toHaveBeenCalledOnce();
   expect(config.reloadOpencode).not.toHaveBeenCalled();
-  expect(screen.getByText(/A running service may still use the old version/)).toBeTruthy();
+  expect(screen.getByText(en['settings.opencodeRunningHint'])).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Upgrade CLI…' })).toBeNull();
 });
 
@@ -551,7 +553,9 @@ test('read-only refresh keeps URL, password and clear-password drafts and tests 
   await fireEvent.click(screen.getByLabelText('Clear the saved password when saving'));
   await fireEvent.click(screen.getByRole('button', { name: 'Refresh connection' }));
   await waitFor(() => expect(getOpenCodeServiceStatus).toHaveBeenCalledTimes(3));
-  expect((screen.getByLabelText('Clear the saved password when saving') as HTMLInputElement).checked).toBe(true);
+  expect(
+    screen.getByRole('checkbox', { name: 'Clear the saved password when saving' }).getAttribute('aria-checked'),
+  ).toBe('true');
 });
 
 test('failed save preserves confirmed target and local secret draft without displaying backend payloads', async () => {
@@ -602,8 +606,12 @@ test.each([
     const save = screen.getByRole('button', { name: locale === 'en' ? 'Save connection target' : '保存连接目标' });
     await fireEvent.click(save);
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain(hint);
-    expect(alert.textContent).toContain(action);
+    if (code === 'validation_failed') {
+      expect(alert.textContent).toBe((locale === 'en' ? en : zh)['settings.serviceSaveValidation']);
+    } else {
+      expect(alert.textContent).toContain(hint);
+      expect(alert.textContent).toContain(action);
+    }
     expect(alert.textContent).not.toContain('private-password');
     expect(alert.textContent).not.toMatch(/Mini Island|lid protection|power|合盖保护|电源|关闭/);
     expect((url as HTMLInputElement).value).toBe('http://[::1]:5096');
@@ -639,7 +647,7 @@ test('offline save commits the returned normalized target, clears password and n
   const { config } = mount({ setOpenCodeServiceTarget: vi.fn().mockResolvedValue(offline) });
   await explicitDraft('http://localhost:5096', 'new-secret');
   await fireEvent.click(screen.getByRole('button', { name: 'Save connection target' }));
-  await screen.findByText(/Target saved, but the backend is offline/);
+  await screen.findByText(en['settings.serviceSavedOffline']);
   expect(screen.getByText('Disconnected')).toBeTruthy();
   expect(screen.queryByText('4242')).toBeNull();
   expect(screen.queryByText(/secret inaccessible/)).toBeNull();

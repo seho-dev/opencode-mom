@@ -16,6 +16,14 @@ function mount(overrides: Record<string, unknown> = {}) {
     getAppInfo: vi.fn().mockResolvedValue({ version: '0.1.0', platform: 'other' }),
     checkForUpdates: vi.fn(),
     openProjectPage: vi.fn(),
+    getMomHttpSettings: vi.fn().mockResolvedValue({ port: 18765, allowLan: false }),
+    getMcpProxySettings: vi.fn().mockResolvedValue({
+      enabled: false,
+      idleTimeout: 300,
+      maxUnits: 16,
+      revision: 1,
+    }),
+    getMcpProxyState: vi.fn().mockResolvedValue({ actualState: 'stopped', boundAddr: null, securityErrors: [] }),
     ...overrides,
   } as unknown as ConfigStore;
   render(Settings, {}, { wrapper: Harness, wrapperProps: { config } });

@@ -22,6 +22,48 @@ function mount(overrides: Record<string, unknown> = {}) {
   return { config, ...view };
 }
 
+test('inactive updates do not start operations and a pending app-info read survives a tab round trip without overlap', async () => {
+  let finish!: (info: AppInfo) => void;
+  const config = {
+    preferences: { locale: 'en', theme: 'dark' },
+    getAppInfo: vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise<AppInfo>((resolve) => {
+          finish = resolve;
+        }),
+      )
+      .mockResolvedValue({ version: '0.2.0', platform: 'macos' }),
+    checkForUpdates: vi.fn(),
+    openProjectPage: vi.fn(),
+  };
+  const view = render(
+    AppUpdates,
+    { active: false },
+    {
+      wrapper: Harness,
+      wrapperProps: { config: config as unknown as ConfigStore },
+    },
+  );
+  await tick();
+  expect(config.getAppInfo).not.toHaveBeenCalled();
+  await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Star on GitHub' }));
+  expect(config.checkForUpdates).not.toHaveBeenCalled();
+  expect(config.openProjectPage).not.toHaveBeenCalled();
+  await view.rerender({ active: true });
+  await view.rerender({ active: false });
+  await view.rerender({ active: true });
+  expect(config.getAppInfo).toHaveBeenCalledOnce();
+  await view.rerender({ active: false });
+  finish({ version: '0.1.0', platform: 'macos' });
+  await screen.findByText('Installed version: 0.1.0');
+  expect(config.getAppInfo).toHaveBeenCalledOnce();
+  await view.rerender({ active: true });
+  await screen.findByText('Installed version: 0.2.0');
+  expect(config.getAppInfo).toHaveBeenCalledTimes(2);
+});
+
 test('reads installed version locally, checks only on click, guards pending and reports up to date', async () => {
   let finish: (value: UpdateCheck) => void = () => {};
   const checkForUpdates = vi.fn().mockImplementation(

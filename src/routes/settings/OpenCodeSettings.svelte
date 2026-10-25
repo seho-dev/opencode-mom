@@ -1,7 +1,7 @@
 <script lang="ts">
 import { ArrowUp, Download, RefreshCw } from '@lucide/svelte';
 import { isTauri } from '@tauri-apps/api/core';
-import { onMount } from 'svelte';
+import { onMount, untrack } from 'svelte';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import * as Dialog from '$src/components/dialog/index.js';
@@ -10,6 +10,7 @@ import { getI18n } from '$src/i18n/context.js';
 import type { AppInfo, OpenCodeInstallation, OpenCodeUpdateCheck } from '$src/types/app.js';
 import OpenCodeService from './OpenCodeService.svelte';
 
+let { active = true }: { active?: boolean } = $props();
 const config = getConfig();
 const i18n = getI18n();
 let native = $state(false);
@@ -22,7 +23,7 @@ let errorKind = $state<'inspect' | 'check' | 'upgrade' | 'readback'>('inspect');
 let needsRefresh = $state(false);
 let upgradedVersion = $state<string | null>(null);
 let confirmation = $state.raw<{ binaryPath: string; version: string; targetVersion: string } | null>(null);
-let mounted = false;
+let mounted = $state(false);
 let request = 0;
 let servicePanel = $state<ReturnType<typeof OpenCodeService>>();
 let serviceBusy = $state(false);
@@ -38,7 +39,7 @@ const canUpgrade = $derived(
 );
 
 async function load() {
-  if (!mounted || !native || pending || serviceBusy || confirmation) return;
+  if (!mounted || !active || !native || pending || serviceBusy || confirmation) return;
   const seq = ++request;
   pending = 'inspect';
   error = '';
@@ -47,9 +48,10 @@ async function load() {
   try {
     if (!appInfo) {
       const info = await config.getAppInfo();
-      if (!mounted || seq !== request) return;
+      if (!mounted || !active || seq !== request) return;
       appInfo = info;
     }
+    if (!active) return;
     const info = await config.getOpenCodeInstallation();
     if (!mounted || seq !== request) return;
     installation = info;
@@ -66,7 +68,17 @@ async function load() {
 }
 
 async function check() {
-  if (!mounted || !native || !appInfo || !installation || pending || serviceBusy || confirmation || needsRefresh)
+  if (
+    !mounted ||
+    !active ||
+    !native ||
+    !appInfo ||
+    !installation ||
+    pending ||
+    serviceBusy ||
+    confirmation ||
+    needsRefresh
+  )
     return;
   const seq = ++request;
   pending = 'check';
@@ -89,7 +101,8 @@ async function check() {
 }
 
 function confirmUpgrade() {
-  if (!canUpgrade || pending || !installation?.binaryPath || !installation.version || !result) return;
+  if (!mounted || !active || !canUpgrade || pending || !installation?.binaryPath || !installation.version || !result)
+    return;
   confirmation = {
     binaryPath: installation.binaryPath,
     version: installation.version,
@@ -100,7 +113,7 @@ function closeConfirmation() {
   if (!pending) confirmation = null;
 }
 async function upgrade() {
-  if (!mounted || !canUpgrade || pending || !confirmation) return;
+  if (!mounted || !active || !canUpgrade || pending || !confirmation) return;
   const expected = confirmation;
   const seq = ++request;
   pending = 'upgrade';
@@ -112,6 +125,7 @@ async function upgrade() {
     completed = true;
     result = null;
     needsRefresh = true;
+    if (!active) return;
     const info = await config.getOpenCodeInstallation();
     if (!mounted || seq !== request) return;
     installation = info;
@@ -126,7 +140,7 @@ async function upgrade() {
     }
   } finally {
     if (mounted && seq === request) {
-      if (completed) await servicePanel?.refresh();
+      if (completed && active) await servicePanel?.refresh();
       if (mounted && seq === request) {
         confirmation = null;
         pending = null;
@@ -137,120 +151,131 @@ async function upgrade() {
 
 onMount(() => {
   mounted = true;
-  native = isTauri();
-  if (native) void load();
   return () => {
     mounted = false;
     request += 1;
   };
 });
+
+$effect(() => {
+  if (!mounted || !active) return;
+  untrack(() => {
+    native = isTauri();
+    if (native && !installation && !needsRefresh) void load();
+  });
+});
 </script>
 
-<section
-  class="px-4 py-3 sm:px-5 sm:py-4"
-  aria-labelledby="opencode-settings-title"
-  aria-busy={pending !== null || serviceBusy}
->
-  <h2 id="opencode-settings-title" class="m-0 font-[var(--font-heading)] text-[13px] leading-5 font-semibold">
+<section class="max-w-3xl" aria-labelledby="opencode-settings-title" aria-busy={pending !== null || serviceBusy}>
+  <h2
+    id="opencode-settings-title"
+    tabindex="-1"
+    class="mt-0 mb-2 font-[var(--font-heading)] text-sm leading-5 font-semibold"
+  >
     {i18n.t('settings.opencodeTitle')}
   </h2>
-  <p class="mt-1 mb-0 text-xs leading-5 text-[var(--text-secondary)]">{i18n.t('settings.opencodeHint')}</p>
-  {#if !native}
-    <p class="mt-3 mb-0 text-xs leading-5 text-[var(--text-muted)]">{i18n.t('settings.opencodeDesktopOnly')}</p>
-  {:else}
-    <section class="mt-4" aria-labelledby="opencode-updates-title">
-      <div class="flex items-start justify-between gap-3 sm:gap-6">
-        <div class="min-w-0">
-          <h3 id="opencode-updates-title" class="m-0 text-xs leading-5 font-semibold">
-            {i18n.t('settings.opencodeUpdates')}
-          </h3>
-          <p class="mt-1 mb-0 text-xs leading-5 text-[var(--text-muted)]">{i18n.t('settings.opencodeCheckHint')}</p>
+  <div class="panel rounded-[var(--radius)] divide-y divide-[var(--border-default)]">
+    {#if !native}
+      <p class="m-0 px-4 py-3 text-xs leading-5 text-[var(--text-muted)] sm:px-5 sm:py-4">
+        {i18n.t('settings.opencodeDesktopOnly')}
+      </p>
+    {:else}
+      <OpenCodeService
+        bind:this={servicePanel}
+        {active}
+        ready={appInfo !== null}
+        blocked={pending !== null || confirmation !== null}
+        bind:busy={serviceBusy}
+      />
+      <section class="px-4 py-3 sm:px-5 sm:py-4" aria-labelledby="opencode-updates-title">
+        <div class="flex items-start justify-between gap-3 sm:gap-6">
+          <div class="min-w-0">
+            <h3 id="opencode-updates-title" class="m-0 text-xs leading-5 font-semibold">
+              {i18n.t('settings.opencodeUpdates')}
+            </h3>
+            <p class="field-hint mt-1">{i18n.t('settings.opencodeHint')}</p>
+            <p class="field-hint mt-1">{i18n.t('settings.opencodeCheckHint')}</p>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={pending !== null || serviceBusy || confirmation !== null}
+              aria-label={i18n.t('settings.opencodeRefresh')}
+              title={i18n.t('settings.opencodeRefresh')}
+              aria-busy={pending === 'inspect'}
+              onclick={load}
+            >
+              <RefreshCw
+                size={14}
+                class={pending === 'inspect' ? 'animate-spin motion-reduce:animate-none' : ''}
+                aria-hidden="true"
+              />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={!installation || needsRefresh || pending !== null || serviceBusy || confirmation !== null}
+              aria-label={i18n.t(error && errorKind === 'check' ? 'settings.opencodeRetryCheck' : 'settings.opencodeCheck')}
+              title={i18n.t(error && errorKind === 'check' ? 'settings.opencodeRetryCheck' : 'settings.opencodeCheck')}
+              aria-busy={pending === 'check'}
+              onclick={check}
+            >
+              {#if pending === 'check'}
+                <RefreshCw size={14} class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              {:else}
+                <Download size={14} aria-hidden="true" />
+              {/if}
+            </Button>
+          </div>
         </div>
-        <div class="flex shrink-0 items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={pending !== null || serviceBusy || confirmation !== null}
-            aria-label={i18n.t('settings.opencodeRefresh')}
-            title={i18n.t('settings.opencodeRefresh')}
-            aria-busy={pending === 'inspect'}
-            onclick={load}
-          >
-            <RefreshCw
-              size={14}
-              class={pending === 'inspect' ? 'animate-spin motion-reduce:animate-none' : ''}
-              aria-hidden="true"
-            />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={!installation || needsRefresh || pending !== null || serviceBusy || confirmation !== null}
-            aria-label={i18n.t(error && errorKind === 'check' ? 'settings.opencodeRetryCheck' : 'settings.opencodeCheck')}
-            title={i18n.t(error && errorKind === 'check' ? 'settings.opencodeRetryCheck' : 'settings.opencodeCheck')}
-            aria-busy={pending === 'check'}
-            onclick={check}
-          >
-            {#if pending === 'check'}
-              <RefreshCw size={14} class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
-            {:else}
-              <Download size={14} aria-hidden="true" />
+        <div role="status" aria-live="polite" aria-atomic="true" class="text-xs leading-5">
+          {#if pending}
+            <p class="mt-3 mb-0 text-[var(--text-secondary)]">{i18n.t(`settings.opencodePending.${pending}`)}</p>
+          {:else if upgradedVersion}
+            <p class="mt-3 mb-0 text-[var(--accent-primary)]">
+              {i18n.t('settings.opencodeUpgraded', { version: upgradedVersion })}
+            </p>
+            <p class="mt-1 mb-0 text-[var(--text-muted)]">{i18n.t('settings.opencodeRunningHint')}</p>
+          {:else if result}
+            <p class={['mt-3 mb-0 break-words', result.updateAvailable && 'text-[var(--accent-primary)]']}>
+              {i18n.t(result.updateAvailable ? 'settings.opencodeAvailable' : 'settings.opencodeCurrent', { version: result.latestVersion })}
+            </p>
+            {#if result.updateAvailable && !result.installation.canUpgrade}
+              <p class="mt-1 mb-0 text-[var(--text-muted)]">{i18n.t('settings.opencodeReason.unsupported')}</p>
             {/if}
-          </Button>
-        </div>
-      </div>
-      <div role="status" aria-live="polite" aria-atomic="true" class="text-xs leading-5">
-        {#if pending}
-          <p class="mt-3 mb-0 text-[var(--text-secondary)]">{i18n.t(`settings.opencodePending.${pending}`)}</p>
-        {:else if upgradedVersion}
-          <p class="mt-3 mb-0 text-[var(--accent-primary)]">
-            {i18n.t('settings.opencodeUpgraded', { version: upgradedVersion })}
-          </p>
-          <p class="mt-1 mb-0 text-[var(--text-muted)]">{i18n.t('settings.opencodeRunningHint')}</p>
-        {:else if result}
-          <p class={['mt-3 mb-0 break-words', result.updateAvailable && 'text-[var(--accent-primary)]']}>
-            {i18n.t(result.updateAvailable ? 'settings.opencodeAvailable' : 'settings.opencodeCurrent', { version: result.latestVersion })}
-          </p>
-          {#if result.updateAvailable && !result.installation.canUpgrade}
-            <p class="mt-1 mb-0 text-[var(--text-muted)]">{i18n.t('settings.opencodeReason.unsupported')}</p>
           {/if}
-        {/if}
-      </div>
-      {#if canUpgrade}
-        <Button size="sm" class="mt-3" disabled={pending !== null || confirmation !== null} onclick={confirmUpgrade}>
-          <ArrowUp size={14} aria-hidden="true" />{i18n.t('settings.opencodeUpgrade')}
-        </Button>
-      {/if}
-    </section>
-    {#if error}
-      <div class="mt-3 flex flex-wrap items-center gap-2 text-xs leading-5 text-[var(--status-error)]" role="alert">
-        <span class="min-w-0 break-words [overflow-wrap:anywhere]"
-          >{i18n.t(`settings.opencodeError.${errorKind}`)}</span
-        >
-        {#if errorKind !== 'check'}
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={pending !== null || serviceBusy || confirmation !== null}
-            aria-label={i18n.t('settings.opencodeRetry')}
-            title={i18n.t('settings.opencodeRetry')}
-            onclick={load}
-          >
-            <RefreshCw size={14} aria-hidden="true" />
+        </div>
+        {#if canUpgrade}
+          <Button size="sm" class="mt-3" disabled={pending !== null || confirmation !== null} onclick={confirmUpgrade}>
+            <ArrowUp size={14} aria-hidden="true" />{i18n.t('settings.opencodeUpgrade')}
           </Button>
         {/if}
-      </div>
+        {#if error}
+          <div class="mt-3 flex flex-wrap items-center gap-2 text-xs leading-5 text-[var(--status-error)]" role="alert">
+            <span class="min-w-0 break-words [overflow-wrap:anywhere]"
+              >{i18n.t(`settings.opencodeError.${errorKind}`)}</span
+            >
+            {#if errorKind !== 'check'}
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={pending !== null || serviceBusy || confirmation !== null}
+                aria-label={i18n.t('settings.opencodeRetry')}
+                title={i18n.t('settings.opencodeRetry')}
+                onclick={load}
+              >
+                <RefreshCw size={14} aria-hidden="true" />
+              </Button>
+            {/if}
+          </div>
+        {/if}
+      </section>
     {/if}
-    <OpenCodeService
-      bind:this={servicePanel}
-      ready={appInfo !== null}
-      blocked={pending !== null || confirmation !== null}
-      bind:busy={serviceBusy}
-    />
-  {/if}
+  </div>
 </section>
 
-<Dialog.Root open={confirmation !== null} onOpenChange={(open) => { if (!open) closeConfirmation(); }}>
+<Dialog.Root open={active && confirmation !== null} onOpenChange={(open) => { if (!open) closeConfirmation(); }}>
   <Dialog.Content
     aria-busy={pending === 'upgrade'}
     onEscapeKeydown={(event) => { if (pending) event.preventDefault(); }}

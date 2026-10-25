@@ -2,6 +2,7 @@
 import { RefreshCw } from '@lucide/svelte';
 import { onMount, untrack } from 'svelte';
 import { Button } from '$src/components/button/index.js';
+import { Checkbox } from '$src/components/checkbox/index.js';
 import { Input } from '$src/components/input/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
@@ -9,9 +10,10 @@ import type { OpenCodeServiceStatus, OpenCodeServiceTarget } from '$src/types/ap
 
 let {
   ready,
+  active = true,
   blocked = false,
   busy = $bindable(false),
-}: { ready: boolean; blocked?: boolean; busy?: boolean } = $props();
+}: { ready: boolean; active?: boolean; blocked?: boolean; busy?: boolean } = $props();
 const config = getConfig();
 const i18n = getI18n();
 let status = $state.raw<OpenCodeServiceStatus | null>(null);
@@ -25,7 +27,7 @@ let pending = $state<'read' | 'save' | null>(null);
 let error = $state<'read' | 'save' | 'busy' | 'validation' | null>(null);
 let saved = $state(false);
 let connectionUnknown = $state(false);
-let mounted = false;
+let mounted = $state(false);
 let request = 0;
 const modes = ['shared', 'explicit'] as const;
 const disabled = $derived(!ready || blocked || pending !== null);
@@ -36,7 +38,7 @@ function applyDraft(target: OpenCodeServiceTarget) {
   url = target.url ?? '';
 }
 export async function refresh() {
-  if (!mounted || !ready || pending) return;
+  if (!mounted || !active || !ready || pending) return;
   const seq = ++request;
   pending = 'read';
   busy = true;
@@ -63,7 +65,7 @@ export async function refresh() {
 }
 async function save(event: SubmitEvent) {
   event.preventDefault();
-  if (!mounted || disabled || (mode === 'explicit' && !url.trim())) return;
+  if (!mounted || !active || disabled || (mode === 'explicit' && !url.trim())) return;
   const seq = ++request;
   pending = 'save';
   busy = true;
@@ -105,19 +107,17 @@ onMount(() => {
   };
 });
 $effect(() => {
-  if (ready) untrack(() => void refresh());
+  if (mounted && active && ready) untrack(() => void refresh());
 });
 </script>
 
-<section
-  class="mt-4 border-t border-[var(--border-subtle)] pt-4"
-  aria-labelledby="opencode-service-title"
-  aria-busy={pending !== null}
->
+<section class="px-4 py-3 sm:px-5 sm:py-4" aria-labelledby="opencode-service-title" aria-busy={pending !== null}>
   <div class="flex items-start justify-between gap-3 sm:gap-6">
     <div class="min-w-0">
-      <h3 id="opencode-service-title" class="m-0 text-xs leading-5 font-semibold">{i18n.t('settings.serviceTitle')}</h3>
-      <p class="mt-1 mb-0 text-xs leading-5 text-[var(--text-muted)]">{i18n.t('settings.serviceReadHint')}</p>
+      <h3 id="opencode-service-title" tabindex="-1" class="m-0 text-xs leading-5 font-semibold">
+        {i18n.t('settings.serviceTitle')}
+      </h3>
+      <p class="field-hint mt-1">{i18n.t('settings.serviceReadHint')}</p>
     </div>
     <Button
       variant="outline"
@@ -162,7 +162,14 @@ $effect(() => {
       </dd>
     </dl>
   </div>
-  <form class="mt-4 flex flex-col gap-3" onsubmit={save} oninput={() => { edited = true; saved = false; }}>
+  <form
+    class="mt-4 flex flex-col gap-3"
+    onsubmit={save}
+    oninput={() => {
+      edited = true;
+      saved = false;
+    }}
+  >
     <fieldset class="m-0 min-w-0 border-0 p-0" {disabled}>
       <legend class="mb-2 text-xs leading-5 font-medium">{i18n.t('settings.serviceMode')}</legend>
       <div class="grid gap-2 sm:grid-cols-2">
@@ -180,7 +187,7 @@ $effect(() => {
             <span class="min-w-0"
               ><span class="block font-medium"
                 >{i18n.t(choice === 'shared' ? 'settings.serviceShared' : 'settings.serviceExplicit')}</span
-              ><span class="block text-[var(--text-muted)]"
+              ><span class="field-hint"
                 >{i18n.t(choice === 'shared' ? 'settings.serviceSharedHint' : 'settings.serviceExplicitHint')}</span
               ></span
             >
@@ -195,6 +202,7 @@ $effect(() => {
         >
         <Input
           id="opencode-service-url"
+          name="opencode-service-url"
           type="url"
           bind:value={url}
           {disabled}
@@ -204,7 +212,7 @@ $effect(() => {
           spellcheck={false}
           aria-describedby="opencode-service-url-hint"
         />
-        <p id="opencode-service-url-hint" class="mt-1 mb-0 text-xs leading-5 text-[var(--text-muted)]">
+        <p id="opencode-service-url-hint" class="field-hint mt-1">
           {i18n.t('settings.serviceUrlHint')}
         </p>
       </div>
@@ -214,23 +222,38 @@ $effect(() => {
         >
         <Input
           id="opencode-service-password"
+          name="opencode-service-password"
           type="password"
           bind:value={password}
           disabled={disabled || clearPassword}
           autocomplete="new-password"
           aria-describedby="opencode-service-password-hint"
         />
-        <p id="opencode-service-password-hint" class="mt-1 mb-0 text-xs leading-5 text-[var(--text-muted)]">
+        <p id="opencode-service-password-hint" class="field-hint mt-1">
           {i18n.t('settings.servicePasswordHint')}
         </p>
         {#if status?.target.hasPassword}
           <p class="mt-1 mb-0 text-xs leading-5 text-[var(--text-secondary)]">
             {i18n.t('settings.servicePasswordSaved')}
           </p>
-          <label class="mt-2 flex items-center gap-2 text-xs leading-5">
-            <input type="checkbox" bind:checked={clearPassword} {disabled} class="accent-[var(--accent-primary)]">
-            {i18n.t('settings.serviceClearPassword')}
-          </label>
+          <div class="mt-2 flex items-center gap-2 text-xs leading-5">
+            <Checkbox
+              id="opencode-service-clear-password"
+              name="opencode-service-clear-password"
+              bind:checked={clearPassword}
+              {disabled}
+              onCheckedChange={() => {
+                edited = true;
+                saved = false;
+              }}
+            />
+            <label
+              for="opencode-service-clear-password"
+              class={disabled ? 'cursor-default opacity-[var(--disabled-opacity)]' : 'cursor-pointer'}
+            >
+              {i18n.t('settings.serviceClearPassword')}
+            </label>
+          </div>
         {/if}
         <p class="mt-2 mb-0 text-xs leading-5 text-[var(--status-warning)]">
           {i18n.t('settings.serviceCredentialWarning')}

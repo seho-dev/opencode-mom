@@ -164,6 +164,7 @@ export const en = {
   'common.search': 'Search',
   'common.searchByName': 'Search by name',
   'common.status': 'Status',
+  'common.unknownStatus': 'Status unknown',
   'common.type': 'Type',
   'common.unnamed': 'unnamed',
   'common.unset': 'unset',
@@ -961,7 +962,8 @@ export const en = {
   'mcp.proxy.form.name': 'Display Name',
   'mcp.proxy.form.enabled': 'Enabled',
   'mcp.proxy.form.command': 'Command & Arguments',
-  'mcp.proxy.form.commandHint': 'One argument per line; executable first. No shell parsing.',
+  'mcp.proxy.form.commandHint':
+    'One argument per line; executable first. Blank lines are empty arguments; quotes are literal. No shell parsing.',
   'mcp.proxy.form.cwd': 'Working Directory',
   'mcp.proxy.form.cwdHint': 'Required absolute working directory.',
   'mcp.proxy.form.env': 'Environment Variables',

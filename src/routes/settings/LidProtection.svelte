@@ -10,6 +10,7 @@ import type { LidState } from '$src/types/power.js';
 
 const config = getConfig();
 const i18n = getI18n();
+let { active = true }: { active?: boolean } = $props();
 let state = $state<LidState>({ enabled: false, phase: 'disabled' });
 let known = $state(false);
 let loading = $state(true);
@@ -19,7 +20,7 @@ let saving = $state(false);
 let savingEnabled = $state(false);
 let queryError = $state('');
 let saveError = $state('');
-let mounted = false;
+let mounted = $state(false);
 let request = 0;
 let readGeneration = 0;
 let targetVersion = config.serviceTargetVersion;
@@ -54,20 +55,20 @@ $effect(() => {
     saveError = '';
     loading = true;
     reloadQueued = true;
-    void readStatus();
+    if (active) void readStatus();
   });
 });
 
 function schedule() {
   clearTimeout(timer);
-  if (reloadQueued && mounted && !querying && !saving) {
+  if (reloadQueued && mounted && active && !querying && !saving) {
     void readStatus();
     return;
   }
-  if (mounted && !querying && !saving) timer = setTimeout(() => void readStatus(), 2000);
+  if (mounted && active && !querying && !saving) timer = setTimeout(() => void readStatus(), 2000);
 }
 async function readStatus(manual = false) {
-  if (!mounted || querying || saving) return;
+  if (!mounted || !active || querying || saving) return;
   clearTimeout(timer);
   const seq = ++request;
   const readSeq = ++readGeneration;
@@ -96,7 +97,7 @@ async function readStatus(manual = false) {
   }
 }
 async function setEnabled(enabled: boolean) {
-  if (!mounted || saving) return;
+  if (!mounted || !active || saving) return;
   const control = document.getElementById('lid-closed');
   const restoreFocus = document.activeElement === control;
   clearTimeout(timer);
@@ -122,34 +123,39 @@ async function setEnabled(enabled: boolean) {
       schedule();
       if (restoreFocus) {
         await tick();
-        if (mounted && seq === request && document.activeElement === document.body) control?.focus();
+        if (mounted && active && seq === request && document.activeElement === document.body) control?.focus();
       }
     }
   }
 }
 onMount(() => {
   mounted = true;
-  void readStatus();
   return () => {
     mounted = false;
     request += 1;
     clearTimeout(timer);
   };
 });
+$effect(() => {
+  if (!mounted) return;
+  if (active) untrack(() => void readStatus());
+  else clearTimeout(timer);
+});
 </script>
 
-<div class="px-4 py-3 sm:px-5 sm:py-4">
+<div id="settings-lid" tabindex="-1" class="px-4 py-3 sm:px-5 sm:py-4">
   <div class="flex items-start justify-between gap-6">
     <div class="min-w-0">
       <label for="lid-closed" class="font-[var(--font-heading)] text-[13px] leading-5 font-semibold"
         >{i18n.t('settings.lid')}</label
       >
-      <p id="lid-description" class="mt-1 mb-0 text-xs leading-5 text-[var(--text-secondary)]">
+      <p id="lid-description" class="field-hint mt-1">
         {i18n.t('settings.lidHint')}
       </p>
     </div>
     <Switch
       id="lid-closed"
+      name="lid-closed"
       checked={state.enabled}
       disabled={!known || saving}
       aria-describedby={`lid-description lid-status lid-close-note lid-authorization${failure || state.phase === 'error' ? ' lid-error' : ''}`}

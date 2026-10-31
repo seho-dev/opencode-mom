@@ -1,61 +1,63 @@
 # Domain and Command Types
 
-`mcp-proxy.ts` also exports `MomHttpSettings` (`port`, `allowLan`) for the shared application HTTP listener. These fields are absent from `McpProxySettingsDto`; `McpProxyStateDto` retains read-only HTTP network metadata alongside proxy state.
-
 ## Overview
 
-This directory defines frontend domain records, command DTOs, and small UI result unions, with one file per domain area. It describes data exchanged by configuration actions and consumed by pages without implementing persistence, validation, or state management.
+Defines domain records, command DTOs, and small UI result unions in domain-owned files for configuration
+actions and pages. This directory implements no persistence, validation, or state management.
 
 ## Directory Structure
 
 ```text
-src/types/            # Domain contracts without runtime implementations
-├── agents.ts         # Agent definitions, source previews, permissions, and field mutations
-├── app.ts            # App snapshot, projects, preferences, app/CLI/target metadata, updates, command errors
-├── groups.ts         # Group records, agent bindings, and category mappings
-├── mcp.ts            # MCP entries, lists, drafts, and guarded updates
-├── mcp-proxy.ts      # MCP Proxy state, settings, server DTOs, and lifecycle requests
-├── models.ts         # Model references, definitions, variants, and catalog entries
-├── power.ts          # Lid-protection state and phases
-├── providers.ts      # Provider settings and model dictionaries
-├── skills.ts         # Skill entries, lists, drafts, and guarded updates
-├── stats.ts          # Token records and daily aggregates
-├── island.ts         # Mini Island state, sessions, requests, messages, and answers
-└── ui.ts             # Permission parsing and presentation unions
+types/
+├── agents.ts             # Sources, permissions, mutations
+├── app.ts                # Snapshots, preferences, CLI/service metadata
+├── groups.ts             # Groups, bindings, categories
+├── mcp.ts                # MCP records and guarded writes
+├── mcp-proxy.ts          # Proxy and MOM HTTP contracts
+├── models.ts             # References, variants, catalog
+├── power.ts              # Lid-protection state and phases
+├── providers.ts          # Provider settings and model dictionaries
+├── skills.ts             # Skill records and guarded writes
+├── stats.ts              # Token records and daily aggregates
+├── island.ts             # Native Island sessions and requests
+├── prompt-generation.ts  # Generation request and derived preset/kind types
+└── ui.ts                 # Permission result unions
 ```
 
 ## Key Files
 
 | Responsibility | File | Description |
 | :--- | :--- | :--- |
-| App contract | `app.ts` | `AppState`, `ProjectFolder`, `AppPreferences`, `AppInfo`, `UpdateCheck`, `ProjectPage`, and `CommandError`; project folders, selections, and diagnostics are optional snapshot fields. |
-| OpenCode installation | `app.ts` | `OpenCodeInstallation` and `OpenCodeUpdateCheck`; exact nullable binary/version, backend-owned method/reason, manual command, and stable-update availability. |
-| Service target | `app.ts` | `OpenCodeServiceTarget` and `OpenCodeServiceStatus`; Shared/fixed mode, public password presence and nullable connected identity/error fields. |
-| Group contract | `groups.ts` | `Group`, `AgentModelBinding`, and `CategoryMapping`; preset-specific collections can be `null`. |
-| Model contract | `models.ts` | `ModelRef`, `ModelDef`, and `ModelCatalogEntry`; catalog limits and variants have distinct optional/nullable shapes. |
-| Agent contract | `agents.ts` | `AgentDefinition`, typed optional `AgentSourcePreview[]` and `AgentFieldOverride[]`, permissive source records, permission rules, and `AgentWrite` mutation metadata. |
-| Resource writes | `mcp.ts`, `skills.ts` | Separate saved entries, creation drafts, and updates carrying expected source/content snapshots. |
-| MCP Proxy contract | `mcp-proxy.ts` | Gateway state, proxy-only settings, MOM HTTP listener settings, proxy server DTOs, import request, and unit close request. |
+| App and service boundary | `app.ts` | Snapshots, projects, preferences, command errors, and backend-owned installation/service metadata. |
+| Model bindings | `groups.ts`, `models.ts` | Group collections, typed references, model definitions, and catalog shapes. |
+| Guarded resource writes | `agents.ts`, `mcp.ts`, `skills.ts` | Source previews, creation drafts, and update snapshot contracts. |
+| Native/service records | `mcp-proxy.ts`, `island.ts`, `prompt-generation.ts` | Proxy/listener separation, native request state, and generation payloads. |
 
 ## Conventions
 
-- **Domain ownership**: Extend the existing domain file rather than adding runtime helpers or a cross-domain type barrel; sibling contracts use `import type` from their owning files.
-- **Constant-derived unions**: `agents.ts` and `groups.ts` import and re-export their domain unions from `src/utils/constants.ts`; extend those source constants rather than duplicating unions here.
-- **References and dictionaries**: Use `ModelRef` (`${string}/${string}`) for model bindings; `ProviderDef.models` is a `Record<string, ModelDef>`, while model variants are arrays.
-- **Optional versus null**: Preserve required nullable preset collections in `Group` and optional nullable catalog fields; `AppState.selectedGroupId` can be absent or `null`.
-- **Project folders**: `ProjectFolder` stores only `id` and `path`; display names are derived by the UI. Optional `AppState.projects`/`selectedProjectId` preserve compatibility with older payloads and mocks.
-- **Agent previews**: Optional `sources` retain storage, logical `path`, `resolvedPath`, backend-generated `content` string, `raw`, fields and nullable prompt. Inline content is the agent's JSON text; Markdown content is the full document. Echo the string unchanged, never regenerate it from JavaScript `raw` (floats/large integers can change). New fields stay optional for legacy payloads/mocks; current backend reads supply them. Optional `overrides` retain required `field`, `inline`, `markdown`, and `effective` values.
-- **Manual updates**: `AppInfo.platform` is `macos`/`windows`/`linux`/`other`; `UpdateCheck.latestVersion` is required but nullable when no stable release exists. `ProjectPage` limits browser destinations to `repository`/`releases`; metadata/check results are not part of `AppState`.
-- **CLI updates**: Keep installation method and upgrade-reason unions wire-compatible. `OpenCodeInstallation.binaryPath`, `version`, `upgradeReason`, and `manualCommand` are required nullable fields; `OpenCodeUpdateCheck.latestVersion` is non-null. Backend values are authoritative; do not infer version ordering or upgrade capability in the frontend.
-- **Service target**: Target mode is `shared`/`explicit`, url is required nullable, and `hasPassword` is the only credential metadata. Status connected/url/pid/version/error remain separate from target and local CLI metadata; nullable identity/error fields are required. Never add passwords to returned DTOs or AppState. Preserve `busy`/`conflict` command error codes for guarded operations.
-- **MCP Proxy state**: `actual`/`desired` and `desiredState` are booleans; `actualState` is `running`/`stopped`. Keep `boundAddr` required nullable and expose separate numeric `activeUnits` and `activeSessions` counters.
-- **MOM HTTP settings**: `MomHttpSettings` contains port and allowLan only; `McpProxySettingsDto` contains enabled, idleTimeout, maxUnits, and revision. Keep listener settings separate from revision-guarded proxy writes.
-- **Guarded updates**: Keep `expectedConfig`/`expectedSourcePath` on `McpUpdate` and `expectedContent`/`expectedPath` on `SkillUpdate`. Agent `mutation.expectedPath`/`expectedContent` echo the frozen preview's `resolvedPath`/`content`; backend updates reject missing snapshots with `validation_failed`. Agent create payloads remain unchanged and need no expected fields.
-- **Open-ended data**: Retain `Record<string, unknown>` for raw/config/settings objects, `unknown` for variant bodies and error detail, and open strings for agent modes and permission effects.
-- **Permission results**: Preserve the `ok` discriminator in `PermissionParse` and `mode` discriminator in `PermissionView`; only successful/rules branches carry rules.
-- **Usage shapes**: Keep timestamped `TokenUsageRecord.time` separate from aggregated `DailyTokenUsage.date`; both retain numeric input/output counts.
-- **Island contract**: Keep the Island wire records in `island.ts`; required numeric `connectionGeneration` is the native cache generation, not a URL or credential, and invalidates target-local UI state monotonically. `IslandView` is `compact`/`peek`/`expanded`. Permission `save?: string[]` carries only server-provided rules, and `IslandPermissionDecision` is `once`/`always`/`reject`. Always requires explicit user consent and a fresh backend check of the exact pending request with nonempty save rules; never infer rules from resources. Question answers use field keys and option values, while messages expose only public user/assistant text.
+- **Domain ownership**: Extend the existing domain file rather than adding runtime helpers or a
+  cross-domain type barrel; sibling contracts use `import type` from their owning files.
+- **Derived unions**: Extend source constants in `src/utils/constants.ts` for agent, group, and generation
+  vocabulary rather than duplicating unions; retain typed `ModelRef` bindings.
+- **Wire compatibility**: Preserve optional versus nullable fields, open-ended data, and discriminated
+  result branches; consult the linked contracts before changing a domain payload's shape.
+- **Guarded resource writes**: Echo frozen source paths and backend-generated content unchanged, never
+  regenerate content from JavaScript raw data; preserve update snapshot requirements without changing create payloads.
+- **Public metadata**: Never return passwords in DTOs or `AppState`; installation versions and upgrade
+  capability are backend-authoritative, and app/check metadata remains separate from snapshots.
+- **Listener isolation**: Keep MOM HTTP listener settings separate from revision-guarded MCP Proxy
+  writes; do not merge listener fields into proxy settings when extending either contract.
+- **Island consent**: Always requires explicit user consent and a fresh backend check of the exact
+  pending request with nonempty server-provided save rules; never infer permission rules from resources.
+- **Generation privacy**: Keep preset instructions and provider credentials out of generation payloads;
+  derive kind/preset types from shared constants and use service defaults when model/variant are omitted.
+
+## Details
+
+| Section | File |
+| --- | --- |
+| Domain wire shapes and mutation contracts | [docs/wire-contracts.md](docs/wire-contracts.md) |
 
 ## Sync
 
-This file is maintained as the directory scope changes. When files in this directory are added, modified, or deleted (components, logic units, utilities, constants, etc.), update this file's directory structure, key files, and conventions to keep the documentation in sync with the code.
+Keep this guide and linked docs in sync with changes to this directory.

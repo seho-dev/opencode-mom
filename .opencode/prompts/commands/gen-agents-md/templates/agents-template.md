@@ -26,4 +26,4 @@ Anti-pattern list stating "what not to do" and "why".
 
 ## Sync
 
-This file is maintained as the directory scope changes. When files in this directory are added, modified, or deleted (components, logic units, utilities, constants, etc.), update this file's directory structure, key files, and conventions to keep the documentation in sync with the code.
+Keep this guide and linked docs in sync with changes to this directory.

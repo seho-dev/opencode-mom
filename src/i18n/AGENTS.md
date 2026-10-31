@@ -2,7 +2,7 @@
 
 ## Overview
 
-Provides typed English and Chinese messages, parameter interpolation, and a context-shared translator that follows the config store's locale preference. This directory owns message lookup and context access, not preference persistence or UI rendering.
+Typed English and Chinese dictionaries feed a context-shared translator that follows the config locale. This module owns lookup and interpolation, not preference persistence or UI rendering.
 
 ## Directory Structure
 
@@ -22,32 +22,42 @@ i18n/                         # Translation data and context API
 ## Key Files
 
 | Responsibility | File | Description |
-| :--- | :--- | :--- |
-| Message schema | `dictionaries/en.ts` | Defines `en` as a const object and `MessageKey = keyof typeof en`. |
-| Chinese messages | `dictionaries/zh.ts` | Implements every English key through `Record<MessageKey, string>`. |
-| Translator | `i18n.svelte.ts` | Exposes `locale` and `t(key, params)` using the supplied locale getter. |
-| Context | `context.ts` | Shares an `I18n` instance through `setI18n` and `getI18n`. |
+| --- | --- | --- |
+| Message schema | `dictionaries/en.ts` | English keys define the shared message type. |
+| Chinese messages | `dictionaries/zh.ts` | Typed counterpart for every English key. |
+| Translation lookup | `i18n.svelte.ts` | Reactive locale, interpolation, and fallback behavior. |
+| Context API | `context.ts` | Parent-installed translator access. |
+| Compatibility checks | `__tests__/i18n.test.ts` | Locale changes, key parity, and placeholders. |
 
 ## Conventions
 
-- **Key schema**: Define new keys in `en.ts`; mirror every key in the typed `zh.ts` map rather than maintaining a separate key union.
-- **Project and update messages**: `header.*` covers the GitHub opener; `settings.*` covers manual version checks, macOS trust guidance, and optional Star support. Keep security steps and the quarantine command equivalent in both locales; Star support never gates downloads.
-- **CLI update messages**: `settings.opencode*` covers local installation details, every backend method/reason, explicit stable checks, exact path/version confirmation, and separate command/readback failures. Keep local-only, no-sudo/no-service-restart warnings equivalent in both locales; app updates remain separate.
-- **Service operation messages**: Model catalog loading/errors and lid-monitor scope describe the selected local OpenCode service, not CLI transport. Keep CLI wording for installation, updates and Shared Service bootstrap only.
-- **Service target messages**: `settings.service*` distinguishes saved target, live backend identity and CLI version; explains direct V2 HTTP loopback APIs, Basic backend passwords, no-auth without a password, and no OpenChamber UI/Bearer fallback. Busy errors ask users to wait for the ongoing operation and retry; validation hints cover the direct HTTP loopback URL, positive port, and backend password without claiming authentication was checked. Never require manual Mini Island/lid-protection disabling or power restoration to switch targets; backend monitor refresh preserves enabled preferences. Keep errors free of private bodies. Keep Unix account-owned 0600 plaintext storage, Windows current-account DPAPI, dedicated backend-password guidance and no protection against account compromise equivalent in both locales. Never expose credential values or claim verified Windows ACL protection; Windows-native DPAPI acceptance is outside macOS host tests.
-- **Resource scope copy**: `scope.*` covers the list-only Global/project picker, exact-root read-only notices, separate Global comparison, and forgetting a folder without deleting files. It describes configuration files, never live MCP status or inherited runtime configuration.
-- **MOM HTTP copy**: `settings.http.*` covers the General tab listener port (default 18765), LAN access/security warning, runtime status, and saves. `settings.proxy.httpHint` directs proxy users to General; proxy-only controls retain `settings.proxy.*`.
-- **Settings search**: `settings.search*` labels the local setting finder, result count, navigation hint, clear action, and empty state. Keep both locales concise and action-oriented. `settings/SettingsSearch.svelte` explicitly indexes existing labels/descriptions and their technical keys in both dictionaries, never user-entered values; preserve those key identities during copy edits. `groups.enableAria` / `groups.disableAria` use matching `{name}` placeholders.
-- **Dashboard copy**: `dashboard.*` covers runtime selection, Quick Actions, configured-resource counts, lazy MCP Proxy status, and independent usage periods. Keep input/output chart abbreviations translated; unavailable proxy readback must not claim zero services or a running gateway.
-- **Parameters**: Use matching `{name}` placeholders in both locales and pass string or number values to `t`; with a params object, missing values become empty strings, while omitting params leaves placeholders intact.
-- **Locale getter**: Keep `createI18n(() => config.preferences.locale)` in context providers so lookup follows preference changes; this module does not persist the locale.
-- **Context access**: Install the translator with `setI18n` in a parent and consume it with `getI18n` in descendants; `context.ts` owns the private Symbol key.
-- **Fallback**: Preserve lookup order of selected locale, English, then the key itself.
-- **Existing coverage**: Keep interpolation, locale-change, and unknown-key cases in `__tests__/i18n.test.ts`; its dictionary loop checks matching keys and placeholder names across both locales.
-- **Island copy**: `island.*` covers the compact native window, public message view, permissions, questions, unknown/disconnected status, and explicit ambiguous/409 retry states; `island.compact.*` supplies short status/count labels for non-notched screens, with full accessible counts retained through the existing keys. Every screen defaults to compact; notch geometry only changes information density. `settings.island*` covers the macOS-only switch and local V2 Shared Service explanation. Closing or disabling never means rejecting requests or interrupting sessions.
+- **Dictionary schema**: Define keys in English and mirror them in the typed Chinese map; do not create
+  another key union. Follow [schema contracts](docs/translator-contracts.md#schema-and-interpolation).
 
-Dashboard MCP Proxy runtime labels reuse `mcp.proxy.running` / `mcp.proxy.stopped`; `settings.proxy.*` contains settings copy, not gateway state labels. Keep successful running/stopped rendering covered in both locales, alongside unavailable readback.
+- **Reactive context**: Install the translator in a parent using the config locale getter; descendants consume
+  context. Locale persistence stays outside this module’s [reactive
+  context](docs/translator-contracts.md#reactive-context-and-regression-coverage).
+
+- **Parameters**: Keep placeholder names aligned and pass supported values; preserve missing-parameter and
+  fallback behavior. Consult [interpolation rules](docs/translator-contracts.md#schema-and-interpolation)
+  before changing lookup semantics.
+
+- **Product terminology**: Distinguish app updates, CLI operations, live services, and configuration scopes.
+  Use the matching [product-copy contracts](docs/product-copy.md) rather than implying runtime behavior from
+  configuration.
+
+- **Security copy**: Keep credential-storage guidance and platform limitations equivalent across locales;
+  never expose secrets or claim unverified protection. Preserve [service
+  wording](docs/product-copy.md#app-cli-and-service-terminology).
+
+- **UI status**: Keep dashboard, settings-search, and Island labels concise without losing accessible counts
+  or unknown states. Preserve their [domain
+  terminology](docs/product-copy.md#dashboard-and-island-terminology) and static search keys.
+
+- **Regression coverage**: Keep both dictionaries aligned on keys and placeholder names; retain locale-change,
+  interpolation, and unknown-key checks. Use the existing [translator regression
+  coverage](docs/translator-contracts.md#reactive-context-and-regression-coverage).
 
 ## Sync
 
-This file is maintained as the directory scope changes. When files in this directory are added, modified, or deleted (components, logic units, utilities, constants, etc.), update this file's directory structure, key files, and conventions to keep the documentation in sync with the code.
+Keep this guide and linked docs in sync with changes to this directory.

@@ -39,10 +39,10 @@ Anti-pattern list stating "what not to do" and "why".
 
 ## Sync
 
-Fixed closing section — always present. Copy the exact text from [agents-rules.md](./agents-rules.md).
+Keep this guide and linked docs in sync with changes to this directory.
 ```
 
-Every generated document must end with the fixed `## Sync` section; the scenario examples below omit it for brevity.
+Every generated document must end with the fixed `## Sync` section: "Keep this guide and linked docs in sync with changes to this directory." The scenario examples below omit it for brevity.
 
 ---
 
@@ -56,9 +56,10 @@ Every generated document must end with the fixed `## Sync` section; the scenario
 
 ### Content Pruning
 
-- **Required**: Overview, Directory Structure, Conventions
+- **Required**: Overview, Directory Structure, Conventions; component-level files also require Props and Usage.
 - **Recommended**: Key Files (when file count > 5)
-- **Optional**: Anti-patterns, Props, Usage, Design Patterns
+- **Optional**: Key Files, Anti-patterns, and component Design Patterns.
+- Keep conventions short and actionable; link detailed lifecycle, wire, and edge-case contracts in a few topic-specific `docs/` files without duplicating them in the guide.
 
 ---
 

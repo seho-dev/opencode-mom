@@ -32,6 +32,7 @@ Generated AGENTS.md must:
 - **≤ 100 lines** — trim overages
 - **Concise** — no filler, every sentence carries information
 - **Precise** — exact descriptions, consistent terminology
+- **Layered** — keep a self-contained backbone and short actionable conventions; link detailed contracts in topic-specific `docs/` rather than duplicating them.
 
 ## Sync Rule
 
@@ -40,6 +41,7 @@ Generated AGENTS.md must:
 - Record only directory-specific facts verified from the code; do not copy speculative conventions from examples.
 - Do not duplicate root-level conventions, MCP config, or shared rules.
 - **Every generated AGENTS.md must end with the fixed `## Sync` section verbatim** (see template).
+- The fixed Sync sentence is: "Keep this guide and linked docs in sync with changes to this directory."
 
 ## Document Layers
 
@@ -50,9 +52,10 @@ Generated AGENTS.md must:
 
 ### Content Pruning
 
-- **Required**: Overview, Directory Structure, Conventions
+- **Required**: Overview, Directory Structure, Conventions; component-level files also require Props and Usage.
 - **Recommended**: Key Files (when file count > 5)
-- **Optional**: Anti-patterns, Props, Usage, Design Patterns
+- **Optional**: Key Files, Anti-patterns, and component Design Patterns.
+- Move lifecycle, wire, and edge-case details into a few linked topic documents, not separate overview/conventions/structure/sync files.
 
 ---
 

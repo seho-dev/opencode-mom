@@ -47,6 +47,9 @@ shared/                # Builtin agent catalog JSON imported by the frontend
 
 ## Conventions
 
+- **Documentation**: Write all repository documentation in English; `README.md` is the canonical README. This does not change the app's supported UI languages.
+- **Docs layering**: Module guides retain Overview, a concise Directory Structure tree, and short Conventions; component guides also require Props and Usage. Key Files, Anti-patterns, and component Design Patterns are optional. Link detailed contracts in topic-specific `docs/`; do not duplicate them in `AGENTS.md`.
+- **Docs sync**: End every project-owned `AGENTS.md` with the same `## Sync` sentence: "Keep this guide and linked docs in sync with changes to this directory."
 - **Svelte 5 runes only**: `$state`/`$derived`/`$props`/`$effect`; no Svelte stores.
 - **IPC boundary**: UI never calls `invoke` directly. Extend `CommandAdapter` (`src/config/adapter.ts`), read state via the config store (`getConfig()`), and register new handlers in `src-tauri/src/lib.rs`.
 - **Wire compatibility**: persisted `group.type` values are frozen (`opencode` / `slim` / `oh-my-openagent`); convert to canonical types at the adapter boundary only.
@@ -67,3 +70,7 @@ shared/                # Builtin agent catalog JSON imported by the frontend
 
 - Lid protection changes real system power policy; automated tests and readback do not replace manual lid-close acceptance (README). Do not run the macOS helper with `sudo`; its tests use mock backends.
 - Do not commit secrets, API keys, or local environment files.
+
+## Sync
+
+Keep this guide and linked docs in sync with changes to this directory.

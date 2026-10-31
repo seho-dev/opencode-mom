@@ -1,5 +1,9 @@
 # Mini Island
 
+## Overview
+
+The independent native Island window presents compact attention, session browsing, and guarded request actions without global preload. Native geometry owns window shape; messages load only when expanded.
+
 ## Directory Structure
 
 ```text
@@ -11,27 +15,49 @@ island/
     └── layout.test.ts           # Independent window without global preload
 ```
 
+## Key Files
+
+| Responsibility | File | Description |
+| --- | --- | --- |
+| Window controller | `+page.svelte` | View transitions, snapshots, and guarded actions. |
+| Question inputs | `QuestionForm.svelte` | Field-key responses and accessible multiselect. |
+| Interaction checks | `__tests__/island.test.ts` | Lifecycle, recovery, and event-boundary coverage. |
+| Window isolation | `__tests__/layout.test.ts` | No global configuration preload. |
+
 ## Conventions
 
-- Keep the continuous #070708 screen-edge backdrop and square top edge across compact, peek and expanded, including the content-free notch safe gap. Never simulate a physical notch with a transparent cutout. Every screen starts and collapses compact; geometry only changes density and size, never the view or IPC. Positive `notchWidth` and `topInset` together define the current screen's notch; use finite nonnegative backend screen geometry, never a user-agent/device guess. Compact stays max(notchWidth + 112, 200) × max(topInset, 28). Both notched wings carry information: left has a short state over the running count; right has one 18 px activity visual beside the pending count over its label. The actual notch gap remains empty of content and controls. No-notch compact stays 200 × 28 with two text levels: state/running count plus the snapshot session count, then separate permission and question counts. The same single activity visual remains on the right. Session counts describe the bounded current snapshot (including its cached children), not total/history. Connected idle shows factual zeroes; disabled/connecting/error snapshots replace unavailable counts with em dashes and never present cached aggregates as current. Visible counts cap at 99+; both compact buttons describe exact snapshot and request counts for accessibility. Never show branding, extra icons, project titles, paths, request/message text or raw errors in default compact. Peek stays 400 × (topInset + 132), with a 36 px header and 96 px body below the safe notch gap; expanded stays 560 × 520. Unknown/invalid geometry stays hidden, and cannot request peek, until known. Native owns actual window sizing, not an oversized hidden hit area.
-- Compact permission attention requires an enabled connected snapshot and reads across all sessions, including children. Keep the current request stable by session/request ID through reorder; queue controls and explicit Allow once/Reject never select a session, expand, or read messages. One main Island hit surface owns pointer enter/move/leave and focus, including the exposed center and safe top gap; do not duplicate wing/shell handlers that race during crossings or resizing. On every screen hover/focus uses a 100 ms entry timer, and pointer move recovers a missing initial entry without restarting it. Compact click/touch/Enter/Space immediately requests peek only, even without permissions. Keep header controls mounted through peek for keyboard focus continuity. Peek shows cached status, question hints and body Refresh, never chat or automatic focus. Only its single explicit downward Expand sessions disclosure click/keyboard activation opens expanded and reads messages; header/arrow hover never does. Leave uses a single 180 ms timer, including pointer leave during resize, to allow entry into the newly visible body; keep peek while hovered, focused, menu-open, busy or checking a reply. A compact click keeps peek until leave/blur, without a pin control. Do not queue duplicate/no-op peek requests or let late hover override explicit expanded/authoritative collapsed requests. Pending arrival never expands. Screen geometry/status updates never reset compact, peek or expanded, fetch messages outside expanded, focus, or authorize. Local blur follows leave protection; authoritative island:collapsed always wins without canceling/retrying writes. All timers/listeners are cleaned on teardown.
-- Permission replies share an exact-ID, live-presence, mounted/connected/enabled/busy guard in both views. Allow once is primary; the same hover-open/click-toggle disclosure offers Always for this project only with nonempty server-provided save rules and explicit user consent. OpenCode persists the action plus request.save in the request's OpenCode Project, not MOM's selected folder; never derive save rules from resources. Its visible hint includes that OpenCode Project, the action, exact patterns in a keyboard-scrollable read-only field and the same-Project matching-pending caveat. Peek contains the menu inside its 96 px body; expanded uses an in-flow menu and scrolls it into view without focusing it. Hover never authorizes. Dropdown Escape returns focus to its trigger before a second Escape compacts. Successful replies request refresh + state readback; never optimistically remove requests. Pending/ambiguous replies stay locked until a connected enabled read confirms removal or an explicit Refresh; no automatic write retry. Automatic permission refresh never confirms an uncertain message draft.
-- Use system text and one 18 px CSS-only four-bar activity visual, contained inside the right wing. Idle/disabled/disconnected retain four static low bars, never a dot-only status. Animate only enabled connected actually-running snapshots. prefers-reduced-motion retains a static active wave; activity never adds animation libraries or timers.
-- Motion is presentation-only CSS: the black Island fills the current real native viewport (`100vw` × `100dvh`), with a square top edge, content-free camera gap, no whole-backdrop opacity/translation/scale and no CSS width/height tween. Content enters at 0.72 opacity and 4 px below rest over 180 ms, or 220 ms for the session list/conversation, using `cubic-bezier(0.22, 1, 0.36, 1)` without delay. Header heights, lane sizing, lower radii and selected-row colors transition without replacing compact/peek header buttons or activity DOM. Permission identity and selected conversation use keyed immediate replacement: no outro, retained hidden controls, duplicate approval buttons or animation callbacks. Keep the composer mounted during selection; motion never chooses view, focuses, reads messages or performs actions.
-- Native frame motion uses main-thread `NSAnimationContext` + `NSWindow.animator()`: changed sizes grow in 220 ms and shrink in 190 ms around the existing top/notch-center anchor. Completion performs final correction/readback before geometry/view commit, eligible explicit expanded focus and async IPC success; the lowercase enum-to-void wire contract is unchanged. Frontend keeps the previous authoritative view during grow and mounts/animates target content only after successful IPC. Native compact requests and blur/close clear selection and emit `island:collapsed` immediately, before shrink; frontend removes expanded/peek controls and their focus nodes without an outro and invalidates late results. Compact remains authoritative even if physical shrink fails; it never restores old controls. Actual intermediate frame bounds own hover/hit testing, not a permanent expanded transparent area.
-- Native owns one active/latest pending request guarded by generation, serial and native window identity. A superseded native animator finishes without committing/focusing; reversal can wait for the remaining current animation (up to approximately 220 ms), then runs its own transition, not an immediate retarget. Frontend sends compact immediately during pending grow/peek, deduplicates the same pending target, and accepts only the latest request identity/version; stale grow success/failure never restores controls or reads messages. Compact's first early `island:collapsed` acknowledges its current request without discarding genuine final-readback error feedback; a later authoritative collapse, new request or teardown invalidates that result. Failed shrink stays compact, reports through the existing status-control title, and never retries automatically. Changed/SSE notifications update content only; display/DPI placement reconciles instantly after active motion. Startup, unchanged/position-only frames, placement/error correction and native reduced-motion use the instant path. CSS reduced-motion cancels all new CSS motion at runtime; independently, native samples `NSWorkspace.accessibilityDisplayShouldReduceMotion()` at each transition start without a watcher, so an already-running native animation may finish. Do not delay authoritative collapse or wait for either animation to remove controls.
-- Source/jsdom checks do not prove AppKit/WebKit smoothness, native focus timing, viewport repaint, attachment, seams, actual bounds or physical camera hover. Grow may expose black space while the old view remains; immediate compact content is centered in the still-shrinking real viewport. Verify the rebuilt app on notched and non-notched screens, including rapid reversal, keyboard/blur collapse, runtime Reduce Motion and display changes; never infer manual acceptance from tests.
-- Register five window-targeted listeners before the initial snapshot read: `island:changed`, `island:collapsed`, `island:pointer-enter`, `island:pointer-leave`, and `app:preferences-changed`. Pointer events have void payloads and only update native hover, never focus, expand, read or mutate. Keep DOM/native hover as separate booleans with combined presence: either source retains peek, duplicate entry never restarts the existing 100 ms deadline, and only both sources leaving can start the existing protected 180 ms shrink. DOM pointermove recovers entry. Expanded ignores hover; disabled snapshots, authoritative collapse and teardown clear both flags and hover timers, and stale peek readback cannot revive the view. Native delivery does not imply the physical camera/notch area can be hovered. Dispose late listener registrations on teardown. Event invalidations retain one bounded 200 ms timer and serialized dirty reads, never polling or per-token requests.
-- Only explicit Refresh can confirm an uncertain attempt from a public user message with the exact submission ID. Same text or an assistant ID is not proof; 409 itself is not success.
-- Cache-only snapshots expose monotonic `connectionGeneration`. A newer generation clears selection, messages, drafts/message IDs, permission attempts/menus and keyed question forms without changing view, hover, native motion or focus. Ignore older generations and late prior-generation message/action results even when session/request IDs match. Snapshot reads remain serialized and event-coalesced, independently of serialized per-generation message reads so a stalled old message read cannot block connection invalidation. Never retry a mutation across generations.
-- Messages, send, permission/question replies, question cancellation and interruption append the displayed snapshot/form generation to the config call as required `expectedConnectionGeneration`. Capture before invoking; never substitute the latest backend generation or replay old payloads after a conflict/refresh. This protects clicks made after native switched but before the new snapshot reached the UI.
-- New connection generations invalidate pending resize identities without changing the committed view or hover; late old grow success/failure cannot open controls, focus, read messages or restore errors. Rejected sends with validation/conflict codes request cache readback only, never automatic Refresh or resend.
-- If Refresh finds no matching user ID, preserve the attempt for an explicit same-ID retry or offer local discard. Discard clears text/ID and never sends; a later Send is a new user action.
-- Validation/not-found and HTTP 400/401/403/404/422 rejections leave drafts editable. Editing resets the ID; unchanged manual retry retains it.
-- Compact running counts require a connected snapshot. Writes also require `enabled === true`. Collapse, unmount and discard never reject requests or interrupt sessions.
-- All fixed copy uses `island.*` keys in both dictionaries; backend `answerable` owns form metadata and constraint validation.
-- QuestionForm multiselect options and custom values use the shared Checkbox with explicit `id`/`for`, Island gold styling and explicit busy/read-only disabled props. Preserve field keys and option values. Space toggles; Enter on either checkbox must not submit the form. Keyboard, ARIA state and explicit answer submission regression coverage lives in `../../components/checkbox/__tests__/checkbox.test.ts`.
+- **Native geometry**: Start and collapse compact on every screen; use backend geometry, not device guesses.
+  Follow [presentation contracts](docs/presentation.md#geometry-density-and-attention) for density, safe gaps,
+  and unavailable counts.
+
+- **View ownership**: Only explicit disclosure opens sessions; hover may reveal attention but never authorizes
+  actions. Preserve [transition ownership](docs/presentation.md#css-and-appkit-frame-transitions) and
+  authoritative collapse without restoring obsolete controls.
+
+- **Permission consent**: Reply only to live, exact requests with explicit consent; project persistence uses
+  server-provided rules. Preserve [permission and question
+  contracts](docs/connection-lifecycle.md#permission-consent-and-question-inputs), never optimistic removal.
+
+- **Send recovery**: Keep uncertain drafts and submission IDs until explicit readback confirms them; never
+  infer success or resend automatically. Follow [recovery
+  contracts](docs/connection-lifecycle.md#uncertain-sends-and-explicit-recovery).
+
+- **Connection generations**: Bind reads and mutations to the displayed connection generation; invalidate old
+  drafts, actions, and resize results. Follow [generation
+  guards](docs/connection-lifecycle.md#connection-generation-guards) without cross-target retries.
+
+- **Event lifecycle**: Coalesce snapshot invalidations and clean listeners, hover state, and timers on
+  teardown. Preserve [window event contracts](docs/presentation.md#window-events-and-manual-acceptance),
+  including late registrations and separate hover sources.
+
+- **Accessible responses**: Keep translated status and accessible counts; preserve backend-owned answerability
+  and exact field/option identities. Use the shared Checkbox and [question-input
+  rules](docs/connection-lifecycle.md#permission-consent-and-question-inputs).
+
+- **Manual acceptance**: Automated checks cannot prove native motion, focus, seams, or camera-area behavior.
+  Perform the rebuilt-app [acceptance checks](docs/presentation.md#window-events-and-manual-acceptance) on
+  notched and non-notched screens.
 
 ## Sync
 
-Keep this scope document aligned with Island files and lifecycle changes without editing unrelated route scopes.
+Keep this guide and linked docs in sync with changes to this directory.

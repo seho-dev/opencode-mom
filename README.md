@@ -16,8 +16,6 @@ One window. Three runtimes — **Native**, **Slim**, **OMO**. One click to switc
 ![Personal goal: 100 stars](https://img.shields.io/badge/personal%20goal-100%20stars-yellow?logo=apple&logoColor=white)
 [![GitHub stars](https://img.shields.io/github/stars/seho-dev/opencode-mom?style=social)](https://github.com/seho-dev/opencode-mom/stargazers)
 
-[English](README.md) · [简体中文](README.zh-CN.md)
-
 </div>
 
 > [!IMPORTANT]
@@ -78,10 +76,19 @@ Model-group projection uses one-to-one key patches that leave keys the group doe
 - **MCP** — see every registered server across config sources, inspect diagnostics, keep credentials masked, edit raw JSON, and delete safely; failed file replacements retain recovery `.bak` snapshots. Includes a built-in MCP HTTP Proxy gateway bridging local stdio MCP servers over HTTP/SSE for clients like OpenCode/Claude desktop with bearer token authentication and cross-platform process tree cleanup.
 - **Skills** — discover local and remote skills, view and edit content, watch diagnostics. Remote skills stay read-only.
 
+### 🧩 Plugins, Commands & global behavior
+
+- **Plugins** — preview plugins matched to Global configuration through the selected OpenCode V2 service API. Builtin components and project-only plugins are excluded. There is no project selector, plugin creation, editing or local plugin-file scanning. **Configuration details** shows config file locations and plugin JSON parameters on demand. 🔒 Parameters may contain sensitive values and are not retained in global draft recovery.
+- **Updates** — loading or refreshing the list checks Global packages for available updates. Each row keeps an Update button, enabled only when an update is available and safe to apply; exact version/commit pins and local plugins stay disabled. ⚠️ Plugin routes are experimental and runtime status is Location-based. OpenCode updates shared packages and notifies active locations to reload them. An unsuccessful request may already have changed the package; refresh before retrying. MOM never automatically retries an update, reloads configuration or restarts the service.
+- **Remove declaration** — after confirmation, remove the matching entries from known Global `opencode.json(c)` files only. Plugin files and cache are preserved. External config edits or changed sources reject the operation instead of overwriting them. Local plugins require an exact resolved declaration path match; auto-discovered files and directory-to-entrypoint mappings that cannot be confirmed stay read-only. Running instances are not unloaded automatically; reload OpenCode explicitly when ready.
+- **Commands** — create, preview, edit and delete local Markdown slash commands, including nested names such as `/team/review`. The complete document retains YAML frontmatter, unknown metadata and placeholders. There is no JSON command editing, remote synchronization, command execution or shell expansion.
+- **Prompt assistance** — Agents and Commands share a model-powered prompt dialog with Generate, Improve and Shorten presets. Rust prepends the preset instructions before sending your request and optional current draft through the selected OpenCode V2 service. Preview the result and explicitly apply it to the editor; saving remains separate. 🔒 Text is sent to the selected provider. ⚠️ Uses `/api/experimental/generate`; failed requests are never automatically retried, and closing the dialog does not guarantee that generation or billing stops.
+- **Settings → Behavior** — edit the raw Global `AGENTS.md`, independently of the selected Project. The default directory is `$XDG_CONFIG_HOME/opencode` or `~/.config/opencode`; `OPENCODE_CONFIG_DIR` overrides it, while an explicit `OPENCODE_CONFIG` file does not move it. Saving is explicit; missing files are created and external edits are rejected instead of overwritten. 🔒 These instructions may affect every OpenCode project; saving does not restart the service.
+
 #### Global and saved project roots
 
-- Only the **MCP, Agents and Skills list pages** have a scope selector. Add project roots with the native folder chooser, switch among saved roots, or return directly to **Global**. These pages share the last scope choice; adding the same folder again does not create another record.
-- **Project scope is read-only** in this first version: browse lists and details. **Show global configuration** adds a read-only comparison, not OpenCode's effective runtime configuration. Global create/edit/delete remains available independently of the saved project selection. Providers, Models, Groups, Settings, the tray, and OpenCode's running group/service are unaffected.
+- The **MCP, Agents, Skills and Commands list pages** share a source scope selector. Add project roots with the native folder chooser, switch among saved roots, or return directly to **Global**. Adding the same folder again does not create another record. Plugins are Global-only and ignore this selection; API failures never fall back to local plugin-file scanning.
+- **Project MCP, Agents and Skills remain read-only; only Markdown Commands support Project file writes.** **Show global configuration** adds a read-only source comparison on these local resource pages, not OpenCode's effective runtime configuration. Mutation destinations are fixed by their scope/source, not by a later selector change. Providers, Models, Groups, Settings, the tray, and OpenCode's running group/service are unaffected by scope selection.
 - Removing a root only forgets its saved record, never its files. If the selected record is removed, the selector returns to Global. A missing folder stays saved and reports `not_found` rather than falling back to Global.
 
 For a selected root `R`, the expected project paths are:
@@ -91,8 +98,9 @@ For a selected root `R`, the expected project paths are:
 | MCP / JSON agents | `R/opencode.json`, `R/opencode.jsonc`, `R/.opencode/opencode.json`, `R/.opencode/opencode.jsonc` |
 | Markdown agents | `R/.opencode/agent`, `R/.opencode/agents` |
 | Skills | `R/.opencode/skill`, `R/.opencode/skills` |
+| Markdown commands | `R/.opencode/command`, `R/.opencode/commands` |
 
-Only that exact root is inspected: no ancestor, sibling or descendant project discovery and no project `.claude` / `.agents` paths. Neither scope uses `mode` / `modes` directories. This is a limited source browser, not OpenCode's full discovery or effective state.
+For these local resource pages, only that exact root is inspected: no ancestor, sibling or descendant project discovery and no project `.claude` / `.agents` paths. Neither scope uses `mode` / `modes` directories. This is a limited source browser, not OpenCode's full discovery or effective state. Plugins match the API's configuration sources against MOM's captured Global config paths before displaying or updating packages.
 
 Adding and reading a project reject filesystem/volume roots and canonical overlaps between its fixed sources and MOM's captured Global config files/resource roots, including overrides. There is no blanket home-directory or minimum-depth exclusion; path checks do not guarantee protection against concurrent symlink changes.
 
@@ -118,7 +126,7 @@ Global recognizes native `agent` / `agents` and `skill` / `skills` directory ali
 
 ### 🌗 Native feel
 
-- English / 简体中文 UI, dark (default) and light themes, launch-at-login, a single-window console plus a tray for quick access.
+- English / Simplified Chinese UI, dark (default) and light themes, launch-at-login, a single-window console plus a tray for quick access.
 
 ## 🏝️ Roadmap
 
@@ -206,7 +214,7 @@ The Island switch is stored as `state.islandEnabled` (default `false`), outside 
 - **App config publication.** MOM's own config read/modify/write operations share the same in-process mutex. Saves stage a complete file in the destination directory, sync it, then publish by atomic rename; they create no `.bak`. General target-config writes remain plain writes without locks or backups.
 - **Resource recovery.** Existing-file inline agent CRUD, Markdown agent updates, MCP replacements and local skill updates use checked replacement with recovery `.bak` files retained on failure and cleaned up after success. Static Global symlinks remain supported; stale content and detected retargets are rejected. Expected paths identify discovered sources, not arbitrary write destinations; these checks do not eliminate filesystem races.
 - **Overrides.** `OPENCODE_CONFIG_DIR` overrides the OpenCode config directory and `OPENCODE_CONFIG` pins an explicit managed file — which is also the highest-priority source for Global MCP and Skills discovery. Project browsing uses only the selected root's paths above.
-- **Resource boundaries.** Project resources are read-only. New Global Markdown agents and skills use plural `agents` / `skills` directories; older directories are not migrated, and updates use the original paths or report ambiguity for duplicate sources. Saving or selecting roots does not migrate or rename files, reload the OpenCode service configuration, execute plugins, or launch MCP servers.
+- **Resource boundaries.** Project MCP, Agents and Skills are read-only. Only Markdown Commands permit Project file mutations, with canonical destination checks before staging and publication. Detected escapes into Global or outside the saved root are rejected; these checks do not eliminate concurrent filesystem races. New resources use plural `agents` / `skills` / `commands` directories, while edits retain original sources. Plugins are API-only and cannot change configuration files from MOM. The source selector does not migrate files or request a configuration reload. Plugin API requests are handled by OpenCode and may initialize a Location and load its plugins; upgrades can affect other active locations.
 - **Skip when empty.** OpenCode sync is skipped when a group has no effective OpenCode overrides, so a missing OpenCode config only blocks operations that actually need it.
 
 ## 🛠️ Development

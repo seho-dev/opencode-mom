@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { expect, test, vi } from 'vitest';
-import type { ConfigStore } from '$src/config/store.svelte.js';
+import type { CommandAdapter } from '$src/config/adapter.js';
+import { type ConfigStore, createConfigStore } from '$src/config/store.svelte.js';
 import { toast } from '$src/shell/toast.svelte.js';
 import Harness from '$src/test-utils/harness.svelte';
 import Settings from '../+page.svelte';
@@ -24,6 +25,9 @@ function mount(overrides: Record<string, unknown> = {}) {
       revision: 1,
     }),
     getMcpProxyState: vi.fn().mockResolvedValue({ actualState: 'stopped', boundAddr: null, securityErrors: [] }),
+    setDefaultPlugin: vi.fn().mockImplementation(async (plugin) => {
+      config.preferences = { ...config.preferences, defaultPlugin: plugin };
+    }),
     ...overrides,
   } as unknown as ConfigStore;
   render(Settings, {}, { wrapper: Harness, wrapperProps: { config } });
@@ -146,4 +150,59 @@ test('mount and system refresh read local app details without checking updates',
   await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
   expect(config.checkForUpdates).not.toHaveBeenCalled();
   expect(config.getAppInfo).toHaveBeenCalledOnce();
+});
+
+test('failed default plugin persistence restores confirmed selection and allows retrying the same option', async () => {
+  vi.mocked(toast).mockClear();
+  const savePreferences = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('disk is read-only'))
+    .mockResolvedValueOnce(undefined);
+  const config = createConfigStore(
+    {
+      savePreferences,
+      getAutostart: async () => false,
+      getLidProtection: async () => ({ enabled: false, phase: 'disabled' }),
+      getAppInfo: async () => ({ version: '0.1.0', platform: 'other' }),
+      getMomHttpSettings: async () => ({ port: 18765, allowLan: false }),
+      getMcpProxySettings: async () => ({ enabled: false, idleTimeout: 300, maxUnits: 16, revision: 1 }),
+      getMcpProxyState: async () => ({ actualState: 'stopped', boundAddr: null, securityErrors: [] }),
+    } as unknown as CommandAdapter,
+    false,
+    false,
+  );
+  render(Settings, {}, { wrapper: Harness, wrapperProps: { config } });
+  const native = screen.getByRole('button', { name: 'Native' }) as HTMLButtonElement;
+  const slim = screen.getByRole('button', { name: 'Slim' }) as HTMLButtonElement;
+  expect(native.getAttribute('aria-pressed')).toBe('true');
+  expect(slim.getAttribute('aria-pressed')).toBe('false');
+  await fireEvent.click(native);
+  expect(savePreferences).not.toHaveBeenCalled();
+
+  await fireEvent.click(slim);
+  await waitFor(() =>
+    expect(vi.mocked(toast)).toHaveBeenCalledExactlyOnceWith({
+      variant: 'error',
+      description: 'disk is read-only',
+    }),
+  );
+  expect(config.preferences.defaultPlugin).toBe('native');
+  expect(native.getAttribute('aria-pressed')).toBe('true');
+  expect(slim.getAttribute('aria-pressed')).toBe('false');
+  expect(slim.disabled).toBe(false);
+  expect(savePreferences).toHaveBeenCalledExactlyOnceWith({ theme: 'dark', locale: 'en', defaultPlugin: 'slim' });
+
+  await fireEvent.click(slim);
+  await waitFor(() => expect(savePreferences).toHaveBeenCalledTimes(2));
+  expect(savePreferences).toHaveBeenNthCalledWith(2, { theme: 'dark', locale: 'en', defaultPlugin: 'slim' });
+  expect(config.preferences.defaultPlugin).toBe('slim');
+  expect(vi.mocked(toast)).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(toast)).toHaveBeenNthCalledWith(2, {
+    variant: 'success',
+    description: 'Default plugin preference updated.',
+  });
+  expect(slim.getAttribute('aria-pressed')).toBe('true');
+  expect(native.getAttribute('aria-pressed')).toBe('false');
+  await fireEvent.click(slim);
+  expect(savePreferences).toHaveBeenCalledTimes(2);
 });

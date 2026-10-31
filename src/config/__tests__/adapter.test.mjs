@@ -376,3 +376,47 @@ test('local service target IPC preserves nullable fields and omitted, retained, 
     await vite.close();
   }
 });
+
+test('preferences defaultPlugin contract reads and saves native, slim, and omo', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
+    const calls = [];
+    const plugins = ['native', 'slim', 'omo'];
+
+    let currentPreferences = { theme: 'dark', locale: 'en', defaultPlugin: 'native' };
+    const adapter = createTauriAdapter(async (command, args) => {
+      calls.push([command, args]);
+      if (command === 'load_app_state') {
+        return {
+          providers: [],
+          agents: [],
+          groups: [],
+          preferences: currentPreferences,
+        };
+      }
+      if (command === 'save_preferences') {
+        return;
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    for (const plugin of plugins) {
+      currentPreferences = { theme: 'dark', locale: 'en', defaultPlugin: plugin };
+      const state = await adapter.loadAppState();
+      assert.strictEqual(state.preferences, currentPreferences);
+      assert.deepEqual(state.preferences, {
+        theme: 'dark',
+        locale: 'en',
+        defaultPlugin: plugin,
+      });
+      assert.deepEqual(calls.at(-1), ['load_app_state', undefined]);
+
+      const payload = { theme: 'dark', locale: 'en', defaultPlugin: plugin };
+      await adapter.savePreferences(payload);
+      assert.deepEqual(calls.at(-1), ['save_preferences', { preferences: payload }]);
+    }
+  } finally {
+    await vite.close();
+  }
+});

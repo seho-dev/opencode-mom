@@ -607,6 +607,7 @@ fn state_preferences_are_cached_without_config_reads() {
     let preferences = AppPreferences {
         theme: models::ThemePreference::Light,
         locale: models::LocalePreference::Zh,
+        ..Default::default()
     };
     service.update_preferences(preferences);
     assert_eq!(service.state().preferences, preferences);
@@ -962,6 +963,7 @@ fn disabled_target_refresh_is_a_noop_without_a_monitor_or_preference_change() {
     service.update_preferences(AppPreferences {
         theme: models::ThemePreference::Light,
         locale: models::LocalePreference::Zh,
+        ..Default::default()
     });
     let before = serde_json::to_value(service.state()).unwrap();
     assert_eq!(service.prepare_target_refresh().invalidate(), None);
@@ -1006,6 +1008,7 @@ fn target_refresh_preserves_enabled_view_preferences_and_geometry_but_clears_pri
             cache.preferences = AppPreferences {
                 theme: models::ThemePreference::Light,
                 locale: models::LocalePreference::Zh,
+                ..Default::default()
             };
             cache.start_actions();
             (

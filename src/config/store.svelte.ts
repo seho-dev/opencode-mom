@@ -45,6 +45,7 @@ import type { PromptGenerationRequest } from '$src/types/prompt-generation.js';
 import type { ProviderDef } from '$src/types/providers.js';
 import type { SkillDraft, SkillEntry, SkillList, SkillUpdate } from '$src/types/skills.js';
 import type { TokenUsageRecord } from '$src/types/stats.js';
+import { GROUP_TYPE_NATIVE, type GroupType } from '$src/utils/constants.js';
 import type { CommandAdapter } from './adapter.js';
 
 type DraftRecovery = { operation: string; payload: unknown; error: CommandError; conflict: boolean };
@@ -137,7 +138,7 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     assertServiceTarget(targetVersion);
     return result;
   }
-  let preferences = $state<AppPreferences>({ theme: 'dark', locale: 'en' });
+  let preferences = $state<AppPreferences>({ theme: 'dark', locale: 'en', defaultPlugin: GROUP_TYPE_NATIVE });
   function syncPreferencesToDom() {
     if (typeof document === 'undefined') return;
     document.documentElement.setAttribute('data-theme', preferences.theme);
@@ -169,6 +170,7 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       preferences = previous;
       syncPreferencesToDom();
       error = serializeError(cause);
+      throw error;
     }
   }
   const run = async <T>(operation: string, payload: unknown, action: () => Promise<T>) => {
@@ -377,10 +379,13 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       notice = null;
     },
     setTheme(theme: ThemePreference) {
-      return persistPreferences({ ...preferences, theme });
+      return persistPreferences({ ...preferences, theme }).catch(() => {});
     },
     setLocale(locale: LocalePreference) {
-      return persistPreferences({ ...preferences, locale });
+      return persistPreferences({ ...preferences, locale }).catch(() => {});
+    },
+    setDefaultPlugin(defaultPlugin: GroupType) {
+      return persistPreferences({ ...preferences, defaultPlugin });
     },
     applyPreferences(next: AppPreferences) {
       preferences = next;

@@ -158,10 +158,21 @@ pub enum LocalePreference {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DefaultPlugin {
+    #[default]
+    Native,
+    Slim,
+    Omo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AppPreferences {
     pub theme: ThemePreference,
     pub locale: LocalePreference,
+    #[serde(default)]
+    pub default_plugin: DefaultPlugin,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -709,3 +709,17 @@ test.each([
   expect(proxyAnchor.textContent).not.toMatch(/(?:settings|mcp)\.proxy\.(?:running|stopped)/);
   expect(getMcpProxyState).toHaveBeenCalledExactlyOnceWith();
 });
+
+test('prioritizes featured runtime and tile ordering matching default plugin preference', () => {
+  mount({
+    groups: [],
+    selectedGroupId: null,
+    preferences: { theme: 'dark', locale: 'en', defaultPlugin: 'slim' },
+  });
+
+  const featuredHeading = screen.getByRole('heading', { name: /Slim runtime/i });
+  expect(featuredHeading.closest('[data-variant="featured"]')).toBeTruthy();
+
+  const tileButtons = screen.getAllByRole('button', { name: /Switch .* group/i });
+  expect(tileButtons[0].getAttribute('aria-label')).toContain('Slim');
+});

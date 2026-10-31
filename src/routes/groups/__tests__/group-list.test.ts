@@ -33,13 +33,24 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-async function mount(options: { groups?: Group[]; selectedGroupId?: string | null; locale?: 'en' | 'zh' } = {}) {
+async function mount(
+  options: {
+    groups?: Group[];
+    selectedGroupId?: string | null;
+    locale?: 'en' | 'zh';
+    defaultPlugin?: Group['type'];
+  } = {},
+) {
   const state: AppState = {
     providers: [],
     agents: [],
     groups: options.groups ?? [group('native'), group('slim'), group('omo')],
     selectedGroupId: options.selectedGroupId ?? null,
-    preferences: { theme: 'dark', locale: options.locale ?? 'en' },
+    preferences: {
+      theme: 'dark',
+      locale: options.locale ?? 'en',
+      defaultPlugin: options.defaultPlugin ?? 'native',
+    },
   };
   const adapter = {
     loadAppState: vi.fn(async () => structuredClone(state)),
@@ -261,4 +272,12 @@ test('Chinese accessible names identify the group and follow confirmed enabled s
   await waitFor(() => expect(control.disabled).toBe(false));
   expect(screen.getByRole('checkbox', { name: '停用 native lane' })).toBe(control);
   expect(control.checked).toBe(true);
+});
+
+test('prioritizes tab selection matching default plugin preference', async () => {
+  mount({ defaultPlugin: 'slim' });
+  await waitFor(() => {
+    expect(screen.getByRole('tab', { name: /Slim/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: /Native/ }).getAttribute('aria-selected')).toBe('false');
+  });
 });

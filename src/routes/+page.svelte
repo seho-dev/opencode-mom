@@ -11,7 +11,7 @@ import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { McpProxyStateDto } from '$src/types/mcp-proxy.js';
 import type { DailyTokenUsage } from '$src/types/stats.js';
-import { GROUP_TYPES, type GroupType } from '$src/utils/constants.js';
+import { GROUP_TYPE_NATIVE, GROUP_TYPES, type GroupType } from '$src/utils/constants.js';
 import {
   type ActivityPeriod,
   activityYears,
@@ -71,9 +71,11 @@ const busy = $derived(config.loading || config.saving || config.switching || con
 const configUnavailable = $derived(
   !config.loading && !config.groups.length && !config.providers.length && !!config.error,
 );
+const defaultPlugin = $derived<GroupType>(config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE);
 const featuredType = $derived<GroupType>(
-  config.groups.find((group) => group.id === config.selectedGroupId)?.type ?? 'native',
+  config.groups.find((group) => group.id === config.selectedGroupId)?.type ?? defaultPlugin,
 );
+const runtimeTiles = $derived<GroupType[]>([defaultPlugin, ...GROUP_TYPES.filter((type) => type !== defaultPlugin)]);
 const modelCount = $derived(
   config.providers.reduce((count, provider) => count + Object.keys(provider.models).length, 0),
 );
@@ -172,7 +174,7 @@ function openSwitch(type: GroupType, trigger: HTMLButtonElement) {
 
   <!-- Zone 1: Top 3 Runtime Selector Tiles -->
   <section aria-label={i18n.t('dashboard.runtimes')} class="grid grid-cols-1 gap-4 @min-[800px]:grid-cols-3">
-    {#each GROUP_TYPES as type (type)}
+    {#each runtimeTiles as type (type)}
       <RuntimeCard {type} {busy} variant="tile" onswitch={openSwitch} />
     {/each}
   </section>

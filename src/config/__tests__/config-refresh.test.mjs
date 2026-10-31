@@ -19,6 +19,36 @@ const state = (id) => ({
   preferences: { theme: 'dark', locale: 'en' },
 });
 
+test('failed theme and locale persistence rolls back without rejecting fire-and-forget callers', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
+    const store = createConfigStore(
+      {
+        savePreferences: async () => {
+          throw new Error('disk is read-only');
+        },
+      },
+      false,
+      false,
+    );
+    const previous = { ...store.preferences };
+    const themeSave = store.setTheme('light');
+    assert.equal(store.preferences.theme, 'light');
+    await assert.doesNotReject(themeSave);
+    assert.deepEqual(store.preferences, previous);
+    assert.equal(store.error?.message, 'disk is read-only');
+
+    const localeSave = store.setLocale('zh');
+    assert.equal(store.preferences.locale, 'zh');
+    await assert.doesNotReject(localeSave);
+    assert.deepEqual(store.preferences, previous);
+    assert.equal(store.error?.message, 'disk is read-only');
+  } finally {
+    await vite.close();
+  }
+});
+
 test('token usage records store delegates without arguments or refreshing configuration', async () => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   try {

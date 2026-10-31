@@ -21,7 +21,6 @@ import {
   GROUP_TYPE_OPTIONS,
   GROUP_TYPE_SLIM,
   type GroupType,
-  MAPPING_KINDS,
   type MappingKind,
 } from '$src/utils/constants.js';
 import { BUILTIN_AGENTS, buildModelVariants } from '$src/utils/index.js';
@@ -32,7 +31,7 @@ let { group }: { group?: Group } = $props();
 const defaultValues = $derived({
   name: group?.name ?? '',
   description: group?.description ?? '',
-  type: group?.type ?? GROUP_TYPE_NATIVE,
+  type: group?.type ?? config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE,
   native: group?.openCodeAgentOverrides ?? ([] as AgentModelBinding[]),
   slim: group?.slimAgentOverrides ?? ([] as AgentModelBinding[]),
   omo: group?.omoAgentOverrides ?? ([] as AgentModelBinding[]),
@@ -81,7 +80,7 @@ const omo = $derived(values.current.omo);
 const categories = $derived(values.current.categories);
 let initialized = $state('');
 let seenReset = $state(-1);
-let tab = $state<MappingKind>(MAPPING_KINDS[0]);
+let tab = $state<MappingKind>(defaultTab(config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE));
 let pending = $state<GroupType | null>(null);
 const builtinSystem = $derived(tab === GROUP_TYPE_SLIM || tab === GROUP_TYPE_OMO ? tab : null);
 const mappingOptions = $derived(

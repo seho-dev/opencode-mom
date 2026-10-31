@@ -13,18 +13,27 @@ import {
   GROUP_TYPE_NATIVE,
   GROUP_TYPE_OMO,
   GROUP_TYPE_SLIM,
+  GROUP_TYPES,
   type GroupType,
 } from '$src/utils/constants.js';
 
-const tabOrder: GroupType[] = [GROUP_TYPE_NATIVE, GROUP_TYPE_SLIM, GROUP_TYPE_OMO];
 const config = getConfig();
 const i18n = getI18n();
+const defaultPlugin = $derived<GroupType>(config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE);
+const tabOrder = $derived<GroupType[]>([defaultPlugin, ...GROUP_TYPES.filter((type) => type !== defaultPlugin)]);
 let query = $state('');
 let deleting = $state<string | null>(null);
 let refreshing = $state(false);
 let changingGroup = $state<string | null>(null);
 let switchedGroup = $state<string | null>(null);
-let activeTab = $state<GroupType>(GROUP_TYPE_NATIVE);
+let userSelectedTab = $state(false);
+let activeTab = $state<GroupType>(config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE);
+
+$effect(() => {
+  if (!userSelectedTab && config.preferences.defaultPlugin) {
+    activeTab = config.preferences.defaultPlugin;
+  }
+});
 let nativeTabEl = $state<HTMLButtonElement | null>(null);
 let slimTabEl = $state<HTMLButtonElement | null>(null);
 let omoTabEl = $state<HTMLButtonElement | null>(null);
@@ -48,6 +57,7 @@ $effect(() => {
   page = 1;
 });
 function selectTab(tab: GroupType) {
+  userSelectedTab = true;
   activeTab = tab;
   page = 1;
 }
@@ -139,46 +149,59 @@ async function reloadNow() {
 <div class="search-toolbar">
   <input aria-label={i18n.t('groups.searchLabel')} bind:value={query} placeholder={i18n.t('groups.searchPlaceholder')}>
 </div>
+{#snippet tabButton(type: GroupType)}
+  {#if type === GROUP_TYPE_NATIVE}
+    <Button
+      bind:ref={nativeTabEl}
+      id="groups-tab-native"
+      role="tab"
+      variant={activeTab === GROUP_TYPE_NATIVE ? 'default' : 'outline'}
+      size="sm"
+      aria-selected={activeTab === GROUP_TYPE_NATIVE}
+      aria-controls="groups-tabpanel-native"
+      tabindex={activeTab === GROUP_TYPE_NATIVE ? 0 : -1}
+      onclick={() => selectTab(GROUP_TYPE_NATIVE)}
+      onkeydown={onTabKeys}
+    >
+      {i18n.t('groups.tabNative', { count: nativeCount })}
+    </Button>
+  {:else if type === GROUP_TYPE_SLIM}
+    <Button
+      bind:ref={slimTabEl}
+      id="groups-tab-slim"
+      role="tab"
+      variant={activeTab === GROUP_TYPE_SLIM ? 'default' : 'outline'}
+      size="sm"
+      aria-selected={activeTab === GROUP_TYPE_SLIM}
+      aria-controls="groups-tabpanel-slim"
+      tabindex={activeTab === GROUP_TYPE_SLIM ? 0 : -1}
+      onclick={() => selectTab(GROUP_TYPE_SLIM)}
+      onkeydown={onTabKeys}
+    >
+      {i18n.t('groups.tabSlim', { count: slimCount })}
+    </Button>
+  {:else if type === GROUP_TYPE_OMO}
+    <Button
+      bind:ref={omoTabEl}
+      id="groups-tab-omo"
+      role="tab"
+      variant={activeTab === GROUP_TYPE_OMO ? 'default' : 'outline'}
+      size="sm"
+      aria-selected={activeTab === GROUP_TYPE_OMO}
+      aria-controls="groups-tabpanel-omo"
+      tabindex={activeTab === GROUP_TYPE_OMO ? 0 : -1}
+      onclick={() => selectTab(GROUP_TYPE_OMO)}
+      onkeydown={onTabKeys}
+    >
+      {i18n.t('groups.tabOmo', { count: omoCount })}
+    </Button>
+  {/if}
+{/snippet}
+
 <div class="flex gap-2 mb-3" role="tablist" aria-label={i18n.t('groups.title')}>
-  <Button
-    bind:ref={nativeTabEl}
-    id="groups-tab-native"
-    role="tab"
-    variant={activeTab === GROUP_TYPE_NATIVE ? 'default' : 'outline'}
-    size="sm"
-    aria-selected={activeTab === GROUP_TYPE_NATIVE}
-    aria-controls="groups-tabpanel-native"
-    tabindex={activeTab === GROUP_TYPE_NATIVE ? 0 : -1}
-    onclick={() => selectTab(GROUP_TYPE_NATIVE)}
-    onkeydown={onTabKeys}
-    >{i18n.t('groups.tabNative', { count: nativeCount })}</Button
-  >
-  <Button
-    bind:ref={slimTabEl}
-    id="groups-tab-slim"
-    role="tab"
-    variant={activeTab === GROUP_TYPE_SLIM ? 'default' : 'outline'}
-    size="sm"
-    aria-selected={activeTab === GROUP_TYPE_SLIM}
-    aria-controls="groups-tabpanel-slim"
-    tabindex={activeTab === GROUP_TYPE_SLIM ? 0 : -1}
-    onclick={() => selectTab(GROUP_TYPE_SLIM)}
-    onkeydown={onTabKeys}
-    >{i18n.t('groups.tabSlim', { count: slimCount })}</Button
-  >
-  <Button
-    bind:ref={omoTabEl}
-    id="groups-tab-omo"
-    role="tab"
-    variant={activeTab === GROUP_TYPE_OMO ? 'default' : 'outline'}
-    size="sm"
-    aria-selected={activeTab === GROUP_TYPE_OMO}
-    aria-controls="groups-tabpanel-omo"
-    tabindex={activeTab === GROUP_TYPE_OMO ? 0 : -1}
-    onclick={() => selectTab(GROUP_TYPE_OMO)}
-    onkeydown={onTabKeys}
-    >{i18n.t('groups.tabOmo', { count: omoCount })}</Button
-  >
+  {#each tabOrder as type (type)}
+    {@render tabButton(type)}
+  {/each}
 </div>
 <div id={`groups-tabpanel-${activeTab}`} role="tabpanel" aria-labelledby={`groups-tab-${activeTab}`}>
   <DataTable label={i18n.t('groups.tableLabel')} total={groups.length} bind:page {pageSize}

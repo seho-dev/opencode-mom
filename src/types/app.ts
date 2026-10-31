@@ -1,5 +1,5 @@
 import type { AgentDefinition } from './agents.js';
-import type { Group } from './groups.js';
+import type { Group, GroupType } from './groups.js';
 import type { ProviderDef } from './providers.js';
 
 export type ThemePreference = 'light' | 'dark';
@@ -62,6 +62,7 @@ export type ProjectPage = 'repository' | 'releases';
 export interface AppPreferences {
   theme: ThemePreference;
   locale: LocalePreference;
+  defaultPlugin?: GroupType;
 }
 export interface ProjectFolder {
   id: string;

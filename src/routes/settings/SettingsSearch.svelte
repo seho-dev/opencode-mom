@@ -26,6 +26,7 @@ const entries: (SettingsSearchTarget & { keys: [MessageKey, MessageKey, ...Messa
     keys: ['settings.behaviorTitle', 'settings.behaviorHint', 'settings.behaviorContent', 'settings.behaviorScope'],
   },
   { tab: 'general', target: 'settings-autostart', keys: ['settings.autostart', 'settings.autostartHint'] },
+  { tab: 'general', target: 'settings-default-plugin', keys: ['settings.defaultPlugin', 'settings.defaultPluginHint'] },
   {
     tab: 'general',
     target: 'settings-lid',

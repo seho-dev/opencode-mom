@@ -10,6 +10,7 @@ import { Switch } from '$src/components/switch/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import { toast } from '$src/shell/toast.svelte.js';
+import { GROUP_TYPE_LABELS, GROUP_TYPE_NATIVE, GROUP_TYPES, type GroupType } from '$src/utils/constants.js';
 import AppUpdates from './AppUpdates.svelte';
 import Behavior from './Behavior.svelte';
 import LidProtection from './LidProtection.svelte';
@@ -46,7 +47,22 @@ let loading = $state(true);
 let saving = $state(false);
 let error = $state('');
 let failedSave = $state(false);
+let savingPlugin = $state(false);
+const selectedPlugin = $derived(config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE);
 let request = 0;
+
+async function handleDefaultPluginChange(type: GroupType) {
+  if (savingPlugin || selectedPlugin === type) return;
+  savingPlugin = true;
+  try {
+    await config.setDefaultPlugin(type);
+    toast({ variant: 'success', description: i18n.t('settings.defaultPluginSaved') });
+  } catch (cause) {
+    toast({ variant: 'error', description: readError(cause) });
+  } finally {
+    savingPlugin = false;
+  }
+}
 
 function selectTab(tab: SettingsTab): boolean {
   if (activeTab === tab) return true;
@@ -273,6 +289,46 @@ onDestroy(() => {
           aria-describedby="autostart-description"
           onclick={(event) => { event.preventDefault(); void toggle(); }}
         />
+      </div>
+      <div
+        id="settings-default-plugin"
+        tabindex="-1"
+        class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:px-5 sm:py-4"
+        aria-busy={savingPlugin}
+      >
+        <div class="min-w-0">
+          <span id="default-plugin-label" class="block font-[var(--font-heading)] text-[13px] leading-5 font-semibold"
+            >{i18n.t('settings.defaultPlugin')}</span
+          >
+          <p id="default-plugin-description" class="field-hint mt-1">
+            {i18n.t('settings.defaultPluginHint')}
+          </p>
+          {#if savingPlugin}
+            <p class="mt-1 mb-0 text-xs text-[var(--text-muted)]" role="status">
+              {i18n.t('settings.saving')}
+            </p>
+          {/if}
+        </div>
+        <!-- biome-ignore lint/a11y/useSemanticElements: segmented button group -->
+        <div
+          class="flex shrink-0 items-center gap-1.5"
+          role="group"
+          aria-labelledby="default-plugin-label"
+          aria-describedby="default-plugin-description"
+        >
+          {#each GROUP_TYPES as type (type)}
+            <Button
+              type="button"
+              size="sm"
+              variant={selectedPlugin === type ? 'default' : 'outline'}
+              aria-pressed={selectedPlugin === type}
+              disabled={savingPlugin}
+              onclick={() => handleDefaultPluginChange(type)}
+            >
+              {i18n.t(GROUP_TYPE_LABELS[type])}
+            </Button>
+          {/each}
+        </div>
       </div>
       <MiniIsland active={activeTab === 'general'} />
       <LidProtection active={activeTab === 'general'} />

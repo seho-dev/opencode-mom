@@ -154,9 +154,11 @@ test('matches bilingual labels, descriptions and technical names locally, and fo
     ['  ＣＬＩ  ', en['settings.opencodeUpdates']],
     ['18765', en['settings.http.port']],
     ['allowLan', en['settings.http.allowLan']],
+    ['default plugin', en['settings.defaultPlugin']],
     ['MCP maxUnits', en['settings.proxy.maxUnits']],
     ['idleTimeout', en['settings.proxy.idleTimeout']],
     ['局域网', en['settings.http.allowLan']],
+    ['默认插件', en['settings.defaultPlugin']],
     ['登录', en['settings.autostart']],
     ['password', en['settings.servicePassword']],
   ] as const) {

@@ -12,13 +12,22 @@ import Select from '$src/components/Select.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { AgentDefinition, AgentStorage } from '$src/types/agents.js';
-import { GROUP_TYPE_NATIVE, GROUP_TYPE_OMO, GROUP_TYPE_SLIM, STORAGE_OPTIONS } from '$src/utils/constants.js';
+import {
+  GROUP_TYPE_NATIVE,
+  GROUP_TYPE_OMO,
+  GROUP_TYPE_SLIM,
+  GROUP_TYPES,
+  type GroupType,
+  STORAGE_OPTIONS,
+} from '$src/utils/constants.js';
 import { BUILTIN_AGENTS, type BuiltinAgent, isBuiltinAgentId } from '$src/utils/index.js';
 
 type AgentTab = 'custom' | 'native' | 'slim' | 'omo';
-const tabOrder: AgentTab[] = ['custom', 'native', 'slim', 'omo'];
 const config = getConfig();
 const i18n = getI18n();
+const defaultPlugin = $derived(config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE);
+const pluginTabOrder = $derived<GroupType[]>([defaultPlugin, ...GROUP_TYPES.filter((type) => type !== defaultPlugin)]);
+const tabOrder = $derived<AgentTab[]>(['custom', ...pluginTabOrder]);
 let query = $state('');
 let deleting = $state<string | null>(null);
 let refreshing = $state(false);
@@ -246,6 +255,55 @@ async function remove() {
     >
   </div>
 {/if}
+{#snippet builtinTabButton(type: GroupType)}
+  {#if type === GROUP_TYPE_NATIVE}
+    <Button
+      bind:ref={nativeTabEl}
+      id="agents-tab-native"
+      role="tab"
+      variant={activeTab === 'native' ? 'default' : 'outline'}
+      size="sm"
+      aria-selected={activeTab === 'native'}
+      aria-controls="agents-tabpanel-native"
+      tabindex={activeTab === 'native' ? 0 : -1}
+      onclick={() => selectTab('native')}
+      onkeydown={onTabKeys}
+    >
+      {i18n.t('agents.tabNative', { count: nativeAgents.length })}
+    </Button>
+  {:else if type === GROUP_TYPE_SLIM}
+    <Button
+      bind:ref={slimTabEl}
+      id="agents-tab-slim"
+      role="tab"
+      variant={activeTab === 'slim' ? 'default' : 'outline'}
+      size="sm"
+      aria-selected={activeTab === 'slim'}
+      aria-controls="agents-tabpanel-slim"
+      tabindex={activeTab === 'slim' ? 0 : -1}
+      onclick={() => selectTab('slim')}
+      onkeydown={onTabKeys}
+    >
+      {i18n.t('agents.tabSlim', { count: slimAgents.length })}
+    </Button>
+  {:else if type === GROUP_TYPE_OMO}
+    <Button
+      bind:ref={omoTabEl}
+      id="agents-tab-omo"
+      role="tab"
+      variant={activeTab === 'omo' ? 'default' : 'outline'}
+      size="sm"
+      aria-selected={activeTab === 'omo'}
+      aria-controls="agents-tabpanel-omo"
+      tabindex={activeTab === 'omo' ? 0 : -1}
+      onclick={() => selectTab('omo')}
+      onkeydown={onTabKeys}
+    >
+      {i18n.t('agents.tabOmo', { count: omoAgents.length })}
+    </Button>
+  {/if}
+{/snippet}
+
 <div class="flex flex-wrap gap-2 mb-3" role="tablist" aria-label={i18n.t('agents.sourceTabLabel')}>
   <Button
     bind:ref={customTabEl}
@@ -258,47 +316,12 @@ async function remove() {
     tabindex={activeTab === 'custom' ? 0 : -1}
     onclick={() => selectTab('custom')}
     onkeydown={onTabKeys}
-    >{i18n.t('agents.tabCustom', { count: customAgents.length })}</Button
   >
-  <Button
-    bind:ref={nativeTabEl}
-    id="agents-tab-native"
-    role="tab"
-    variant={activeTab === 'native' ? 'default' : 'outline'}
-    size="sm"
-    aria-selected={activeTab === 'native'}
-    aria-controls="agents-tabpanel-native"
-    tabindex={activeTab === 'native' ? 0 : -1}
-    onclick={() => selectTab('native')}
-    onkeydown={onTabKeys}
-    >{i18n.t('agents.tabNative', { count: nativeAgents.length })}</Button
-  >
-  <Button
-    bind:ref={slimTabEl}
-    id="agents-tab-slim"
-    role="tab"
-    variant={activeTab === 'slim' ? 'default' : 'outline'}
-    size="sm"
-    aria-selected={activeTab === 'slim'}
-    aria-controls="agents-tabpanel-slim"
-    tabindex={activeTab === 'slim' ? 0 : -1}
-    onclick={() => selectTab('slim')}
-    onkeydown={onTabKeys}
-    >{i18n.t('agents.tabSlim', { count: slimAgents.length })}</Button
-  >
-  <Button
-    bind:ref={omoTabEl}
-    id="agents-tab-omo"
-    role="tab"
-    variant={activeTab === 'omo' ? 'default' : 'outline'}
-    size="sm"
-    aria-selected={activeTab === 'omo'}
-    aria-controls="agents-tabpanel-omo"
-    tabindex={activeTab === 'omo' ? 0 : -1}
-    onclick={() => selectTab('omo')}
-    onkeydown={onTabKeys}
-    >{i18n.t('agents.tabOmo', { count: omoAgents.length })}</Button
-  >
+    {i18n.t('agents.tabCustom', { count: customAgents.length })}
+  </Button>
+  {#each pluginTabOrder as type (type)}
+    {@render builtinTabButton(type)}
+  {/each}
 </div>
 {#if activeTab === 'custom'}
   <div id="agents-tabpanel-custom" role="tabpanel" aria-labelledby="agents-tab-custom">

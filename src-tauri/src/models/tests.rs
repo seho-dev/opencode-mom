@@ -11,6 +11,10 @@ fn legacy_config_without_preferences_yields_defaults() {
     assert_eq!(config.state.preferences, AppPreferences::default());
     assert_eq!(config.state.preferences.theme, ThemePreference::Dark);
     assert_eq!(config.state.preferences.locale, LocalePreference::En);
+    assert_eq!(
+        config.state.preferences.default_plugin,
+        DefaultPlugin::Native
+    );
     assert!(!config.state.island_enabled);
     assert!(config.projects.is_empty());
     assert_eq!(config.state.selected_project_id, None);
@@ -32,6 +36,10 @@ fn explicit_preferences_round_trip_unchanged() {
     assert_eq!(decoded, config);
     assert_eq!(decoded.state.preferences.theme, ThemePreference::Light);
     assert_eq!(decoded.state.preferences.locale, LocalePreference::Zh);
+    assert_eq!(
+        decoded.state.preferences.default_plugin,
+        DefaultPlugin::Native
+    );
 }
 
 #[test]
@@ -39,11 +47,56 @@ fn default_config_serializes_preferences() {
     let value = serde_json::to_value(AppConfig::default()).expect("serialize default config");
     assert_eq!(
         value["state"]["preferences"],
-        json!({ "theme": "dark", "locale": "en" })
+        json!({ "theme": "dark", "locale": "en", "defaultPlugin": "native" })
     );
     assert_eq!(value["projects"], json!([]));
     assert_eq!(value["state"]["selectedProjectId"], Value::Null);
     assert_eq!(value["state"]["islandEnabled"], false);
+}
+
+#[test]
+fn default_plugin_preferences_round_trip_canonical_values() {
+    for (plugin, name) in [
+        (DefaultPlugin::Native, "native"),
+        (DefaultPlugin::Slim, "slim"),
+        (DefaultPlugin::Omo, "omo"),
+    ] {
+        let preferences = AppPreferences {
+            default_plugin: plugin,
+            ..Default::default()
+        };
+        let value = serde_json::to_value(preferences).unwrap();
+        assert_eq!(value["defaultPlugin"], name);
+        assert_eq!(
+            serde_json::from_value::<AppPreferences>(value).unwrap(),
+            preferences
+        );
+    }
+}
+
+#[test]
+fn default_plugin_preferences_reject_legacy_and_unknown_values() {
+    for name in ["opencode", "oh-my-openagent", "unknown", "Native", ""] {
+        assert!(serde_json::from_value::<AppPreferences>(json!({
+            "theme": "dark", "locale": "en", "defaultPlugin": name
+        }))
+        .is_err());
+    }
+}
+
+#[test]
+fn group_types_keep_frozen_wire_values() {
+    for (group_type, name) in [
+        (GroupType::Native, "opencode"),
+        (GroupType::Slim, "slim"),
+        (GroupType::Omo, "oh-my-openagent"),
+    ] {
+        assert_eq!(serde_json::to_value(group_type).unwrap(), name);
+        assert_eq!(
+            serde_json::from_value::<GroupType>(json!(name)).unwrap(),
+            group_type
+        );
+    }
 }
 
 #[test]
@@ -83,6 +136,7 @@ fn island_flag_is_independent_of_preferences() {
     config.state.preferences = AppPreferences {
         theme: ThemePreference::Light,
         locale: LocalePreference::Zh,
+        ..Default::default()
     };
     let encoded = serde_json::to_value(&config).unwrap();
     assert_eq!(encoded["state"]["islandEnabled"], true);

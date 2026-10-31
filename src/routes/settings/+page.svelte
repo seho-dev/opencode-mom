@@ -11,25 +11,34 @@ import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import { toast } from '$src/shell/toast.svelte.js';
 import AppUpdates from './AppUpdates.svelte';
+import Behavior from './Behavior.svelte';
 import LidProtection from './LidProtection.svelte';
 import McpProxySettings from './McpProxySettings.svelte';
 import MiniIsland from './MiniIsland.svelte';
 import OpenCodeSettings from './OpenCodeSettings.svelte';
 import SettingsSearch, { type SettingsSearchTarget } from './SettingsSearch.svelte';
 
-type SettingsTab = 'general' | 'mcp-proxy';
+type SettingsTab = 'general' | 'mcp-proxy' | 'behavior';
 
 const config = getConfig();
 const i18n = getI18n();
 
-const tabOrder: SettingsTab[] = ['general', 'mcp-proxy'];
+const tabOrder: SettingsTab[] = ['general', 'mcp-proxy', 'behavior'];
 let generalTabEl = $state<HTMLButtonElement | null>(null);
 let proxyTabEl = $state<HTMLButtonElement | null>(null);
+let behaviorTabEl = $state<HTMLButtonElement | null>(null);
 
 let proxySettingsRef = $state<{ refresh: () => Promise<void> } | null>(null);
 let httpSettingsRef = $state<{ refresh: () => Promise<void> } | null>(null);
+let behaviorRef = $state<{ refresh: () => Promise<void> } | null>(null);
 
-let activeTab = $state<SettingsTab>(route.url.searchParams.get('tab') === 'mcp-proxy' ? 'mcp-proxy' : 'general');
+let activeTab = $state<SettingsTab>(
+  route.url.searchParams.get('tab') === 'behavior'
+    ? 'behavior'
+    : route.url.searchParams.get('tab') === 'mcp-proxy'
+      ? 'mcp-proxy'
+      : 'general',
+);
 
 let enabled = $state(false);
 let known = $state(false);
@@ -67,6 +76,7 @@ function onTabKeys(event: KeyboardEvent) {
   if (!selectTab(next)) return;
   if (next === 'general') generalTabEl?.focus();
   else if (next === 'mcp-proxy') proxyTabEl?.focus();
+  else if (next === 'behavior') behaviorTabEl?.focus();
 }
 
 async function navigateToSetting(entry: SettingsSearchTarget) {
@@ -128,6 +138,8 @@ async function handleRefresh() {
     await Promise.all([load(), httpSettingsRef?.refresh()]);
   } else if (activeTab === 'mcp-proxy') {
     await proxySettingsRef?.refresh();
+  } else if (activeTab === 'behavior') {
+    await behaviorRef?.refresh();
   }
 }
 
@@ -165,7 +177,7 @@ onDestroy(() => {
 <SettingsSearch onselect={navigateToSetting} />
 
 <!-- Tab navigation -->
-<div class="flex gap-2 mb-4" role="tablist" aria-label={i18n.t('settings.title')}>
+<div class="flex flex-wrap gap-2 mb-4" role="tablist" aria-label={i18n.t('settings.title')}>
   <Button
     bind:ref={generalTabEl}
     id="settings-tab-general"
@@ -193,6 +205,20 @@ onDestroy(() => {
     onkeydown={onTabKeys}
   >
     {i18n.t('settings.tabMcpProxy')}
+  </Button>
+  <Button
+    bind:ref={behaviorTabEl}
+    id="settings-tab-behavior"
+    role="tab"
+    variant={activeTab === 'behavior' ? 'default' : 'outline'}
+    size="sm"
+    aria-selected={activeTab === 'behavior'}
+    aria-controls="settings-tabpanel-behavior"
+    tabindex={activeTab === 'behavior' ? 0 : -1}
+    onclick={() => selectTab('behavior')}
+    onkeydown={onTabKeys}
+  >
+    {i18n.t('settings.behaviorTab')}
   </Button>
 </div>
 
@@ -265,4 +291,14 @@ onDestroy(() => {
   aria-hidden={activeTab !== 'mcp-proxy'}
 >
   <McpProxySettings active={activeTab === 'mcp-proxy'} bind:this={proxySettingsRef} />
+</div>
+<div
+  id="settings-tabpanel-behavior"
+  role="tabpanel"
+  tabindex="-1"
+  aria-labelledby="settings-tab-behavior"
+  hidden={activeTab !== 'behavior'}
+  aria-hidden={activeTab !== 'behavior'}
+>
+  <Behavior active={activeTab === 'behavior'} bind:this={behaviorRef} />
 </div>

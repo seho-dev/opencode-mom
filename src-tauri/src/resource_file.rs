@@ -80,13 +80,39 @@ pub(crate) fn absent(path: &Path) -> Result<(), AppError> {
 
 pub(crate) fn replace(
     updates: &[(Snapshot, String)],
+    before_replace: impl FnMut(&Path) -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    replace_inner(updates, |_| Ok(()), before_replace)
+}
+
+pub(crate) fn replace_checked(
+    updates: &[(Snapshot, String)],
+    validate: impl FnMut(&Path) -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    replace_inner(updates, validate, |_| Ok(()))
+}
+
+fn replace_inner(
+    updates: &[(Snapshot, String)],
+    mut validate: impl FnMut(&Path) -> Result<(), AppError>,
     mut before_replace: impl FnMut(&Path) -> Result<(), AppError>,
 ) -> Result<(), AppError> {
     let mut staged = Vec::new();
     let mut backups = Vec::new();
+    let mut parents = Vec::new();
     let result = (|| {
         for (snapshot, replacement) in updates {
+            validate(&snapshot.path)?;
             snapshot.validate()?;
+            let parent = Directory::ensure(
+                snapshot
+                    .path
+                    .parent()
+                    .ok_or_else(|| changed(&snapshot.path))?,
+            )?;
+            parent.validate()?;
+            validate(&snapshot.path)?;
+            parents.push(parent);
             let suffix = uuid::Uuid::new_v4().simple().to_string();
             let filename = snapshot
                 .path
@@ -105,9 +131,11 @@ pub(crate) fn replace(
             write_new(&temporary, replacement.as_bytes())?;
         }
         // ponytail: per-file atomicity and a last-check/rename race; .bak files recover partial failure.
-        for ((snapshot, _), temporary) in updates.iter().zip(&staged) {
+        for (((snapshot, _), temporary), parent) in updates.iter().zip(&staged).zip(&parents) {
             before_replace(&snapshot.path)?;
+            validate(&snapshot.path)?;
             snapshot.validate()?;
+            parent.validate()?;
             fs::set_permissions(temporary, snapshot.identity.permissions())
                 .map_err(|error| AppError::io("set permissions", temporary, error))?;
             fs::rename(temporary, &snapshot.path).map_err(|error| {
@@ -130,6 +158,41 @@ pub(crate) fn replace(
         }
     }
     result
+}
+
+pub(crate) fn delete_checked(
+    logical: &Path,
+    snapshot: &Snapshot,
+    mut validate: impl FnMut(&Path) -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    validate(logical)?;
+    snapshot.validate()?;
+    let parent = Directory::ensure(logical.parent().ok_or_else(|| changed(logical))?)?;
+    let entry = parent
+        .resolved
+        .join(logical.file_name().ok_or_else(|| changed(logical))?);
+    let identity =
+        fs::symlink_metadata(&entry).map_err(|error| AppError::io("inspect", &entry, error))?;
+    validate(logical)?;
+    snapshot.validate()?;
+    parent.validate()?;
+    let current =
+        fs::symlink_metadata(&entry).map_err(|error| AppError::io("inspect", &entry, error))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if current.dev() != identity.dev() || current.ino() != identity.ino() {
+            return Err(changed(logical));
+        }
+    }
+    #[cfg(not(unix))]
+    if current.created().ok() != identity.created().ok()
+        || current.file_type() != identity.file_type()
+    {
+        return Err(changed(logical));
+    }
+    // ponytail: last-check/unlink race; remove the selected entry, never its shared symlink target.
+    fs::remove_file(&entry).map_err(|error| AppError::io("remove", logical, error))
 }
 
 pub(crate) struct Directory {

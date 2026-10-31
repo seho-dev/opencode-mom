@@ -1,6 +1,6 @@
 <script module lang="ts">
 export type SettingsSearchTarget = {
-  tab: 'general' | 'mcp-proxy';
+  tab: 'general' | 'mcp-proxy' | 'behavior';
   target: string;
   fallback?: string;
 };
@@ -20,6 +20,11 @@ let query = $state('');
 let input = $state<HTMLInputElement | null>(null);
 
 const entries: (SettingsSearchTarget & { keys: [MessageKey, MessageKey, ...MessageKey[]] })[] = [
+  {
+    tab: 'behavior',
+    target: 'settings-behavior-title',
+    keys: ['settings.behaviorTitle', 'settings.behaviorHint', 'settings.behaviorContent', 'settings.behaviorScope'],
+  },
   { tab: 'general', target: 'settings-autostart', keys: ['settings.autostart', 'settings.autostartHint'] },
   {
     tab: 'general',
@@ -134,8 +139,20 @@ const entries: (SettingsSearchTarget & { keys: [MessageKey, MessageKey, ...Messa
 const index = entries.map((entry) => ({
   ...entry,
   text: [
-    en[entry.tab === 'general' ? 'settings.tabGeneral' : 'settings.tabMcpProxy'],
-    zh[entry.tab === 'general' ? 'settings.tabGeneral' : 'settings.tabMcpProxy'],
+    en[
+      entry.tab === 'general'
+        ? 'settings.tabGeneral'
+        : entry.tab === 'behavior'
+          ? 'settings.behaviorTab'
+          : 'settings.tabMcpProxy'
+    ],
+    zh[
+      entry.tab === 'general'
+        ? 'settings.tabGeneral'
+        : entry.tab === 'behavior'
+          ? 'settings.behaviorTab'
+          : 'settings.tabMcpProxy'
+    ],
     ...entry.keys.flatMap((key) => [key, en[key], zh[key]]),
   ]
     .join(' ')
@@ -209,7 +226,7 @@ function clear() {
               >
                 <span class="min-w-0 flex-1">
                   <span class="mb-0.5 block text-[10px] leading-4 text-[var(--text-muted)]"
-                    >{i18n.t(entry.tab === 'general' ? 'settings.tabGeneral' : 'settings.tabMcpProxy')}</span
+                    >{i18n.t(entry.tab === 'general' ? 'settings.tabGeneral' : entry.tab === 'behavior' ? 'settings.behaviorTab' : 'settings.tabMcpProxy')}</span
                   >
                   <span class="block text-xs leading-5 font-semibold text-[var(--text-primary)]"
                     >{i18n.t(entry.keys[0])}</span

@@ -8,7 +8,11 @@ import Select from '$src/components/Select.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 
-let { disabled = false, showGlobal = $bindable(false) }: { disabled?: boolean; showGlobal?: boolean } = $props();
+let {
+  disabled = false,
+  writable = false,
+  showGlobal = $bindable(false),
+}: { disabled?: boolean; writable?: boolean; showGlobal?: boolean } = $props();
 const config = getConfig();
 const i18n = getI18n();
 let managing = $state(false);
@@ -115,7 +119,9 @@ async function remove(id: string) {
         <p class="m-0 break-words text-[var(--text-secondary)] [overflow-wrap:anywhere]">
           {selected?.path ?? selectedId}
         </p>
-        <p class="mb-0 mt-1 text-[var(--text-muted)]">{i18n.t('scope.projectReadOnly')}</p>
+        <p class="mb-0 mt-1 text-[var(--text-muted)]">
+          {i18n.t(writable ? 'scope.projectWritable' : 'scope.projectReadOnly')}
+        </p>
       </div>
       <div class="flex items-center gap-2 text-[var(--text-secondary)]">
         <Checkbox id="scope-show-global-{showGlobalId}" bind:checked={showGlobal} disabled={busy} />

@@ -1,6 +1,8 @@
 pub mod agent;
 pub mod app;
 pub mod autostart;
+pub mod behavior;
+pub mod custom_commands;
 pub mod group;
 pub(crate) mod island;
 pub mod mcp_proxy;
@@ -16,6 +18,8 @@ pub use crate::tray::*;
 pub use agent::*;
 pub use app::*;
 pub use autostart::*;
+pub use behavior::*;
+pub use custom_commands::*;
 pub use group::*;
 pub(crate) use island::*;
 pub use mcp_proxy::*;

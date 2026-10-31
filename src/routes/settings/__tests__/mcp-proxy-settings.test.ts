@@ -11,6 +11,7 @@ import McpProxySettings from '../McpProxySettings.svelte';
 
 vi.mock('$app/navigation', () => ({
   goto: vi.fn().mockResolvedValue(undefined),
+  beforeNavigate: vi.fn(),
 }));
 
 vi.mock('$src/shell/toast.svelte.js', () => ({

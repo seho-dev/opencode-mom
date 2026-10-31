@@ -13,7 +13,7 @@ import SettingsSearch from '../SettingsSearch.svelte';
 
 const native = vi.hoisted(() => ({ isTauri: vi.fn(() => true) }));
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: native.isTauri }));
-vi.mock('$app/navigation', () => ({ goto: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('$app/navigation', () => ({ goto: vi.fn().mockResolvedValue(undefined), beforeNavigate: vi.fn() }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/settings'), params: {} } }));
 vi.mock('$src/shell/toast.svelte.js', () => ({ toast: vi.fn() }));
 
@@ -70,6 +70,13 @@ function makeAdapter() {
     }),
     saveMcpProxySettings: vi.fn(),
     rotateMcpProxyKey: vi.fn(),
+    getGlobalBehavior: vi.fn().mockResolvedValue({
+      path: '/global/AGENTS.md',
+      resolvedPath: '/resolved/AGENTS.md',
+      content: '# Private saved instructions',
+      exists: true,
+    }),
+    saveGlobalBehavior: vi.fn(),
   };
 }
 
@@ -115,6 +122,7 @@ function expectNoWrites(adapter: ReturnType<typeof makeAdapter>) {
     adapter.setMomHttpSettings,
     adapter.saveMcpProxySettings,
     adapter.rotateMcpProxyKey,
+    adapter.saveGlobalBehavior,
   ])
     expect(call).not.toHaveBeenCalled();
 }
@@ -605,6 +613,40 @@ test('browser search still locates desktop-only settings without fetching native
   expect(adapter.getOpenCodeServiceStatus).not.toHaveBeenCalled();
   expect(adapter.getOpenCodeInstallation).not.toHaveBeenCalled();
   expect(adapter.getIslandState).not.toHaveBeenCalled();
+  expectNoWrites(adapter);
+});
+
+test('Behavior search is static, third-tab drafts survive and no hidden Behavior native work starts', async () => {
+  const { adapter } = mountPage();
+  await settle();
+  const password = activePanel().getByLabelText('Service password (optional)') as HTMLInputElement;
+  await fireEvent.input(password, { target: { value: 'keep-secret-across-behavior' } });
+  const search = screen.getByRole('searchbox', { name: 'Search settings' });
+  expect(adapter.getGlobalBehavior).not.toHaveBeenCalled();
+  await fireEvent.input(search, { target: { value: 'AGENTS.md' } });
+  expect(adapter.getGlobalBehavior).not.toHaveBeenCalled();
+  await fireEvent.click(within(results()).getByRole('button', { name: /Global behavior/ }));
+  await settle();
+  const input = activePanel().getByLabelText(en['settings.behaviorContent']) as HTMLTextAreaElement;
+  expect(document.activeElement?.id).toBe('settings-behavior-title');
+  expect(adapter.getGlobalBehavior).toHaveBeenCalledOnce();
+  await fireEvent.input(input, { target: { value: 'behavior-private-draft-marker' } });
+  for (const value of ['behavior-private-draft-marker', 'Private saved instructions', '/resolved/AGENTS.md']) {
+    await fireEvent.input(search, { target: { value } });
+    expect(screen.queryByRole('list', { name: 'Matching settings' })).toBeNull();
+  }
+  const general = screen.getByRole('tab', { name: 'General' });
+  await fireEvent.click(general);
+  await settle();
+  expect(activePanel().getByLabelText('Service password (optional)')).toBe(password);
+  expect(password.value).toBe('keep-secret-across-behavior');
+  await fireEvent.keyDown(general, { key: 'End' });
+  await settle();
+  expect(document.activeElement?.id).toBe('settings-tab-behavior');
+  expect(activePanel().getByLabelText(en['settings.behaviorContent'])).toBe(input);
+  expect(input.value).toBe('behavior-private-draft-marker');
+  expect(adapter.getGlobalBehavior).toHaveBeenCalledOnce();
+  for (const [url] of vi.mocked(goto).mock.calls) expect(String(url)).not.toContain('private');
   expectNoWrites(adapter);
 });
 

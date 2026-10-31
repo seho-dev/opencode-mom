@@ -1,6 +1,8 @@
 pub mod agents;
 pub mod agents_md;
+pub mod behavior;
 pub mod commands;
+pub mod custom_commands;
 pub mod document;
 pub mod error;
 pub mod groups;
@@ -136,6 +138,13 @@ pub fn run() {
             commands::get_skill,
             commands::create_skill,
             commands::update_skill,
+            commands::list_slash_commands,
+            commands::get_slash_command,
+            commands::create_slash_command,
+            commands::update_slash_command,
+            commands::delete_slash_command,
+            commands::get_global_behavior,
+            commands::save_global_behavior,
             commands::get_autostart,
             commands::set_autostart,
             commands::save_group,

@@ -11,6 +11,14 @@ import type {
   ProjectPage,
   UpdateCheck,
 } from '$src/types/app.js';
+import type { BehaviorDocument, BehaviorUpdate } from '$src/types/behavior.js';
+import type {
+  SlashCommandDelete,
+  SlashCommandDraft,
+  SlashCommandEntry,
+  SlashCommandList,
+  SlashCommandUpdate,
+} from '$src/types/commands.js';
 import type { Group, GroupType } from '$src/types/groups.js';
 import type {
   IslandAnswer,
@@ -99,6 +107,13 @@ export interface CommandAdapter {
   getSkill(id: string, projectId?: string | null): Result<SkillEntry>;
   createSkill(draft: SkillDraft, projectId?: string | null): Result<SkillEntry>;
   updateSkill(draft: SkillUpdate, projectId?: string | null): Result<SkillEntry>;
+  listSlashCommands(projectId?: string | null): Result<SlashCommandList>;
+  getSlashCommand(id: string, projectId?: string | null): Result<SlashCommandEntry>;
+  createSlashCommand(draft: SlashCommandDraft, projectId?: string | null): Result<SlashCommandEntry>;
+  updateSlashCommand(draft: SlashCommandUpdate, projectId?: string | null): Result<SlashCommandEntry>;
+  deleteSlashCommand(draft: SlashCommandDelete, projectId?: string | null): Result<void>;
+  getGlobalBehavior(): Result<BehaviorDocument>;
+  saveGlobalBehavior(draft: BehaviorUpdate): Result<BehaviorDocument>;
   getAutostart(): Result<boolean>;
   setAutostart(enabled: boolean): Result<boolean>;
   getLidProtection(): Result<LidState>;
@@ -194,6 +209,14 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     getSkill: (id, projectId) => invoke('get_skill', { id, ...projectScope(projectId) }),
     createSkill: (draft, projectId) => invoke('create_skill', { draft, ...projectScope(projectId) }),
     updateSkill: (draft, projectId) => invoke('update_skill', { draft, ...projectScope(projectId) }),
+    listSlashCommands: (projectId) =>
+      projectId == null ? invoke('list_slash_commands') : invoke('list_slash_commands', { projectId }),
+    getSlashCommand: (id, projectId) => invoke('get_slash_command', { id, ...projectScope(projectId) }),
+    createSlashCommand: (draft, projectId) => invoke('create_slash_command', { draft, ...projectScope(projectId) }),
+    updateSlashCommand: (draft, projectId) => invoke('update_slash_command', { draft, ...projectScope(projectId) }),
+    deleteSlashCommand: (draft, projectId) => invoke('delete_slash_command', { draft, ...projectScope(projectId) }),
+    getGlobalBehavior: () => invoke('get_global_behavior'),
+    saveGlobalBehavior: (draft) => invoke('save_global_behavior', { draft }),
     getAutostart: () => invoke('get_autostart'),
     setAutostart: (enabled) => invoke('set_autostart', { enabled }),
     getLidProtection: () => invoke('get_lid_protection'),

@@ -13,6 +13,14 @@ import type {
   ThemePreference,
   UpdateCheck,
 } from '$src/types/app.js';
+import type { BehaviorDocument, BehaviorUpdate } from '$src/types/behavior.js';
+import type {
+  SlashCommandDelete,
+  SlashCommandDraft,
+  SlashCommandEntry,
+  SlashCommandList,
+  SlashCommandUpdate,
+} from '$src/types/commands.js';
 import type { Group } from '$src/types/groups.js';
 import type {
   IslandAnswer,
@@ -73,6 +81,16 @@ const serializeError = (value: unknown): CommandError => {
   };
 };
 const snapshot = <T>(value: T): T => structuredClone(value);
+async function readResource<T>(action: () => Promise<T>): Promise<T> {
+  try {
+    return await action();
+  } catch (cause) {
+    throw {
+      code: serializeError(cause).code,
+      message: 'Configuration could not be loaded. Refresh and retry.',
+    } satisfies CommandError;
+  }
+}
 
 export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = true, initialize = true) {
   let providers = $state<ProviderDef[]>([]);
@@ -161,7 +179,16 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       notice = operation;
       return result;
     } catch (cause) {
-      const secretDraft = ['createMcp', 'updateMcp', 'createSkill', 'updateSkill'].includes(operation);
+      const secretDraft = [
+        'createMcp',
+        'updateMcp',
+        'createSkill',
+        'updateSkill',
+        'createSlashCommand',
+        'updateSlashCommand',
+        'deleteSlashCommand',
+        'saveGlobalBehavior',
+      ].includes(operation);
       const normalized = secretDraft
         ? {
             code: serializeError(cause).code,
@@ -507,6 +534,27 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     },
     updateSkill(draft: SkillUpdate, projectId?: string | null): Promise<SkillEntry> {
       return run('updateSkill', draft, () => adapter.updateSkill(draft, projectId));
+    },
+    listSlashCommands(projectId?: string | null): Promise<SlashCommandList> {
+      return readResource(() => adapter.listSlashCommands(projectId));
+    },
+    getSlashCommand(id: string, projectId?: string | null): Promise<SlashCommandEntry> {
+      return readResource(() => adapter.getSlashCommand(id, projectId));
+    },
+    createSlashCommand(draft: SlashCommandDraft, projectId?: string | null): Promise<SlashCommandEntry> {
+      return run('createSlashCommand', draft, () => adapter.createSlashCommand(draft, projectId));
+    },
+    updateSlashCommand(draft: SlashCommandUpdate, projectId?: string | null): Promise<SlashCommandEntry> {
+      return run('updateSlashCommand', draft, () => adapter.updateSlashCommand(draft, projectId));
+    },
+    deleteSlashCommand(draft: SlashCommandDelete, projectId?: string | null): Promise<void> {
+      return run('deleteSlashCommand', draft, () => adapter.deleteSlashCommand(draft, projectId));
+    },
+    getGlobalBehavior(): Promise<BehaviorDocument> {
+      return readResource(() => adapter.getGlobalBehavior());
+    },
+    saveGlobalBehavior(draft: BehaviorUpdate): Promise<BehaviorDocument> {
+      return run('saveGlobalBehavior', draft, () => adapter.saveGlobalBehavior(draft));
     },
     getAutostart(): Promise<boolean> {
       return adapter.getAutostart();

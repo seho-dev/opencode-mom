@@ -114,6 +114,7 @@ fn parent_relative_overrides_normalize_existing_and_missing_config_and_command_p
                     explicit.clone(),
                 ]
             );
+            assert!(paths.validate_plugin_config_source(&explicit).is_ok());
             assert_eq!(paths.commands_write_dir(), directory.join("commands"));
             assert_eq!(
                 paths.global_instructions_file(),
@@ -371,6 +372,139 @@ fn global_resource_writes_default_to_xdg_and_ignore_explicit_config_parent() {
     assert!(paths
         .validate_managed_write(&working_directory.join("override/plugins/new.ts"))
         .is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn normalized_overrides_preserve_logical_symlinks_and_reject_retargeted_sources() {
+    use std::os::unix::fs::symlink;
+    let home = tempfile::tempdir().unwrap();
+    let first = home.path().join("first");
+    let second = home.path().join("second");
+    let alias = home.path().join("alias");
+    for target in [&first, &second] {
+        fs::create_dir_all(target.join("commands")).unwrap();
+        fs::write(target.join("custom.jsonc"), "{}").unwrap();
+    }
+    symlink(&first, &alias).unwrap();
+    let paths = ConfigPaths::with_resource_parts(
+        home.path().into(),
+        Some(PathBuf::from("../alias/custom.jsonc")),
+        Some(PathBuf::from("../alias/nested/..")),
+        home.path().join("xdg"),
+        home.path().join("cwd"),
+    );
+    assert_eq!(paths.opencode_file(), alias.join("custom.jsonc"));
+    assert_eq!(paths.commands_write_dir(), alias.join("commands"));
+    assert!(paths
+        .validate_managed_write(&paths.commands_write_dir().join("new.md"))
+        .is_ok());
+    assert!(paths
+        .validate_managed_write(&paths.global_instructions_file())
+        .is_ok());
+    assert!(paths
+        .validate_plugin_config_source(&fs::canonicalize(first.join("custom.jsonc")).unwrap())
+        .is_ok());
+    let outside = home.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("static.md"), "Static Global symlink").unwrap();
+    symlink(outside.join("static.md"), first.join("commands/static.md")).unwrap();
+    assert!(paths
+        .validate_managed_write(&paths.commands_write_dir().join("static.md"))
+        .is_ok());
+    symlink(&outside, first.join("commands/escape")).unwrap();
+    assert!(paths
+        .validate_managed_write(&paths.commands_write_dir().join("escape/new.md"))
+        .is_err());
+    fs::remove_file(&alias).unwrap();
+    symlink(&second, &alias).unwrap();
+    for target in [
+        paths.commands_write_dir().join("new.md"),
+        paths.global_instructions_file(),
+    ] {
+        assert_eq!(
+            paths.validate_managed_write(&target).unwrap_err().code,
+            crate::error::ErrorCode::ConfigurationFailed
+        );
+    }
+    assert_eq!(
+        paths
+            .validate_plugin_config_source(&paths.opencode_file())
+            .unwrap_err()
+            .code,
+        crate::error::ErrorCode::ConfigurationFailed
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn override_parent_segments_follow_symlinks_without_losing_retarget_checks() {
+    use std::os::unix::fs::symlink;
+    let home = tempfile::tempdir().unwrap();
+    let first = home.path().join("first/target");
+    let second = home.path().join("second/target");
+    let alias = home.path().join("alias");
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    symlink(&first, &alias).unwrap();
+    let paths = ConfigPaths::with_resource_parts(
+        home.path().into(),
+        Some(PathBuf::from("../alias/../override/custom.jsonc")),
+        Some(PathBuf::from("../alias/../override")),
+        home.path().join("xdg"),
+        home.path().join("cwd"),
+    );
+    let directory = fs::canonicalize(&first)
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("override");
+    assert_eq!(paths.opencode_file(), directory.join("custom.jsonc"));
+    assert_eq!(paths.commands_write_dir(), directory.join("commands"));
+    let command = paths.commands_write_dir().join("new.md");
+    assert!(paths.validate_managed_write(&command).is_ok());
+    assert!(paths
+        .validate_plugin_config_source(&paths.opencode_file())
+        .is_ok());
+    fs::remove_file(&alias).unwrap();
+    symlink(&second, &alias).unwrap();
+    assert_eq!(
+        paths.validate_managed_write(&command).unwrap_err().code,
+        crate::error::ErrorCode::ConfigurationFailed
+    );
+    assert_eq!(
+        paths
+            .validate_plugin_config_source(&paths.opencode_file())
+            .unwrap_err()
+            .code,
+        crate::error::ErrorCode::ConfigurationFailed
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn override_parent_segments_do_not_collapse_files_or_unresolved_symlinks() {
+    use std::os::unix::fs::symlink;
+    let home = tempfile::tempdir().unwrap();
+    fs::write(home.path().join("file"), "not a directory").unwrap();
+    symlink(home.path().join("missing"), home.path().join("dangling")).unwrap();
+    for component in ["file", "dangling"] {
+        let paths = ConfigPaths::with_resource_parts(
+            home.path().into(),
+            Some(PathBuf::from(format!(
+                "../{component}/../override/custom.jsonc"
+            ))),
+            Some(PathBuf::from(format!("../{component}/../override"))),
+            home.path().join("xdg"),
+            home.path().join("cwd"),
+        );
+        assert!(paths
+            .validate_managed_write(&paths.commands_write_dir().join("new.md"))
+            .is_err());
+        assert!(paths
+            .validate_plugin_config_source(&paths.opencode_file())
+            .is_err());
+    }
 }
 
 #[cfg(unix)]

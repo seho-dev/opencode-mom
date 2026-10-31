@@ -203,6 +203,35 @@ impl ConfigPaths {
         &self.command_dirs
     }
 
+    pub(crate) fn plugin_config_dirs(&self) -> impl Iterator<Item = &Path> {
+        self.plugin_dirs.iter().filter_map(|path| path.parent())
+    }
+
+    pub(crate) fn validate_plugin_config_source(&self, path: &Path) -> Result<(), AppError> {
+        let invalid = || {
+            AppError::validation(
+                "Plugin declarations only support known Global configuration files",
+            )
+        };
+        if self.is_project() || !path.is_absolute() {
+            return Err(invalid());
+        }
+        let (logical, captured) = self
+            .global_write_files
+            .iter()
+            .find(|(logical, captured)| {
+                self.global_config_files.contains(logical) && (path == logical || path == captured)
+            })
+            .ok_or_else(invalid)?;
+        self.validate_override_paths()?;
+        if checked_resource_path(logical)? != *captured {
+            return Err(AppError::configuration(
+                "Global plugin configuration source changed; reload",
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_override_paths(&self) -> Result<(), AppError> {
         if self
             .override_path_sources

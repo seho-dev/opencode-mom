@@ -39,6 +39,7 @@ import type {
   MomHttpSettings,
 } from '$src/types/mcp-proxy.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
+import type { PluginConfigPreview, PluginRemovalPlan, PluginRemovalTarget, PluginRuntime } from '$src/types/plugins.js';
 import type { LidState } from '$src/types/power.js';
 import type { PromptGenerationRequest } from '$src/types/prompt-generation.js';
 import type { ProviderDef } from '$src/types/providers.js';
@@ -534,6 +535,21 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     },
     updateSkill(draft: SkillUpdate, projectId?: string | null): Promise<SkillEntry> {
       return run('updateSkill', draft, () => adapter.updateSkill(draft, projectId));
+    },
+    getPluginConfigSources(): Promise<PluginConfigPreview> {
+      return runForServiceTarget(() => readResource(() => adapter.getPluginConfigSources()));
+    },
+    listPluginRuntime(): Promise<PluginRuntime> {
+      return runForServiceTarget(() => adapter.listPluginRuntime());
+    },
+    updatePluginPackage(target: string): Promise<void> {
+      return runForServiceTarget(() => adapter.updatePluginPackage(target));
+    },
+    preparePluginRemoval(target: PluginRemovalTarget): Promise<PluginRemovalPlan> {
+      return runForServiceTarget(() => adapter.preparePluginRemoval(target));
+    },
+    removePluginDeclaration(plan: PluginRemovalPlan): Promise<void> {
+      return runForServiceTarget(() => adapter.removePluginDeclaration(plan));
     },
     listSlashCommands(projectId?: string | null): Promise<SlashCommandList> {
       return readResource(() => adapter.listSlashCommands(projectId));

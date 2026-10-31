@@ -140,8 +140,51 @@ impl ManagedConnection {
         self.snapshot.ensure_current()
     }
 
+    pub(in crate::opencode) fn verify_identity(&self, deadline: Instant) -> Result<(), AppError> {
+        if !self.healthy(deadline)? {
+            return Err(failure(
+                "service identity changed; reconnect before reading",
+            ));
+        }
+        self.ensure_current()
+    }
+
     pub(in crate::opencode) fn directory(&self) -> Option<&Path> {
         self.snapshot.directory()
+    }
+
+    pub(in crate::opencode) fn plugin_service_key(
+        &self,
+        directory: &str,
+    ) -> Result<String, AppError> {
+        use sha2::{Digest, Sha256};
+        self.ensure_current()?;
+        // Fixed endpoints synthesize a registration UUID on every connection; never hash it.
+        let registration = self
+            .snapshot
+            .selection
+            .url
+            .is_none()
+            .then_some(self.registration.id.as_str());
+        let identity = serde_json::to_vec(&(
+            registration,
+            self.registration.pid,
+            &self.registration.version,
+            self.snapshot.revision,
+            self.url.as_str(),
+            directory,
+        ))
+        .map_err(|_| AppError::configuration("Plugin service identity unavailable"))?;
+        Ok(format!("{:x}", Sha256::digest(identity)))
+    }
+
+    pub(in crate::opencode) fn reserve_plugin_removal(
+        &self,
+        deadline: Instant,
+    ) -> Result<SideEffectReservation, AppError> {
+        let reservation = self.snapshot.reserve_side_effect(deadline)?;
+        self.verify_identity(deadline)?;
+        Ok(reservation)
     }
 
     pub(in crate::opencode) fn get_json<T: for<'de> Deserialize<'de>>(
@@ -197,6 +240,62 @@ impl ManagedConnection {
             )));
         }
         self.ensure_current()
+    }
+
+    pub(in crate::opencode) fn plugin_post(
+        &self,
+        operation: &str,
+        directory: Option<&Path>,
+        body: &serde_json::Value,
+        deadline: Instant,
+    ) -> Result<(Option<Response>, SideEffectReservation), AppError> {
+        if !matches!(operation, "check" | "update") {
+            return Err(AppError::validation("Invalid plugin operation"));
+        }
+        let reservation = self.snapshot.reserve_side_effect(deadline)?;
+        if !self.healthy(deadline)? {
+            return Err(AppError::configuration(
+                "Plugin service identity changed; refresh before writing",
+            ));
+        }
+        let mut url = api_url(&self.url, &["plugin", operation])?;
+        if let Some(directory) = directory {
+            let directory = directory
+                .to_str()
+                .ok_or_else(|| AppError::validation("Plugin runtime directory must be UTF-8"))?;
+            url.query_pairs_mut()
+                .append_pair("location[directory]", directory);
+        }
+        let request = self
+            .client
+            .post(url)
+            .json(body)
+            .timeout(remaining(deadline)?.min(HEALTH_TIMEOUT));
+        let request = match &self.registration.password {
+            Some(password) => request.basic_auth("opencode", Some(password)),
+            None => request,
+        };
+        let unknown = || {
+            AppError::configuration(
+            "Plugin operation outcome unknown; refresh with GET before deciding whether to retry",
+        )
+        };
+        let response = request.send().map_err(|_| unknown())?;
+        remaining(deadline).map_err(|_| unknown())?;
+        self.ensure_current().map_err(|_| unknown())?;
+        let expected = if operation == "update" {
+            StatusCode::NO_CONTENT
+        } else {
+            StatusCode::OK
+        };
+        if response.status() != expected {
+            return Err(unknown());
+        }
+        if operation == "update" {
+            Ok((None, reservation))
+        } else {
+            Ok((Some(response), reservation))
+        }
     }
 
     fn page_url(&self, session_id: Option<&str>, cursor: Option<&str>) -> Result<Url, AppError> {
@@ -411,7 +510,7 @@ pub(in crate::opencode) fn decode_json<T: for<'de> Deserialize<'de>>(
     })
 }
 
-fn response_json<T: for<'de> Deserialize<'de>>(
+pub(in crate::opencode) fn response_json<T: for<'de> Deserialize<'de>>(
     mut response: Response,
     deadline: Instant,
     max_bytes: u64,

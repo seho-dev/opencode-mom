@@ -5,6 +5,7 @@ pub(crate) mod generate;
 pub(crate) mod installation;
 pub(crate) mod island;
 mod models;
+pub(crate) mod plugins;
 mod reload;
 pub(crate) mod target;
 mod token_usage;

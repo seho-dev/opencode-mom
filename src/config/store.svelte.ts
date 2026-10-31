@@ -32,6 +32,7 @@ import type {
 } from '$src/types/mcp-proxy.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
 import type { LidState } from '$src/types/power.js';
+import type { PromptGenerationRequest } from '$src/types/prompt-generation.js';
 import type { ProviderDef } from '$src/types/providers.js';
 import type { SkillDraft, SkillEntry, SkillList, SkillUpdate } from '$src/types/skills.js';
 import type { TokenUsageRecord } from '$src/types/stats.js';
@@ -109,6 +110,13 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
         code: 'conflict',
         message: 'The OpenCode service target changed. Refresh to read the current target.',
       } satisfies CommandError;
+  }
+  async function runForServiceTarget<T>(action: () => Promise<T>): Promise<T> {
+    const targetVersion = serviceTargetVersion;
+    assertServiceTarget(targetVersion);
+    const result = await action();
+    assertServiceTarget(targetVersion);
+    return result;
   }
   let preferences = $state<AppPreferences>({ theme: 'dark', locale: 'en' });
   function syncPreferencesToDom() {
@@ -367,6 +375,9 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     },
     getOpenCodeServiceStatus(): Promise<OpenCodeServiceStatus> {
       return adapter.getOpenCodeServiceStatus();
+    },
+    generatePrompt(request: PromptGenerationRequest): Promise<string> {
+      return runForServiceTarget(() => adapter.generatePrompt(request));
     },
     async setOpenCodeServiceTarget(url: string | null, password?: string | null): Promise<OpenCodeServiceStatus> {
       serviceTargetRequests += 1;

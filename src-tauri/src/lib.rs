@@ -100,6 +100,7 @@ pub fn run() {
             commands::open_project_page,
             commands::list_providers,
             commands::opencode_list_models,
+            commands::opencode_generate_prompt,
             commands::opencode_resolve_binary,
             commands::opencode_get_installation,
             commands::opencode_get_service_status,

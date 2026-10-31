@@ -9,6 +9,8 @@ export const AGENT_SOURCES = ['inline', 'markdown', 'both'] as const;
 export const AGENT_STORAGES = ['inline', 'global_markdown'] as const;
 export const GROUP_TYPES = [GROUP_TYPE_NATIVE, GROUP_TYPE_SLIM, GROUP_TYPE_OMO] as const;
 export const AGENT_MODES = ['primary', 'subagent', 'all'] as const;
+export const PROMPT_GENERATION_KINDS = ['agent', 'command'] as const;
+export const PROMPT_GENERATION_PRESETS = ['generate', 'improve', 'shorten'] as const;
 export const COLOR_THEMES = ['primary', 'secondary', 'accent', 'success', 'warning', 'error', 'info'] as const;
 // V2 permission effects and built-in rule actions (plugins may define more).
 export const PERMISSION_EFFECTS = ['allow', 'ask', 'deny'] as const;

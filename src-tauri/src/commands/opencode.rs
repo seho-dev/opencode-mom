@@ -11,6 +11,13 @@ use crate::paths::ConfigPaths;
 type CommandResult<T> = Result<T, AppError>;
 
 #[tauri::command]
+pub async fn opencode_generate_prompt(
+    request: opencode::generate::PromptGenerationRequest,
+) -> CommandResult<String> {
+    opencode::generate::generate_prompt(request).await
+}
+
+#[tauri::command]
 pub async fn opencode_list_models(
     state: State<'_, ConfigPaths>,
     provider: Option<String>,

@@ -1,6 +1,7 @@
 mod active;
 mod binary;
 mod command;
+pub(crate) mod generate;
 pub(crate) mod installation;
 pub(crate) mod island;
 mod models;

@@ -30,6 +30,7 @@ import type {
 } from '$src/types/mcp-proxy.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
 import type { LidState } from '$src/types/power.js';
+import type { PromptGenerationRequest } from '$src/types/prompt-generation.js';
 import type { ProviderDef } from '$src/types/providers.js';
 import type { SkillDraft, SkillEntry, SkillList, SkillUpdate } from '$src/types/skills.js';
 import type { TokenUsageRecord } from '$src/types/stats.js';
@@ -73,6 +74,7 @@ export interface CommandAdapter {
   selectProject(id: string | null): Result<void>;
   listProviders(): Result<ProviderDef[]>;
   opencodeListModels(provider?: string): Result<ModelCatalogEntry[]>;
+  generatePrompt(request: PromptGenerationRequest): Result<string>;
   opencodeResolveBinary(): Result<string>;
   opencodeReload(): Result<void>;
   opencodeTokenUsageRecords(): Result<TokenUsageRecord[]>;
@@ -167,6 +169,7 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     selectProject: (id) => invoke('select_project', { id }),
     listProviders: () => invoke('list_providers'),
     opencodeListModels: (provider) => invoke('opencode_list_models', { provider }),
+    generatePrompt: (request) => invoke('opencode_generate_prompt', { request }),
     opencodeResolveBinary: () => invoke('opencode_resolve_binary'),
     opencodeReload: () => invoke('opencode_reload'),
     opencodeTokenUsageRecords: () => invoke('opencode_token_usage_records'),

@@ -3,6 +3,7 @@ import { goto } from '$app/navigation';
 import { Button } from '$src/components/button/index.js';
 import FormActions from '$src/components/FormActions.svelte';
 import GlobalDestination from '$src/components/GlobalDestination.svelte';
+import PromptGenerator from '$src/components/PromptGenerator.svelte';
 import Select from '$src/components/Select.svelte';
 import { Switch } from '$src/components/switch/index.js';
 import { getConfig } from '$src/config/context.js';
@@ -436,6 +437,14 @@ function changeModel(model: string) {
               ></textarea>
             {/snippet}
           </form.Field><small class="field-hint">{promptHint}</small>
+          {#key edit ? draftSource : source}
+            <PromptGenerator
+              kind="agent"
+              value={values.prompt}
+              disabled={config.saving || (edit && !selectedSource)}
+              onapply={(text) => form.setFieldValue('prompt', text)}
+            />
+          {/key}
         </div>
       </fieldset>
       <form.Field name="permission">

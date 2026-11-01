@@ -37,9 +37,12 @@ pub async fn create_mcp(
     draft: McpDraft,
     project_id: Option<Uuid>,
 ) -> Result<McpServer, AppError> {
-    reject_project_write(project_id)?;
     let paths = state.inner().clone();
-    super::spawn_blocking_task("Create MCP", move || mcp::create(&paths, draft)).await
+    super::spawn_blocking_task("Create MCP", move || {
+        reject_project_write(project_id)?;
+        mcp::create(&paths, draft)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -48,9 +51,12 @@ pub async fn update_mcp(
     draft: McpUpdate,
     project_id: Option<Uuid>,
 ) -> Result<McpServer, AppError> {
-    reject_project_write(project_id)?;
     let paths = state.inner().clone();
-    super::spawn_blocking_task("Update MCP", move || mcp::update(&paths, draft)).await
+    super::spawn_blocking_task("Update MCP", move || {
+        reject_project_write(project_id)?;
+        mcp::update(&paths, draft)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -59,9 +65,12 @@ pub async fn delete_mcp(
     name: String,
     project_id: Option<Uuid>,
 ) -> Result<(), AppError> {
-    reject_project_write(project_id)?;
     let paths = state.inner().clone();
-    super::spawn_blocking_task("Delete MCP", move || mcp::delete(&paths, &name)).await
+    super::spawn_blocking_task("Delete MCP", move || {
+        reject_project_write(project_id)?;
+        mcp::delete(&paths, &name)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -95,9 +104,12 @@ pub async fn create_skill(
     draft: SkillDraft,
     project_id: Option<Uuid>,
 ) -> Result<SkillEntry, AppError> {
-    reject_project_write(project_id)?;
     let paths = state.inner().clone();
-    super::spawn_blocking_task("Create skill", move || skills::create(&paths, draft)).await
+    super::spawn_blocking_task("Create skill", move || {
+        reject_project_write(project_id)?;
+        skills::create(&paths, draft)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -106,7 +118,10 @@ pub async fn update_skill(
     draft: SkillUpdate,
     project_id: Option<Uuid>,
 ) -> Result<SkillEntry, AppError> {
-    reject_project_write(project_id)?;
     let paths = state.inner().clone();
-    super::spawn_blocking_task("Update skill", move || skills::update(&paths, draft)).await
+    super::spawn_blocking_task("Update skill", move || {
+        reject_project_write(project_id)?;
+        skills::update(&paths, draft)
+    })
+    .await
 }

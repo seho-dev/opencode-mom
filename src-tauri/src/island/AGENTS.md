@@ -34,6 +34,7 @@ island/
 - **Snapshot flow**: Subscribe before snapshots, coalesce only SSE invalidations, and limit message notifications to the expanded selected session; reconnect and collapse must clear the appropriate local lifetimes.
 - **Native authority**: Change views only explicitly, focus only current explicit expansion, and commit geometry after verified native readback; keep AppKit on its main thread without global monitors or timers.
 - **Acceptance**: Keep diagnostics free of session data and credentials; use synthetic lifecycle tests, then rebuild and restart for manual native hover, notch, focus, and display acceptance.
+- **Diagnostics**: Log connection/error/recovery transitions only, never each snapshot or repeated failed poll. Keep session IDs, messages, questions, permissions and raw errors out of diagnostic records.
 
 ## Details
 

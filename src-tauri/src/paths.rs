@@ -177,6 +177,10 @@ impl ConfigPaths {
         self.app_config_dir().join("config.json")
     }
 
+    pub(crate) fn logs_dir(&self) -> PathBuf {
+        self.app_config_dir().join("logs")
+    }
+
     pub fn opencode_file(&self) -> PathBuf {
         self.opencode.clone()
     }

@@ -16,6 +16,7 @@ fn legacy_config_without_preferences_yields_defaults() {
         DefaultPlugin::Native
     );
     assert!(!config.state.island_enabled);
+    assert!(!config.state.logging_enabled);
     assert!(config.projects.is_empty());
     assert_eq!(config.state.selected_project_id, None);
 }
@@ -52,6 +53,7 @@ fn default_config_serializes_preferences() {
     assert_eq!(value["projects"], json!([]));
     assert_eq!(value["state"]["selectedProjectId"], Value::Null);
     assert_eq!(value["state"]["islandEnabled"], false);
+    assert_eq!(value["state"]["loggingEnabled"], false);
 }
 
 #[test]
@@ -152,6 +154,28 @@ fn island_flag_is_independent_of_preferences() {
 }
 
 struct ConfigDirectory(tempfile::TempDir);
+
+#[test]
+fn logging_flag_is_independent_of_preferences() {
+    let mut config: AppConfig = serde_json::from_value(json!({
+        "state": { "loggingEnabled": true, "islandEnabled": true }
+    }))
+    .unwrap();
+    config.state.preferences = AppPreferences {
+        theme: ThemePreference::Light,
+        locale: LocalePreference::Zh,
+        ..Default::default()
+    };
+    let encoded = serde_json::to_value(&config).unwrap();
+    assert_eq!(encoded["state"]["loggingEnabled"], true);
+    assert!(encoded["state"]["preferences"]
+        .get("loggingEnabled")
+        .is_none());
+    assert_eq!(
+        serde_json::from_value::<AppConfig>(encoded).unwrap(),
+        config
+    );
+}
 
 impl ConfigDirectory {
     fn new() -> Self {

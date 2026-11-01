@@ -244,9 +244,9 @@ pub async fn create_agent(
     agent: AgentDefinitionDto,
     project_id: Option<Uuid>,
 ) -> CommandResult<AgentDefinitionDto> {
-    reject_project_write(project_id)?;
     let paths = state.inner().clone();
     super::spawn_blocking_task("Create agent", move || {
+        reject_project_write(project_id)?;
         let storage = agent.storage.map(Into::into).ok_or_else(|| {
             AppError::validation("agent creation requires an explicit storage target")
         })?;
@@ -272,9 +272,9 @@ pub async fn update_agent(
     agent: AgentDefinitionDto,
     project_id: Option<Uuid>,
 ) -> CommandResult<AgentDefinitionDto> {
-    reject_project_write(project_id)?;
     let paths = state.inner().clone();
     super::spawn_blocking_task("Update agent", move || {
+        reject_project_write(project_id)?;
         let storage = agent.storage.map(Into::into).ok_or_else(|| {
             AppError::validation("agent update requires an explicit storage target")
         })?;
@@ -292,9 +292,9 @@ pub async fn delete_agent(
     storage: Option<AgentStorageDto>,
     project_id: Option<Uuid>,
 ) -> CommandResult<()> {
-    reject_project_write(project_id)?;
     let paths = state.inner().clone();
     super::spawn_blocking_task("Delete agent", move || {
+        reject_project_write(project_id)?;
         let storage: AgentStorage = match storage {
             Some(storage) => storage.into(),
             None => {

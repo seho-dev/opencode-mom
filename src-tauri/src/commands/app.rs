@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::agents;
 use crate::commands::agent::AgentDefinitionDto;
 use crate::error::AppError;
+use crate::logging::{record, LogStatus, LogType};
 use crate::models;
 use crate::paths::ConfigPaths;
 use crate::providers;
@@ -26,7 +27,10 @@ pub async fn set_mom_http_settings(
     proxy: State<'_, std::sync::Arc<crate::mcp_proxy::ProxyService>>,
     settings: crate::http_server::MomHttpSettings,
 ) -> CommandResult<()> {
-    let http = http.inner().as_ref().map_err(Clone::clone)?;
+    let http = http.inner().as_ref().map_err(|error| {
+        record(LogType::Http, LogStatus::Error, "http_settings_unavailable");
+        error.clone()
+    })?;
     update_http_settings(
         http.as_ref().clone(),
         proxy.inner().as_ref().clone(),
@@ -49,7 +53,14 @@ pub async fn rotate_mom_http_key(
     http: State<'_, crate::http_server::HttpServerState>,
     proxy: State<'_, std::sync::Arc<crate::mcp_proxy::ProxyService>>,
 ) -> CommandResult<String> {
-    let http = http.inner().as_ref().map_err(Clone::clone)?;
+    let http = http.inner().as_ref().map_err(|error| {
+        record(
+            LogType::Http,
+            LogStatus::Error,
+            "http_key_rotate_unavailable",
+        );
+        error.clone()
+    })?;
     rotate_http_key(http.as_ref().clone(), proxy.inner().as_ref().clone()).await
 }
 
@@ -159,11 +170,22 @@ pub async fn save_preferences(
         Ok(())
     })
     .await?;
-    if let Err(error) = app.emit_to("tray", "app:preferences-changed", ()) {
-        eprintln!("failed to notify tray window of preference change: {error}");
+    if app.emit_to("tray", "app:preferences-changed", ()).is_err() {
+        record(
+            LogType::Config,
+            LogStatus::Error,
+            "preferences_committed_tray_notify_failed",
+        );
     }
-    if let Err(error) = app.emit_to("island", "app:preferences-changed", ()) {
-        eprintln!("failed to notify island window of preference change: {error}");
+    if app
+        .emit_to("island", "app:preferences-changed", ())
+        .is_err()
+    {
+        record(
+            LogType::Config,
+            LogStatus::Error,
+            "preferences_committed_island_notify_failed",
+        );
     }
     Ok(())
 }

@@ -9,6 +9,7 @@ Rust crate root for configuration persistence, resource management, group projec
 ```text
 src/
 ├── lib.rs               # Tauri initialization and shutdown
+├── logging/             # Opt-in local diagnostic recording, retention and bounded queries
 ├── commands/            # Domain IPC boundary
 ├── models.rs            # App config types and persistence
 ├── paths.rs             # Captured paths and resource scopes
@@ -55,6 +56,7 @@ src/
 | --- | --- |
 | Configuration and resource safety | [Configuration contracts](docs/config-contracts.md) |
 | Desktop ownership and validation | [Runtime lifecycle](docs/runtime-lifecycle.md) |
+| Local diagnostic logs | [Logging contracts](logging/AGENTS.md) |
 
 ## Sync
 

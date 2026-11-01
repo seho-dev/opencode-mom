@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::groups;
+use crate::logging::{record, LogStatus, LogType};
 use crate::models::ModelGroup;
 use crate::paths::ConfigPaths;
 
@@ -50,13 +51,17 @@ pub async fn switch_group(
 ) -> CommandResult<()> {
     let paths = state.inner().clone();
     super::spawn_blocking_task("Switch group", move || groups::switch_group(&paths, id)).await?;
-    if window.label() == "tray" {
-        if let Err(error) = window
+    if window.label() == "tray"
+        && window
             .app_handle()
             .emit_to("main", "tray:config-changed", ())
-        {
-            eprintln!("failed to notify main window of group switch: {error}");
-        }
+            .is_err()
+    {
+        record(
+            LogType::Group,
+            LogStatus::Error,
+            "group_switch_committed_notify_failed",
+        );
     }
     Ok(())
 }

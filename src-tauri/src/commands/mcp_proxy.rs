@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::http_server::HttpServerState;
+use crate::logging::{operation, LogType};
 use crate::mcp_proxy::config::{
     GatewaySettings, ProxyProtocol, ProxyServiceConfig, ServiceTimeouts,
 };
@@ -245,15 +246,18 @@ pub async fn save_mcp_proxy_settings(
     settings: McpProxySettingsDto,
     expected_revision: u64,
 ) -> Result<(), AppError> {
+    let operation = operation(LogType::McpProxy, "mcp_proxy_settings_save");
     let gateway = GatewaySettings {
         enabled: settings.enabled,
         idle_timeout_secs: settings.idle_timeout,
         max_units: settings.max_units,
     };
 
-    proxy
+    let result = proxy
         .save_gateway_settings(gateway, expected_revision)
-        .await
+        .await;
+    operation.finish(&result);
+    result
 }
 
 #[tauri::command]
@@ -276,19 +280,25 @@ pub async fn create_mcp_proxy_server(
     server: McpProxyServerDto,
     expected_revision: u64,
 ) -> Result<McpProxyServerDto, AppError> {
-    let mut config = proxy.config().await;
-    if config.services.iter().any(|s| s.id == server.id) {
-        return Err(AppError::validation(format!(
-            "proxy server '{}' already exists",
-            server.id
-        )));
+    let operation = operation(LogType::McpProxy, "mcp_proxy_server_create");
+    let result = async {
+        let mut config = proxy.config().await;
+        if config.services.iter().any(|s| s.id == server.id) {
+            return Err(AppError::validation(format!(
+                "proxy server '{}' already exists",
+                server.id
+            )));
+        }
+
+        let service = ProxyServiceConfig::try_from(server)?;
+        config.services.push(service.clone());
+        proxy.save_config(config, expected_revision).await?;
+
+        Ok(McpProxyServerDto::from(&service))
     }
-
-    let service = ProxyServiceConfig::try_from(server)?;
-    config.services.push(service.clone());
-    proxy.save_config(config, expected_revision).await?;
-
-    Ok(McpProxyServerDto::from(&service))
+    .await;
+    operation.finish(&result);
+    result
 }
 
 #[tauri::command]
@@ -297,18 +307,26 @@ pub async fn update_mcp_proxy_server(
     server: McpProxyServerDto,
     expected_revision: u64,
 ) -> Result<McpProxyServerDto, AppError> {
-    let mut config = proxy.config().await;
-    let index = config
-        .services
-        .iter()
-        .position(|s| s.id == server.id)
-        .ok_or_else(|| AppError::not_found(format!("proxy server '{}' not found", server.id)))?;
+    let operation = operation(LogType::McpProxy, "mcp_proxy_server_update");
+    let result = async {
+        let mut config = proxy.config().await;
+        let index = config
+            .services
+            .iter()
+            .position(|s| s.id == server.id)
+            .ok_or_else(|| {
+                AppError::not_found(format!("proxy server '{}' not found", server.id))
+            })?;
 
-    let service = ProxyServiceConfig::try_from(server)?;
-    config.services[index] = service.clone();
-    proxy.save_config(config, expected_revision).await?;
+        let service = ProxyServiceConfig::try_from(server)?;
+        config.services[index] = service.clone();
+        proxy.save_config(config, expected_revision).await?;
 
-    Ok(McpProxyServerDto::from(&service))
+        Ok(McpProxyServerDto::from(&service))
+    }
+    .await;
+    operation.finish(&result);
+    result
 }
 
 #[tauri::command]
@@ -317,17 +335,23 @@ pub async fn delete_mcp_proxy_server(
     id: String,
     expected_revision: u64,
 ) -> Result<(), AppError> {
-    let mut config = proxy.config().await;
-    let index = config
-        .services
-        .iter()
-        .position(|s| s.id == id)
-        .ok_or_else(|| AppError::not_found(format!("proxy server '{id}' not found")))?;
+    let operation = operation(LogType::McpProxy, "mcp_proxy_server_delete");
+    let result = async {
+        let mut config = proxy.config().await;
+        let index = config
+            .services
+            .iter()
+            .position(|s| s.id == id)
+            .ok_or_else(|| AppError::not_found(format!("proxy server '{id}' not found")))?;
 
-    config.services.remove(index);
-    proxy.save_config(config, expected_revision).await?;
+        config.services.remove(index);
+        proxy.save_config(config, expected_revision).await?;
 
-    Ok(())
+        Ok(())
+    }
+    .await;
+    operation.finish(&result);
+    result
 }
 
 fn extract_command(
@@ -460,14 +484,20 @@ pub async fn close_mcp_proxy_unit(
     proxy: tauri::State<'_, Arc<ProxyService>>,
     request: CloseMcpProxyUnitRequest,
 ) -> Result<(), AppError> {
-    if request.expected_generation != proxy.generation() {
-        return Err(AppError::validation("proxy runtime generation conflict"));
+    let operation = operation(LogType::McpProxy, "mcp_proxy_unit_close");
+    let result = async {
+        if request.expected_generation != proxy.generation() {
+            return Err(AppError::validation("proxy runtime generation conflict"));
+        }
+        proxy
+            .legacy_sessions()
+            .close_session(&request.unit_id)
+            .await?;
+        Ok(())
     }
-    proxy
-        .legacy_sessions()
-        .close_session(&request.unit_id)
-        .await?;
-    Ok(())
+    .await;
+    operation.finish(&result);
+    result
 }
 
 #[cfg(test)]

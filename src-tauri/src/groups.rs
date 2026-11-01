@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::document::{JsoncDoc, OMO_SCHEMA, OPENCODE_SCHEMA, SLIM_SCHEMA};
 use crate::error::AppError;
+use crate::logging::{operation, LogType};
 use crate::models::{self, AppConfig, GroupType, ModelGroup};
 use crate::paths::ConfigPaths;
 use crate::projection;
@@ -131,9 +132,21 @@ pub fn delete_group(paths: &ConfigPaths, id: Uuid) -> Result<AppConfig, AppError
 /// Switches the active selection and projects the group into the managed target files.
 /// Switching to the already-selected group is a no-op.
 pub fn switch_group(paths: &ConfigPaths, group_id: Uuid) -> Result<(), AppError> {
+    let operation = operation(LogType::Group, "group_switch");
+    let result = switch_group_inner(paths, group_id, |event| operation.checkpoint(event));
+    operation.finish(&result);
+    result
+}
+
+fn switch_group_inner(
+    paths: &ConfigPaths,
+    group_id: Uuid,
+    mut checkpoint: impl FnMut(&'static str),
+) -> Result<(), AppError> {
     let _write = models::config_write_lock();
     let mut config = load(paths)?;
     let group = find_enabled_group(&config, group_id)?.clone();
+    checkpoint("group_switch_validated");
     if config.state.selected_group_id == Some(group_id) {
         return Ok(());
     }
@@ -143,12 +156,14 @@ pub fn switch_group(paths: &ConfigPaths, group_id: Uuid) -> Result<(), AppError>
         let source = JsoncDoc::read(&slim_file, SLIM_SCHEMA)?;
         let document = projection::project_slim_active(&group, &source)?;
         document.save(&slim_file)?;
+        checkpoint("group_switch_projection_complete");
     }
     if group.group_type == GroupType::Omo {
         let omo_file = paths.omo_file();
         let source = JsoncDoc::read(&omo_file, OMO_SCHEMA)?;
         let document = projection::project_omo(&group, &source)?;
         document.save(&omo_file)?;
+        checkpoint("group_switch_projection_complete");
     }
     if group.group_type == GroupType::Native && projection::has_effective_opencode_overrides(&group)
     {
@@ -156,8 +171,9 @@ pub fn switch_group(paths: &ConfigPaths, group_id: Uuid) -> Result<(), AppError>
         let source = JsoncDoc::read(&opencode_file, OPENCODE_SCHEMA)?;
         let (document, warnings) = projection::project_opencode(&group, &source)?;
         document.save(&opencode_file)?;
-        for warning in warnings {
-            eprintln!("warning: {warning}");
+        checkpoint("group_switch_projection_complete");
+        if !warnings.is_empty() {
+            eprintln!("warning: group projection skipped unavailable agent mappings");
         }
     }
 
@@ -348,7 +364,108 @@ fn unique_copy_group_name(source: &str, groups: &[ModelGroup]) -> Result<String,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ErrorCode;
     use std::fs;
+
+    #[test]
+    fn switch_preserves_validation_noop_and_projection_results() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = ConfigPaths::for_home(temp.path());
+        let mut steps = Vec::new();
+        let id = Uuid::new_v4();
+        assert_eq!(
+            switch_group_inner(&paths, id, |event| steps.push(event))
+                .unwrap_err()
+                .code,
+            ErrorCode::NotFound
+        );
+        assert!(steps.is_empty());
+        let group = ModelGroup {
+            id,
+            name: "Switch test".to_owned(),
+            description: String::new(),
+            group_type: GroupType::Slim,
+            open_code_agent_overrides: Vec::new(),
+            slim_agent_overrides: None,
+            omo_agent_overrides: None,
+            omo_category_mappings: None,
+            is_enabled: false,
+            updated_at: time::OffsetDateTime::now_utc(),
+        };
+        let mut config = AppConfig {
+            groups: vec![group],
+            ..Default::default()
+        };
+        models::save_config(&paths.config_file(), &config).unwrap();
+        assert_eq!(
+            switch_group_inner(&paths, id, |event| steps.push(event))
+                .unwrap_err()
+                .code,
+            ErrorCode::ValidationFailed
+        );
+        assert!(steps.is_empty());
+
+        config.groups[0].is_enabled = true;
+        config.state.selected_group_id = Some(id);
+        models::save_config(&paths.config_file(), &config).unwrap();
+        assert!(switch_group_inner(&paths, id, |event| steps.push(event)).is_ok());
+        assert_eq!(steps, ["group_switch_validated"]);
+        steps.clear();
+        assert!(!paths.slim_file().exists());
+
+        config.state.selected_group_id = None;
+        models::save_config(&paths.config_file(), &config).unwrap();
+        fs::create_dir_all(paths.slim_file().parent().unwrap()).unwrap();
+        fs::write(paths.slim_file(), "{").unwrap();
+        assert!(switch_group_inner(&paths, id, |event| steps.push(event)).is_err());
+        assert_eq!(steps, ["group_switch_validated"]);
+        steps.clear();
+        assert_eq!(fs::read_to_string(paths.slim_file()).unwrap(), "{");
+        assert_eq!(models::load_config(&paths.config_file()).unwrap(), config);
+
+        fs::write(paths.slim_file(), "{}").unwrap();
+        switch_group_inner(&paths, id, |event| steps.push(event)).unwrap();
+        assert_eq!(
+            steps,
+            ["group_switch_validated", "group_switch_projection_complete"]
+        );
+        steps.clear();
+        assert_eq!(
+            models::load_config(&paths.config_file())
+                .unwrap()
+                .state
+                .selected_group_id,
+            Some(id)
+        );
+        assert_ne!(fs::read_to_string(paths.slim_file()).unwrap(), "{}");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            models::save_config(&paths.config_file(), &config).unwrap();
+            fs::write(paths.slim_file(), "{}").unwrap();
+            let directory = paths.config_file().parent().unwrap().to_owned();
+            let permissions = fs::metadata(&directory).unwrap().permissions();
+            fs::set_permissions(&directory, fs::Permissions::from_mode(0o500)).unwrap();
+            let result = switch_group_inner(&paths, id, |event| steps.push(event));
+            fs::set_permissions(&directory, permissions).unwrap();
+            assert!(result.is_err());
+            assert_eq!(
+                steps,
+                ["group_switch_validated", "group_switch_projection_complete"]
+            );
+            assert_ne!(fs::read_to_string(paths.slim_file()).unwrap(), "{}");
+            assert_eq!(models::load_config(&paths.config_file()).unwrap(), config);
+        }
+
+        steps.clear();
+        config.groups[0].group_type = GroupType::Native;
+        models::save_config(&paths.config_file(), &config).unwrap();
+        switch_group_inner(&paths, id, |event| steps.push(event)).unwrap();
+        assert_eq!(steps, ["group_switch_validated"]);
+        assert!(!paths.opencode_file().exists());
+    }
 
     #[test]
     fn copy_name_search_skips_existing_suffixes_case_insensitively() {

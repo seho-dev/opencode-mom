@@ -11,6 +11,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::AppError;
+use crate::logging::{operation, record, LogStatus, LogType};
 use crate::paths::ConfigPaths;
 
 pub(crate) mod auth;
@@ -256,11 +257,20 @@ impl HttpServer {
         cleanup: impl std::future::Future<Output = Result<(), AppError>> + Send + 'static,
     ) -> Result<String, AppError> {
         let server = self.clone();
-        tokio::spawn(async move { server.rotate_key_owned(cleanup).await })
-            .await
-            .map_err(|error| {
-                AppError::configuration(format!("MOM HTTP key rotation task failed: {error}"))
-            })?
+        let operation = Arc::new(operation(LogType::Http, "http_key_rotate"));
+        let worker_operation = operation.clone();
+        tokio::spawn(async move {
+            let result = server.rotate_key_owned(cleanup).await;
+            worker_operation.finish(&result);
+            result
+        })
+        .await
+        .map_err(|error| {
+            let error =
+                AppError::configuration(format!("MOM HTTP key rotation task failed: {error}"));
+            operation.finish::<()>(&Err(error.clone()));
+            error
+        })?
     }
 
     async fn rotate_key_owned(
@@ -299,9 +309,13 @@ impl HttpServer {
             state.config = config.auth;
         }
         // Keep admission closed until all owners of the previous epoch are gone.
-        if let Err(error) = cleanup.await {
+        if cleanup.await.is_err() {
             self.shutdown_token.cancel();
-            eprintln!("warning: MOM HTTP key committed; admission remains closed: {error}");
+            record(
+                LogType::Http,
+                LogStatus::Error,
+                "http_key_committed_cleanup_failed",
+            );
             return Ok(key.raw_token);
         }
         let mut state = self.auth.write().unwrap_or_else(|error| error.into_inner());
@@ -325,19 +339,25 @@ impl HttpServer {
     }
 
     pub async fn start(&self) -> Result<SocketAddr, AppError> {
-        let mut runtime = self.runtime.lock().await;
-        if self.shutdown_token.is_cancelled() {
-            return Err(AppError::configuration("MOM HTTP service is shutting down"));
+        let operation = operation(LogType::Http, "http_start");
+        let result = async {
+            let mut runtime = self.runtime.lock().await;
+            if self.shutdown_token.is_cancelled() {
+                return Err(AppError::configuration("MOM HTTP service is shutting down"));
+            }
+            if runtime
+                .listener_handle
+                .as_ref()
+                .is_some_and(|handle| !handle.is_finished())
+            {
+                return Ok(runtime.bound_addr.expect("running HTTP listener address"));
+            }
+            let listener = Self::bind(runtime.settings).await?;
+            self.serve(&mut runtime, listener)
         }
-        if runtime
-            .listener_handle
-            .as_ref()
-            .is_some_and(|handle| !handle.is_finished())
-        {
-            return Ok(runtime.bound_addr.expect("running HTTP listener address"));
-        }
-        let listener = Self::bind(runtime.settings).await?;
-        self.serve(&mut runtime, listener)
+        .await;
+        operation.finish(&result);
+        result
     }
 
     async fn bind(settings: MomHttpSettings) -> Result<TcpListener, AppError> {
@@ -377,11 +397,12 @@ impl HttpServer {
         }
         let stop = shutdown_token.clone();
         runtime.listener_handle = Some(tokio::spawn(async move {
-            if let Err(error) = axum::serve(listener, router)
+            if axum::serve(listener, router)
                 .with_graceful_shutdown(stop.cancelled_owned())
                 .await
+                .is_err()
             {
-                eprintln!("warning: MOM HTTP listener failed: {error}");
+                record(LogType::Http, LogStatus::Error, "http_listener_failed");
             }
         }));
         runtime.shutdown_token = shutdown_token;
@@ -399,18 +420,23 @@ impl HttpServer {
         settings: MomHttpSettings,
         cleanup: impl std::future::Future<Output = Result<(), AppError>> + Send + 'static,
     ) -> Result<(), AppError> {
-        settings.validate()?;
         let server = self.clone();
+        let operation = Arc::new(operation(LogType::Http, "http_settings_save"));
+        let worker_operation = operation.clone();
         tokio::spawn(async move {
-            let result = server.set_settings_owned(settings, cleanup).await;
-            if let Err(error) = &result {
-                eprintln!("warning: MOM HTTP settings update failed: {error}");
+            let result = async {
+                settings.validate()?;
+                server.set_settings_owned(settings, cleanup).await
             }
+            .await;
+            worker_operation.finish(&result);
             result
         })
         .await
         .map_err(|error| {
-            AppError::configuration(format!("MOM HTTP settings task failed: {error}"))
+            let error = AppError::configuration(format!("MOM HTTP settings task failed: {error}"));
+            operation.finish::<()>(&Err(error.clone()));
+            error
         })?
     }
 
@@ -439,9 +465,13 @@ impl HttpServer {
             .epoch
             .cancel();
         if let Err(error) = Self::stop(&mut runtime, Duration::from_secs(8)).await {
-            if let Err(cleanup) = cleanup.await {
+            if cleanup.await.is_err() {
                 self.shutdown_token.cancel();
-                eprintln!("warning: MOM HTTP stopped; MCP cleanup failed: {cleanup}");
+                record(
+                    LogType::Http,
+                    LogStatus::Error,
+                    "http_stopped_cleanup_failed",
+                );
             }
             return Err(error);
         }
@@ -470,14 +500,17 @@ impl HttpServer {
             .map_err(|error| {
                 AppError::configuration(format!("save MOM HTTP settings task failed: {error}"))
             })??;
+            record(LogType::Http, LogStatus::Success, "http_settings_committed");
             Ok::<_, AppError>(listener)
         }
         .await;
         let cleanup = cleanup.await;
-        if let Err(error) = &cleanup {
+        if cleanup.is_err() {
             self.shutdown_token.cancel();
-            eprintln!(
-                "warning: MOM HTTP admission remains closed after MCP cleanup failed: {error}"
+            record(
+                LogType::Http,
+                LogStatus::Error,
+                "http_admission_closed_cleanup_failed",
             );
         }
         match prepared {
@@ -520,7 +553,7 @@ impl HttpServer {
                     handle.abort();
                     if let Err(error) = handle.await {
                         if !error.is_cancelled() {
-                            eprintln!("warning: MOM HTTP listener task failed: {error}");
+                            record(LogType::Http, LogStatus::Error, "http_listener_task_failed");
                         }
                     }
                     return Err(AppError::configuration(
@@ -533,15 +566,21 @@ impl HttpServer {
     }
 
     pub async fn shutdown(&self, deadline: Duration) -> Result<(), AppError> {
-        self.shutdown_token.cancel();
-        let until = tokio::time::Instant::now() + deadline;
-        let mut runtime = tokio::time::timeout_at(until, self.runtime.lock())
+        let operation = operation(LogType::Http, "http_shutdown");
+        let result = async {
+            self.shutdown_token.cancel();
+            let until = tokio::time::Instant::now() + deadline;
+            let mut runtime = tokio::time::timeout_at(until, self.runtime.lock())
+                .await
+                .map_err(|_| AppError::configuration("timed out waiting for MOM HTTP shutdown"))?;
+            Self::stop(
+                &mut runtime,
+                until.saturating_duration_since(tokio::time::Instant::now()),
+            )
             .await
-            .map_err(|_| AppError::configuration("timed out waiting for MOM HTTP shutdown"))?;
-        Self::stop(
-            &mut runtime,
-            until.saturating_duration_since(tokio::time::Instant::now()),
-        )
-        .await
+        }
+        .await;
+        operation.finish(&result);
+        result
     }
 }

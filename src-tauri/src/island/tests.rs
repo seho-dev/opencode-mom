@@ -4,6 +4,29 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 
+#[test]
+fn connection_logging_selects_only_transitions_and_fixed_safe_events() {
+    let mut cache = Cache::default();
+    assert_eq!(cache.connection_event("connecting"), None);
+    assert_eq!(
+        cache.connection_event("connected"),
+        Some((LogStatus::Success, "island_connected"))
+    );
+    cache.connection = Some("connected");
+    assert_eq!(cache.connection_event("connected"), None);
+    assert_eq!(
+        cache.connection_event("error"),
+        Some((LogStatus::Error, "island_connection_failed"))
+    );
+    cache.connection = Some("error");
+    cache.error = Some("private path, session, prompt and raw error".into());
+    assert_eq!(cache.connection_event("error"), None);
+    assert_eq!(
+        cache.connection_event("connected"),
+        Some((LogStatus::Success, "island_connected"))
+    );
+}
+
 struct FakeApi {
     address: SocketAddr,
     requests: Arc<AtomicUsize>,

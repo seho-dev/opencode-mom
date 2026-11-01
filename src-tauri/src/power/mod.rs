@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use crate::error::AppError;
+use crate::logging::{record, LogStatus, LogType};
 
 pub trait PowerController: Send {
     fn prepare(&mut self) -> Result<(), AppError>;
@@ -34,6 +35,22 @@ pub enum LidPhase {
     Protected,
     Unknown,
     Error,
+}
+
+impl LidPhase {
+    fn transition_event(self, previous: Self) -> Option<(LogStatus, &'static str)> {
+        if self == previous {
+            return None;
+        }
+        Some(match self {
+            Self::Checking => (LogStatus::Success, "power_checking"),
+            Self::Protected => (LogStatus::Success, "power_protecting"),
+            Self::Idle => (LogStatus::Success, "power_idle"),
+            Self::Unknown => (LogStatus::Error, "power_unknown"),
+            Self::Error => (LogStatus::Error, "power_error"),
+            Self::Disabled => (LogStatus::Success, "power_disabled"),
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -339,6 +356,9 @@ impl<C: PowerController> Engine<C> {
     fn publish(&self, phase: LidPhase, count: Option<usize>, error: Option<String>) {
         if let Ok(mut shared) = self.shared.lock() {
             if shared.desired.generation == self.generation {
+                if let Some((status, event)) = phase.transition_event(shared.state.phase) {
+                    record(LogType::Power, status, event);
+                }
                 shared.generation = self.generation;
                 shared.state = LidState {
                     enabled: shared.desired.enabled,

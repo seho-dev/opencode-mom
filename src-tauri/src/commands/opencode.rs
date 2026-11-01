@@ -2,6 +2,7 @@ use tauri::{AppHandle, Manager, State};
 
 use super::spawn_blocking_task;
 use crate::error::AppError;
+use crate::logging::{operation, record, LogStatus, LogType};
 use crate::opencode::{
     self, installation, ModelCatalogEntry, OpenCodeInstallation, OpenCodeServiceStatus,
     OpenCodeUpdateCheck, TokenUsageRecord,
@@ -14,7 +15,10 @@ type CommandResult<T> = Result<T, AppError>;
 pub async fn opencode_generate_prompt(
     request: opencode::generate::PromptGenerationRequest,
 ) -> CommandResult<String> {
-    opencode::generate::generate_prompt(request).await
+    let operation = operation(LogType::Opencode, "opencode_prompt_generate");
+    let result = opencode::generate::generate_prompt(request).await;
+    operation.finish(&result);
+    result
 }
 
 #[tauri::command]
@@ -59,7 +63,11 @@ pub async fn opencode_set_service_target(
             |generation| {
                 power.finish_target_refresh();
                 if island.finish_target_refresh(&app, generation).is_err() {
-                    eprintln!("OpenCode target saved; Mini Island refresh unavailable");
+                    record(
+                        LogType::Opencode,
+                        LogStatus::Error,
+                        "opencode_target_committed_island_unavailable",
+                    );
                 }
             },
         )

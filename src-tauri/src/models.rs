@@ -187,6 +187,8 @@ pub struct AppSelectionState {
     pub preferences: AppPreferences,
     #[serde(default)]
     pub island_enabled: bool,
+    #[serde(default)]
+    pub logging_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

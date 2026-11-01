@@ -31,6 +31,7 @@ power/
 - **Controller boundary**: Keep native effects behind PowerController and serialize effects against target commits; never hold shared state during controller calls or locks during interactive authorization and HTTP queries.
 - **Generations**: Reject stale observations before native effects; target changes preserve enablement and authorization, while explicit control changes invalidate prior work and stop late effects before publication.
 - **Observed state**: Publish protection or idle only after acknowledged effects; query failures mean Unknown, never idle, and failed restoration blocks new protection until cleanup succeeds.
+- **Diagnostics**: Log only published phase transitions with fixed event identifiers; repeated observations, session counts and raw native/service errors never become log payloads.
 - **Opt-out**: Enabling requires persisted preference success, but failed writes must never prevent in-memory disablement and restoration; retain the existing strict parser and durable publication path.
 - **Policy ownership**: Journal before mutation, verify apply and restore readback, preserve external policy changes, and retain unresolved recovery state rather than claiming cleanup succeeded.
 - **Helper security**: Reuse the shared protocol and preserve socket, peer, token, sequence, and acknowledgment checks; authorization is explicit and restoration failures must remain visible to callers.

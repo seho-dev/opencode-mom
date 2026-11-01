@@ -9,6 +9,7 @@ pub mod groups;
 pub(crate) mod http_server;
 mod island;
 pub mod jsonc;
+pub(crate) mod logging;
 pub mod mcp;
 pub(crate) mod mcp_proxy;
 pub mod models;
@@ -49,6 +50,9 @@ pub fn run() {
         }))
         .setup(move |app| {
             let paths = paths::ConfigPaths::from_environment()?;
+            let logging = logging::LoggingService::new(&paths);
+            logging.install();
+            app.manage(logging);
             opencode::target::initialize(&paths)?;
             let proxy = std::sync::Arc::new(mcp_proxy::ProxyService::new(&paths).unwrap_or_else(
                 |error| {
@@ -70,10 +74,20 @@ pub fn run() {
             );
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             tray::setup(app)?;
+            logging::record(
+                logging::LogType::App,
+                logging::LogStatus::Success,
+                "app.started",
+            );
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::load_app_state,
+            commands::get_logging_state,
+            commands::set_logging_enabled,
+            commands::query_logs,
+            commands::open_logs_directory,
+            commands::clear_logs,
             commands::get_island_state,
             commands::set_island_enabled,
             commands::refresh_island,
@@ -210,6 +224,14 @@ pub fn run() {
                     .take();
                 if let Some(service) = app.try_state::<power::PowerService>() {
                     service.shutdown();
+                }
+                logging::record(
+                    logging::LogType::App,
+                    logging::LogStatus::Success,
+                    "app.stopped",
+                );
+                if let Some(service) = app.try_state::<std::sync::Arc<logging::LoggingService>>() {
+                    service.shutdown(std::time::Duration::from_secs(2));
                 }
             }
             _ => {}

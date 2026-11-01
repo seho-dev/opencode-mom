@@ -15,6 +15,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::AppError;
+use crate::logging::{operation, record, LogStatus, LogType};
 use crate::mcp_proxy::config::{GatewaySettings, ProxyConfig};
 use crate::mcp_proxy::process::OwnerBudget;
 use crate::mcp_proxy::session::{LegacySessionManager, Observation};
@@ -151,13 +152,9 @@ impl ProxyService {
     ) -> Result<(), AppError> {
         let service = self.clone();
         tokio::spawn(async move {
-            let result = service
+            service
                 .save_config_owned(new_config, expected_revision)
-                .await;
-            if let Err(error) = &result {
-                eprintln!("warning: MCP proxy configuration update failed: {error}");
-            }
-            result
+                .await
         })
         .await
         .map_err(|error| {
@@ -214,17 +211,31 @@ impl ProxyService {
         }
         *config_guard = new_config;
         self.generation.fetch_add(1, Ordering::SeqCst);
+        record(
+            LogType::McpProxy,
+            LogStatus::Success,
+            "mcp_proxy_config_committed",
+        );
         if disabling {
-            if let Err(error) = self.legacy_sessions.close_all().await {
-                eprintln!(
-                    "warning: MCP proxy configuration saved; session cleanup failed: {error}"
+            if self.legacy_sessions.close_all().await.is_err() {
+                record(
+                    LogType::McpProxy,
+                    LogStatus::Error,
+                    "mcp_proxy_config_committed_cleanup_failed",
                 );
             }
         } else {
             for id in changed_services {
-                if let Err(error) = self.legacy_sessions.close_service_sessions(&id).await {
-                    eprintln!(
-                        "warning: MCP proxy configuration saved; session cleanup failed: {error}"
+                if self
+                    .legacy_sessions
+                    .close_service_sessions(&id)
+                    .await
+                    .is_err()
+                {
+                    record(
+                        LogType::McpProxy,
+                        LogStatus::Error,
+                        "mcp_proxy_config_committed_cleanup_failed",
                     );
                 }
             }
@@ -236,11 +247,19 @@ impl ProxyService {
     pub async fn shutdown(&self, deadline: Duration) -> Result<(), AppError> {
         self.stopped.cancel();
         let service = self.clone();
-        tokio::spawn(async move { service.shutdown_owned(deadline).await })
-            .await
-            .map_err(|error| {
-                AppError::configuration(format!("MCP proxy shutdown task failed: {error}"))
-            })?
+        let operation = Arc::new(operation(LogType::McpProxy, "mcp_proxy_shutdown"));
+        let worker_operation = operation.clone();
+        tokio::spawn(async move {
+            let result = service.shutdown_owned(deadline).await;
+            worker_operation.finish(&result);
+            result
+        })
+        .await
+        .map_err(|error| {
+            let error = AppError::configuration(format!("MCP proxy shutdown task failed: {error}"));
+            operation.finish::<()>(&Err(error.clone()));
+            error
+        })?
     }
 
     async fn shutdown_owned(&self, deadline: Duration) -> Result<(), AppError> {

@@ -3,6 +3,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::error::AppError;
 use crate::island::{IslandService, IslandState, IslandView};
+use crate::logging::{operation, LogType};
 use crate::opencode::island::IslandMessage;
 use crate::paths::ConfigPaths;
 
@@ -36,22 +37,30 @@ pub(crate) async fn refresh_island(
     app: AppHandle,
     service: State<'_, IslandService>,
 ) -> Result<IslandState, AppError> {
-    service.refresh(&app).await?;
-    Ok(service.state())
+    let operation = operation(LogType::Island, "island_refresh");
+    let result = service.refresh(&app).await.map(|()| service.state());
+    operation.finish(&result);
+    result
 }
 
 #[tauri::command]
 pub(crate) async fn set_island_view(app: AppHandle, view: IslandView) -> Result<(), AppError> {
-    let receiver = super::spawn_blocking_task("Set Mini Island view", move || {
-        let generation = app.state::<IslandService>().enabled_generation()?;
-        crate::island::on_main(&app, move |app| {
-            app.state::<IslandService>().set_view(app, view, generation)
+    let operation = operation(LogType::Island, "island_view_set");
+    let result = async {
+        let receiver = super::spawn_blocking_task("Set Mini Island view", move || {
+            let generation = app.state::<IslandService>().enabled_generation()?;
+            crate::island::on_main(&app, move |app| {
+                app.state::<IslandService>().set_view(app, view, generation)
+            })
         })
-    })
-    .await?;
-    receiver
-        .await
-        .map_err(|_| AppError::configuration("Mini Island native transition closed"))?
+        .await?;
+        receiver
+            .await
+            .map_err(|_| AppError::configuration("Mini Island native transition closed"))?
+    }
+    .await;
+    operation.finish(&result);
+    result
 }
 
 #[tauri::command]
@@ -73,13 +82,16 @@ pub(crate) async fn island_send(
     message_id: String,
     expected_connection_generation: u64,
 ) -> Result<(), AppError> {
-    service
+    let operation = operation(LogType::Island, "island_send");
+    let result = service
         .request(
             expected_connection_generation,
             |api| async move { api.send(&session_id, &text, &message_id).await },
             true,
         )
-        .await
+        .await;
+    operation.finish(&result);
+    result
 }
 
 #[tauri::command]
@@ -90,7 +102,8 @@ pub(crate) async fn island_reply_permission(
     decision: String,
     expected_connection_generation: u64,
 ) -> Result<(), AppError> {
-    service
+    let operation = operation(LogType::Island, "island_permission_reply");
+    let result = service
         .request(
             expected_connection_generation,
             |api| async move {
@@ -99,7 +112,9 @@ pub(crate) async fn island_reply_permission(
             },
             true,
         )
-        .await
+        .await;
+    operation.finish(&result);
+    result
 }
 
 #[tauri::command]
@@ -110,13 +125,16 @@ pub(crate) async fn island_reply_question(
     answer: Map<String, Value>,
     expected_connection_generation: u64,
 ) -> Result<(), AppError> {
-    service
+    let operation = operation(LogType::Island, "island_question_reply");
+    let result = service
         .request(
             expected_connection_generation,
             |api| async move { api.reply_question(&session_id, &form_id, answer).await },
             true,
         )
-        .await
+        .await;
+    operation.finish(&result);
+    result
 }
 
 #[tauri::command]
@@ -126,13 +144,16 @@ pub(crate) async fn island_cancel_question(
     form_id: String,
     expected_connection_generation: u64,
 ) -> Result<(), AppError> {
-    service
+    let operation = operation(LogType::Island, "island_question_cancel");
+    let result = service
         .request(
             expected_connection_generation,
             |api| async move { api.cancel_question(&session_id, &form_id).await },
             true,
         )
-        .await
+        .await;
+    operation.finish(&result);
+    result
 }
 
 #[tauri::command]
@@ -141,11 +162,14 @@ pub(crate) async fn island_interrupt(
     session_id: String,
     expected_connection_generation: u64,
 ) -> Result<(), AppError> {
-    service
+    let operation = operation(LogType::Island, "island_interrupt");
+    let result = service
         .request(
             expected_connection_generation,
             |api| async move { api.interrupt(&session_id).await },
             true,
         )
-        .await
+        .await;
+    operation.finish(&result);
+    result
 }

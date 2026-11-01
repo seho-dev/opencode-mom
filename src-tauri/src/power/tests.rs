@@ -1,5 +1,25 @@
 use super::*;
 
+#[test]
+fn phase_logging_selects_only_transitions_and_fixed_safe_events() {
+    for (phase, status, event) in [
+        (LidPhase::Checking, LogStatus::Success, "power_checking"),
+        (LidPhase::Protected, LogStatus::Success, "power_protecting"),
+        (LidPhase::Idle, LogStatus::Success, "power_idle"),
+        (LidPhase::Unknown, LogStatus::Error, "power_unknown"),
+        (LidPhase::Error, LogStatus::Error, "power_error"),
+        (LidPhase::Disabled, LogStatus::Success, "power_disabled"),
+    ] {
+        assert_eq!(phase.transition_event(phase), None);
+        let previous = if phase == LidPhase::Error {
+            LidPhase::Unknown
+        } else {
+            LidPhase::Error
+        };
+        assert_eq!(phase.transition_event(previous), Some((status, event)));
+    }
+}
+
 #[derive(Default)]
 struct Mock {
     calls: Vec<String>,

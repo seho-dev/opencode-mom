@@ -7,6 +7,7 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::watch;
 
 use crate::error::AppError;
+use crate::logging::{record, LogStatus, LogType};
 use crate::models::{self, AppPreferences};
 use crate::opencode::island::{self as api, IslandApi, IslandChange, IslandSnapshot};
 use crate::paths::ConfigPaths;
@@ -67,6 +68,17 @@ struct Cache {
 }
 
 impl Cache {
+    fn connection_event(&self, connection: &'static str) -> Option<(LogStatus, &'static str)> {
+        if self.connection == Some(connection) {
+            return None;
+        }
+        match connection {
+            "connected" => Some((LogStatus::Success, "island_connected")),
+            "error" => Some((LogStatus::Error, "island_connection_failed")),
+            _ => None,
+        }
+    }
+
     fn current(&self, generation: u64) -> bool {
         self.enabled && self.generation == generation
     }
@@ -126,6 +138,9 @@ impl Cache {
         }
         self.published = revision;
         self.snapshot = Arc::new(snapshot);
+        if let Some((status, event)) = self.connection_event("connected") {
+            record(LogType::Island, status, event);
+        }
         self.connection = Some("connected");
         self.error = None;
         true
@@ -137,6 +152,9 @@ impl Cache {
         }
         self.invalidate_api();
         self.snapshot = Arc::default();
+        if let Some((status, event)) = self.connection_event("error") {
+            record(LogType::Island, status, event);
+        }
         self.connection = Some("error");
         self.error = Some("OpenCode connection unavailable; retrying".into());
         true
@@ -147,6 +165,7 @@ impl Cache {
             return false;
         }
         self.stop();
+        record(LogType::Island, LogStatus::Error, "island_window_failed");
         self.connection = Some("error");
         self.error = Some("Mini Island window could not be created".into());
         true

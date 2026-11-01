@@ -195,6 +195,9 @@ jobs:
       - name: Fetch macOS helper dependencies
         run: cargo +1.90.0 fetch --manifest-path src-tauri/native/macos-helper/Cargo.toml --locked --target aarch64-apple-darwin
 
+      - name: Fetch macOS helper dependencies for MSRV
+        run: cargo +1.77.2 fetch --manifest-path src-tauri/native/macos-helper/Cargo.toml --locked --target aarch64-apple-darwin
+
       - name: Check Rust backend MSRV
         run: cargo +1.90.0 check --manifest-path src-tauri/Cargo.toml --all-targets --locked
 

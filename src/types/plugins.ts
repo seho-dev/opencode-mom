@@ -1,11 +1,3 @@
-export type PluginConfigEntry = string | { package: string; options?: Record<string, unknown> };
-
-export type PluginConfigSource =
-  | { type: 'document'; path?: string; plugins: PluginConfigEntry[] }
-  | { type: 'directory'; path: string };
-
-export type PluginConfigPreview = { directory: string; data: PluginConfigSource[] };
-
 export type PluginRemovalTarget = { type: 'package'; target: string } | { type: 'local'; path: string };
 
 export type PluginRemovalPlan = {

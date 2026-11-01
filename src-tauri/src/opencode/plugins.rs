@@ -81,14 +81,14 @@ pub struct PluginRuntime {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PluginConfigPreview {
-    pub directory: String,
-    pub data: Vec<PluginConfigSource>,
+struct PluginConfigPreview {
+    directory: String,
+    data: Vec<PluginConfigSource>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
-pub enum PluginConfigSource {
+enum PluginConfigSource {
     Document {
         #[serde(skip_serializing_if = "Option::is_none")]
         path: Option<String>,
@@ -101,7 +101,7 @@ pub enum PluginConfigSource {
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
-pub enum PluginConfigEntry {
+enum PluginConfigEntry {
     Native(String),
     Package {
         package: String,
@@ -173,7 +173,7 @@ struct RuntimeLocation {
     directory: String,
 }
 
-// Loading the list checks each eligible Global target; config preview remains GET-only.
+// Loading the list checks each eligible Global target.
 pub fn list(paths: &ConfigPaths) -> Result<PluginRuntime, AppError> {
     validate_global_scope(paths)?;
     let deadline = Instant::now() + TIMEOUT;
@@ -186,13 +186,6 @@ pub fn update(paths: &ConfigPaths, target: &str) -> Result<(), AppError> {
     let deadline = Instant::now() + TIMEOUT;
     let connection = transport::connect(deadline)?;
     update_with(paths, target, &connection, deadline)
-}
-
-pub fn config_sources(paths: &ConfigPaths) -> Result<PluginConfigPreview, AppError> {
-    validate_global_scope(paths)?;
-    let deadline = Instant::now() + TIMEOUT;
-    let connection = transport::connect(deadline)?;
-    config_sources_with(paths, &connection, deadline)
 }
 
 pub fn prepare_removal(
@@ -212,14 +205,6 @@ pub fn remove_declaration(paths: &ConfigPaths, plan: PluginRemovalPlan) -> Resul
     let deadline = Instant::now() + TIMEOUT;
     let connection = transport::connect(deadline)?;
     removal::remove_with(paths, plan, &connection, deadline)
-}
-
-fn config_sources_with(
-    paths: &ConfigPaths,
-    connection: &ManagedConnection,
-    deadline: Instant,
-) -> Result<PluginConfigPreview, AppError> {
-    Ok(global_state(paths, connection, deadline)?.preview)
 }
 
 fn read_config_sources(

@@ -8,7 +8,7 @@ import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
-import type { PluginConfigPreview, PluginRemovalPlan, PluginRuntime, PluginRuntimeItem } from '$src/types/plugins.js';
+import type { PluginRemovalPlan, PluginRuntime, PluginRuntimeItem } from '$src/types/plugins.js';
 
 const config = getConfig();
 const i18n = getI18n();
@@ -21,12 +21,7 @@ let updateTarget = $state<string | null>(null);
 let removalPlan = $state.raw<PluginRemovalPlan | null>(null);
 let query = $state('');
 let page = $state(1);
-let previewOpen = $state(false);
-let preview = $state<PluginConfigPreview | null>(null);
-let previewPending = $state(false);
-let previewError = $state(false);
 let request = 0;
-let previewRequest = 0;
 let mounted = true;
 const pageSize = 10;
 const sourceLabels = {
@@ -57,13 +52,11 @@ $effect(() => {
   removalPlan = null;
   query = '';
   page = 1;
-  closePreview();
   untrack(() => {
     void refresh();
   });
   return () => {
     request += 1;
-    previewRequest += 1;
   };
 });
 $effect(() => {
@@ -73,7 +66,6 @@ $effect(() => {
 onDestroy(() => {
   mounted = false;
   request += 1;
-  previewRequest += 1;
   removalPlan = null;
 });
 
@@ -181,7 +173,6 @@ async function removeDeclaration() {
     await config.removePluginDeclaration(plan);
     if (!mounted || seq !== request || key !== identity) return;
     removalPlan = null;
-    closePreview();
     success = 'remove';
     pending = '';
     await refresh(true);
@@ -194,31 +185,6 @@ async function removeDeclaration() {
     if (mounted && seq === request && key === identity) pending = '';
   }
 }
-function closePreview() {
-  previewRequest += 1;
-  previewOpen = false;
-  preview = null;
-  previewError = false;
-  previewPending = false;
-}
-async function readPreview() {
-  if (previewPending) return;
-  const seq = ++previewRequest;
-  const key = identity;
-  previewOpen = true;
-  preview = null;
-  previewPending = true;
-  previewError = false;
-  try {
-    const result = await config.getPluginConfigSources();
-    if (!mounted || seq !== previewRequest || key !== identity) return;
-    preview = result;
-  } catch {
-    if (mounted && seq === previewRequest && key === identity) previewError = true;
-  } finally {
-    if (mounted && seq === previewRequest && key === identity) previewPending = false;
-  }
-}
 </script>
 
 <PageHead eyebrow={i18n.t('plugins.eyebrow')} title={i18n.t('plugins.title')}>
@@ -228,7 +194,6 @@ async function readPreview() {
       ><RefreshCw size={14} class={pending === 'read' ? 'animate-spin motion-reduce:animate-none' : ''} />
       {i18n.t('plugins.runtimeRefresh')}</Button
     >
-    <Button variant="outline" size="sm" onclick={readPreview}>{i18n.t('plugins.configPreview')}</Button>
   </div>
 </PageHead>
 <section class="min-w-0" aria-label={i18n.t('plugins.runtimeTitle')} aria-busy={!!pending}>
@@ -378,67 +343,6 @@ async function readPreview() {
       <Button variant="destructive" disabled={!!pending || uncertain} onclick={removeDeclaration}>
         {i18n.t('common.delete')}
       </Button>
-    </Dialog.Footer>
-  </Dialog.Content>
-</Dialog.Root>
-<Dialog.Root open={previewOpen} onOpenChange={(open) => { if (!open) closePreview(); }}>
-  <Dialog.Content class="max-w-2xl" aria-busy={previewPending}>
-    <Dialog.Header>
-      <Dialog.Title>{i18n.t('plugins.configPreview')}</Dialog.Title>
-      <Dialog.Description>{i18n.t('plugins.configPreviewHint')}</Dialog.Description>
-    </Dialog.Header>
-    <div class="max-h-[60vh] min-w-0 overflow-y-auto">
-      <p class="type-note mb-3">{i18n.t('plugins.optionsHint')}</p>
-      {#if previewPending}
-        <p role="status">{i18n.t('plugins.configLoading')}</p>
-      {:else if previewError}
-        <div class="state-banner error" role="alert">
-          <span>{i18n.t('plugins.configUnavailable')}</span>
-          <Button variant="outline" size="sm" onclick={readPreview}>{i18n.t('configuration.retry')}</Button>
-        </div>
-      {:else if preview}
-        <p class="break-words text-xs text-[var(--text-secondary)] [overflow-wrap:anywhere]">
-          {i18n.t('plugins.runtimeDirectory')}: {preview.directory}
-        </p>
-        <ol class="m-0 list-none space-y-4 p-0">
-          {#each preview.data as source, index (index)}
-            <li class="min-w-0 border-t border-[var(--border-subtle)] pt-3">
-              <p class="m-0 text-xs text-[var(--text-muted)]">
-                {i18n.t(source.type === 'directory' ? 'plugins.configDirectory' : 'plugins.configDocument')}
-              </p>
-              <p class="mt-1 break-words text-xs [overflow-wrap:anywhere]">
-                {source.path ?? i18n.t('plugins.pathNotProvided')}
-              </p>
-              {#if source.type === 'document'}
-                <ol class="m-0 list-none space-y-3 p-0">
-                  {#each source.plugins as entry, entryIndex (entryIndex)}
-                    <li class="min-w-0 border-l border-[var(--border-subtle)] pl-3">
-                      <p class="m-0 break-words text-sm [overflow-wrap:anywhere]">
-                        {typeof entry === 'string' ? entry : entry.package}
-                      </p>
-                      <p class="mt-2 mb-1 text-xs text-[var(--text-muted)]">{i18n.t('plugins.options')}</p>
-                      {#if typeof entry !== 'string' && entry.options !== undefined}
-                        <pre
-                          class="m-0 whitespace-pre-wrap break-words font-[var(--font-primary)] text-xs leading-6 [overflow-wrap:anywhere]"
-                        >{JSON.stringify(entry.options, null, 2)}</pre>
-                      {:else}
-                        <p class="m-0 text-xs text-[var(--text-muted)]">{i18n.t('plugins.optionsNotProvided')}</p>
-                      {/if}
-                    </li>
-                  {:else}
-                    <li class="text-xs text-[var(--text-muted)]">{i18n.t('plugins.configNoEntries')}</li>
-                  {/each}
-                </ol>
-              {/if}
-            </li>
-          {:else}
-            <li class="text-xs text-[var(--text-muted)]">{i18n.t('plugins.configEmpty')}</li>
-          {/each}
-        </ol>
-      {/if}
-    </div>
-    <Dialog.Footer>
-      <Button variant="outline" onclick={closePreview}>{i18n.t('common.close')}</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

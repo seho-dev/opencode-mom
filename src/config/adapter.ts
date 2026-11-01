@@ -37,7 +37,7 @@ import type {
   MomHttpSettings,
 } from '$src/types/mcp-proxy.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
-import type { PluginConfigPreview, PluginRemovalPlan, PluginRemovalTarget, PluginRuntime } from '$src/types/plugins.js';
+import type { PluginRemovalPlan, PluginRemovalTarget, PluginRuntime } from '$src/types/plugins.js';
 import type { LidState } from '$src/types/power.js';
 import type { PromptGenerationRequest } from '$src/types/prompt-generation.js';
 import type { ProviderDef } from '$src/types/providers.js';
@@ -108,7 +108,6 @@ export interface CommandAdapter {
   getSkill(id: string, projectId?: string | null): Result<SkillEntry>;
   createSkill(draft: SkillDraft, projectId?: string | null): Result<SkillEntry>;
   updateSkill(draft: SkillUpdate, projectId?: string | null): Result<SkillEntry>;
-  getPluginConfigSources(): Result<PluginConfigPreview>;
   listPluginRuntime(): Result<PluginRuntime>;
   updatePluginPackage(target: string): Result<void>;
   preparePluginRemoval(target: PluginRemovalTarget): Result<PluginRemovalPlan>;
@@ -215,7 +214,6 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     getSkill: (id, projectId) => invoke('get_skill', { id, ...projectScope(projectId) }),
     createSkill: (draft, projectId) => invoke('create_skill', { draft, ...projectScope(projectId) }),
     updateSkill: (draft, projectId) => invoke('update_skill', { draft, ...projectScope(projectId) }),
-    getPluginConfigSources: () => invoke('get_plugin_config_sources'),
     listPluginRuntime: () => invoke('list_plugin_runtime'),
     updatePluginPackage: (target) => invoke('update_plugin_package', { target }),
     preparePluginRemoval: (target) => invoke('prepare_plugin_removal', { target }),

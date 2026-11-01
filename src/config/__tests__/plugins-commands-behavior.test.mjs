@@ -5,18 +5,6 @@ import { createServer } from 'vite';
 const projectId = '11111111-1111-4111-8111-111111111111';
 const secret = 'private-plugin-command-instructions';
 const options = { token: secret, nested: { enabled: true } };
-const preview = {
-  directory: '/project',
-  data: [
-    {
-      type: 'document',
-      path: '/config/opencode.jsonc',
-      plugins: ['trusted-plugin', { package: 'private-plugin', options }, { package: 'plain-plugin' }],
-    },
-    { type: 'document', plugins: [] },
-    { type: 'directory', path: '/config/plugins' },
-  ],
-};
 const runtime = {
   directory: '/project',
   data: [
@@ -46,7 +34,6 @@ const removalPlan = Object.freeze({
   serviceKey: `${secret}-service`,
 });
 const pluginResults = {
-  get_plugin_config_sources: preview,
   list_plugin_runtime: runtime,
   prepare_plugin_removal: removalPlan,
 };
@@ -69,7 +56,6 @@ const behavior = {
   expectedContent: `# Instructions\n\n${secret}\n\n- Preserve all Markdown.\n`,
 };
 const pluginOperations = [
-  ['getPluginConfigSources', 'get_plugin_config_sources', [], undefined],
   ['listPluginRuntime', 'list_plugin_runtime', [], undefined],
   ['updatePluginPackage', 'update_plugin_package', ['trusted-plugin'], { target: 'trusted-plugin' }],
   ['preparePluginRemoval', 'prepare_plugin_removal', [removalTarget], { target: removalTarget }],
@@ -106,6 +92,7 @@ test('plugins stay Global-only while commands and behavior preserve snapshots, n
       if (failure) throw failure;
       return pluginResults[args[0]] ?? result;
     });
+    assert.equal('getPluginConfigSources' in adapter, false);
     for (const [method, ipc, args, payload] of pluginOperations) {
       for (const input of [args, [...args, undefined], [...args, null], [...args, projectId]]) {
         assert.strictEqual(await adapter[method](...input), pluginResults[ipc] ?? result);
@@ -127,7 +114,7 @@ test('plugins stay Global-only while commands and behavior preserve snapshots, n
       assert.strictEqual(await adapter.saveGlobalBehavior(draft), result);
       assert.deepEqual(calls.at(-1), ['save_global_behavior', { draft }]);
     }
-    failure = { code: 'conflict', message: secret, detail: preview };
+    failure = { code: 'conflict', message: secret, detail: removalPlan };
     for (const [method, , args] of [...pluginOperations, ...commandOperations])
       await assert.rejects(adapter[method](...args, projectId), failure);
     await assert.rejects(adapter.getGlobalBehavior(), failure);
@@ -192,6 +179,7 @@ test('plugin facades stay Global-only with a selected project and commands retai
     for (const key of [
       'plugins',
       'pluginRuntime',
+      'getPluginConfigSources',
       'pluginConfigSources',
       'pluginConfigPreview',
       'options',
@@ -377,7 +365,6 @@ test('resource reads redact private failures without creating or replacing globa
       false,
     );
     const reads = [
-      ['getPluginConfigSources', [], ['get_plugin_config_sources']],
       ['listSlashCommands', [projectId], ['list_slash_commands', { projectId }]],
       ['getSlashCommand', ['review', projectId], ['get_slash_command', { id: 'review', projectId }]],
       ['getGlobalBehavior', [], ['get_global_behavior']],
@@ -406,7 +393,7 @@ test('resource reads redact private failures without creating or replacing globa
         assert.equal(store.loading, false);
       }
     }
-    failure = { code: 'conflict', message: secret, detail: preview };
+    failure = { code: 'conflict', message: secret, detail: removalPlan };
     await assert.rejects(store.updateSlashCommand(commandUpdate), { code: 'conflict' });
     const originalError = store.error;
     const originalRecovery = store.draftRecovery;
@@ -428,7 +415,7 @@ test('resource reads redact private failures without creating or replacing globa
   }
 });
 
-test('plugin preview and runtime operations reject old service replies without retries or dispatch during target saves', async () => {
+test('plugin runtime operations reject old service replies without retries or dispatch during target saves', async () => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   try {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
@@ -436,7 +423,6 @@ test('plugin preview and runtime operations reject old service replies without r
     let pending;
     let saving;
     const methods = [
-      ['getPluginConfigSources', []],
       ['listPluginRuntime', []],
       ['updatePluginPackage', ['trusted-plugin']],
       ['preparePluginRemoval', [removalTarget]],
@@ -472,7 +458,7 @@ test('plugin preview and runtime operations reject old service replies without r
       assert.equal(calls.length, dispatched);
       saving.resolve({ connected: false });
       await targetSave;
-      pending.resolve({ ...preview, directory: '/old-target' });
+      pending.resolve({ ...runtime, directory: '/old-target' });
       await stale;
       assert.equal(store.error, null);
       assert.equal(store.notice, null);

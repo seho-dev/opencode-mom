@@ -144,7 +144,6 @@ pub fn run() {
             commands::update_slash_command,
             commands::delete_slash_command,
             commands::list_plugin_runtime,
-            commands::get_plugin_config_sources,
             commands::update_plugin_package,
             commands::prepare_plugin_removal,
             commands::remove_plugin_declaration,

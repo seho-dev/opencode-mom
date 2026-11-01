@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::opencode::plugins::{
-    self as runtime, PluginConfigPreview, PluginRemovalPlan, PluginRemovalTarget, PluginRuntime,
+    self as runtime, PluginRemovalPlan, PluginRemovalTarget, PluginRuntime,
 };
 use crate::paths::ConfigPaths;
 
@@ -10,17 +10,6 @@ pub async fn list_plugin_runtime(
 ) -> Result<PluginRuntime, AppError> {
     let paths = state.inner().clone();
     super::spawn_blocking_task("Plugin runtime", move || runtime::list(&paths)).await
-}
-
-#[tauri::command]
-pub async fn get_plugin_config_sources(
-    state: tauri::State<'_, ConfigPaths>,
-) -> Result<PluginConfigPreview, AppError> {
-    let paths = state.inner().clone();
-    super::spawn_blocking_task("Plugin config preview", move || {
-        runtime::config_sources(&paths)
-    })
-    .await
 }
 
 #[tauri::command]

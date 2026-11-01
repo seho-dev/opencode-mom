@@ -510,11 +510,7 @@ fn plugin_entrypoints_reject_project_scope_before_connecting_or_requesting() {
     let project =
         crate::models::add_project(&global.config_file(), root.to_str().unwrap()).unwrap();
     let scoped = global.for_project(Some(project.id)).unwrap();
-    for result in [
-        list(&scoped).map(|_| ()),
-        config_sources(&scoped).map(|_| ()),
-        update(&scoped, "pkg"),
-    ] {
+    for result in [list(&scoped).map(|_| ()), update(&scoped, "pkg")] {
         let error = result.unwrap_err();
         assert_eq!(error.code, crate::error::ErrorCode::ValidationFailed);
         assert!(error.message.contains("Global"));
@@ -530,7 +526,7 @@ fn plugin_entrypoints_reject_project_scope_before_connecting_or_requesting() {
         }
     });
     let connection = connect(&api, None);
-    assert!(config_sources_with(&scoped, &connection, deadline()).is_err());
+    assert!(global_state(&scoped, &connection, deadline()).is_err());
     assert!(check_with(&scoped, None, &connection, deadline()).is_err());
     assert!(update_with(&scoped, "pkg", &connection, deadline()).is_err());
     assert_eq!(requests.load(Ordering::SeqCst), 0);
@@ -964,7 +960,7 @@ fn unknown_native_package_formats_remain_visible_but_cannot_update() {
 }
 
 #[test]
-fn config_preview_pins_runtime_directory_and_projects_only_native_plugin_sources() {
+fn global_config_pins_runtime_directory_and_projects_only_plugin_sources() {
     let temp = tempfile::tempdir().unwrap();
     let directory = temp.path().join("global");
     fs::create_dir_all(&directory).unwrap();
@@ -993,11 +989,13 @@ fn config_preview_pins_runtime_directory_and_projects_only_native_plugin_sources
                     {"type":"document","info":{"providers":{"token":"PRIVATE"}}}
                 ]),
             ),
-            _ => panic!("unexpected preview request: {}", request.path),
+            _ => panic!("unexpected config request: {}", request.path),
         }
     });
     let connection = connect(&api, Some("private"));
-    let preview = config_sources_with(&paths, &connection, deadline()).unwrap();
+    let preview = global_state(&paths, &connection, deadline())
+        .unwrap()
+        .preview;
     let value = serde_json::to_value(preview).unwrap();
     assert_eq!(value["directory"], "/runtime with space");
     assert_eq!(
@@ -1015,7 +1013,7 @@ fn config_preview_pins_runtime_directory_and_projects_only_native_plugin_sources
 }
 
 #[test]
-fn config_preview_rejects_invalid_shapes_paths_and_oversized_bodies_without_leaking_values() {
+fn global_config_rejects_invalid_shapes_paths_and_oversized_bodies_without_leaking_values() {
     let temp = tempfile::tempdir().unwrap();
     let paths = ConfigPaths::for_home(temp.path());
     for value in [
@@ -1053,13 +1051,13 @@ fn config_preview_rejects_invalid_shapes_paths_and_oversized_bodies_without_leak
             }
         });
         let connection = connect(&api, None);
-        let error = config_sources_with(&paths, &connection, deadline()).unwrap_err();
+        let error = global_state(&paths, &connection, deadline()).err().unwrap();
         assert!(!error.message.contains("PRIVATE"), "{error}");
     }
 }
 
 #[test]
-fn config_preview_rejects_service_identity_changes_and_stale_target_replies() {
+fn global_config_rejects_service_identity_changes_and_stale_target_replies() {
     let temp = tempfile::tempdir().unwrap();
     let paths = ConfigPaths::for_home(temp.path());
     let flag = Arc::new(AtomicBool::new(false));
@@ -1077,8 +1075,9 @@ fn config_preview_rejects_service_identity_changes_and_stale_target_replies() {
         }
     });
     let connection = connect(&api, None);
-    assert!(config_sources_with(&paths, &connection, deadline())
-        .unwrap_err()
+    assert!(global_state(&paths, &connection, deadline())
+        .err()
+        .unwrap()
         .message
         .contains("identity changed"));
 
@@ -1109,7 +1108,7 @@ fn config_preview_rejects_service_identity_changes_and_stale_target_replies() {
                 panic!("no bootstrap")
             })
             .unwrap();
-        assert!(config_sources_with(&paths, &connection, deadline()).is_err());
+        assert!(global_state(&paths, &connection, deadline()).is_err());
     }
 }
 
@@ -1319,7 +1318,6 @@ fn global_config_failure_never_returns_unfiltered_runtime_or_posts() {
     });
     let connection = connect(&api, None);
     assert!(list_with(&paths, &connection, deadline()).is_err());
-    assert!(config_sources_with(&paths, &connection, deadline()).is_err());
     assert!(check_with(&paths, None, &connection, deadline()).is_err());
     assert!(update_with(&paths, "project-only", &connection, deadline()).is_err());
     assert_eq!(posts.load(Ordering::SeqCst), 0);
@@ -1374,7 +1372,7 @@ fn check_all_sends_only_global_unique_targets_and_stops_on_first_failed_post() {
 
 #[cfg(unix)]
 #[test]
-fn config_preview_matches_global_canonical_sources_and_rejects_source_retargeting() {
+fn global_config_matches_canonical_sources_and_rejects_source_retargeting() {
     use std::os::unix::fs::symlink;
     let temp = tempfile::tempdir().unwrap();
     let first = temp.path().join("first.jsonc");
@@ -1457,7 +1455,7 @@ fn plugin_post_source_retargeting_reports_unknown_outcome_without_retry() {
 }
 
 #[test]
-fn public_list_checks_each_global_target_once_and_preview_never_posts() {
+fn public_list_checks_each_global_target_once_and_stops_on_failure() {
     let temp = tempfile::tempdir().unwrap();
     let paths = ConfigPaths::for_home(temp.path());
     crate::opencode::target::initialize(&paths).unwrap();
@@ -1521,9 +1519,6 @@ fn public_list_checks_each_global_target_once_and_preview_never_posts() {
             .unwrap()
             .set(Some(api.url()), None, || Ok(()))
             .unwrap();
-        // The public preview must not initiate checks, even before the first list load.
-        config_sources(&paths).unwrap();
-        assert!(checks.lock().unwrap().is_empty());
         let result = list(&paths);
         let calls = checks.lock().unwrap().clone();
         if let Some(index) = fail_on {
@@ -1537,8 +1532,6 @@ fn public_list_checks_each_global_target_once_and_preview_never_posts() {
             assert!(runtime.data.iter().all(|item| item.can_update));
             assert_eq!(calls, ["global-a", "global-b"]);
         }
-        config_sources(&paths).unwrap();
-        assert_eq!(*checks.lock().unwrap(), calls);
     }
     crate::opencode::target::runtime()
         .unwrap()

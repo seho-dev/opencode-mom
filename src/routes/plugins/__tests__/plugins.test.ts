@@ -3,8 +3,9 @@ import { tick } from 'svelte';
 import { afterAll, beforeAll, expect, test, vi } from 'vitest';
 import { makeScopedConfig } from '$src/components/__tests__/scope-config.js';
 import { en } from '$src/i18n/dictionaries/en.js';
+import { zh } from '$src/i18n/dictionaries/zh.js';
 import Harness from '$src/test-utils/harness.svelte';
-import type { PluginConfigPreview, PluginRemovalPlan, PluginRuntime, PluginRuntimeItem } from '$src/types/plugins.js';
+import type { PluginRemovalPlan, PluginRuntime, PluginRuntimeItem } from '$src/types/plugins.js';
 import Plugins from '../+page.svelte';
 
 const originalScroll = HTMLElement.prototype.scrollIntoView;
@@ -50,7 +51,6 @@ function config(overrides: Record<string, unknown> = {}, selected: string | null
       ...obsolete,
       serviceTargetVersion: 0,
       listPluginRuntime: vi.fn().mockResolvedValue(runtime()),
-      getPluginConfigSources: vi.fn().mockResolvedValue({ directory: '/service/location', data: [] }),
       updatePluginPackage: vi.fn().mockResolvedValue(undefined),
       preparePluginRemoval: vi.fn(),
       removePluginDeclaration: vi.fn().mockResolvedValue(undefined),
@@ -88,10 +88,6 @@ test('Delete prepares Global paths, Cancel writes nothing, and confirmation echo
   });
   show(store);
   await screen.findByText('example-plugin');
-  await fireEvent.click(screen.getByRole('button', { name: en['plugins.configPreview'] }));
-  await screen.findByText(en['plugins.configEmpty']);
-  await fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: en['common.close'] }));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   await fireEvent.click(screen.getByRole('button', { name: en['common.delete'] }));
   let dialog = await screen.findByRole('dialog');
   expect(within(dialog).getByText('example-plugin')).toBeTruthy();
@@ -116,9 +112,6 @@ test('Delete prepares Global paths, Cancel writes nothing, and confirmation echo
   expect(store.updatePluginPackage).not.toHaveBeenCalled();
   expect(store.reloadOpencode).not.toHaveBeenCalled();
   expect(screen.queryByText(en['plugins.packageUpdated'])).toBeNull();
-  await fireEvent.click(screen.getByRole('button', { name: en['plugins.configPreview'] }));
-  await screen.findByText(en['plugins.configEmpty']);
-  expect(store.getPluginConfigSources).toHaveBeenCalledTimes(2);
 });
 
 test('Delete obeys canRemove for local files and prepares again after prepare or stale snapshot failure without retries', async () => {
@@ -262,7 +255,6 @@ test('two backend Global matches from a 90-item service runtime show slim on the
   expect(screen.queryByRole('button', { name: en['scope.add'] })).toBeNull();
   expect(screen.queryByRole('button', { name: en['scope.manage'] })).toBeNull();
   expect(screen.queryByRole('button', { name: /check updates/i })).toBeNull();
-  expect(screen.queryByText(en['plugins.optionsHint'])).toBeNull();
   expect(screen.queryByRole('checkbox')).toBeNull();
   expect(screen.queryByRole('link', { name: /new|edit|delete/i })).toBeNull();
   expect(screen.queryByRole('button', { name: /^(new plugin|edit|delete|save)$/i })).toBeNull();
@@ -285,7 +277,6 @@ test('two backend Global matches from a 90-item service runtime show slim on the
   expect(screen.getAllByRole('row')).toHaveLength(3);
   expect(screen.queryByRole('navigation', { name: en['common.pagination'] })).toBeNull();
   expect(store.listPluginRuntime).toHaveBeenCalledExactlyOnceWith();
-  expect(store.getPluginConfigSources).not.toHaveBeenCalled();
   expect(store.updatePluginPackage).not.toHaveBeenCalled();
   for (const method of Object.values(obsolete)) expect(method).not.toHaveBeenCalled();
 });
@@ -404,7 +395,6 @@ test('eligible package updates require confirmation before a shared-cache mutati
   await waitFor(() => expect(store.listPluginRuntime).toHaveBeenCalledTimes(2));
   await screen.findByText(en['plugins.packageUpdated']);
   expect(store.updatePluginPackage).toHaveBeenCalledExactlyOnceWith('available-package');
-  expect(store.getPluginConfigSources).not.toHaveBeenCalled();
   expect(store.reloadOpencode).not.toHaveBeenCalled();
 });
 
@@ -503,78 +493,22 @@ test('each row keeps an Update action and refresh consumes fresh eligibility fro
   expect(store.updatePluginPackage).not.toHaveBeenCalled();
 });
 
-test('configuration preview is on demand, preserves API order and distinguishes absent options from an empty object', async () => {
-  const source = deferred<PluginConfigPreview>();
-  const { store } = config({ getPluginConfigSources: vi.fn().mockReturnValue(source.promise) }, 'project-b');
+test.each(['en', 'zh'] as const)('runtime has no configuration preview surface in %s', async (locale) => {
+  const messages = locale === 'zh' ? zh : en;
+  const { store } = config({ preferences: { locale, theme: 'dark' } });
   show(store);
   await screen.findByText('example-plugin');
-  expect(store.getPluginConfigSources).not.toHaveBeenCalled();
-  await fireEvent.click(screen.getByRole('button', { name: en['plugins.configPreview'] }));
-  const dialog = screen.getByRole('dialog');
-  expect(within(dialog).getByText(en['plugins.configLoading'])).toBeTruthy();
-  source.resolve({
-    directory: '/project/location',
-    data: [
-      {
-        type: 'document',
-        plugins: [
-          'string-entry',
-          { package: 'no-options' },
-          { package: 'empty-options', options: {} },
-          { package: 'sensitive', options: { token: '<script>unsafe()</script>' } },
-        ],
-      },
-      { type: 'directory', path: '/plugins/candidate-directory' },
-      { type: 'document', path: '/config/last.jsonc', plugins: [] },
-    ],
-  });
-  await within(dialog).findByText('string-entry');
-  expect(store.getPluginConfigSources).toHaveBeenCalledExactlyOnceWith();
-  expect(within(dialog).getByText(en['plugins.configPreviewHint'])).toBeTruthy();
-  expect(within(dialog).getByText(en['plugins.optionsHint'])).toBeTruthy();
-  expect(within(dialog).getByText(en['plugins.pathNotProvided'])).toBeTruthy();
-  expect(within(dialog).getAllByText(en['plugins.optionsNotProvided'])).toHaveLength(2);
-  expect([...dialog.querySelectorAll('pre')].map((pre) => pre.textContent)).toEqual([
-    '{}',
-    JSON.stringify({ token: '<script>unsafe()</script>' }, null, 2),
-  ]);
-  expect(dialog.querySelector('script')).toBeNull();
-  expect(dialog.querySelector('textarea, input')).toBeNull();
-  const sources = [...(dialog.querySelector('ol')?.children ?? [])];
-  expect(sources).toHaveLength(3);
-  expect(sources[0]?.textContent).toContain('string-entry');
-  expect(sources[1]?.textContent).toContain('/plugins/candidate-directory');
-  expect(sources[1]?.textContent).not.toContain(en['plugins.options']);
-  expect(sources[2]?.textContent).toContain('/config/last.jsonc');
-  expect(store.updatePluginPackage).not.toHaveBeenCalled();
-  await fireEvent.click(within(dialog).getByRole('button', { name: en['common.close'] }));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(
+    within(document.querySelector('.page-head') as HTMLElement)
+      .getAllByRole('button')
+      .map((button) => button.textContent?.trim()),
+  ).toEqual([messages['plugins.runtimeRefresh']]);
+  expect(screen.queryByRole('button', { name: /configuration details|配置详情/i })).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(store.listPluginRuntime).toHaveBeenCalledExactlyOnceWith();
 });
 
-test('configuration failure is independent from runtime upgrade eligibility and can retry its GET', async () => {
-  const { store } = config({
-    getPluginConfigSources: vi
-      .fn()
-      .mockRejectedValueOnce(new Error('private preview detail'))
-      .mockResolvedValue({ directory: '/service/location', data: [] }),
-  });
-  show(store);
-  await screen.findByText('example-plugin');
-  await fireEvent.click(screen.getByRole('button', { name: en['plugins.configPreview'] }));
-  const dialog = screen.getByRole('dialog');
-  await within(dialog).findByText(en['plugins.configUnavailable']);
-  expect(screen.queryByText(/private preview detail/)).toBeNull();
-  await fireEvent.click(within(dialog).getByRole('button', { name: en['configuration.retry'] }));
-  await within(dialog).findByText(en['plugins.configEmpty']);
-  await fireEvent.click(within(dialog).getByRole('button', { name: en['common.close'] }));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  expect((screen.getByRole('button', { name: en['plugins.updatePackage'] }) as HTMLButtonElement).disabled).toBe(false);
-  expect(store.listPluginRuntime).toHaveBeenCalledOnce();
-  await fireEvent.click(screen.getByRole('button', { name: en['plugins.updatePackage'] }));
-  expect(screen.getByRole('dialog').textContent).toContain(en['plugins.updateConfirmTitle']);
-});
-
-test('service changes reread Global runtime, clear previews and reject stale reads and errors', async () => {
+test('service changes reread Global runtime and reject stale reads and errors', async () => {
   const { createSubscriber } = await import('svelte/reactivity');
   let notify = () => {};
   const track = createSubscriber((update) => {
@@ -583,8 +517,6 @@ test('service changes reread Global runtime, clear previews and reject stale rea
   let generation = 0;
   const oldRuntime = deferred<PluginRuntime>();
   const oldServiceRuntime = deferred<PluginRuntime>();
-  const oldPreview = deferred<PluginConfigPreview>();
-  const oldServicePreview = deferred<PluginConfigPreview>();
   const { store } = config(
     {
       listPluginRuntime: vi
@@ -592,11 +524,6 @@ test('service changes reread Global runtime, clear previews and reject stale rea
         .mockReturnValueOnce(oldRuntime.promise)
         .mockReturnValueOnce(oldServiceRuntime.promise)
         .mockResolvedValue(runtime([packageItem('current-plugin')], '/current-location')),
-      getPluginConfigSources: vi
-        .fn()
-        .mockReturnValueOnce(oldPreview.promise)
-        .mockReturnValueOnce(oldServicePreview.promise)
-        .mockResolvedValue({ directory: '/current-location', data: [{ type: 'directory', path: '/current-config' }] }),
     },
     'project-a',
   );
@@ -608,37 +535,20 @@ test('service changes reread Global runtime, clear previews and reject stale rea
   });
   show(store);
   await waitFor(() => expect(store.listPluginRuntime).toHaveBeenCalledExactlyOnceWith());
-  await fireEvent.click(screen.getByRole('button', { name: en['plugins.configPreview'] }));
   generation += 1;
   notify();
   await waitFor(() => expect(store.listPluginRuntime).toHaveBeenCalledTimes(2));
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  await fireEvent.click(screen.getByRole('button', { name: en['plugins.configPreview'] }));
   generation += 1;
   notify();
   await screen.findByText('current-plugin');
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  await fireEvent.click(screen.getByRole('button', { name: en['plugins.configPreview'] }));
-  await screen.findByText('/current-config');
   oldRuntime.resolve(runtime([packageItem('stale-plugin')], '/stale-location'));
   oldServiceRuntime.reject(new Error('stale runtime error'));
-  oldPreview.resolve({ directory: '/stale-location', data: [{ type: 'directory', path: '/stale-config' }] });
-  oldServicePreview.reject(new Error('stale config error'));
-  await Promise.allSettled([
-    oldRuntime.promise,
-    oldServiceRuntime.promise,
-    oldPreview.promise,
-    oldServicePreview.promise,
-  ]);
+  await Promise.allSettled([oldRuntime.promise, oldServiceRuntime.promise]);
+  await tick();
   expect(screen.queryByText('stale-plugin')).toBeNull();
-  expect(screen.queryByText('/stale-config')).toBeNull();
   expect(screen.queryByText(en['plugins.runtimeUnavailable'])).toBeNull();
-  expect(screen.queryByText(en['plugins.configUnavailable'])).toBeNull();
-  expect(screen.getByText('/current-config')).toBeTruthy();
+  expect(screen.getByText('current-plugin')).toBeTruthy();
   expect(store.listPluginRuntime).toHaveBeenCalledTimes(3);
-  expect(store.getPluginConfigSources).toHaveBeenNthCalledWith(1);
-  expect(store.getPluginConfigSources).toHaveBeenNthCalledWith(2);
-  expect(store.getPluginConfigSources).toHaveBeenNthCalledWith(3);
 });
 
 test('a service switch closes an upgrade confirmation and ignores its late POST failure', async () => {

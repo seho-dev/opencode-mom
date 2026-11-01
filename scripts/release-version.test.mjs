@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import {
   generateChangelogSection,
   parseVersion,
   prepareRelease,
+  releaseNotes,
   selectVersion,
   syncVersions,
   VERSION_FILES,
@@ -307,9 +309,9 @@ test('preparation creates a missing changelog, falls back to full history and st
   const changelog = '# Changelog\n\n## 0.1.1 - 2026-10-07\n\n- release\n\n';
   assert.equal(readFileSync(join(root, 'CHANGELOG.md'), 'utf8'), changelog);
   assert.equal(state.tags['v0.1.1'].files['CHANGELOG.md'], changelog);
-  assert.deepEqual(
+  assert.equal(
     state.calls.find((args) => args[0] === 'describe'),
-    ['describe', '--tags', '--match', 'v[0-9]*', '--abbrev=0'],
+    undefined,
   );
   assert.deepEqual(
     state.calls.find((args) => args[0] === 'log'),
@@ -441,4 +443,255 @@ test('existing tag builds verify versions and never bump', (t) => {
   assert.ok(state.calls.every((args) => args[0] !== 'push'));
   assert.throws(() => readFileSync(join(root, 'CHANGELOG.md')), /ENOENT/);
   assert.throws(() => prepareRelease({ ...tagPush, ref: 'refs/tags/v0.2.0' }), /does not match/);
+});
+
+test('releaseNotes extracts exact version section without bleeding into adjacent sections across CRLF and LF', (t) => {
+  const { root } = fixture(t);
+  const headSha = 'a'.repeat(40);
+  const runGit = (...args) => {
+    if (args[0] === 'status') return '';
+    if (args[0] === 'rev-parse') return headSha;
+    throw new Error(`Unexpected git call: ${args.join(' ')}`);
+  };
+
+  // Middle section with newer section before and older section after
+  const changelog =
+    '# Changelog\r\n\r\n' +
+    '## 0.2.0 - 2026-10-10\r\n\r\n' +
+    '- feat: new thing\r\n\r\n' +
+    '## 0.1.0 - 2026-10-01\r\n\r\n' +
+    '- initial release\r\n\r\n' +
+    '## 0.0.9 - 2026-09-01\r\n\r\n' +
+    '- legacy\r\n';
+  writeFileSync(join(root, 'CHANGELOG.md'), changelog);
+
+  const notes = releaseNotes({ root, tag: 'v0.1.0', runGit });
+  assert.equal(notes, '## 0.1.0 - 2026-10-01\r\n\r\n- initial release\n');
+  assert.ok(!notes.includes('0.2.0'));
+  assert.ok(!notes.includes('0.0.9'));
+
+  // Unix LF variant
+  writeFileSync(join(root, 'CHANGELOG.md'), changelog.replaceAll('\r\n', '\n'));
+  const notesLf = releaseNotes({ root, tag: 'v0.1.0', runGit });
+  assert.equal(notesLf, '## 0.1.0 - 2026-10-01\n\n- initial release\n');
+  assert.ok(!notesLf.includes('0.2.0'));
+  assert.ok(!notesLf.includes('0.0.9'));
+});
+
+test('releaseNotes falls back to git commit history excluding target and newer tags when section is missing', (t) => {
+  const { root } = fixture(t);
+  const headSha = 'a'.repeat(40);
+  const describeCalls = [];
+  const runGit = (...args) => {
+    const [command, ...rest] = args;
+    if (command === 'status') return '';
+    if (command === 'rev-parse') return headSha;
+    if (command === 'tag') {
+      // Returns older tag v0.0.9, target tag v0.1.0, and newer tag v0.2.0
+      return 'v0.0.9\nv0.1.0\nv0.2.0\n';
+    }
+    if (command === 'describe') {
+      describeCalls.push(args);
+      assert.ok(args.includes('--match=v0.0.9'));
+      assert.ok(!args.some((a) => a === '--match=v0.1.0' || a === '--match=v0.2.0'));
+      return 'v0.0.9';
+    }
+    if (command === 'log') return 'feat: unreleased change\nchore(release): v0.1.0\nfix: something\n';
+    if (command === 'show') {
+      if (rest.includes('--format=%cs')) return '2026-10-15';
+      if (rest[0] === '-s') return 'feat: commit';
+    }
+    throw new Error(`Unexpected git call: ${args.join(' ')}`);
+  };
+
+  // Missing CHANGELOG.md
+  const fallbackNotes = releaseNotes({ root, tag: 'v0.1.0', runGit });
+  assert.equal(fallbackNotes, '## 0.1.0 - 2026-10-15\n\n- feat: unreleased change\n- fix: something\n');
+  assert.deepEqual(describeCalls.length, 1);
+
+  // Existing CHANGELOG.md but missing requested tag
+  writeFileSync(join(root, 'CHANGELOG.md'), '# Changelog\n\n## 0.0.9 - 2026-09-01\n\n- old\n');
+  const fallbackNotes2 = releaseNotes({ root, tag: 'v0.1.0', runGit });
+  assert.equal(fallbackNotes2, '## 0.1.0 - 2026-10-15\n\n- feat: unreleased change\n- fix: something\n');
+});
+
+test('releaseNotes propagates git errors and non-ENOENT filesystem errors', (t) => {
+  const { root } = fixture(t);
+  const headSha = 'a'.repeat(40);
+  const runGit = (...args) => {
+    if (args[0] === 'status') return '';
+    if (args[0] === 'rev-parse') return headSha;
+    if (args[0] === 'tag') throw new Error('git tag fatal error');
+    throw new Error(`Unexpected git call: ${args.join(' ')}`);
+  };
+
+  // Git failure during fallback history collection must propagate, not be swallowed
+  assert.throws(() => releaseNotes({ root, tag: 'v0.1.0', runGit }), /git tag fatal error/);
+
+  // Create CHANGELOG.md as a directory to trigger EISDIR
+  const runGitClean = (...args) => {
+    if (args[0] === 'status') return '';
+    if (args[0] === 'rev-parse') return headSha;
+    return '';
+  };
+  mkdirSync(join(root, 'CHANGELOG.md'));
+  assert.throws(
+    () => releaseNotes({ root, tag: 'v0.1.0', runGit: runGitClean }),
+    (err) => err.code === 'EISDIR',
+  );
+});
+
+test('releaseNotes throws on malformed tag or checkout mismatch', (t) => {
+  const { root } = fixture(t);
+  assert.throws(() => releaseNotes({ root, tag: '0.1.0' }), /Expected a stable release tag/);
+  assert.throws(() => releaseNotes({ root, tag: 'v0.1.0-beta' }), /Expected a stable release tag/);
+
+  const runGitMismatch = (...args) => {
+    if (args[0] === 'status') return '';
+    if (args[0] === 'rev-parse') {
+      return args[1].includes('HEAD') ? 'a'.repeat(40) : 'b'.repeat(40);
+    }
+    return '';
+  };
+  assert.throws(
+    () => releaseNotes({ root, tag: 'v0.1.0', runGit: runGitMismatch }),
+    /Checkout must match the requested tag/,
+  );
+
+  const runGitDirty = (...args) => {
+    if (args[0] === 'status') return ' M CHANGELOG.md\n';
+    return '';
+  };
+  assert.throws(
+    () => releaseNotes({ root, tag: 'v0.1.0', runGit: runGitDirty }),
+    /Release notes require clean version files and CHANGELOG\.md/,
+  );
+});
+
+test('prepareRelease dry_run returns release=false, version, tag, sha and notes without mutations or git writes', (t) => {
+  for (const dryRunVal of [true, 'true']) {
+    const { root, files, state, options } = repository(t, 'release: 0.2.0');
+    // Seed an origin remote commit to verify dry-run does not advance it
+    state.defaultHead = options.sha;
+    const beforeFiles = Object.fromEntries(Object.keys(files).map((p) => [p, readFileSync(join(root, p), 'utf8')]));
+
+    const dispatch = {
+      ...options,
+      eventName: 'workflow_dispatch',
+      event: { inputs: { version: '0.2.0', dry_run: dryRunVal } },
+    };
+
+    const result = prepareRelease(dispatch);
+
+    assert.equal(result.release, 'false');
+    assert.equal(result.version, '0.2.0');
+    assert.equal(result.tag, 'v0.2.0');
+    assert.equal(result.sha, options.sha);
+    assert.ok(result.notes?.startsWith('## 0.2.0 - '));
+
+    // Verify no git write calls
+    const writes = state.calls.filter((args) => {
+      const cmd = args[0] === '-c' ? args[2] : args[0];
+      return ['add', 'commit', 'push'].includes(cmd) || (cmd === 'tag' && !args.includes('--list'));
+    });
+    assert.deepEqual(writes, []);
+    assert.equal(state.head, options.sha);
+    assert.equal(state.defaultHead, options.sha);
+    assert.deepEqual(state.tags, {});
+
+    // Verify no tracked files or CHANGELOG written
+    for (const [p, content] of Object.entries(beforeFiles)) {
+      assert.equal(readFileSync(join(root, p), 'utf8'), content);
+    }
+    assert.throws(() => readFileSync(join(root, 'CHANGELOG.md')), /ENOENT/);
+  }
+});
+
+test('prepareRelease dry_run strict coercion: false, "false", or undefined runs normal release', (t) => {
+  for (const dryRunVal of [false, 'false', undefined]) {
+    const { state, options } = repository(t, 'release: 0.2.0');
+    const dispatch = {
+      ...options,
+      eventName: 'workflow_dispatch',
+      event: { inputs: { version: '0.2.0', dry_run: dryRunVal } },
+    };
+
+    const result = prepareRelease(dispatch);
+    assert.equal(result.release, 'true');
+    assert.equal(result.tag, 'v0.2.0');
+    assert.ok(state.calls.some((args) => args[0] === 'push'));
+  }
+});
+
+test('cli notes and dry_run commands work in real git worktree without push or corruption', (t) => {
+  const { root } = fixture(t);
+  writeFileSync(join(root, 'CHANGELOG.md'), '# Changelog\n\n## 0.1.0 - 2026-10-01\n\n- initial release\n');
+  const outputFile = join(root, 'github_output');
+  writeFileSync(outputFile, '');
+
+  const env = { ...process.env, HUSKY: '0', GITHUB_OUTPUT: outputFile };
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', env }).trim();
+  git('-c', 'init.defaultBranch=main', 'init');
+  git('config', 'user.name', 'test');
+  git('config', 'user.email', 'test@example.com');
+  git('-c', 'commit.gpgsign=false', 'add', '.');
+  git('-c', 'commit.gpgsign=false', 'commit', '--no-verify', '-m', 'initial');
+  git('-c', 'tag.gpgSign=false', 'tag', 'v0.1.0');
+
+  // Verify CLI notes command prints raw markdown directly to stdout with no GITHUB_OUTPUT pollution
+  const stdout = execFileSync('node', [resolve('scripts/release-version.mjs'), 'notes', 'v0.1.0'], {
+    cwd: root,
+    encoding: 'utf8',
+    env,
+  });
+  assert.equal(stdout, '## 0.1.0 - 2026-10-01\n\n- initial release\n');
+  assert.equal(readFileSync(outputFile, 'utf8'), '');
+
+  const originDir = mkdtempSync(join(tmpdir(), 'mom-origin-'));
+  t.after(() => rmSync(originDir, { recursive: true, force: true }));
+  execFileSync('git', ['init', '--bare', originDir], { encoding: 'utf8', env });
+  execFileSync(
+    'git',
+    ['--git-dir', originDir, 'fetch', root, 'refs/heads/main:refs/heads/main', 'refs/tags/v0.1.0:refs/tags/v0.1.0'],
+    { encoding: 'utf8', env },
+  );
+  git('remote', 'add', 'origin', originDir);
+
+  const headBefore = git('rev-parse', 'HEAD');
+  const eventPayloadDir = mkdtempSync(join(tmpdir(), 'mom-event-'));
+  t.after(() => rmSync(eventPayloadDir, { recursive: true, force: true }));
+  const eventPayloadPath = join(eventPayloadDir, 'event.json');
+  writeFileSync(eventPayloadPath, JSON.stringify({ inputs: { version: '0.2.0', dry_run: true } }));
+
+  const dryRunEnv = {
+    ...env,
+    GITHUB_EVENT_NAME: 'workflow_dispatch',
+    GITHUB_EVENT_PATH: eventPayloadPath,
+    GITHUB_REF: 'refs/heads/main',
+    GITHUB_SHA: headBefore,
+    DEFAULT_BRANCH: 'main',
+  };
+
+  const dryRunStdout = execFileSync('node', [resolve('scripts/release-version.mjs'), 'prepare'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: dryRunEnv,
+  });
+  const dryRunOutput = JSON.parse(dryRunStdout.split('\n')[0]);
+  assert.equal(dryRunOutput.release, 'false');
+  assert.equal(dryRunOutput.version, '0.2.0');
+  assert.equal(dryRunOutput.tag, 'v0.2.0');
+  assert.equal(dryRunOutput.sha, headBefore);
+
+  const githubOutput = readFileSync(outputFile, 'utf8');
+  assert.ok(githubOutput.includes('release=false\n'));
+  assert.ok(!githubOutput.includes('notes='));
+
+  assert.equal(git('rev-parse', 'HEAD'), headBefore);
+  assert.ok(!git('tag', '--list').split('\n').includes('v0.2.0'));
+  const originTags = execFileSync('git', ['--git-dir', originDir, 'tag', '--list'], {
+    encoding: 'utf8',
+    env,
+  }).trim();
+  assert.ok(!originTags.includes('v0.2.0'));
 });

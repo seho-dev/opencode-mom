@@ -131,12 +131,65 @@ export function generateChangelogSection({ version, date, subjects }) {
   return `## ${version} - ${date}\n\n${subjects.map((subject) => `- ${subject}\n`).join('')}`;
 }
 
+const STABLE_TAG = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+function gitRunner(root) {
+  return (...args) =>
+    execFileSync('git', args, { cwd: root, encoding: 'utf8', env: { ...process.env, HUSKY: '0' } }).trim();
+}
+
+function readChangelog(root) {
+  try {
+    return readFileSync(resolve(root, 'CHANGELOG.md'), 'utf8');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    return '# Changelog\n';
+  }
+}
+
+function historySection(git, version, target) {
+  const tags = git('tag', '--list', '--merged', target)
+    .split('\n')
+    .filter((tag) => STABLE_TAG.test(tag) && compareVersions(tag.slice(1), version) < 0);
+  // An empty ancestor list is the only first-release fallback; Git failures must surface.
+  const previous = tags.length
+    ? git('describe', '--tags', '--abbrev=0', ...tags.map((tag) => `--match=${tag}`), target)
+    : '';
+  const subjects = git('log', '--format=%s', previous ? `${previous}..${target}` : target)
+    .split('\n')
+    .filter((subject) => subject && !subject.startsWith('chore(release):'));
+  let dateTarget = target;
+  if (git('show', '-s', '--format=%s', target) === `chore(release): v${version}`) {
+    dateTarget = git('rev-list', '--parents', '-n', '1', target).split(' ')[1] ?? target;
+  }
+  return generateChangelogSection({ version, date: git('show', '-s', '--format=%cs', dateTarget), subjects });
+}
+
+export function releaseNotes({ root, tag, runGit }) {
+  if (!STABLE_TAG.test(tag ?? '')) throw new Error('Expected a stable release tag (vX.Y.Z)');
+  const git = runGit ?? gitRunner(root);
+  if (git('status', '--porcelain', '--', ...VERSION_FILES, 'CHANGELOG.md')) {
+    throw new Error('Release notes require clean version files and CHANGELOG.md');
+  }
+  const version = verifyVersions(root, tag);
+  if (git('rev-parse', `${tag}^{commit}`) !== git('rev-parse', 'HEAD')) {
+    throw new Error('Checkout must match the requested tag');
+  }
+  const changelog = readChangelog(root);
+  const headings = [...changelog.matchAll(/^##[ \t]+[^\r\n]*(?:\r?\n|$)/gm)];
+  const index = headings.findIndex((heading) =>
+    new RegExp(`^## ${version.replaceAll('.', '\\.')} - \\d{4}-\\d{2}-\\d{2}\\s*$`).test(heading[0]),
+  );
+  if (index !== -1) {
+    return `${changelog.slice(headings[index].index, headings[index + 1]?.index).trimEnd()}\n`;
+  }
+  return historySection(git, version, 'HEAD');
+}
+
 export function prepareRelease({ root, eventName, event = {}, ref, sha, defaultBranch, runGit }) {
-  const git =
-    runGit ??
-    ((...args) =>
-      execFileSync('git', args, { cwd: root, encoding: 'utf8', env: { ...process.env, HUSKY: '0' } }).trim());
+  const git = runGit ?? gitRunner(root);
   const skip = { release: 'false' };
+  const dryRun = eventName === 'workflow_dispatch' && [true, 'true'].includes(event.inputs?.dry_run);
   if (!defaultBranch) throw new Error('Missing default branch');
   git('check-ref-format', `refs/heads/${defaultBranch}`);
   if (!/^[a-f0-9]{40,64}$/.test(sha ?? '') || git('rev-parse', 'HEAD') !== sha) {
@@ -183,36 +236,24 @@ export function prepareRelease({ root, eventName, event = {}, ref, sha, defaultB
     ) {
       throw new Error(`Existing ${tag} is not this run's release commit`);
     }
-    return { release: 'true', version, tag, sha: taggedSha };
+    if (!dryRun) return { release: 'true', version, tag, sha: taggedSha };
+    return { release: 'false', version, tag, sha, notes: historySection(git, version, 'HEAD') };
   }
   if (git('rev-parse', `refs/remotes/origin/${defaultBranch}`) !== sha) {
     throw new Error('Default branch changed since this run started; release from its new HEAD');
   }
   for (const existing of tags) {
-    if (/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(existing)) {
+    if (STABLE_TAG.test(existing)) {
       if (compareVersions(version, existing.slice(1)) <= 0) throw new Error(`${tag} is not newer than ${existing}`);
     }
   }
-  let range = 'HEAD';
-  try {
-    range = `${git('describe', '--tags', '--match', 'v[0-9]*', '--abbrev=0')}..HEAD`;
-  } catch {
-    // The first release has no matching tag; include its full history.
-  }
-  const subjects = git('log', '--format=%s', range)
-    .split('\n')
-    .filter((subject) => subject && !subject.startsWith('chore(release):'));
-  const section = generateChangelogSection({ version, date: git('show', '-s', '--format=%cs', 'HEAD'), subjects });
+  const section = historySection(git, version, 'HEAD');
   const changelogPath = resolve(root, 'CHANGELOG.md');
-  let changelog = '# Changelog\n';
-  try {
-    changelog = readFileSync(changelogPath, 'utf8');
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
+  let changelog = readChangelog(root);
   const header = /^# Changelog(?:\r?\n|$)(?:\r?\n)*/m;
   const entry = `# Changelog\n\n${section}\n`;
   changelog = header.test(changelog) ? changelog.replace(header, () => entry) : entry + changelog;
+  if (dryRun) return { release: 'false', version, tag, sha, notes: section };
   for (const [path, text] of Object.entries(updated)) writeFileSync(resolve(root, path), text);
   writeFileSync(changelogPath, changelog);
   git('add', '--', ...VERSION_FILES, 'CHANGELOG.md');
@@ -234,7 +275,11 @@ export function prepareRelease({ root, eventName, event = {}, ref, sha, defaultB
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     let result;
-    if (process.argv[2] === 'verify') {
+    if (process.argv[2] === 'notes') {
+      const tag = process.argv[3];
+      if (!tag) throw new Error('Usage: node scripts/release-version.mjs notes vX.Y.Z');
+      process.stdout.write(releaseNotes({ root: process.cwd(), tag }));
+    } else if (process.argv[2] === 'verify') {
       const tag = process.argv[3];
       if (!tag) throw new Error('Usage: node scripts/release-version.mjs verify vX.Y.Z');
       result = { version: verifyVersions(process.cwd(), tag) };
@@ -248,17 +293,25 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         defaultBranch: process.env.DEFAULT_BRANCH,
       });
     } else {
-      throw new Error('Usage: node scripts/release-version.mjs prepare | verify vX.Y.Z');
+      throw new Error('Usage: node scripts/release-version.mjs prepare | verify vX.Y.Z | notes vX.Y.Z');
     }
-    if (process.env.GITHUB_OUTPUT) {
-      appendFileSync(
-        process.env.GITHUB_OUTPUT,
-        Object.entries(result)
-          .map(([key, value]) => `${key}=${value}\n`)
-          .join(''),
-      );
+    if (result) {
+      const { notes, ...outputs } = result;
+      if (process.env.GITHUB_OUTPUT) {
+        appendFileSync(
+          process.env.GITHUB_OUTPUT,
+          Object.entries(outputs)
+            .map(([key, value]) => `${key}=${value}\n`)
+            .join(''),
+        );
+      }
+      console.log(JSON.stringify(outputs));
+      if (notes !== undefined) {
+        const preview = `Release preview: ${result.tag}\n\n${notes}`;
+        console.log(preview);
+        if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, preview);
+      }
     }
-    console.log(JSON.stringify(result));
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

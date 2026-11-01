@@ -10,6 +10,11 @@ on:
         description: 'Stable X.Y.Z (empty = next patch); run on the default branch'
         required: false
         type: string
+      dry_run:
+        description: 'Preview validation, version and changelog without committing, building or publishing'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -145,6 +150,9 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -156,9 +164,12 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "$RELEASE_SHA"
           test "$(find release-assets -type f | wc -l)" -eq 5
+          notes_file="$(mktemp "$RUNNER_TEMP/release-notes.XXXXXX")"
+          trap 'rm -f "$notes_file"' EXIT
+          node scripts/release-version.mjs notes "$RELEASE_TAG" > "$notes_file"
+          printf '\n%s\n' 'macOS: Apple Silicon and Intel builds are ad-hoc signed, not Developer ID signed or notarized. Windows: the x64 NSIS installer is unsigned and may show SmartScreen warnings. Download only from this official Releases page; see the README for scoped first-launch trust steps. Updates are installed manually; review Settings after upgrading.' >> "$notes_file"
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --generate-notes \
-              --notes 'macOS: Apple Silicon and Intel builds are ad-hoc signed, not Developer ID signed or notarized. Windows: the x64 NSIS installer is unsigned and may show SmartScreen warnings. Download only from this official Releases page; see the README for scoped first-launch trust steps. Updates are installed manually; review Settings after upgrading.'
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --notes-file "$notes_file"
           fi
           gh release upload "$RELEASE_TAG" release-assets/* --clobber
-          gh release edit "$RELEASE_TAG" --draft=false
+          gh release edit "$RELEASE_TAG" --draft=false --notes-file "$notes_file"

@@ -125,7 +125,7 @@ test('uses OS readback instead of requested value and refresh only reads status'
   expect(setAutostart).toHaveBeenCalledOnce();
 });
 
-test('unavailable autostart does not block lid interaction or its independent refresh', async () => {
+test('unavailable autostart does not block the independent lid preference', async () => {
   const getAutostart = vi.fn().mockRejectedValue(new Error('Login unavailable'));
   const config = mount({ getAutostart });
   const lid = screen.getByRole('checkbox', { name: 'Stay awake with lid closed' }) as HTMLInputElement;
@@ -133,8 +133,8 @@ test('unavailable autostart does not block lid interaction or its independent re
   await fireEvent.click(lid);
   await waitFor(() => expect(lid.checked).toBe(true));
   expect(config.setLidProtection).toHaveBeenCalledExactlyOnceWith(true);
-  await fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
-  await waitFor(() => expect(config.getLidProtection).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole('button', { name: 'Refresh status' })).toBeNull();
+  expect(config.getLidProtection).toHaveBeenCalledOnce();
   expect(getAutostart).toHaveBeenCalledOnce();
   expect(config.setAutostart).not.toHaveBeenCalled();
 });

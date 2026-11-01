@@ -30,15 +30,7 @@ const entries: (SettingsSearchTarget & { keys: [MessageKey, MessageKey, ...Messa
   {
     tab: 'general',
     target: 'settings-lid',
-    keys: [
-      'settings.lid',
-      'settings.lidHint',
-      'settings.lidDetails',
-      'settings.lidAuthorization',
-      'settings.lidScope',
-      'settings.lidSafety',
-      'settings.lidRestore',
-    ],
+    keys: ['settings.lid', 'settings.lidHint', 'settings.lidAuthorization', 'settings.lidSafety'],
   },
   { tab: 'general', target: 'settings-island', keys: ['settings.island', 'settings.islandHint'] },
   {

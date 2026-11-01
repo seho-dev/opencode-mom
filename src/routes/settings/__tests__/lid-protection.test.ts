@@ -1,14 +1,18 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { CommandAdapter } from '$src/config/adapter.js';
-import { type ConfigStore, createConfigStore } from '$src/config/store.svelte.js';
+import { createConfigStore } from '$src/config/store.svelte.js';
+import { en } from '$src/i18n/dictionaries/en.js';
+import { zh } from '$src/i18n/dictionaries/zh.js';
 import Harness from '$src/test-utils/harness.svelte';
 import type { LidState } from '$src/types/power.js';
 import LidProtection from '../LidProtection.svelte';
 
 const disabled: LidState = { enabled: false, phase: 'disabled' };
-const protectedState: LidState = { enabled: true, phase: 'protected', activeSessions: 2 };
+const enabled: LidState = { enabled: true, phase: 'protected', activeSessions: 2 };
+const privateError = 'Enable lid protection again. <b>private native error</b>';
+
 function deferred() {
   let resolve!: (value: LidState) => void;
   let reject!: (reason: unknown) => void;
@@ -18,531 +22,321 @@ function deferred() {
   });
   return { promise, resolve, reject };
 }
-function mount(overrides: Record<string, unknown> = {}) {
-  const config = {
-    preferences: { locale: 'en', theme: 'dark' },
+
+function mount(overrides: Record<string, unknown> = {}, active = true) {
+  const adapter = {
+    savePreferences: vi.fn().mockResolvedValue(undefined),
     getLidProtection: vi.fn().mockResolvedValue(disabled),
     setLidProtection: vi.fn().mockResolvedValue({ enabled: true, phase: 'idle' }),
-    ...overrides,
-  } as unknown as ConfigStore;
-  const view = render(LidProtection, {}, { wrapper: Harness, wrapperProps: { config } });
-  const toggle = screen.getByRole('checkbox', { name: 'Stay awake with lid closed' }) as HTMLInputElement;
-  return { config, toggle, ...view };
-}
-function mountTarget(overrides: Record<string, unknown> = {}) {
-  const adapter = {
-    getLidProtection: vi.fn().mockResolvedValue(disabled),
-    setLidProtection: vi.fn().mockResolvedValue(disabled),
     setOpenCodeServiceTarget: vi.fn().mockResolvedValue({ connected: false }),
     ...overrides,
   };
   const config = createConfigStore(adapter as unknown as CommandAdapter, false, false);
-  const view = render(LidProtection, {}, { wrapper: Harness, wrapperProps: { config } });
+  const view = render(LidProtection, { active }, { wrapper: Harness, wrapperProps: { config } });
   const toggle = screen.getByRole('checkbox') as HTMLInputElement;
   return { ...view, config, adapter, toggle };
 }
+
 async function settle() {
-  await tick();
-  await Promise.resolve();
-  await tick();
+  for (let step = 0; step < 4; step++) {
+    await Promise.resolve();
+    await tick();
+  }
 }
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
 
-test('loads without enabling, waits through authorization, and uses native phase rather than enabled', async () => {
+test('loads the preference once, keeps the native switch pending, and waits for authoritative toggle results', async () => {
   const read = deferred();
   const save = deferred();
-  const getLidProtection = vi.fn().mockReturnValueOnce(read.promise).mockResolvedValue(protectedState);
-  const setLidProtection = vi.fn().mockReturnValue(save.promise);
-  const { toggle } = mount({ getLidProtection, setLidProtection });
+  const { adapter, toggle } = mount({
+    getLidProtection: vi.fn().mockReturnValue(read.promise),
+    setLidProtection: vi.fn().mockReturnValue(save.promise),
+  });
+  expect(toggle.tagName).toBe('INPUT');
+  expect(toggle.type).toBe('checkbox');
+  expect(toggle.name).toBe('lid-closed');
   expect(toggle.disabled).toBe(true);
   expect(toggle.checked).toBe(false);
-  expect(screen.getByRole('status').textContent).toBe('Reading status…');
-  await settle();
-  expect(getLidProtection).toHaveBeenCalledOnce();
-  expect(setLidProtection).not.toHaveBeenCalled();
+  expect(toggle.getAttribute('aria-busy')).toBe('true');
+  await fireEvent.click(toggle);
+  expect(adapter.setLidProtection).not.toHaveBeenCalled();
   read.resolve(disabled);
-  await waitFor(() => expect(toggle.disabled).toBe(false));
+  await settle();
+  expect(adapter.getLidProtection).toHaveBeenCalledExactlyOnceWith();
+  expect(toggle.disabled).toBe(false);
   for (const id of toggle.getAttribute('aria-describedby')?.split(' ') ?? []) {
     expect(document.getElementById(id)).toBeTruthy();
   }
   toggle.focus();
+  await fireEvent.click(toggle);
+  await fireEvent.click(toggle);
+  expect(adapter.setLidProtection).toHaveBeenCalledExactlyOnceWith(true);
+  expect(toggle.checked).toBe(false);
+  expect(toggle.disabled).toBe(true);
+  save.resolve({ enabled: true, phase: 'checking' });
+  await settle();
+  expect(toggle.checked).toBe(true);
+  expect(toggle.disabled).toBe(false);
+  expect(toggle.getAttribute('aria-busy')).toBe('false');
   expect(document.activeElement).toBe(toggle);
-  await fireEvent.click(toggle);
-  expect(setLidProtection).toHaveBeenCalledExactlyOnceWith(true);
-  expect(toggle.checked).toBe(false);
-  expect(toggle.disabled).toBe(true);
-  expect(screen.getByRole('status').textContent).toContain('authorization may take a moment');
-  expect((screen.getByRole('button', { name: 'Refresh status' }) as HTMLButtonElement).disabled).toBe(true);
-  save.resolve({ enabled: true, phase: 'idle' });
-  await waitFor(() => expect(toggle.checked).toBe(true));
-  expect(toggle.disabled).toBe(false);
-  expect(screen.getByRole('status').textContent).toBe('Watching — no working sessions');
-  await fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
-  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Protected — 2 working sessions'));
-  expect(setLidProtection).toHaveBeenCalledOnce();
-});
-
-test.each([
-  ['disabled', 'Disabled'],
-  ['idle', 'Watching — no working sessions'],
-  ['checking', 'Checking authorization — keep the lid open'],
-  ['protected', 'Protected — working sessions detected'],
-  ['unknown', 'Status unknown — keep the lid open'],
-  ['error', 'Protection not confirmed — keep the lid open'],
-] as const)('renders native %s without claiming protection from the enabled flag', async (phase, text) => {
-  const { toggle } = mount({ getLidProtection: vi.fn().mockResolvedValue({ enabled: true, phase }) });
-  await waitFor(() => expect(screen.getByRole('status').textContent).toBe(text));
-  expect(toggle.checked).toBe(true);
-  expect(toggle.disabled).toBe(false);
-  if (phase === 'unknown' || phase === 'error') {
-    expect(screen.getByRole('button', { name: 'Turn off and restore' })).toBeTruthy();
-  }
-});
-
-test('failed initial query allows OFF even while retry is pending; its late result cannot overwrite OFF', async () => {
-  const retry = deferred();
-  const getLidProtection = vi
-    .fn()
-    .mockRejectedValueOnce(new Error('Status unavailable'))
-    .mockReturnValueOnce(retry.promise);
-  const setLidProtection = vi.fn().mockResolvedValue(disabled);
-  const { toggle } = mount({ getLidProtection, setLidProtection });
-  expect((await screen.findByRole('alert')).textContent).toContain('Status unavailable');
-  expect(toggle.disabled).toBe(true);
-  await fireEvent.click(screen.getByRole('button', { name: 'Retry status' }));
-  await fireEvent.click(screen.getByRole('button', { name: 'Turn off and restore' }));
-  await waitFor(() => expect(toggle.disabled).toBe(false));
-  expect(setLidProtection).toHaveBeenCalledExactlyOnceWith(false);
-  retry.resolve(protectedState);
-  await settle();
-  expect(toggle.checked).toBe(false);
-  expect(screen.getByRole('status').textContent).toBe('Disabled');
+  expect(adapter.getLidProtection).toHaveBeenCalledOnce();
   expect(screen.queryByRole('alert')).toBeNull();
 });
 
-test('policy failure preserves confirmed switch state, never claims Protected, and permits OFF retry', async () => {
-  const setLidProtection = vi
-    .fn()
-    .mockRejectedValueOnce(new Error('<b>restore denied</b>'))
-    .mockResolvedValueOnce(disabled);
-  const { toggle } = mount({ getLidProtection: vi.fn().mockResolvedValue(protectedState), setLidProtection });
-  await waitFor(() => expect(toggle.checked).toBe(true));
-  await fireEvent.click(toggle);
-  const alert = await screen.findByRole('alert');
-  expect(alert.textContent).toContain('<b>restore denied</b>');
-  expect(alert.querySelector('b')).toBeNull();
-  expect(toggle.checked).toBe(true);
-  expect(toggle.disabled).toBe(false);
-  expect(toggle.getAttribute('aria-describedby')).toContain('lid-error');
-  expect(screen.getByRole('status').textContent).toBe('Protection not confirmed — keep the lid open');
-  await fireEvent.click(screen.getByRole('button', { name: 'Turn off and restore' }));
-  await waitFor(() => expect(toggle.checked).toBe(false));
-  expect(setLidProtection).toHaveBeenNthCalledWith(2, false);
-  expect(screen.getByRole('status').textContent).toBe('Disabled');
-});
-
-test('accepted command is not a fake success when native readback reports an error or a different enabled value', async () => {
-  const { toggle, config } = mount({
-    setLidProtection: vi.fn().mockResolvedValue({ enabled: false, phase: 'error', error: 'Authorization cancelled' }),
-  });
-  await waitFor(() => expect(toggle.disabled).toBe(false));
-  await fireEvent.click(toggle);
-  expect((await screen.findByRole('alert')).textContent).toContain('Authorization cancelled');
-  expect(toggle.checked).toBe(false);
-  expect(config.setLidProtection).toHaveBeenCalledExactlyOnceWith(true);
-  expect(screen.getByRole('status').textContent).toBe('Protection not confirmed — keep the lid open');
-});
-
-test('a fresh poll clears a query failure, but a failed setting needs explicit readback or OFF retry', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  const getLidProtection = vi
-    .fn()
-    .mockResolvedValueOnce(protectedState)
-    .mockRejectedValueOnce(new Error('Query failed'))
-    .mockResolvedValue(protectedState);
-  const setLidProtection = vi.fn().mockRejectedValue(new Error('Setting failed'));
-  const { toggle } = mount({ getLidProtection, setLidProtection });
-  await settle();
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(screen.getByRole('alert').textContent).toContain('Query failed');
-  expect(toggle.disabled).toBe(false);
-  expect(screen.getByRole('status').textContent).toBe('Protection not confirmed — keep the lid open');
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(screen.queryByRole('alert')).toBeNull();
-  expect(screen.getByRole('status').textContent).toBe('Protected — 2 working sessions');
-  await fireEvent.click(toggle);
-  await settle();
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(screen.getByRole('alert').textContent).toContain('Setting failed');
-  expect(screen.getByRole('status').textContent).toBe('Protection not confirmed — keep the lid open');
-  await fireEvent.click(screen.getByRole('button', { name: 'Retry status' }));
-  await settle();
-  expect(screen.queryByRole('alert')).toBeNull();
-  expect(screen.getByRole('status').textContent).toBe('Protected — 2 working sessions');
-});
-
-test('polls status only, without overlap or unchanged live-region mutations, and pauses while saving', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  const poll = deferred();
-  const save = deferred();
-  const getLidProtection = vi
-    .fn()
-    .mockResolvedValueOnce(protectedState)
-    .mockReturnValueOnce(poll.promise)
-    .mockResolvedValue(protectedState);
-  const setLidProtection = vi.fn().mockReturnValue(save.promise);
-  const { toggle, unmount } = mount({ getLidProtection, setLidProtection });
-  await settle();
-  const status = screen.getByRole('status');
-  const changed = vi.fn();
-  const observer = new MutationObserver(changed);
-  observer.observe(status, { childList: true, characterData: true, subtree: true });
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(getLidProtection).toHaveBeenCalledTimes(2);
-  await vi.advanceTimersByTimeAsync(6000);
-  expect(getLidProtection).toHaveBeenCalledTimes(2);
-  expect(status.textContent).toBe('Protected — 2 working sessions');
-  poll.resolve({ ...protectedState });
-  await settle();
-  expect(changed).not.toHaveBeenCalled();
-  expect(observer.takeRecords()).toHaveLength(0);
-  observer.disconnect();
-  await fireEvent.click(toggle);
-  expect(status.textContent).toContain('Restoring power settings');
-  await vi.advanceTimersByTimeAsync(6000);
-  expect(getLidProtection).toHaveBeenCalledTimes(2);
-  save.resolve(disabled);
-  await settle();
-  expect(toggle.checked).toBe(false);
-  expect(status.textContent).toBe('Disabled');
-  unmount();
-  await vi.advanceTimersByTimeAsync(4000);
-  expect(getLidProtection).toHaveBeenCalledTimes(2);
-  expect(setLidProtection).toHaveBeenCalledExactlyOnceWith(false);
-});
-
-test.each(['resolve', 'reject'] as const)(
-  'late poll %s cannot override a newer save; polling resumes after reconciliation',
-  async (completion) => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const poll = deferred();
-    const getLidProtection = vi
-      .fn()
-      .mockResolvedValueOnce(protectedState)
-      .mockReturnValueOnce(poll.promise)
-      .mockResolvedValue(disabled);
-    const setLidProtection = vi.fn().mockResolvedValue(disabled);
-    const { toggle } = mount({ getLidProtection, setLidProtection });
+test.each(['disabled', 'idle', 'checking', 'protected', 'unknown', 'error'] as const)(
+  'native %s readback displays only the enabled preference, never phase/session warnings or backend errors',
+  async (phase) => {
+    const { container, toggle } = mount({
+      getLidProtection: vi.fn().mockResolvedValue({ ...enabled, phase, error: privateError }),
+    });
     await settle();
-    await vi.advanceTimersByTimeAsync(2000);
-    await fireEvent.click(toggle);
-    await settle();
-    expect(toggle.checked).toBe(false);
-    await vi.advanceTimersByTimeAsync(4000);
-    expect(getLidProtection).toHaveBeenCalledTimes(2);
-    if (completion === 'resolve') poll.resolve(protectedState);
-    else poll.reject(new Error('stale read failure'));
-    await settle();
-    expect(screen.getByRole('status').textContent).toBe('Disabled');
+    expect(toggle.checked).toBe(true);
+    expect(toggle.disabled).toBe(false);
+    expect(screen.queryByRole('status')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(getLidProtection).toHaveBeenCalledTimes(3);
-    expect(setLidProtection).toHaveBeenCalledExactlyOnceWith(false);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(container.querySelector('details')).toBeNull();
+    expect(
+      screen.queryByText(/protected|protection not confirmed|status unknown|keep the lid open|working sessions/i),
+    ).toBeNull();
+    expect(container.textContent).not.toContain(privateError);
+    expect(screen.getByText(en['settings.lidHint'])).toBeTruthy();
+    expect(container.textContent).toContain(en['settings.lidAuthorization']);
+    expect(container.textContent).toContain(en['settings.lidSafety']);
   },
 );
 
-test('a stale read finishing during authorization cannot restore the old protected status or restart polling', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  const poll = deferred();
-  const save = deferred();
-  const getLidProtection = vi
-    .fn()
-    .mockResolvedValueOnce(protectedState)
-    .mockReturnValueOnce(poll.promise)
-    .mockResolvedValue(disabled);
-  const setLidProtection = vi.fn().mockReturnValue(save.promise);
-  const { toggle } = mount({ getLidProtection, setLidProtection });
-  await settle();
-  await vi.advanceTimersByTimeAsync(2000);
-  await fireEvent.click(toggle);
-  poll.resolve(protectedState);
-  await settle();
-  expect(toggle.disabled).toBe(true);
-  expect(screen.getByRole('status').textContent).toContain('Restoring power settings');
-  await vi.advanceTimersByTimeAsync(4000);
-  expect(getLidProtection).toHaveBeenCalledTimes(2);
-  save.resolve(disabled);
-  await settle();
-  expect(toggle.checked).toBe(false);
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(getLidProtection).toHaveBeenCalledTimes(3);
-});
+test.each(['en', 'zh'] as const)(
+  'failed explicit toggles keep the preference and show only a concise %s error',
+  async (locale) => {
+    const messages = locale === 'zh' ? zh : en;
+    const { adapter, config, container, toggle } = mount({
+      getLidProtection: vi.fn().mockResolvedValue(enabled),
+      setLidProtection: vi
+        .fn()
+        .mockRejectedValueOnce({ code: 'configuration_failed', message: privateError })
+        .mockResolvedValueOnce(disabled),
+    });
+    await settle();
+    await config.setLocale(locale);
+    await settle();
+    expect(container.textContent).toContain(messages['settings.lidAuthorization']);
+    expect(container.textContent).toContain(messages['settings.lidSafety']);
+    await fireEvent.click(toggle);
+    await settle();
+    expect(screen.getByRole('alert').textContent?.trim()).toBe(messages['settings.lidSaveFailed']);
+    expect(container.textContent).not.toContain(privateError);
+    expect(toggle.checked).toBe(true);
+    expect(toggle.disabled).toBe(false);
+    expect(toggle.getAttribute('aria-describedby')).toContain('lid-error');
+    await fireEvent.click(toggle);
+    await settle();
+    expect(toggle.checked).toBe(false);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(adapter.setLidProtection).toHaveBeenNthCalledWith(1, false);
+    expect(adapter.setLidProtection).toHaveBeenNthCalledWith(2, false);
+    expect(adapter.getLidProtection).toHaveBeenCalledOnce();
+  },
+);
 
-test.each(['read', 'save'] as const)(
-  'unmount invalidates a pending %s and does not schedule another status read',
-  async (operation) => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const pending = deferred();
-    const getLidProtection = vi
-      .fn()
-      .mockReturnValue(operation === 'read' ? pending.promise : Promise.resolve(disabled));
-    const setLidProtection = vi.fn().mockReturnValue(pending.promise);
-    const { toggle, unmount } = mount({ getLidProtection, setLidProtection });
+test.each([
+  { enabled: false, phase: 'error', error: privateError },
+  { enabled: true, phase: 'error', error: privateError },
+  { enabled: true, phase: 'idle', error: privateError },
+  { enabled: false, phase: 'idle' },
+] satisfies LidState[])(
+  'failed toggle readback owns enabled=$enabled without exposing its backend payload',
+  async (result) => {
+    const { container, toggle } = mount({ setLidProtection: vi.fn().mockResolvedValue(result) });
     await settle();
-    if (operation === 'save') await fireEvent.click(toggle);
-    unmount();
-    pending.reject(new Error('completed after unmount'));
+    await fireEvent.click(toggle);
     await settle();
-    await vi.advanceTimersByTimeAsync(4000);
-    expect(getLidProtection).toHaveBeenCalledOnce();
-    expect(setLidProtection).toHaveBeenCalledTimes(operation === 'save' ? 1 : 0);
+    expect(toggle.checked).toBe(result.enabled);
+    expect(toggle.disabled).toBe(false);
+    expect(screen.getByRole('alert').textContent?.trim()).toBe(en['settings.lidSaveFailed']);
+    expect(container.textContent).not.toContain(privateError);
     expect(screen.queryByRole('status')).toBeNull();
   },
 );
 
-test.each([disabled, protectedState])(
-  'successful target saves reread without changing enabled=$enabled; failed saves do nothing',
+test('initial read failure is concise, keeps an unknown preference disabled, and retries only on active entry', async () => {
+  const { adapter, container, rerender, toggle } = mount({
+    getLidProtection: vi.fn().mockRejectedValueOnce(new Error(privateError)).mockResolvedValueOnce(enabled),
+  });
+  await settle();
+  expect(screen.getByRole('alert').textContent?.trim()).toBe(en['settings.lidLoadFailed']);
+  expect(container.textContent).not.toContain(privateError);
+  expect(toggle.checked).toBe(false);
+  expect(toggle.disabled).toBe(true);
+  await fireEvent.click(toggle);
+  expect(adapter.setLidProtection).not.toHaveBeenCalled();
+  await rerender({ active: false });
+  await rerender({ active: true });
+  await settle();
+  expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
+  expect(toggle.checked).toBe(true);
+  expect(toggle.disabled).toBe(false);
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('never polls after load, toggles or target readback, even as fake timers advance', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const { adapter, config, toggle, unmount } = mount();
+  await settle();
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(adapter.getLidProtection).toHaveBeenCalledOnce();
+  await fireEvent.click(toggle);
+  await settle();
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(adapter.getLidProtection).toHaveBeenCalledOnce();
+  await config.setOpenCodeServiceTarget(null);
+  await settle();
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
+  expect(vi.getTimerCount()).toBe(0);
+  unmount();
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
+});
+
+test('inactive mount and target changes start no work; each active entry reads without toggling', async () => {
+  const { adapter, config, rerender, toggle } = mount({}, false);
+  await config.setOpenCodeServiceTarget(null);
+  await settle();
+  await fireEvent.click(toggle);
+  expect(adapter.getLidProtection).not.toHaveBeenCalled();
+  expect(adapter.setLidProtection).not.toHaveBeenCalled();
+  await rerender({ active: true });
+  await settle();
+  expect(adapter.getLidProtection).toHaveBeenCalledOnce();
+  await rerender({ active: false });
+  await fireEvent.click(toggle);
+  await rerender({ active: true });
+  await settle();
+  expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
+  expect(adapter.setLidProtection).not.toHaveBeenCalled();
+});
+
+test.each([disabled, enabled])(
+  'only successful target saves reread the preference without remounting (enabled=$enabled)',
   async (value) => {
-    const view = mountTarget({ getLidProtection: vi.fn().mockResolvedValue(value) });
-    await waitFor(() => expect(view.toggle.disabled).toBe(false));
-    expect(view.toggle.checked).toBe(value.enabled);
-    const details = view.container.querySelector('details') as HTMLDetailsElement;
-    details.open = true;
-    await view.config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
-    await waitFor(() => expect(view.adapter.getLidProtection).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole('checkbox')).toBe(view.toggle);
-    expect(view.toggle.checked).toBe(value.enabled);
-    expect(details.open).toBe(true);
-    view.adapter.setOpenCodeServiceTarget.mockRejectedValueOnce(new Error('Save failed'));
-    await expect(view.config.setOpenCodeServiceTarget(null)).rejects.toThrow('Save failed');
+    const { adapter, config, toggle } = mount({ getLidProtection: vi.fn().mockResolvedValue(value) });
     await settle();
-    expect(view.config.serviceTargetVersion).toBe(1);
-    expect(view.adapter.getLidProtection).toHaveBeenCalledTimes(2);
-    expect(view.adapter.setLidProtection).not.toHaveBeenCalled();
+    await config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
+    await settle();
+    expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('checkbox')).toBe(toggle);
+    expect(toggle.checked).toBe(value.enabled);
+    adapter.setOpenCodeServiceTarget.mockRejectedValueOnce(new Error('Save failed'));
+    await expect(config.setOpenCodeServiceTarget(null)).rejects.toThrow('Save failed');
+    await settle();
+    expect(config.serviceTargetVersion).toBe(1);
+    expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
+    expect(adapter.setLidProtection).not.toHaveBeenCalled();
   },
 );
-
-test.each(['resolve', 'reject'] as const)(
-  'target changes during a pending read ignore its old %s and reread only the latest target',
-  async (completion) => {
-    const pending = deferred();
-    const latest = deferred();
-    const getLidProtection = vi.fn().mockReturnValueOnce(pending.promise).mockReturnValueOnce(latest.promise);
-    const view = mountTarget({ getLidProtection });
-    await settle();
-    await view.config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
-    await settle();
-    await view.config.setOpenCodeServiceTarget(null);
-    await settle();
-    expect(getLidProtection).toHaveBeenCalledOnce();
-    if (completion === 'resolve') pending.resolve(protectedState);
-    else pending.reject(new Error('Old target error'));
-    await settle();
-    expect(getLidProtection).toHaveBeenCalledTimes(2);
-    expect(view.toggle.checked).toBe(false);
-    expect(screen.queryByRole('alert')).toBeNull();
-    latest.resolve(disabled);
-    await settle();
-    expect(screen.getByRole('status').textContent).toBe('Disabled');
-    expect(view.adapter.setLidProtection).not.toHaveBeenCalled();
-  },
-);
-
-test('target change during authorization defers the latest read without retrying the preference write', async () => {
-  const save = deferred();
-  const latest = deferred();
-  const getLidProtection = vi.fn().mockResolvedValueOnce(disabled).mockReturnValueOnce(latest.promise);
-  const setLidProtection = vi.fn().mockReturnValueOnce(save.promise);
-  const view = mountTarget({ getLidProtection, setLidProtection });
-  await settle();
-  await fireEvent.click(view.toggle);
-  await view.config.setOpenCodeServiceTarget(null);
-  await settle();
-  expect(getLidProtection).toHaveBeenCalledOnce();
-  save.resolve(protectedState);
-  await settle();
-  expect(getLidProtection).toHaveBeenCalledTimes(2);
-  expect(view.toggle.checked).toBe(false);
-  expect(screen.getByRole('status').textContent).not.toContain('Protected');
-  latest.resolve({ enabled: true, phase: 'idle' });
-  await settle();
-  expect(view.toggle.checked).toBe(true);
-  expect(screen.getByRole('status').textContent).toBe('Watching — no working sessions');
-  expect(setLidProtection).toHaveBeenCalledExactlyOnceWith(true);
-});
-
-test.each([false, true])(
-  'target change immediately hides old protected counts and errors while latest read is pending (errors=%s)',
-  async (errors) => {
-    const latest = deferred();
-    const getLidProtection = vi
-      .fn()
-      .mockResolvedValueOnce({ ...protectedState, ...(errors ? { error: 'Old native error' } : {}) })
-      .mockReturnValueOnce(latest.promise);
-    const setLidProtection = vi.fn().mockRejectedValueOnce(new Error('Old save error'));
-    const view = mountTarget({ getLidProtection, setLidProtection });
-    await settle();
-    expect(view.toggle.checked).toBe(true);
-    if (errors) {
-      await fireEvent.click(view.toggle);
-      await screen.findByRole('alert');
-      expect(screen.getByRole('alert').textContent).toContain('Old save error');
-    } else expect(screen.getByRole('status').textContent).toBe('Protected — 2 working sessions');
-    await view.config.setOpenCodeServiceTarget(null);
-    await settle();
-    expect(getLidProtection).toHaveBeenCalledTimes(2);
-    expect(view.toggle.checked).toBe(true);
-    expect(screen.getByRole('status').textContent).toBe('Reading status…');
-    expect(screen.getByRole('status').className).not.toContain('accent-primary');
-    expect(screen.queryByRole('alert')).toBeNull();
-    latest.resolve({ enabled: true, phase: 'idle' });
-    await settle();
-    expect(screen.getByRole('status').textContent).toBe('Watching — no working sessions');
-    expect(screen.queryByRole('alert')).toBeNull();
-    expect(setLidProtection).toHaveBeenCalledTimes(errors ? 1 : 0);
-  },
-);
-
-test('an idle target reload consumes its queue once and returns to a single 2s polling timer', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  const latest = deferred();
-  const getLidProtection = vi
-    .fn()
-    .mockResolvedValueOnce(protectedState)
-    .mockReturnValueOnce(latest.promise)
-    .mockResolvedValue(disabled);
-  const view = mountTarget({ getLidProtection });
-  await settle();
-  await view.config.setOpenCodeServiceTarget(null);
-  await settle();
-  expect(getLidProtection).toHaveBeenCalledTimes(2);
-  expect(vi.getTimerCount()).toBe(0);
-  await vi.advanceTimersByTimeAsync(8000);
-  expect(getLidProtection).toHaveBeenCalledTimes(2);
-  latest.resolve(disabled);
-  await settle();
-  expect(vi.getTimerCount()).toBe(1);
-  await vi.advanceTimersByTimeAsync(1999);
-  expect(getLidProtection).toHaveBeenCalledTimes(2);
-  await vi.advanceTimersByTimeAsync(1);
-  expect(getLidProtection).toHaveBeenCalledTimes(3);
-  expect(vi.getTimerCount()).toBe(1);
-  expect(view.adapter.setLidProtection).not.toHaveBeenCalled();
-});
-
-test.each(['read', 'save', 'read-first', 'save-first'] as const)(
-  'target reload stays queued through %s, drains once, then resumes the ordinary 2s poll',
-  async (operation) => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const read = deferred();
-    const save = deferred();
-    const latest = deferred();
-    const getLidProtection = vi.fn().mockResolvedValueOnce(protectedState);
-    if (operation !== 'save') getLidProtection.mockReturnValueOnce(read.promise);
-    getLidProtection.mockReturnValueOnce(latest.promise).mockResolvedValue(disabled);
-    const view = mountTarget({ getLidProtection, setLidProtection: vi.fn().mockReturnValue(save.promise) });
-    await settle();
-    if (operation !== 'save') await vi.advanceTimersByTimeAsync(2000);
-    if (operation !== 'read') await fireEvent.click(view.toggle);
-    const beforeReload = getLidProtection.mock.calls.length;
-    await view.config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
-    await settle();
-    await view.config.setOpenCodeServiceTarget(null);
-    await settle();
-    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload);
-    expect(screen.getByRole('status').textContent).not.toContain('Protected');
-    await vi.advanceTimersByTimeAsync(8000);
-    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload);
-    expect(vi.getTimerCount()).toBe(0);
-
-    if (operation === 'read-first' || operation === 'save-first') {
-      if (operation === 'read-first') read.reject(new Error('Old target read failed'));
-      else save.reject(new Error('Old target preference write failed'));
-      await settle();
-      await vi.advanceTimersByTimeAsync(4000);
-      expect(getLidProtection).toHaveBeenCalledTimes(beforeReload);
-      expect(vi.getTimerCount()).toBe(0);
-    }
-    read.resolve(protectedState);
-    save.resolve(protectedState);
-    await settle();
-    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload + 1);
-    expect(screen.queryByRole('alert')).toBeNull();
-    await vi.advanceTimersByTimeAsync(8000);
-    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload + 1);
-    expect(vi.getTimerCount()).toBe(0);
-
-    latest.resolve(disabled);
-    await settle();
-    expect(screen.getByRole('status').textContent).toBe('Disabled');
-    expect(vi.getTimerCount()).toBe(1);
-    await vi.advanceTimersByTimeAsync(1999);
-    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload + 1);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload + 2);
-    expect(vi.getTimerCount()).toBe(1);
-    expect(view.adapter.setLidProtection).toHaveBeenCalledTimes(operation === 'read' ? 0 : 1);
-    view.unmount();
-    expect(vi.getTimerCount()).toBe(0);
-    await vi.advanceTimersByTimeAsync(4000);
-    expect(getLidProtection).toHaveBeenCalledTimes(beforeReload + 2);
-  },
-);
-
-test.each(['read', 'save'] as const)('unmount drops a queued target reload behind a pending %s', async (operation) => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  const pending = deferred();
-  const getLidProtection = vi
-    .fn()
-    .mockReturnValueOnce(operation === 'read' ? pending.promise : Promise.resolve(disabled));
-  const view = mountTarget({ getLidProtection, setLidProtection: vi.fn().mockReturnValue(pending.promise) });
-  await settle();
-  if (operation === 'save') await fireEvent.click(view.toggle);
-  await view.config.setOpenCodeServiceTarget(null);
-  await settle();
-  view.unmount();
-  pending.reject(new Error('Old target completed after unmount'));
-  await settle();
-  await vi.advanceTimersByTimeAsync(8000);
-  expect(getLidProtection).toHaveBeenCalledOnce();
-  expect(vi.getTimerCount()).toBe(0);
-  expect(screen.queryByRole('status')).toBeNull();
-});
 
 test.each(['read', 'save'] as const)(
-  'inactive completion of a pending %s keeps target reload queued until re-entry',
+  'target changes during a pending %s defer one latest read and reject stale success or failure',
   async (operation) => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    for (const completion of ['resolve', 'reject'] as const) {
+      const pending = deferred();
+      const latest = deferred();
+      const getLidProtection = vi.fn();
+      if (operation === 'save') getLidProtection.mockResolvedValueOnce(disabled);
+      getLidProtection.mockReturnValueOnce(operation === 'read' ? pending.promise : latest.promise);
+      if (operation === 'read') getLidProtection.mockReturnValueOnce(latest.promise);
+      const view = mount({ getLidProtection, setLidProtection: vi.fn().mockReturnValue(pending.promise) });
+      await settle();
+      if (operation === 'save') await fireEvent.click(view.toggle);
+      await view.config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
+      await settle();
+      await view.config.setOpenCodeServiceTarget(null);
+      await settle();
+      expect(getLidProtection).toHaveBeenCalledOnce();
+      expect(view.toggle.disabled).toBe(true);
+      if (completion === 'resolve') pending.resolve(enabled);
+      else pending.reject(new Error(privateError));
+      await settle();
+      expect(getLidProtection).toHaveBeenCalledTimes(2);
+      expect(view.toggle.checked).toBe(false);
+      expect(view.toggle.disabled).toBe(true);
+      expect(screen.queryByRole('alert')).toBeNull();
+      latest.resolve({ enabled: true, phase: 'unknown', error: privateError });
+      await settle();
+      expect(view.toggle.checked).toBe(true);
+      expect(view.toggle.disabled).toBe(false);
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(view.adapter.setLidProtection).toHaveBeenCalledTimes(operation === 'save' ? 1 : 0);
+      view.unmount();
+    }
+  },
+);
+
+test.each(['read', 'save'] as const)(
+  'inactive completion of a pending %s keeps the latest target read queued until re-entry',
+  async (operation) => {
     const pending = deferred();
-    const getLidProtection = vi.fn().mockResolvedValueOnce(protectedState);
-    if (operation === 'read') getLidProtection.mockReturnValueOnce(pending.promise);
-    getLidProtection.mockResolvedValue(disabled);
-    const view = mountTarget({ getLidProtection, setLidProtection: vi.fn().mockReturnValue(pending.promise) });
+    const getLidProtection = vi.fn();
+    if (operation === 'save') getLidProtection.mockResolvedValueOnce(disabled);
+    else getLidProtection.mockReturnValueOnce(pending.promise);
+    getLidProtection.mockResolvedValue(enabled);
+    const view = mount({ getLidProtection, setLidProtection: vi.fn().mockReturnValue(pending.promise) });
     await settle();
-    if (operation === 'read') await vi.advanceTimersByTimeAsync(2000);
-    else await fireEvent.click(view.toggle);
+    if (operation === 'save') await fireEvent.click(view.toggle);
     await view.rerender({ active: false });
     await view.config.setOpenCodeServiceTarget(null);
     await settle();
-    const reads = getLidProtection.mock.calls.length;
-    pending.resolve(protectedState);
+    pending.resolve(enabled);
     await settle();
-    await vi.advanceTimersByTimeAsync(6000);
-    expect(getLidProtection).toHaveBeenCalledTimes(reads);
-    expect(vi.getTimerCount()).toBe(0);
-    expect(screen.getByRole('status').textContent).not.toContain('Protected');
+    expect(getLidProtection).toHaveBeenCalledOnce();
     await fireEvent.click(view.toggle);
     expect(view.adapter.setLidProtection).toHaveBeenCalledTimes(operation === 'save' ? 1 : 0);
     await view.rerender({ active: true });
     await settle();
-    expect(getLidProtection).toHaveBeenCalledTimes(reads + 1);
+    expect(getLidProtection).toHaveBeenCalledTimes(2);
     expect(screen.getByRole('checkbox')).toBe(view.toggle);
-    expect(screen.getByRole('status').textContent).toBe('Disabled');
-    expect(vi.getTimerCount()).toBe(1);
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(getLidProtection).toHaveBeenCalledTimes(reads + 2);
+    expect(view.toggle.checked).toBe(true);
+    expect(view.toggle.disabled).toBe(false);
   },
 );
+
+test('fast active round trips retain the pending write guard and defer readback without another write', async () => {
+  const save = deferred();
+  const { adapter, rerender, toggle } = mount({ setLidProtection: vi.fn().mockReturnValue(save.promise) });
+  await settle();
+  await fireEvent.click(toggle);
+  await rerender({ active: false });
+  await rerender({ active: true });
+  await fireEvent.click(toggle);
+  expect(adapter.setLidProtection).toHaveBeenCalledExactlyOnceWith(true);
+  expect(adapter.getLidProtection).toHaveBeenCalledOnce();
+  expect(toggle.disabled).toBe(true);
+  save.resolve(enabled);
+  await settle();
+  expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
+  expect(toggle.disabled).toBe(false);
+});
+
+test.each(['read', 'save'] as const)('unmount drops a queued target reload behind a pending %s', async (operation) => {
+  const pending = deferred();
+  const { adapter, config, toggle, unmount } = mount({
+    getLidProtection: vi.fn().mockReturnValueOnce(operation === 'read' ? pending.promise : Promise.resolve(disabled)),
+    setLidProtection: vi.fn().mockReturnValue(pending.promise),
+  });
+  await settle();
+  if (operation === 'save') await fireEvent.click(toggle);
+  await config.setOpenCodeServiceTarget(null);
+  await settle();
+  unmount();
+  pending.reject(new Error(privateError));
+  await settle();
+  expect(adapter.getLidProtection).toHaveBeenCalledOnce();
+  expect(adapter.setLidProtection).toHaveBeenCalledTimes(operation === 'save' ? 1 : 0);
+  expect(screen.queryByRole('checkbox')).toBeNull();
+  expect(screen.queryByRole('alert')).toBeNull();
+});

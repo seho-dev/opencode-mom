@@ -160,11 +160,16 @@ test('matches bilingual labels, descriptions and technical names locally, and fo
     ['局域网', en['settings.http.allowLan']],
     ['默认插件', en['settings.defaultPlugin']],
     ['登录', en['settings.autostart']],
+    ['closed bag', en['settings.lid']],
+    ['管理员', en['settings.lid']],
     ['password', en['settings.servicePassword']],
+    ['MOM HTTP token', en['settings.http.rotateKey']],
+    ['令牌', en['settings.http.rotateKey']],
   ] as const) {
     await fireEvent.input(search, { target: { value: query } });
     expect(within(results()).getByText(label)).toBeTruthy();
   }
+  await fireEvent.input(search, { target: { value: 'password' } });
   await config.setLocale('zh');
   await tick();
   expect(search).toBe(screen.getByRole('searchbox', { name: '搜索设置' }));
@@ -255,7 +260,7 @@ test('search and same-tab navigation retain URL, password, clear-password and HT
   expectNoWrites(adapter);
   expect(config.draftRecovery).toBeNull();
   await vi.advanceTimersByTimeAsync(2000);
-  expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
+  expect(adapter.getLidProtection).toHaveBeenCalledOnce();
   expect(adapter.getMomHttpSettings).toHaveBeenCalledOnce();
   expect(port.value).toBe('23456');
   expect(password.value).toBe('draft-only-private-password');
@@ -266,7 +271,7 @@ test('search and same-tab navigation retain URL, password, clear-password and HT
   unmount();
   expect(password.isConnected).toBe(false);
   await vi.advanceTimersByTimeAsync(4000);
-  expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
+  expect(adapter.getLidProtection).toHaveBeenCalledOnce();
   expect(adapter.getMomHttpSettings).toHaveBeenCalledOnce();
 });
 

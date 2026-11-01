@@ -151,3 +151,44 @@ test('editing an explicit empty capabilities block preserves its false tools val
   await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
   expect(onSave).toHaveBeenCalledWith('example', { id: 'existing', capabilities: { tools: false } });
 });
+
+test('initial.limit.input null renders empty string and modelToFormValues preserves 0 for cost and limit siblings', async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  const initialWithZeroAndNull: ModelDef = {
+    id: 'zero-model',
+    cost: {
+      input: 0,
+      output: 0,
+      cache: {
+        read: 0,
+        write: 0,
+      },
+    },
+    limit: {
+      context: 0,
+      output: 0,
+      input: null,
+    },
+  };
+
+  render(
+    ModelForm,
+    {
+      mode: 'edit',
+      defaultProviderId: 'example',
+      initial: initialWithZeroAndNull,
+      onSave,
+    },
+    { wrapper: Harness, wrapperProps: { config: config() } },
+  );
+
+  const limitInput = screen.getByRole('combobox', { name: 'Input' }) as HTMLInputElement;
+  expect(limitInput.value).toBe('');
+  expect(limitInput.value).not.toBe('null');
+
+  const costInput = screen.getByRole('spinbutton', { name: 'Input' }) as HTMLInputElement;
+  expect(costInput.value).toBe('0');
+
+  const limitContext = screen.getByRole('combobox', { name: 'Context' }) as HTMLInputElement;
+  expect(limitContext.value).toBe('0');
+});

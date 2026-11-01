@@ -33,7 +33,7 @@ Source-relative paths below are relative to `src/routes/`, not this docs directo
 | Responsibility | File | Description |
 | --- | --- | --- |
 | Provider validation | `providers/schema.ts` | Requires package on creation; parses optional string-valued headers. |
-| Model mapping | `models/modelForm.ts` | Converts editor strings/variant rows to model definitions and back. |
+| Model mapping | `models/modelForm.ts` | Converts editor strings/variant rows to model definitions and back; maps nullish numeric limits/costs to empty strings while preserving zero values, and omits blank optional numeric fields on save. |
 | Agent editing | `agents/agentForm.ts`, `agents/PermissionEditor.svelte` | Validates fields, joins model variants, and serializes ordered permission rules. |
 | Group editing | `groups/GroupForm.svelte` | Edits runtime-specific bindings and confirms type changes when mappings exist. |
 | Document editors | `mcp/McpForm.svelte`, `skills/SkillForm.svelte` | Preserve full documents and send expected source snapshots on updates. |

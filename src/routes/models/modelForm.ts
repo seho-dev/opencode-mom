@@ -25,7 +25,7 @@ export type ModelFormValues = {
 
 export const MODALITIES: ModelModality[] = ['text', 'audio', 'image', 'video', 'pdf'];
 export const emptyVariant = (): VariantRow => ({ key: '', json: '{}' });
-const numStr = (value: number | undefined) => (value === undefined ? '' : String(value));
+const numStr = (value: number | null | undefined) => (value == null ? '' : String(value));
 export const initMods = (values?: ModelModality[]) => {
   const selected: Record<ModelModality, boolean> = {
     text: false,

@@ -7,14 +7,14 @@ export interface ModelCapabilities {
   output?: ModelModality[];
 }
 export interface ModelCost {
-  input: number;
-  output: number;
-  cache?: { read?: number; write?: number };
+  input?: number | null;
+  output?: number | null;
+  cache?: { read?: number | null; write?: number | null } | null;
 }
 export interface ModelLimit {
-  context: number;
-  output: number;
-  input?: number;
+  context?: number | null;
+  output?: number | null;
+  input?: number | null;
 }
 export interface ModelVariant {
   id: string;
@@ -28,8 +28,8 @@ export interface ModelDef {
   family?: string;
   disabled?: boolean;
   capabilities?: ModelCapabilities;
-  cost?: ModelCost;
-  limit?: ModelLimit;
+  cost?: ModelCost | null;
+  limit?: ModelLimit | null;
   settings?: Record<string, unknown>;
   headers?: Record<string, string>;
   variants?: ModelVariant[];

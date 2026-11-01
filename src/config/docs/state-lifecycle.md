@@ -12,13 +12,13 @@ Source-relative paths below are relative to `src/config/`, not this docs directo
 
 - **Request ownership**: Preserve separate state/catalog sequence counters; only the newest response updates values or errors. State loading uses an outstanding-request count; catalog loading belongs to its latest request.
 
-- **Refresh failures**: Automatic refresh tolerates catalog failure after a successful mutation. `refreshAll` rejects catalog failure through `refreshAllError`; failed catalog loads retain the previous catalog.
+- **Refresh failures**: Automatic refresh tolerates catalog failure after a successful mutation. Explicit `refreshAll` or reload rejects state or catalog failure and reports it only through `config.error`; automatic and local catalog reads report through `catalogError`. Failed catalog loads retain the previous catalog.
 
 - **Reload lifecycle**: `reloadOpencode` invokes the selected service configuration reload before refreshing, prevents overlapping reloads, and holds the splash until completion. Initialization also waits for its catalog attempt.
 
 ## Drafts and committed preferences
 
-- **Draft recovery**: Snapshot non-secret failed payloads with `structuredClone`; `reloadKeepingDraft` preserves recovery and form versions, while discard refresh clears recovery and increments `formResetVersion`.
+- **Draft recovery**: Snapshot non-secret failed payloads with `structuredClone`; `reloadKeepingDraft` preserves recovery and form versions. A failed refresh preserves recovery, and a successful full refresh clears it and resets forms only if no new recovery appeared during the read. Explicit discard clears recovery before refreshing.
 
 - **Secret drafts**: MCP/skill create/update failures retain no payload or error detail and use a generic message; leave sensitive content in its original form.
 

@@ -15,7 +15,7 @@ function deferred() {
 const state = (id) => ({
   providers: [],
   agents: [],
-  groups: [{ id }],
+  groups: [{ id, type: 'opencode' }],
   preferences: { theme: 'dark', locale: 'en' },
 });
 
@@ -145,7 +145,7 @@ test('startup, save, and full refresh use the correct splash and reload paths', 
     await refreshing;
     assert.deepEqual(store.catalog, catalog);
     assert.equal(store.splashLoading, false);
-    assert.equal(store.refreshAllError, null);
+    assert.equal(store.error, null);
 
     const failing = store.refreshAll();
     assert.equal(store.splashLoading, false);
@@ -155,8 +155,8 @@ test('startup, save, and full refresh use the correct splash and reload paths', 
     catalogs[3].reject(new Error('catalog unavailable'));
     await assert.rejects(failing, { code: 'ipc_error', message: 'catalog unavailable' });
     assert.equal(store.groups[0].id, 'after-failure');
-    assert.equal(store.catalogError?.message, 'catalog unavailable');
-    assert.equal(store.refreshAllError?.message, 'catalog unavailable');
+    assert.equal(store.catalogError, null);
+    assert.equal(store.error?.message, 'catalog unavailable');
     assert.equal(store.splashLoading, false);
     assert.deepEqual(store.catalog, catalog);
   } finally {
@@ -205,7 +205,7 @@ test('OpenCode reload invokes the selected service before full refresh and skips
     ]);
     assert.equal(store.reloading, false);
     assert.equal(store.splashLoading, false);
-    assert.equal(store.refreshAllError, null);
+    assert.equal(store.error, null);
 
     reload = deferred();
     const failure = store.reloadOpencode();
@@ -220,7 +220,7 @@ test('OpenCode reload invokes the selected service before full refresh and skips
       'load_app_state',
       'opencode_reload',
     ]);
-    assert.equal(store.refreshAllError?.message, 'OpenCode reload failed');
+    assert.equal(store.error?.message, 'OpenCode reload failed');
     assert.equal(store.splashLoading, false);
     assert.equal(store.reloading, false);
 
@@ -232,8 +232,8 @@ test('OpenCode reload invokes the selected service before full refresh and skips
     assert.equal(store.splashLoading, true);
     catalog.reject(new Error('catalog unavailable'));
     await assert.rejects(catalogFailure, { code: 'ipc_error', message: 'catalog unavailable' });
-    assert.equal(store.refreshAllError?.message, 'catalog unavailable');
-    assert.equal(store.catalogError?.message, 'catalog unavailable');
+    assert.equal(store.error?.message, 'catalog unavailable');
+    assert.equal(store.catalogError, null);
     assert.equal(store.splashLoading, false);
     assert.equal(store.reloading, false);
   } finally {
@@ -466,7 +466,6 @@ test('switchGroup keeps a successful mutation when its catalog refresh fails', a
     assert.deepEqual(store.catalog, [{ modelId: 'original' }]);
     assert.equal(store.catalogError?.message, 'catalog unavailable');
     assert.equal(store.error, null);
-    assert.equal(store.refreshAllError, null);
     assert.equal(store.draftRecovery, null);
     assert.equal(store.switching, false);
     assert.equal(store.saving, false);

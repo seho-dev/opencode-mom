@@ -86,14 +86,7 @@ test('group IPC reads wire types and writes canonical types for save and copy', 
         return {
           providers: [],
           agents: [],
-          groups: [
-            group('native', 'opencode'),
-            group('slim', 'slim'),
-            group('omo', 'oh-my-openagent'),
-            group('legacy-native', 'native'),
-            group('legacy-omo', 'omo'),
-            group('unknown', 'unknown-type'),
-          ],
+          groups: [group('native', 'opencode'), group('slim', 'slim'), group('omo', 'oh-my-openagent')],
           preferences: { theme: 'dark', locale: 'en' },
         };
       if (command === 'save_group') {
@@ -106,8 +99,12 @@ test('group IPC reads wire types and writes canonical types for save and copy', 
 
     const state = await adapter.loadAppState();
     assert.deepEqual(
-      state.groups.map(({ type }) => type),
-      ['native', 'slim', 'omo', 'native', 'omo', 'native'],
+      state.groups.map(({ id, type }) => [id, type]),
+      [
+        ['native', 'native'],
+        ['slim', 'slim'],
+        ['omo', 'omo'],
+      ],
     );
     for (const [type, wire] of [
       ['native', 'opencode'],

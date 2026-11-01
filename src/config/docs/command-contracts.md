@@ -45,7 +45,7 @@ This directory connects typed command calls to shared application state and Svel
 | Responsibility | File | Description |
 | --- | --- | --- |
 | Command boundary | `adapter.ts` | `CommandAdapter` defines IPC operations; `createTauriAdapter(invoke)` maps command names and arguments. |
-| Compatibility | `adapter.ts` | `groupTypeToWire` writes `opencode`/`slim`/`oh-my-openagent`; `groupTypeFromWire` accepts canonical aliases and defaults unknown values to `native`. |
+| Compatibility | `adapter.ts` | `groupTypeToWire` writes `opencode`/`slim`/`oh-my-openagent`; `groupTypeFromWire` accepts only frozen wire types `opencode`/`slim`/`oh-my-openagent` and rejects unknown/legacy values (`native`/`omo`). |
 
 ## Prompt regression coverage
 

@@ -120,7 +120,6 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
   let catalog = $state<ModelCatalogEntry[]>([]);
   let catalogLoading = $state(false);
   let catalogError = $state<CommandError | null>(null);
-  let refreshAllError = $state<CommandError | null>(null);
   // Guards against out-of-order catalog responses when loads overlap (startup prefetch, group switch, manual refresh).
   let catalogRequestSeq = 0;
   let serviceTargetVersion = $state(0);
@@ -224,50 +223,65 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       projectSaving = false;
     }
   };
-  async function refresh(keepDraft = false, rejectCatalog = false) {
+  async function refresh(keepDraft = false, rejectErrors = false) {
     loading = true;
     stateRequests += 1;
     const request = ++stateRequestSeq;
     const readProjectVersion = projectVersion;
-    if (!keepDraft) {
-      error = null;
-      draftRecovery = null;
-    }
-    const catalogResult = (catalogOnRefresh ? loadCatalog() : Promise.resolve()).then(
+    const readDraftRecovery = draftRecovery;
+    if (!keepDraft) error = null;
+    const catalogResult = (catalogOnRefresh ? loadCatalog(undefined, !rejectErrors) : Promise.resolve()).then(
       () => null,
       (cause: unknown) => serializeError(cause),
     );
+    const catalogRequest = catalogRequestSeq;
+    const targetVersion = serviceTargetVersion;
+    let stateFailure: CommandError | null = null;
     try {
       const state = await adapter.loadAppState();
-      if (request === stateRequestSeq) apply(state, !keepDraft, readProjectVersion);
+      if (request === stateRequestSeq) {
+        const resetForms = !keepDraft && draftRecovery === readDraftRecovery;
+        apply(state, resetForms, readProjectVersion);
+        if (resetForms) draftRecovery = null;
+      }
     } catch (cause) {
-      if (request === stateRequestSeq) error = serializeError(cause);
+      stateFailure = serializeError(cause);
+      if (request === stateRequestSeq) error = stateFailure;
     } finally {
       if (--stateRequests === 0) loading = false;
     }
     const catalogFailure = await catalogResult;
-    if (rejectCatalog && catalogFailure) throw catalogFailure;
+    if (rejectErrors) {
+      if (stateFailure) throw stateFailure;
+      if (catalogFailure) {
+        if (
+          request === stateRequestSeq &&
+          catalogRequest === catalogRequestSeq &&
+          targetVersion === serviceTargetVersion &&
+          serviceTargetRequests === 0
+        )
+          error = catalogFailure;
+        throw catalogFailure;
+      }
+    }
   }
   async function refreshAll() {
-    refreshAllError = null;
-    try {
-      await refresh(false, true);
-    } catch (cause) {
-      refreshAllError = serializeError(cause);
-      throw refreshAllError;
-    }
+    await refresh(false, true);
   }
   async function reloadOpencode() {
     if (reloading) return;
     reloading = true;
     splashLoading = true;
-    refreshAllError = null;
+    error = null;
     try {
-      await adapter.opencodeReload();
+      try {
+        await adapter.opencodeReload();
+      } catch (cause) {
+        const failure = serializeError(cause);
+        error = failure;
+        throw failure;
+      }
       await refreshAll();
-    } catch (cause) {
-      refreshAllError = serializeError(cause);
-      throw refreshAllError;
     } finally {
       reloading = false;
       if (!initializing) splashLoading = false;
@@ -284,7 +298,7 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
   function continueEditing() {
     error = null;
   }
-  async function loadCatalog(provider?: string) {
+  async function loadCatalog(provider?: string, reportError = true) {
     const targetVersion = serviceTargetVersion;
     assertServiceTarget(targetVersion);
     const seq = ++catalogRequestSeq;
@@ -297,7 +311,12 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       return result;
     } catch (cause) {
       const err = serializeError(cause);
-      if (seq === catalogRequestSeq && targetVersion === serviceTargetVersion && serviceTargetRequests === 0)
+      if (
+        reportError &&
+        seq === catalogRequestSeq &&
+        targetVersion === serviceTargetVersion &&
+        serviceTargetRequests === 0
+      )
         catalogError = err;
       throw err;
     } finally {
@@ -372,9 +391,6 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     },
     get catalogError() {
       return catalogError;
-    },
-    get refreshAllError() {
-      return refreshAllError;
     },
     clearNotice() {
       notice = null;
@@ -700,7 +716,9 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
         switching = false;
       }
     },
-    loadCatalog,
+    loadCatalog(provider?: string) {
+      return loadCatalog(provider);
+    },
     async loadTokenUsageRecords(): Promise<TokenUsageRecord[]> {
       const targetVersion = serviceTargetVersion;
       assertServiceTarget(targetVersion);

@@ -75,7 +75,10 @@ function mount(
       return {
         providers: [],
         agents: [],
-        groups: options.groups ?? groups,
+        groups: (options.groups ?? groups).map((group) => ({
+          ...group,
+          type: { native: 'opencode', slim: 'slim', omo: 'oh-my-openagent' }[group.type],
+        })),
         selectedGroupId,
         preferences: { locale: persistedLocale, theme: persistedTheme },
       };

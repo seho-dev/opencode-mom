@@ -54,15 +54,22 @@ const GROUP_TYPE_WIRE: Record<GroupType, string> = {
   slim: 'slim',
   omo: 'oh-my-openagent',
 };
-const WIRE_GROUP_TYPE: Record<string, GroupType> = {
-  opencode: GROUP_TYPE_NATIVE,
-  slim: GROUP_TYPE_SLIM,
-  'oh-my-openagent': GROUP_TYPE_OMO,
-  native: GROUP_TYPE_NATIVE,
-  omo: GROUP_TYPE_OMO,
-};
 export const groupTypeToWire = (type: GroupType): string => GROUP_TYPE_WIRE[type];
-export const groupTypeFromWire = (value: string): GroupType => WIRE_GROUP_TYPE[value] ?? GROUP_TYPE_NATIVE;
+export const groupTypeFromWire = (value: unknown): GroupType => {
+  switch (value) {
+    case 'opencode':
+      return GROUP_TYPE_NATIVE;
+    case 'slim':
+      return GROUP_TYPE_SLIM;
+    case 'oh-my-openagent':
+      return GROUP_TYPE_OMO;
+    default:
+      throw {
+        code: 'configuration_failed',
+        message: 'Configuration contains an unsupported group type.',
+      } satisfies CommandError;
+  }
+};
 
 export interface CommandAdapter {
   loadAppState(): Result<AppState>;

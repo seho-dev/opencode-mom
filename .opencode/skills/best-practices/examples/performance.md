@@ -50,13 +50,13 @@ function AnalyticsTable({ rawLogs, filterText, onSelectLog }) {
     .filter((log) => log.message.includes(filterText))
     .sort((a, b) => b.timestamp - a.timestamp);
 
-  // Re-creates new function reference on every parent render
+  // Unnecessary wrapper defeats the consumer's useful callback stability
   const handleSelect = (id: string) => onSelectLog(id);
 
   return <VirtualizedList items={processedLogs} onSelect={handleSelect} />;
 }
 
-// ✅ Good: Memoize expensive data derivations and stabilize handler references
+// ✅ Good: Cache measured expensive work and reuse the already-stable callback
 function AnalyticsTable({ rawLogs, filterText, onSelectLog }) {
   const processedLogs = useMemo(() => {
     return rawLogs
@@ -64,10 +64,6 @@ function AnalyticsTable({ rawLogs, filterText, onSelectLog }) {
       .sort((a, b) => b.timestamp - a.timestamp);
   }, [rawLogs, filterText]);
 
-  const handleSelect = useCallback((id: string) => {
-    onSelectLog(id);
-  }, [onSelectLog]);
-
-  return <VirtualizedList items={processedLogs} onSelect={handleSelect} />;
+  return <VirtualizedList items={processedLogs} onSelect={onSelectLog} />;
 }
 ```

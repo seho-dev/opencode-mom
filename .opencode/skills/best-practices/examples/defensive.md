@@ -1,8 +1,86 @@
-# Defensive Coding & Simplicity Rules - Code Examples
+# Boundary Safety & Simplicity Examples
 
-> Reference code examples for [../rules/defensive.md](../rules/defensive.md).
+> Concrete patterns and examples supporting [../rules/defensive.md](../rules/defensive.md).
 
-## Patterns & Examples
+---
+
+## Language-Independent Baseline (Illustrative Pseudocode)
+
+These examples describe contracts, not a required language, library, or architecture. Runtime predicates perform real checks; record construction alone is not validation.
+
+### 1. Validate Once; Default Only Legitimate Absence
+
+Example contract: an order is an object with a mandatory exact status of `paid`, `pending`, or `canceled`. `retry_count` may be absent, meaning `0`; when present it must be a non-negative integer. No coercion or case normalization is agreed.
+
+```text
+function parse_order(raw):
+    if not is_object(raw) or not has_field(raw, "status"):
+        fail InvalidInput("order requires status")
+
+    status = raw["status"]
+    if not is_string(status) or status not in {"paid", "pending", "canceled"}:
+        fail InvalidInput("invalid status")
+
+    if has_field(raw, "retry_count"):
+        retry_count = raw["retry_count"]
+        if not is_integer(retry_count) or retry_count < 0:
+            fail InvalidInput("invalid retry_count")
+    else:
+        retry_count = 0
+
+    return ValidatedOrder(status, retry_count)
+
+function status_label(order):
+    # Internal contract already guarantees a known status.
+    return {"paid": "Paid", "pending": "Pending", "canceled": "Canceled"}[order.status]
+```
+
+Missing `retry_count` defaults to `0`; a supplied `0` remains valid. A supplied null, negative number, string, or boolean fails the integer contract. Missing, unknown, or uppercase status fails rather than becoming `pending`. Internal consumers do not repeat these checks while the validated contract remains intact.
+
+### 2. Domain Policy vs Pass-Through Helper
+
+```text
+# Unnecessary alias: no meaning or responsibility beyond the existing operation.
+function filter_items(items, predicate):
+    return filter(items, predicate)
+
+# Prefer the existing operation directly.
+active_users = filter(users, user -> user.active)
+
+# Useful even with one caller: names an agreed shipment-release policy.
+function can_release_shipment(shipment):
+    return shipment.payment_status equals "paid"
+        and shipment.inventory_reserved
+        and not shipment.on_hold
+```
+
+The policy assumes validated shipment data and an agreed release contract. Its value is domain meaning, not its length or how many tests or callers use it.
+
+### 3. Meaningful Error Ownership and Cleanup
+
+Here `using` represents structured resource management that closes the file on every exit. The named errors illustrate expected failures, not a required exception hierarchy.
+
+```text
+function load_order(path):
+    using source = open_read_only(path):
+        return parse_order(decode_json(source.read()))
+    # Read, decode, and validation failures propagate; no catch-log-rethrow.
+
+function import_command(path):
+    try:
+        order = load_order(path)
+        save_order(order)
+    catch ReadFailure, DecodeFailure, InvalidInput, SaveFailure as error:
+        report_import_failure(error)
+        return Failure
+    return Success
+```
+
+The command boundary can report failure and return an unsuccessful outcome. The loader cannot recover, so it propagates failures while still releasing the file. No layer substitutes an empty order or reports successful work after a failed save.
+
+---
+
+## Frontend & TypeScript Patterns
 
 ### 1. Zero Speculative Abstraction
 

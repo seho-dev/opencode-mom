@@ -32,7 +32,9 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
 import { getUserProfile } from '@/api/user';
 
 function UserCard({ userId }: { userId: string }) {
-  const { data: user } = useQuery(['user', userId], () => getUserProfile(userId));
+  const { data: user, isLoading, error } = useQuery(['user', userId], () => getUserProfile(userId));
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div role="alert">Unable to load profile.</div>;
   return <div>{user?.name}</div>;
 }
 ```
@@ -51,7 +53,7 @@ import { formatDate } from '@/utils/date';
 import { USER_ROLES } from '@/constants/roles';
 ```
 
-### 3. Centralized Constants vs Hardcoded Literals
+### 3. Named Domain Constants vs Unexplained Literals
 
 ```ts
 // ❌ Bad: Hardcoded string literals and magic numbers scattered in code
@@ -59,20 +61,20 @@ if (user.role === 'admin' && status === 2) {
   expireInDays = 30;
 }
 
-// ✅ Good: Typed constants imported from domain constants module
-export const USER_ROLES = {
+// ✅ Good: Name domain values near their owner; share a module only for shared ownership
+const USER_ROLES = {
   ADMIN: 'admin',
   MEMBER: 'member',
   GUEST: 'guest',
 } as const;
 
-export const ORDER_STATUS = {
+const ORDER_STATUS = {
   PENDING: 1,
   ACTIVE: 2,
   EXPIRED: 3,
 } as const;
 
-export const DEFAULT_SESSION_EXPIRATION_DAYS = 30;
+const DEFAULT_SESSION_EXPIRATION_DAYS = 30;
 
 // Call site:
 if (user.role === USER_ROLES.ADMIN && status === ORDER_STATUS.ACTIVE) {

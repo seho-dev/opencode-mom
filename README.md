@@ -108,6 +108,16 @@ cargo check --manifest-path src-tauri/Cargo.toml   # Rust backend check
 cargo test --manifest-path src-tauri/Cargo.toml    # Rust backend tests
 ```
 
+### Release
+
+The project uses the GitHub Actions **Release** workflow on the default branch:
+
+- **Automated**: Commit to the default branch with `release` or `release: description` (bumps the next patch version, e.g. `2.0.1`), or `release: X.Y.Z` (bumps to an explicit newer stable version).
+- **Manual**: Dispatch the `Release` workflow on the default branch with optional `version` (`X.Y.Z`, leave empty for next patch).
+- **Dry Run**: Pass `dry_run: true` on manual dispatch (defaults to `false`) to preview the resolved version and notes without committing, tagging, pushing, building, or publishing.
+- **Notes & Safety Notice**: GitHub Release notes use the exact tagged section from `CHANGELOG.md` (falling back to commit history if absent) with platform security notices appended. Pushing a version-matching `vX.Y.Z` tag directly verifies manifests and publishes without changelog writeback.
+- **Pipeline & Permissions**: The workflow uses the built-in `GITHUB_TOKEN` with `contents: write`; branch and tag rules must permit the release bot's generated commit and tag. Token write permission alone does not bypass branch protection. Release preparation prepends `CHANGELOG.md`, synchronizes 5 manifests (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`) while leaving `macos-helper` untouched, and pushes the branch and tag atomically. Publication waits for all platform builds. If build or publish fails, rerun the original failed workflow without another version bump.
+
 ## 📄 License
 
 Released under the [MIT License](LICENSE). © 2026 seho-dev.

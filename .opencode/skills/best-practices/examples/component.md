@@ -48,7 +48,7 @@ function ItemList({ items }) {
   return <ul>{activeItems.map((item) => <li key={item.id}>{item.name}</li>)}</ul>;
 }
 
-// ✅ Good: Derive directly in render (memoize only if computation is heavy)
+// ✅ Good: Derive directly in render (memoize only when workload or profiling justifies it)
 function ItemList({ items }) {
   const activeItems = items.filter((item) => item.isActive);
 

@@ -35,7 +35,7 @@ function TodoApp() {
 ### 2. Prop Drilling vs Composition / Context
 
 ```tsx
-// ❌ Bad: Drilling currentUser through unrelated intermediate layout components
+// ❌ Bad when repeated pass-through props obscure ownership and complicate maintenance
 function App({ currentUser }) {
   return <Layout currentUser={currentUser} />;
 }
@@ -57,7 +57,7 @@ function App({ currentUser }) {
   );
 }
 
-// ✅ Good (Option B - Shared Context/Store): Access state directly at the consumer
+// ✅ Good (Option B, when shared access warrants context/store): Read at the consumer
 function UserProfile() {
   const currentUser = useCurrentUser();
   return <div>{currentUser.name}</div>;

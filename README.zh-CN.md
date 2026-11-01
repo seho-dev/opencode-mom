@@ -108,6 +108,16 @@ cargo check --manifest-path src-tauri/Cargo.toml   # Rust 后端编译检查
 cargo test --manifest-path src-tauri/Cargo.toml    # Rust 后端测试
 ```
 
+### 发布流程
+
+项目通过 GitHub Actions 的 **Release** 工作流在默认分支触发发布：
+
+- **自动触发**：向默认分支提交标题为 `release` 或 `release: 描述` 的 commit（自动提升下一补丁版本，例如 `2.0.1`），或使用 `release: X.Y.Z` 显式发布更新的稳定版本。
+- **手动触发**：在 GitHub Actions 中手动 dispatch 执行 `Release` 工作流，支持可选的 `version`（`X.Y.Z`，留空默认提升下一补丁版本）。
+- **预演模式（Dry Run）**：手动触发时可设置 `dry_run: true`（默认为 `false`），仅预览计算后的版本号与发布说明，不会生成 commit、tag、推送、构建或发布。
+- **发布说明与安全提示**：GitHub Release 说明精准引用 `CHANGELOG.md` 中对应 tag 的章节内容（若缺失则回退到 commit 历史记录），并附带平台安全提示说明。直接推送版本匹配的 `vX.Y.Z` tag 会校验清单一致性并直接发布，不执行 changelog 回写。
+- **权限与重试保护**：工作流使用具备 `contents: write` 权限的内置 `GITHUB_TOKEN`；分支与 tag 规则必须允许 release bot 推送自动生成的 commit 与 tag，Token 写权限本身不会绕过分支保护。发布准备阶段向 `CHANGELOG.md` 顶部追加条目，同步 5 个清单文件（`package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`），保持 `macos-helper` 独立不被修改，并原子推送分支与 tag。所有平台构建成功后才发布；若构建或发布失败，重新运行原有失败工作流即可继续，无需再次递增版本。
+
 ## 📄 开源许可证
 
 遵循 [MIT License](LICENSE) 开源协议。© 2026 seho-dev.

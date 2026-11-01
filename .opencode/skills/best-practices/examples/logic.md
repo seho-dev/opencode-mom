@@ -31,11 +31,12 @@ function UserStatusWidget({ userId }) {
   return <div>Score: {data?.score}</div>;
 }
 
-// ✅ Good: Domain logic extracted into a reusable hook or utility function
+// ✅ Good: Domain policy and request lifecycle have a clear owner
 function UserStatusWidget({ userId }) {
-  const { data, isLoading } = useUserMetrics(userId);
+  const { data, isLoading, error } = useUserMetrics(userId);
 
   if (isLoading) return <div>Loading...</div>;
+  if (error) return <div role="alert">Unable to load metrics.</div>;
   return <div>Score: {data?.score}</div>;
 }
 ```
@@ -50,7 +51,7 @@ useEffect(() => {
   // Missing cleanup listener and missing abort signal
 }, [id]);
 
-// ✅ Good: Clean up listeners and cancel pending requests
+// ✅ Good: This effect owns cleanup and failure reporting; fetchData propagates errors
 useEffect(() => {
   const controller = new AbortController();
 
@@ -58,16 +59,18 @@ useEffect(() => {
   window.addEventListener('resize', handleResize);
 
   fetchData(id, { signal: controller.signal })
-    .then((result) => setData(result))
+    .then((result) => {
+      if (!controller.signal.aborted) setData(result);
+    })
     .catch((error) => {
-      if (error.name !== 'AbortError') {
+      if (!controller.signal.aborted) {
         showErrorMessage(error);
       }
     });
 
   return () => {
-    window.removeEventListener('resize', handleResize);
     controller.abort();
+    window.removeEventListener('resize', handleResize);
   };
 }, [id]);
 ```

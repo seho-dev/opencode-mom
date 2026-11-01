@@ -39,7 +39,7 @@ Paths in this table are relative to `src-tauri/src/opencode/`.
 - **Fork ownership**: Validate origin chains, before/through boundaries, native copy eligibility, and copied metadata projections before excluding inherited prefixes; missing origins fall back to root attribution, while missing boundaries, cycles, and mismatches fail the scan.
 - **Catalog editing**: `list_models_via_service` uses GET `/api/model`, returning `{location,data: Model.Info[]}`; use enabled entries' `providerID/modelID`, not `id` or providerInfo. Keep configured models including disabled ones; config metadata is authoritative and provider filtering remains client-side.
 - **Test fixtures**: Service tests use injected snapshots/paths, dual FakeApi servers and synthetic Basic credentials, never global environment or real API/bootstrap. Collector/bootstrap fake shells remain Unix-gated. Keep `process::read_only_live_scan` ignored.
-- **Prompt generation**: Validate kind/preset IDs/text/model before connecting; generate.rs prepends backend editing instructions and calls only POST /api/experimental/generate with target pinned through bootstrap/health/POST/bounded response. Never create sessions, mutate agent/command files, log private text, or automatically retry possibly billable requests.
+- **Prompt generation**: Validate kind/preset IDs/text/model before connecting; generate.rs prepends backend editing instructions for `agent`, `command` or Global `AGENTS.md` `behavior` and calls only POST /api/experimental/generate with target pinned through bootstrap/health/POST/bounded response. Never create sessions, mutate agent/command/behavior files, log private text, or automatically retry possibly billable requests.
 
 ## Backend Integration
 

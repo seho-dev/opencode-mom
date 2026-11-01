@@ -16,7 +16,7 @@ Reusable controls, overlays, feedback, and app-level table, form, dashboard, and
 
 - **Scope picker**: Select supports opt-in always-search, pinned choice, stacked path hints, and globe icons. ResourceScope persists only through config, restores confirmed selection on failure, treats native picker cancellation as a no-op, and disables management during writes, not list reads. Forgetting a folder never deletes files.
 
-- **Prompt generation**: `PromptGenerator.svelte` shares the Agent/Command preview dialog; it reads model options only while open and replaces the local draft only after confirmation, without saving.
+- **Prompt generation**: `PromptGenerator.svelte` shares one entry and preview dialog across Agent, Command and Settings Global behavior editors; it reads model options only while open and replaces the local draft only after confirmation, without saving. Global behavior uses the `behavior` kind and cannot apply previews while inactive or during document reads/saves.
 
 ## Dashboard hierarchy
 

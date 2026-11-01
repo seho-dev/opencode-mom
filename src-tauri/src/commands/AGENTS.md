@@ -30,10 +30,10 @@ commands/
 | Responsibility | File | Description |
 | :--- | :--- | :--- |
 | Command exposure | `mod.rs` | Re-export handlers registered by the crate root. |
-| App boundary | `app.rs` | Return app state and manage preferences, projects, and shared HTTP settings. |
+| App boundary | `app.rs` | Return app state and manage preferences, projects, shared HTTP settings, and Bearer key rotation. |
 | Resource mutations | `agent.rs`, `resources.rs` | Enforce scope and source-snapshot guards before domain calls. |
 | Local service | `opencode.rs`, `island.rs` | Adapt service-target and generation-bound action requests. |
-| Proxy lifecycle | `mcp_proxy.rs` | Adapt revision-guarded saves, imports, key rotation, and unit teardown. |
+| Proxy lifecycle | `mcp_proxy.rs` | Adapt revision-guarded saves, imports, and unit teardown. |
 
 ## Conventions
 

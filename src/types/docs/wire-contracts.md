@@ -46,10 +46,11 @@ network metadata alongside proxy state.
 
 - **MCP Proxy state**: `actual`/`desired` and `desiredState` are booleans; `actualState` is `running`/`stopped`. Keep `boundAddr` required nullable and expose separate numeric `activeUnits` and `activeSessions` counters.
 - **MOM HTTP settings**: `MomHttpSettings` contains port and allowLan only; `McpProxySettingsDto` contains enabled, idleTimeout, maxUnits, and revision. Keep listener settings separate from revision-guarded proxy writes.
+- **Shared HTTP token**: `rotate_mom_http_key` returns a string through `rotateMomHttpKey()` without arguments. Keep the token and its verifier out of settings DTOs and `AppState`; HTTP settings have no revision. The General dialog owns the ephemeral result, independently of Proxy availability or enablement.
 
 ## Island requests and prompt generation
 
 `prompt-generation.ts` defines the shared generation request and constant-derived preset/kind types.
 
 - **Island contract**: Keep wire records in `island.ts`; required numeric `connectionGeneration` is the native cache generation, not a URL/credential, and monotonically invalidates target-local UI state. `IslandView` is `compact`/`peek`/`expanded`; permission `save?: string[]` holds only server-provided rules; `IslandPermissionDecision` is `once`/`always`/`reject`. Always needs explicit consent and a fresh backend check of the exact pending request with nonempty save rules; never infer rules from resources. Question answers use field keys/option values; messages expose only public user/assistant text.
-- **Prompt generation**: Derive kind/preset unions from `src/utils/constants.ts`. Optional `model: ModelRef` and separate optional `variant` default to the OpenCode service model when both are omitted; preset instructions and provider credentials never enter this wire contract.
+- **Prompt generation**: Derive kind/preset unions from `src/utils/constants.ts`; kinds are `agent`, `command` and `behavior` (Global `AGENTS.md`). Optional `model: ModelRef` and separate optional `variant` default to the OpenCode service model when both are omitted; preset instructions and provider credentials never enter this wire contract.

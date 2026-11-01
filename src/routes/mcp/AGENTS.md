@@ -37,11 +37,11 @@ mcp/
   ownership. Preserve [refresh routing](docs/configuration-editing.md#tabs-and-active-refresh) rather than
   refreshing both panels.
 
-- **Async ownership**: Proxy polling must not overlap reads, and teardown invalidates late results before
-  feedback or follow-up writes. Preserve [polling and completion
-  guards](docs/proxy-lifecycle.md#polling-teardown-and-async-completion).
+- **Async ownership**: Proxy reads run on entry, explicit refresh, and successful mutations only; teardown
+  invalidates late results before feedback or follow-up writes. Preserve [refresh and completion
+  guards](docs/proxy-lifecycle.md#refresh-teardown-and-async-completion).
 
-- **Revision snapshots**: Keep the captured revision with each edit or toggle; polling never advances draft
+- **Revision snapshots**: Keep the captured revision with each edit or toggle; refresh never advances draft
   expectations. Preserve backend conflict detection and [mutation
   snapshots](docs/proxy-lifecycle.md#revision-snapshots).
 

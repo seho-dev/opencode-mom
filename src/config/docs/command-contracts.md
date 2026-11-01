@@ -26,11 +26,13 @@ This directory connects typed command calls to shared application state and Svel
 
 - **Service target**: Keep `getOpenCodeServiceStatus`/`setOpenCodeServiceTarget(url, password?)` lazy and outside global mutation/draft tracking; preserve omitted/null/empty password IPC semantics. Pending saves block catalog/usage reads; success increments read-only reactive `serviceTargetVersion`, invalidates old catalog/usage responses and clears only catalog data, never config/preferences/form versions. Island/lid sections reread native status on that version without remounting/toggling preferences, reject old-version readback and defer one latest read through pending reads/saves. Failure preserves version, catalog/global state and drafts; never retain passwords/private failures.
 
-- **Lid target readback**: Successful target-version changes immediately mask previous protection/counts and clear target-local errors while preserving confirmed enabled preference; only current-version native readback restores a protected claim.
+- **Lid target readback**: Successful target-version changes clear target-local errors while preserving the confirmed enabled preference and queue one latest native read through pending reads or saves. The switch reflects only that preference; the frontend does not display protection phases or session counts, or claim that protection is active.
 
 ## HTTP and MCP Proxy payloads
 
-- **MCP Proxy facade**: `getMcpProxyState`, `getMcpProxySettings`, `saveMcpProxySettings`, `rotateMcpProxyKey`, `getMcpProxyServer`, `createMcpProxyServer`, `updateMcpProxyServer`, `deleteMcpProxyServer`, `importMcpProxyServer`, `closeMcpProxyUnit`, `getMomHttpSettings`, and `setMomHttpSettings` stay lazy adapter pass-throughs: no `run()`, `AppState`, global `draftRecovery`, localStorage, or catalog/config refreshes. Listener writes carry only `{ settings: { port, allowLan } }`; proxy writes carry only enabled, idleTimeout, maxUnits, revision, and expectedRevision.
+- **HTTP and Proxy facades**: `getMomHttpSettings`, `setMomHttpSettings`, `rotateMomHttpKey`, `getMcpProxyState`, `getMcpProxySettings`, `saveMcpProxySettings`, `getMcpProxyServer`, `createMcpProxyServer`, `updateMcpProxyServer`, `deleteMcpProxyServer`, `importMcpProxyServer`, and `closeMcpProxyUnit` stay lazy adapter pass-throughs: no `run()`, `AppState`, global `draftRecovery`, localStorage, or catalog/config refreshes. Listener writes carry only `{ settings: { port, allowLan } }`; proxy writes carry only enabled, idleTimeout, maxUnits, revision, and expectedRevision.
+
+- **Shared HTTP token**: `rotateMomHttpKey()` invokes `rotate_mom_http_key` without arguments and returns the generated string directly. Rotation is independent of Proxy enablement and reads, and neither results nor failures enter shared state or recovery. HTTP settings remain `{ port, allowLan }`, without a token or revision. The General dialog alone owns one-time display and cleanup.
 
 ## Island wire contracts
 

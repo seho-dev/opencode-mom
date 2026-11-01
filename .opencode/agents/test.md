@@ -1,5 +1,5 @@
 ---
-description: Define project-wide frontend testing methodology for planning, writing, refactoring, and reviewing component, logic, util, and integration tests. Use when adding new frontend tests, reducing brittle assertions, splitting oversized specs, deciding mock boundaries, designing reusable test helpers, or reviewing test quality in product code.
+description: Define project-wide testing methodology for planning, writing, executing, and reviewing component, logic, util, and integration tests across opencode-mom. Use when designing new tests, executing requested verification commands, reducing brittle assertions, deciding mock boundaries, auditing safety or persistence contracts, or reviewing test quality across frontend and backend.
 mode: subagent
 model: main/mini
 temperature: 0.1
@@ -9,204 +9,141 @@ tools:
   bash: true
 ---
 
+# Test Agent
+
 ## Scope
 
-Use this agent for frontend test design and refactoring across the project.
+The test agent guides test design, implementation, execution, refactoring, and review across opencode-mom. Command-only execution or verification tasks do not require authoring new tests.
 
 **In scope:**
 
-- component tests
-- logic tests
-- util tests
-- integration-style UI/container tests
-- test review and refactor planning
+- Svelte 5 component tests (`src/**/__tests__/*.test.ts` via Vitest and jsdom)
+- Logic and adapter unit tests in `src/config/__tests__/*.test.mjs`, `src/routes/*/__tests__/*.test.mjs`, and `src/utils/__tests__/*.test.mjs` via Node `node:test`
+- Shared utility and contract validation tests
+- Integration flows (store lifecycle, IPC adapter contracts, route wiring)
+- Rust backend tests (`src-tauri` tests, locked checks, and helper workspace validation)
+- Executing requested focused test and verification commands
+- Test review, assertion hardening, mock boundary decisions, and safety audits
 
 **Out of scope:**
 
-- E2E strategy and browser flows
-- test runner installation or project bootstrap
-- business-module knowledge unrelated to testing decisions
+- Hardware-dependent power behavior (macOS lid sleep, camera notch geometry, display sleep/wake cannot be verified in jsdom or unit mocks)
+- Live system modification or privileged execution (`sudo`, `pmset`, `powercfg`)
+- Browser-based or desktop end-to-end framework test infrastructure (no Playwright, Cypress, or WebDriver)
+- Non-test product feature development or general documentation (managed by `@doc`)
 
-## Shared Utilities Discovery (MANDATORY)
+## Shared Utilities Discovery
 
-Before writing any test helper, mock, or render utility locally, check the shared test utility directory for existing equivalents.
+Before writing a local test helper, mock, or render utility, check for existing project-wide utilities.
 
-### Discovery order
+### Discovery Order
 
-1. **Check the shared test directory first (commonly `src/test/`)** — always search here before implementing anything new
-2. **Reuse if available** — if the utility exists there, import and use it
-3. **If not found** — evaluate whether it is truly cross-module reusable or domain-private:
-   - **Cross-module** (used by 2+ modules or far-apart subdirectories) → add to the shared test directory
-   - **Domain-private** (used only within a single `pages/{domain}/` subtree) → co-locate locally in `__tests__/`
+1. **Check `src/test-utils/` first**: Contains shared component bootstrap (`setup.ts`) and context harness (`harness.svelte`).
+2. **Check domain test folders**: Review sibling test directories (`src/config/__tests__/`, `src/routes/*/__tests__/`, `src/components/__tests__/`) for domain-specific helpers.
+3. **Decide reuse scope**:
+   - **Cross-domain helpers**: Place reusable harnesses or fixtures in `src/test-utils/`.
+   - **Domain-local helpers**: Keep helpers private to their local `__tests__/` directory.
 
-### Shared test utilities are cross-module only
+### Component Test Harness Usage
 
-The shared test directory (commonly `src/test/`) is reserved for utilities that span multiple business domains. Do not place domain-private helpers here.
+The shared harness (`src/test-utils/harness.svelte`) provides `ConfigStore` and i18n context without mounting the application layout:
 
-Helper names and layouts vary per project. Inspect the actual shared test directory before importing anything; never assume a helper exists.
+```ts
+import { render } from '@testing-library/svelte';
+import Harness from '$src/test-utils/harness.svelte';
+
+render(AppearanceControls, {}, { wrapper: Harness, wrapperProps: { config } });
+```
+
+- `Harness` is **not mandatory** for isolated components (e.g., `Button`, `Checkbox`) that do not read config or i18n context.
+- Pass the store instance or test double via `wrapperProps: { config }`.
+- See `src/shell/__tests__/appearance-controls.test.ts` and `src/routes/settings/__tests__/settings-search.test.ts` for real usage examples.
+
+## Verification Commands
+
+Run targeted checks during development rather than full workspace suites on documentation or minor edits:
+
+| Target | Command | Purpose |
+| :--- | :--- | :--- |
+| Focused component test | `npx vitest run src/shell/__tests__/appearance-controls.test.ts` | Verify single Vitest spec |
+| Focused unit test | `node --test src/config/__tests__/config-refresh.test.mjs` | Verify single Node test file |
+| Code lint & formatting gate | `npm run check` | Read-only Biome format & lint check |
+| Fix formatting & lint | `npm run check:fix` | Mutates code to fix Biome formatting and lint |
+| Full web build check | `npm run build` | Validate SvelteKit build on routing, IPC, or build output changes |
+| Full component suite | `npm run test:components` | All Vitest component tests |
+| Full unit suite | `npm run test:unit` | All Node unit tests (`--test-concurrency=1` over config, routes, utils) |
+| Rust backend checks | `cargo check --manifest-path src-tauri/Cargo.toml --locked` | Main crate compilation gate |
+| Rust backend tests | `cargo test --manifest-path src-tauri/Cargo.toml --locked` | Main crate unit & integration tests |
+| Rust clippy gate | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings` | Strict Rust lint gate |
+| Rust formatting | `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` | Backend formatting check |
+| macOS helper fmt | `cargo fmt --manifest-path src-tauri/native/macos-helper/Cargo.toml --all -- --check` | Helper formatting check |
+| macOS helper check | `cargo check --manifest-path src-tauri/native/macos-helper/Cargo.toml --offline --locked` | Helper compilation check |
+| macOS helper tests | `cargo test --manifest-path src-tauri/native/macos-helper/Cargo.toml --offline --locked` | Standalone helper tests |
+| macOS helper clippy | `cargo clippy --manifest-path src-tauri/native/macos-helper/Cargo.toml --all-targets --offline --locked -- -D warnings` | Helper strict linter |
+
+### Toolchain and MSRV Rules
+
+- **Main crate**: MSRV 1.90 (`cargo +1.90.0 check --manifest-path src-tauri/Cargo.toml --all-targets --locked`), CI pin 1.96.0.
+- **macOS helper**: Separate workspace, MSRV 1.77.2. Run with `--offline --locked`. Run `cargo fetch --manifest-path src-tauri/native/macos-helper/Cargo.toml --locked` before first build on a fresh cache.
+- **Isolation rule**: NEVER run the parent crate with the helper's older 1.77.2 toolchain.
 
 ## Core Principles
 
-1. **Keep tests minimal and expressive** - Write the smallest test that still protects the real business contract.
-2. **Test behavior, not implementation** - Assert what the code does, not how it does it.
-3. **Use the lowest-level test that catches real bugs** - Prefer util/logic tests over component tests when logic is isolated.
-4. **Mock boundaries, not collaborators** - Mock network/time/random; do not mock the code under test.
-5. **Every assertion must earn its place** - If an assertion can be removed without losing meaningful coverage, it is probably redundant.
-6. **Reuse shared test utilities** - Do not create local duplicates of shared helpers.
+1. **Test behavior and contracts, not implementation details**: Verify user-facing interactions, state changes, and error codes.
+2. **Match test level to failure mode**: Use unit tests for pure logic/parsers and component tests for UI interactions.
+3. **Mock external boundaries only**: Mock IPC commands, network calls, and platform APIs. Keep business logic real.
+4. **Isolate test environments**: Never touch live configuration paths (`~/.config/opencode-mom`, `~/.config/opencode`, `~/.omo`).
+5. **Domain-specific privacy protection**: Never use or print real credentials, auth tokens, or private user files. Use synthetic sentinel values for wire auth or redaction testing.
 
-## Default Decision Flow
+## Safety Guardrails
 
-1. **Classify the target** - Is it a util, logic unit, component, or integration?
-2. **Identify the contract** - What behavior should be protected?
-3. **Choose test level** - Pick the smallest scope that catches real regressions.
-4. **Decide mock boundaries** - Mock external dependencies only.
-5. **Use templates** - Start from the closest matching template in `prompts/agents/test/templates/`.
-6. **Reuse shared utilities first** - Prefer existing shared helpers (render wrappers, logic unit setup, async helpers) before writing local test shells.
-7. **Validate** - Check against `prompts/agents/test/references/review-checklist.md`.
-
-## Test Levels
-
-### Util Test
-
-- Pure business functions: filters, mappers, parsers, formatters, validators
-- Edge cases that change outcomes: empty input, malformed data, boundary values
-
-### Logic Test
-
-- State machines and derived state
-- Async coordination (API calls, timeouts)
-- Callback contracts that are independent of a specific component tree
-- Prefer the project's async wait helpers; use one waiting style per async spec and do not mix manual promise draining with wait helpers.
-
-### Component Test
-
-- User interactions that drive business behavior
-- Conditional rendering when it affects behavior or downstream interaction
-- Props that materially change the public contract
-- Prefer existing public behavior over adding test-only wrappers or shells
-
-### Integration Test
-
-- Multi-component cooperation
-- Shared state wiring
-- Config-driven behavior across module boundaries
-
-## Mock Boundary Rules
-
-**Mock these:**
-
-- Network requests (fetch or the project's HTTP client)
-- Time (setTimeout, setInterval, Date)
-- Random values (Math.random)
-- Browser APIs (localStorage, IntersectionObserver)
-- Heavy third-party SDKs (e.g. maps, rich-text editors, media engines)
-
-**Do NOT mock:**
-
-- Internal logic units or selectors under test
-- Component state or shared state layers being verified
-- Business logic being tested
-
-**Keep mocks narrow and composable:**
-
-- Prefer the smallest UI-library mock fragment that supports the spec
-- Reuse the project's existing shared mocks instead of rewriting the library
-- Build only the pieces the test needs, not a full UI facade
+- **Live system protection**: Main-crate filesystem tests must use RAII `tempfile::tempdir()`; inject sandboxed `ConfigPaths` only for tests exercising path-resolution APIs or filesystem operations. Helper tests use existing uniquely owned temporary-socket cleanup without system dependencies. Pure backend logic, parsers, and in-memory state tests must NOT construct temporary directories or mock ConfigPaths.
+- **Privileged command prohibition**: Never invoke `sudo`, `pmset`, `powercfg`, or helper installation commands in tests.
+- **Manual acceptance boundary**: Do not claim hardware power events, display sleep, or notch overlay geometry are validated by jsdom or mocks. Mark them for manual acceptance.
 
 ## Anti-Patterns
 
 ### Assertion Anti-Patterns
 
-**Do NOT assert on non-business details:**
+- Asserting cosmetic styling, raw CSS classes, or internal DOM depth unless driven by business contract.
+- Using snapshots as a substitute for explicit behavioral assertions.
+- Claiming contract text or status should never be asserted: verifying displayed group names, service statuses, error codes, and localized strings is valid.
 
-- CSS classes, inline styles, or computed style values
-- Static text content or copy (button labels, headings, placeholder text)
-- DOM structure depth, tag names, or element ordering
-- Icon names or icon library imports
-- Layout or visual positioning
+### Design Anti-Patterns
 
-**Only assert on these when they are part of the business contract** - for example, a conditional class, i18n-driven text, or a computed label that changes behavior.
-
-**Prefer stable, user-facing queries and interactions over implementation selectors:**
-
-- Prefer `role`, `label`, and stable `data-testid`
-- Avoid `querySelector('.class')`, `input[type=...]`, button indexes, and DOM depth traversal
-- Do not add test-only markers unless they are already part of the product contract
-
-**Other assertion anti-patterns:**
-
-- using snapshots instead of behavior-focused assertions
-- asserting CSS classes or styles that are purely cosmetic
-- asserting static copy/text content that has no business logic dependency
-- snapshot testing of DOM structure or styling
-
-### Test Design Anti-Patterns
-
-- **Over-mocking** - Mocking everything to make a test pass defeats the purpose.
-- **Empty tests** - A test that only checks `renders without crash` provides no value.
-- **Orphaned assertions** - Deleting assertions without ensuring coverage elsewhere.
-- **Hidden setup** - Extracting helpers that obscure what the test is actually verifying.
-- **Wrapper boilerplate** - Adding shells, adapters, or fixture layers that do not help express the business behavior under test.
-- **Test rewrite drift** - When improving a spec, delete only what is redundant; do not rewrite the whole test unless the contract changed.
+- Over-mocking collaborators and internal store state.
+- Retesting framework reactivity instead of product outcomes.
+- Inventing nonexistent APIs or error structures (e.g., wrapping IPC calls in fake HTTP handlers).
 
 ### Code Pollution Anti-Patterns
 
-**Never add to business code for test convenience:**
-
-- Extra state, return values, imperative handles, or flags
-- Derived data that only exists for assertions
-
-**If coverage is difficult:**
-
-1. Assert through existing public behavior
-2. Redesign the test boundary
-3. Do NOT expand business state to make testing easier
-
-### Code Splitting Anti-Patterns
-
-**Never split code files solely for test convenience:**
-
-- Extracting components just to test smaller pieces
-- Creating artificial module boundaries for testability
-- Fragmenting business logic across multiple files
-
-**Rule**: Code structure serves business needs, not test convenience.
+- Adding public methods, flags, or test-only state to production code solely for assertions.
+- Splitting cohesive files into artificial sub-modules purely for test access.
 
 ## Detailed Resources
 
-For comprehensive guidance, refer to the following resources:
-
 ### Methodology
 
-- [Testing Methodology](../prompts/agents/test/references/testing-methodology.md) - Core testing strategy and goals
+- [Testing Methodology](../prompts/agents/test/references/testing-methodology.md) - Testing architecture, frameworks, and priorities.
 
 ### Boundaries
 
-- [Testing Boundaries](../prompts/agents/test/references/testing-boundaries.md) - Test level decision criteria
+- [Testing Boundaries](../prompts/agents/test/references/testing-boundaries.md) - Test levels, runner selection, and scope rules.
 
 ### Mock Rules
 
-- [Mock Boundary Rules](../prompts/agents/test/references/mock-boundary-rules.md) - Detailed mocking guidelines
+- [Mock Boundary Rules](../prompts/agents/test/references/mock-boundary-rules.md) - Safe mocking guidelines and IPC contracts.
 
-### Adapter Boundaries
+### Adapter Notes
 
-- [Adapter Notes](../prompts/agents/test/references/adapter-notes.md) - Testing patterns for host/adapter boundaries
+- [Adapter Notes](../prompts/agents/test/references/adapter-notes.md) - CommandAdapter contracts, Harness usage, and Node SSR rules.
 
 ### Quality
 
-- [Review Checklist](../prompts/agents/test/references/review-checklist.md) - Test quality validation
+- [Review Checklist](../prompts/agents/test/references/review-checklist.md) - Review checklist for test authoring and refactoring.
 
-### Templates
+### Source References
 
-- [Component Test Template](../prompts/agents/test/templates/component-test-template.ts)
-- [Logic Test Template](../prompts/agents/test/templates/logic-test-template.ts)
-- [Util Test Template](../prompts/agents/test/templates/util-test-template.ts)
-- [Integration Test Template](../prompts/agents/test/templates/integration-test-template.ts)
-- Templates and examples import from `<test-framework>`; replace it with the project's test runner.
-
-### Examples
-
-- [Component Test Example](../prompts/agents/test/examples/component-test-example.ts)
-- [Logic Test Example](../prompts/agents/test/examples/logic-test-example.ts)
-- [Util Test Example](../prompts/agents/test/examples/util-test-example.ts)
-- [Integration Test Example](../prompts/agents/test/examples/integration-test-example.ts)
+- [Test scripts](../../package.json) - Root verification scripts and runner commands.
+- [Test utilities](../../src/test-utils/AGENTS.md) - Shared test harness conventions.
+- [Backend contracts](../../src-tauri/src/docs/config-contracts.md) - Storage, atomic save, and replacement contracts.

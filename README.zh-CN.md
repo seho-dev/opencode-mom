@@ -1,16 +1,51 @@
+<div align="center">
+
+![opencode-mom logo](shared/mom-logo.svg)
+
 # opencode-mom
 
-This file is a compatibility pointer; repository documentation is maintained canonically in English in the [README](README.md). The section below provides the localized specification for the local diagnostic logging feature.
+**OpenCode v2 的模型组管理器**<br />
+一个窗口，三套运行时 —— **Native**、**Slim** 与 **OMO**。一键切换整套模型配置，手改的配置字段原样保留。
 
-- [What is opencode-mom?](README.md#-what-is-opencode-mom)
-- [Features](README.md#-features)
-- [Install](README.md#-install)
-- [How MOM writes config](README.md#-how-mom-writes-config)
-- [Development](README.md#-development)
-- [Release](README.md#-release)
-- [License](README.md#-license)
+[![最新发布](https://img.shields.io/github/v/release/seho-dev/opencode-mom?label=release&color=00E5FF)](https://github.com/seho-dev/opencode-mom/releases/latest)
+![平台：macOS 与 Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-6AA4FF)
+![仅支持 OpenCode v2](https://img.shields.io/badge/OpenCode-v2%20only-FF6B6B)
+![许可证：MIT](https://img.shields.io/badge/license-MIT-3DA639)
+![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
+![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
+[![GitHub stars](https://img.shields.io/github/stars/seho-dev/opencode-mom?style=social)](https://github.com/seho-dev/opencode-mom/stargazers)
 
-The app UI continues to ship English and Simplified Chinese; canonical documentation remains maintained in English.
+[English](README.md) · [简体中文](README.zh-CN.md)
+
+</div>
+
+> [!IMPORTANT]
+> **opencode-mom 仅支持 OpenCode v2。** MOM 面向 v2 的配置规范、`provider/model#variant` 模型选择器与权限体系设计。V1 配置不会被迁移或管理。
+
+<div align="center">
+
+![opencode-mom 仪表盘](shared/app.png)
+
+</div>
+
+## 🌟 概览
+
+**opencode-mom**（简称 **MOM**）是一款跨平台桌面应用，专为管理多运行时（multi-runtime）的 OpenCode v2 环境而生。它统一管理**模型组（Model Groups）**，为三种不同运行时快速绑定 Provider、Model、Agent 及 Category：
+
+- **Native** —— OpenCode 原生 Agent，写入 `~/.config/opencode/opencode.jsonc`（或 `opencode.json`）。
+- **Slim** —— Oh My OpenCode Slim，写入 `~/.config/opencode/oh-my-opencode-slim.json`。
+- **OMO** —— Oh My OpenAgent，写入 `~/.omo/omo.jsonc`。
+
+采用**非破坏式写入**：未包含在当前组定义内的手改字段全部保留。
+
+## ✨ 核心特性
+
+- **🧩 模型组一键切换**：在**仪表盘**、**Groups 页面**或**系统托盘**一键即时切换整套模型组合配置。
+- **🧠 Provider、Model 与 Agent 管理**：轻松注册自定义 API Endpoint（兼容 OpenAI、Anthropic 等协议），管理模型限额与定价，配置 Agent 权限与系统提示词（支持内联 JSON 及 Markdown 格式）。
+- **🔌 MCP 与 Skill 管理**：集中管理 MCP 服务，自动打码敏感凭证；内置 **MCP HTTP Proxy**，可将本地 stdio MCP 服务转为 HTTP/SSE 供外部客户端接入。支持浏览与管理本地及远程 Skill。
+- **🏝️ MOM Mini Island（macOS）**：专为 Mac 刘海屏设计的悬浮状态胶囊，直观展示实时会话状态、波形动效，并支持直接单次授权、表单回复及中断任务。
+- **💤 合盖守护（macOS / Windows）**：**仅在 OpenCode 会话处于实际工作中时**阻止笔记本休眠，任务完成后自动恢复原系统电源策略。
+- **📊 实时仪表盘与系统托盘**：实时查看服务健康状态、工作会话数、Token 消耗统计、活动热力图，通过托盘菜单常驻后台便捷操作。
 
 ### 🪵 本地诊断日志
 
@@ -20,4 +55,59 @@ The app UI continues to ship English and Simplified Chinese; canonical documenta
 - **存储规格与访问权限**：本地存储于 `~/.config/opencode-mom/logs`（Windows 为 `%USERPROFILE%\.config\opencode-mom\logs`），最多轮转保留 5 个 5 MiB 的 JSONL 文件；Unix 设置目录 `0700`/文件 `0600` 权限，Windows 采用继承权限（未进行私有 ACL 校验）。
 - **安全白名单与诊断性质**：采用严格字段白名单，绝不记录凭据、密码、Token 及其校验数据、提示词、会话消息、配置内容、请求与响应体或原始错误，无任何自动上传；本功能仅供本地诊断调试而非合规审计，进程被强制终止、磁盘故障或队列溢出可能导致记录丢失。
 
+## 📦 安装与下载
+
+从 **[GitHub Releases](https://github.com/seho-dev/opencode-mom/releases/latest)** 获取对应平台的预编译安装包：
+
+| 平台 | 安装产物 | 说明 |
+| :--- | :--- | :--- |
+| **macOS (Apple Silicon)** | `opencode-mom_*_aarch64.dmg` | M 系列芯片 |
+| **macOS (Intel)** | `opencode-mom_*_x64.dmg` | Intel 处理器 Mac |
+| **Windows (x64)** | `opencode-mom_*_x64-setup.exe` | NSIS 安装包 |
+
+### macOS 首次启动提示
+应用采用 ad-hoc 签名。如果首次打开提示未信任或被拦截：
+1. 打开 **系统设置 → 隐私与安全性**。
+2. 在安全性提示旁点击 **仍要打开** 即可正常启动。
+3. *备选方式（终端执行）*：
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/opencode-mom.app"
+   ```
+
+### 环境要求
+- 需已安装 **[OpenCode v2](https://opencode.ai/v2/docs/)**（用于获取实时服务状态、会话监控及 Mini Island 功能；普通配置编辑可独立使用）。
+
+## 🔧 配置写入机制
+
+MOM 将自身状态保存在 `~/.config/opencode-mom/config.json` 中，仅对目标配置文件进行精准增量修改，绝不破坏未受管字段：
+
 日志功能开关存储为 `state.loggingEnabled`（默认 `false`），独立于主题、语言、模型组与项目选择，日志记录单独保存在 logs/ 下的 JSONL 文件中，不写入 config.json。
+
+| 模型组类型 | 目标配置文件 | 增量修改的字段 |
+| :--- | :--- | :--- |
+| `native` | `~/.config/opencode/opencode.jsonc`（回退 `opencode.json`） | `agents.<name>.model` |
+| `slim` | `~/.config/opencode/oh-my-opencode-slim.json` | Agent 模型绑定关系 |
+| `omo` | `~/.omo/omo.jsonc` | Category 分类与 Agent 覆盖项 |
+
+## 🛠️ 本地开发
+
+运行环境：Node.js 22.x、npm、Rust ≥ 1.77.2，以及 Tauri 2 平台依赖。
+
+```bash
+npm ci                 # 安装依赖
+npm run tauri dev      # 本地启动桌面应用
+npm run tauri build    # 打包当前平台安装产物
+```
+
+质量检查：
+
+```bash
+npm run check          # Biome 格式化与 Lint 检查
+npm run test:unit      # 前端单元测试
+cargo check --manifest-path src-tauri/Cargo.toml   # Rust 后端编译检查
+cargo test --manifest-path src-tauri/Cargo.toml    # Rust 后端测试
+```
+
+## 📄 开源许可证
+
+遵循 [MIT License](LICENSE) 开源协议。© 2026 seho-dev.

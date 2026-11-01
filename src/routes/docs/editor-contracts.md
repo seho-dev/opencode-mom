@@ -20,7 +20,7 @@ Source-relative paths below are relative to `src/routes/`, not this docs directo
 
 ## Preview application and translated copy
 
-- **Prompt assistance**: Agent/Markdown command editors use shared `PromptGenerator.svelte` below text fields; preview application replaces only the local prompt/document draft, preserving explicit-save/source-snapshot checks. Read-only/saving editors cannot apply generated text.
+- **Prompt assistance**: Agent/Markdown command editors and Settings Global behavior use shared `PromptGenerator.svelte` below text fields; preview application replaces only the local prompt/document draft, preserving explicit-save/source-snapshot checks. Read-only, inactive or loading/saving editors cannot apply generated text.
 
 - **Route copy**: Page titles, headings, controls, hints, and feedback use route-specific translation namespaces plus `common.*`, `configuration.*`, `validation.*`, and `toast.*`; tray status labels/details react to locale changes.
 

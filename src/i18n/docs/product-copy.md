@@ -16,7 +16,9 @@ Paths name source modules; `settings/SettingsSearch.svelte` is relative to `src/
 
 - **Resource scope copy**: `scope.*` covers list-only Global/project selection, exact-root read-only notices, separate Global comparison, and forgetting folders without deleting files; describe configuration files, never live MCP status or inherited runtime configuration.
 
-- **MOM HTTP copy**: `settings.http.*` covers the General tab listener port (default 18765), LAN access/security warning, runtime status, and saves. `settings.proxy.httpHint` directs proxy users to General; proxy-only controls retain `settings.proxy.*`.
+- **Prompt assistance copy**: `promptGenerator.*` supplies the shared Agent, Command and Global behavior entry/dialog. Keep editor-specific titles and requirement placeholders in both locales; preview application replaces only the draft, and saving remains separate. Preserve provider-privacy and experimental-API warnings.
+
+- **MOM HTTP copy**: `settings.http.*` covers the General tab listener port (default 18765), LAN access/security warning, saves, and shared token rotation/one-time copy. Rotation invalidates the old token and terminates active client connections, including MCP sessions; keep this warning equivalent across locales. `settings.proxy.httpHint` directs proxy users to General for port, LAN access, and the shared MOM HTTP token; proxy-only capacity/timeout controls retain `settings.proxy.*`.
 
 - **Settings search**: `settings.search*` labels the local finder, result count, navigation hint, clear action and empty state; keep both locales concise/action-oriented. `settings/SettingsSearch.svelte` explicitly indexes existing labels/descriptions and technical keys across dictionaries, never user values; preserve key identities. `groups.enableAria`/`groups.disableAria` require matching `{name}` placeholders.
 

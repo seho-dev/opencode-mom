@@ -8,20 +8,22 @@ Settings compose app behavior, local OpenCode service and CLI controls, MOM HTTP
 
 ```text
 settings/
-├── +page.svelte                   # Retained hidden tab panels ('general' | 'mcp-proxy'), search and active-gated sections
+├── +page.svelte                   # Retained hidden General, MCP Proxy and Behavior panels; active-gated sections
+├── Behavior.svelte                # Global AGENTS.md draft, shared prompt previews and explicit snapshot-guarded saves
 ├── SettingsSearch.svelte          # Local bilingual static-key index; navigation results without reading drafts
-├── LidProtection.svelte           # Native lid-protection lifecycle
+├── LidProtection.svelte           # Native lid preference switch, without status polling
 ├── LoggingSettings.svelte         # Independent diagnostic switch; history lives on /logs
 ├── AppUpdates.svelte              # Explicit update checks and project pages
-├── McpProxySettings.svelte        # General HTTP / MCP Proxy sections with shared polling and revision guards
+├── McpProxySettings.svelte        # General HTTP / MCP Proxy sections with explicit readback and revision guards
 ├── MiniIsland.svelte              # macOS-only Island state and enable readback
 ├── OpenCodeSettings.svelte        # Local CLI inspection, explicit checks, upgrade confirmation/readback
 ├── OpenCodeService.svelte         # Saved target, read-only connection probes, secret-local drafts
 ├── RotateKeyDialog.svelte         # Ephemeral key rotation dialog
 └── __tests__/                     # Settings lifecycle coverage
-    ├── settings-search.test.ts    # Bilingual lookup, draft retention, cross-tab focus, lifecycle and polling safety
+    ├── behavior.test.ts           # Global document snapshots, prompt previews and inactive/pending guards
+    ├── settings-search.test.ts    # Bilingual lookup, draft retention, cross-tab focus and no-polling lifecycle
     ├── rotate-key-dialog.test.ts  # External close and tab changes discard one-time token results
-    ├── lid-protection.test.ts     # Deferred target reloads, 2s fake-timer polling, stale read/save and teardown
+    ├── lid-protection.test.ts     # Preference readback, no polling, deferred target reads, safe errors and teardown
     ├── mini-island.test.ts        # Visibility, pending guards, readback, errors, teardown
     └── opencode-settings.test.ts  # Native reads, CLI confirmation, target drafts, safe errors and cross-panel guards
 ```
@@ -31,7 +33,8 @@ settings/
 | Responsibility | File | Description |
 | --- | --- | --- |
 | Settings shell | `+page.svelte`, `SettingsSearch.svelte` | Retained panels and static bilingual navigation. |
-| Native monitors | `LidProtection.svelte`, `MiniIsland.svelte` | Independent enablement and confirmed native readback. |
+| Global behavior | `Behavior.svelte` | Shared prompt generation, local drafts and explicit source-checked saves. |
+| Native preferences | `LidProtection.svelte`, `MiniIsland.svelte` | Independent preference readback; lid enablement is not a protection claim. |
 | Diagnostic recording | `LoggingSettings.svelte` | Confirmed logging enablement and writer health, without a log viewer. |
 | Service target | `OpenCodeService.svelte` | Saved target, connection probes, and private drafts. |
 | CLI updates | `OpenCodeSettings.svelte` | Explicit checks, confirmation, and guarded upgrade. |
@@ -40,9 +43,13 @@ settings/
 
 ## Conventions
 
-- **Panel lifecycle**: Keep both panels mounted and drafts intact; inactive sections start no native work. Use
+- **Panel lifecycle**: Keep tab panels mounted and drafts intact; inactive sections start no native work. Use
   the typed config facade and preserve [active-lifecycle
   guards](docs/settings-lifecycle.md#active-native-work-and-manual-app-updates).
+
+- **Behavior drafts**: Reuse the shared prompt dialog; confirmed previews replace only the local draft.
+  Keep explicit snapshot-guarded saves and invalidate previews on inactivity, reads/saves or teardown as
+  described in [ownership](docs/settings-lifecycle.md#ownership).
 
 - **Search privacy**: Search only explicit bilingual keys, never drafts or runtime values; results navigate
   without remounting settings. Preserve [retained-panel
@@ -63,16 +70,20 @@ settings/
   interrupts sessions or replies to requests. Preserve [monitor
   ownership](docs/settings-lifecycle.md#island-enablement-and-monitor-readback).
 
-- **Target readback**: Reread native monitor state after successful target changes; reject stale protection
-  claims without remounting or toggling preferences. Follow [target
+- **Target readback**: Reread Island state and the lid preference after successful target changes; reject stale
+  results without remounting or toggling preferences. Lid reads only on active entry or target changes, never
+  through polling. Follow [target
   readback](docs/settings-lifecycle.md#island-enablement-and-monitor-readback).
 
-- **HTTP and Proxy**: Keep listener and Proxy payloads separate; polling preserves dirty drafts and revision
-  snapshots. Preserve [settings contracts](docs/settings-lifecycle.md#http-proxy-drafts-and-token-visibility),
-  validation, and LAN security warnings.
+- **HTTP and Proxy**: Keep listener and Proxy payloads separate. Read settings/status on active entry, manual
+  refresh and post-operation readback only; never poll. Preserve dirty drafts, edit revisions, pending guards
+  and queued refreshes through tab changes. Follow [settings
+  contracts](docs/settings-lifecycle.md#http-proxy-drafts-and-token-visibility), validation and LAN security warnings.
 
-- **Token isolation**: Display rotated tokens only once and clear them on close or tab changes; late results
-  cannot revive secrets. Follow [token
+- **Token isolation**: General's `http=true` section alone owns shared MOM HTTP token controls and rotation,
+  independent of Proxy availability/state. Read back only listener settings and preserve dirty port/LAN drafts;
+  never write Proxy settings or refresh global state. Display tokens once and clear them on close or leaving
+  General; late rotation/clipboard results cannot revive secrets or copied state. Follow [token
   visibility](docs/settings-lifecycle.md#http-proxy-drafts-and-token-visibility).
 
 ## Sync

@@ -12,6 +12,8 @@ This directory provides the management UI for both standard MCP configuration fi
 
 - **Header Refresh**: The header refresh button only operates on the currently active tab: refreshing standard MCP list on the config tab, and refreshing proxy state on the proxy tab.
 
+- **Proxy lifecycle**: Entering the Proxy tab mounts its panel and reads once; leaving invalidates pending results. Runtime changes appear after explicit refresh or successful action readback, never periodic frontend reads. Native gateway/session background work continues independently.
+
 ## Credential-safe display
 
 - **MCP display**: Read-only targets/search use `maskTarget`; detail fields use `maskConfig`. Only the explicit JSON editor receives unmasked configuration.

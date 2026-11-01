@@ -21,6 +21,12 @@
 - **Permission results**: Preserve the `ok` discriminator in `PermissionParse` and `mode` discriminator in `PermissionView`; only successful/rules branches carry rules.
 - **Usage shapes**: Keep timestamped `TokenUsageRecord.time` separate from aggregated `DailyTokenUsage.date`; both retain numeric input/output counts.
 
+## Diagnostic log records
+
+`logging.ts` owns `LoggingState`, `LogRecord`, `LogQuery` and `LogPage`. `LOG_TYPES` supplies the fixed type vocabulary; `LogStatus` is strictly `success | error`. Records use UTC RFC3339 timestamps, a session UUID, a sequence and an operation UUID to connect checkpoints and final results. Optional duration/error-code/context fields are not raw error objects or arbitrary configuration dictionaries.
+
+Keep logging state outside `AppState` and `AppPreferences`; `enabled` is the persisted preference while `recording` confirms the current writer state. Queries carry optional filters and an opaque cursor, and return bounded pages with a nullable next cursor and invalid-line count. Never add credentials, payload bodies, prompts or messages to the logging wire contract.
+
 ## Frozen source snapshots
 
 - **Agent previews**: Optional `sources` retain storage, logical `path`, `resolvedPath`, backend-generated `content` string, `raw`, fields, and nullable prompt. Echo `content` unchanged: inline agent JSON or full Markdown; regenerating JavaScript `raw` can alter floats/large integers. Keep new fields optional for legacy payloads/mocks; current backend reads supply them. Optional `overrides` require `field`, `inline`, `markdown`, and `effective`.

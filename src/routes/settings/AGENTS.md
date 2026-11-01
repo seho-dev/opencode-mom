@@ -11,6 +11,7 @@ settings/
 ├── +page.svelte                   # Retained hidden tab panels ('general' | 'mcp-proxy'), search and active-gated sections
 ├── SettingsSearch.svelte          # Local bilingual static-key index; navigation results without reading drafts
 ├── LidProtection.svelte           # Native lid-protection lifecycle
+├── LoggingSettings.svelte         # Independent diagnostic switch; history lives on /logs
 ├── AppUpdates.svelte              # Explicit update checks and project pages
 ├── McpProxySettings.svelte        # General HTTP / MCP Proxy sections with shared polling and revision guards
 ├── MiniIsland.svelte              # macOS-only Island state and enable readback
@@ -31,6 +32,7 @@ settings/
 | --- | --- | --- |
 | Settings shell | `+page.svelte`, `SettingsSearch.svelte` | Retained panels and static bilingual navigation. |
 | Native monitors | `LidProtection.svelte`, `MiniIsland.svelte` | Independent enablement and confirmed native readback. |
+| Diagnostic recording | `LoggingSettings.svelte` | Confirmed logging enablement and writer health, without a log viewer. |
 | Service target | `OpenCodeService.svelte` | Saved target, connection probes, and private drafts. |
 | CLI updates | `OpenCodeSettings.svelte` | Explicit checks, confirmation, and guarded upgrade. |
 | App updates | `AppUpdates.svelte` | Manual release checks and official project pages. |
@@ -45,6 +47,9 @@ settings/
 - **Search privacy**: Search only explicit bilingual keys, never drafts or runtime values; results navigate
   without remounting settings. Preserve [retained-panel
   search](docs/settings-lifecycle.md#retained-panels-search-and-help) and non-action focus targets.
+
+- **Logging separation**: General owns only the independent logging switch and readback. Keep history,
+  filters and deletion on the separate `/logs` navigation page; neither surface polls for changes.
 
 - **Service drafts**: Retain local target drafts on failure, never read back passwords, and show only safe
   errors. Follow [credential contracts](docs/cli-service.md#service-drafts-and-credential-safety) without

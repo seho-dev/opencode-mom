@@ -6,6 +6,12 @@ Source-relative paths below are relative to `src/routes/settings/` unless a refe
 
 `MiniIsland.svelte` owns the independent macOS-only Island enable switch, reads `getIslandState`, writes `setIslandEnabled`, uses native readback, preserves confirmed state on errors, and hides the switch in browser/non-macOS modes. `OpenCodeSettings.svelte` owns background local CLI inspection, explicit stable-version checks and guarded upgrades; settings show CLI updates, not standalone installation details, app updates stay in `AppUpdates.svelte`, and CLI metadata stays outside the global config snapshot. `OpenCodeService.svelte` owns the saved Shared/fixed local V2 target, local connection probes and component-local password drafts; credentials never join the config snapshot or draft recovery. `McpProxySettings.svelte` shares a settings/readback lifecycle between General `http` mode (MOM HTTP port default 18765, allowLan and runtime status via `getMomHttpSettings`/`setMomHttpSettings`) and the revision-guarded MCP Proxy tab (enabled, timeouts, maxUnits and token rotation), never mixing HTTP/proxy write fields; `RotateKeyDialog.svelte` confirms rotation through `rotateMcpProxyKey`, shows the generated token once for copy, keeps it out of global state and clears it on dismissal.
 
+## Diagnostic recording and history
+
+`LoggingSettings.svelte` owns General's independent logging switch and confirmed backend state. Reads run only on active entry, manual refresh and explicit changes, never on timers or in hidden panels. Preserve the last confirmed switch on a failed save, guard duplicate writes and ignore responses after teardown. An enabled preference is not proof that the writer is healthy; show recording failures separately.
+
+`/logs` is an independent navigation page. Keep the viewer, type/status/time filters, operation details, directory opening and confirmed deletion there rather than embedding them in Settings. Disabled recording does not hide or erase history. History and detail requests are bounded, manually refreshed, and reject late results after filter changes, selection changes, clear or unmount.
+
 ## Retained panels, search and help
 
 - **General sections**: Use four independently labelled sections with headings outside `max-w-3xl` cards and 24px spacing: app behavior (autostart/Mini Island/lid), OpenCode V2 (connection before CLI updates), MOM HTTP, app updates (secondary support). Preserve platform conditions/search anchors/guarded lifecycles/per-section saves; MCP Proxy layout stays independent.

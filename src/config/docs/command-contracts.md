@@ -16,6 +16,12 @@ This directory connects typed command calls to shared application state and Svel
 
 - **Prompt generation**: `generatePrompt(request)` forwards to `opencode_generate_prompt` through the service-target guard, without `run()`, refresh, retries, draft recovery or retained input/output. Rust owns preset instructions; applying generated text and saving remain separate form actions.
 
+## Local diagnostic logs
+
+`getLoggingState`, `setLoggingEnabled`, `queryLogs`, `openLogsDirectory` and `clearLogs` are lazy, untracked adapter pass-throughs. They neither prefetch at startup nor enter `AppState`, `AppPreferences`, draft recovery or localStorage. Enablement is persisted by Rust as `state.loggingEnabled`, independently of theme/locale preferences.
+
+`setLoggingEnabled` forwards only `{ enabled }`; `queryLogs` forwards `{ query }` with the type/status/time/operation filters and opaque cursor unchanged. Other logging commands have no payload. Never wrap all IPC calls in a payload/error logger: request bodies and raw errors can contain credentials or private content. The Settings section owns confirmed switch readback; `/logs` owns its bounded pages and operation detail requests.
+
 ## Service targets and monitor readback
 
 - **Service target**: Keep `getOpenCodeServiceStatus`/`setOpenCodeServiceTarget(url, password?)` lazy and outside global mutation/draft tracking; preserve omitted/null/empty password IPC semantics. Pending saves block catalog/usage reads; success increments read-only reactive `serviceTargetVersion`, invalidates old catalog/usage responses and clears only catalog data, never config/preferences/form versions. Island/lid sections reread native status on that version without remounting/toggling preferences, reject old-version readback and defer one latest read through pending reads/saves. Failure preserves version, catalog/global state and drafts; never retain passwords/private failures.

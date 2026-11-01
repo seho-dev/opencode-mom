@@ -128,6 +128,14 @@ Global recognizes native `agent` / `agents` and `skill` / `skills` directory ali
 
 - English / Simplified Chinese UI, dark (default) and light themes, launch-at-login, a single-window console plus a tray for quick access.
 
+### 🪵 Local Diagnostic Logs
+
+- **Dedicated Controls & Viewer**: Independent logging switch in **Settings → General** (off by default); disabling recording preserves existing history. An independent `/logs` viewer in the navigation menu (not embedded in Settings) supports manual refresh, opening the log directory, and confirmed clearing.
+- **Correlated Tracing & State Recording**: Records results of critical mutations; ordinary polling successes are omitted, while power and Mini Island record only published state transitions. Each entry requires `type`, `status` (`success` | `error`), and links checkpoints via `operationId` (a successful step checkpoint does not imply the entire operation succeeded).
+- **Viewer & Filtering**: Supports filtering by type, status, and time range. Loads older pages via cursor pagination (50 records per page), and operation traces retain up to 100 events. Pagination cursors expire on file rotation or clear; manual refresh resets the query.
+- **Storage & Permissions**: Stored locally in `~/.config/opencode-mom/logs` (Windows: `%USERPROFILE%\.config\opencode-mom\logs`), rotating up to 5 JSONL files capped at 5 MiB each. Unix sets directory `0700` and file `0600` permissions; Windows uses inherited permissions (without verified private ACLs).
+- **Safe Allowlist & Diagnostic Scope**: Strictly allowlisted fields; never records credentials, passwords, tokens and their verification data, prompts, session messages, configuration contents, request/response bodies, or raw errors, with no automatic upload. Intended for local diagnostics rather than compliance auditing; process termination, disk errors, or queue overflow may cause record loss.
+
 ## 🏝️ Roadmap
 
 - **Developer ID signed & notarized macOS builds** — planned, with self-funded membership at the personal goal of ⭐ 100 stars; stars do not purchase a certificate.
@@ -201,6 +209,8 @@ Compare the backend PID/version shown in Settings with its owner; process presen
 ## 🔧 How MOM writes config
 
 MOM keeps its own groups, selection state, saved project roots and shared last scope choice in `~/.config/opencode-mom/config.json`, separately from the files it manages:
+
+The logging switch is stored as `state.loggingEnabled` (default `false`), independent of theme, locale, model groups, and project selection. Log records are saved separately in JSONL files under `logs/` and never written to `config.json`.
 
 The Island switch is stored as `state.islandEnabled` (default `false`), outside theme/locale preferences; preference saves and group changes preserve it.
 

@@ -19,6 +19,7 @@ src/routes/                         # SvelteKit page module
 ├── mcp/                            # /mcp: Global management, project-root scopes, and MCP Proxy
 ├── skills/                         # /skills: Global skills and project .opencode skill(s)
 ├── settings/                       # /settings: system settings, OpenCode CLI, and app updates
+├── logs/                           # /logs: independent local diagnostic history and operation checkpoints
 ├── island/                         # /island: native mini island window
 └── tray/                           # /tray: special tray-window mode
 ```

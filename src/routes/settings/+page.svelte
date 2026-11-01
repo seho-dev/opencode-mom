@@ -1,6 +1,6 @@
 <script lang="ts">
 import { RefreshCw } from '@lucide/svelte';
-import { onDestroy, onMount, tick } from 'svelte';
+import { onDestroy, onMount, tick, untrack } from 'svelte';
 import { goto } from '$app/navigation';
 import { page as route } from '$app/state';
 import { Button } from '$src/components/button/index.js';
@@ -14,6 +14,7 @@ import { GROUP_TYPE_LABELS, GROUP_TYPE_NATIVE, GROUP_TYPES, type GroupType } fro
 import AppUpdates from './AppUpdates.svelte';
 import Behavior from './Behavior.svelte';
 import LidProtection from './LidProtection.svelte';
+import LoggingSettings from './LoggingSettings.svelte';
 import McpProxySettings from './McpProxySettings.svelte';
 import MiniIsland from './MiniIsland.svelte';
 import OpenCodeSettings from './OpenCodeSettings.svelte';
@@ -32,13 +33,16 @@ let behaviorTabEl = $state<HTMLButtonElement | null>(null);
 let proxySettingsRef = $state<{ refresh: () => Promise<void> } | null>(null);
 let httpSettingsRef = $state<{ refresh: () => Promise<void> } | null>(null);
 let behaviorRef = $state<{ refresh: () => Promise<void> } | null>(null);
+let loggingRef = $state<{ refresh: () => Promise<void> } | null>(null);
 
 let activeTab = $state<SettingsTab>(
-  route.url.searchParams.get('tab') === 'behavior'
-    ? 'behavior'
-    : route.url.searchParams.get('tab') === 'mcp-proxy'
-      ? 'mcp-proxy'
-      : 'general',
+  route.url.hash === '#settings-logging'
+    ? 'general'
+    : route.url.searchParams.get('tab') === 'behavior'
+      ? 'behavior'
+      : route.url.searchParams.get('tab') === 'mcp-proxy'
+        ? 'mcp-proxy'
+        : 'general',
 );
 
 let enabled = $state(false);
@@ -50,6 +54,8 @@ let failedSave = $state(false);
 let savingPlugin = $state(false);
 const selectedPlugin = $derived(config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE);
 let request = 0;
+let navigationRequest = 0;
+let destroyed = false;
 
 async function handleDefaultPluginChange(type: GroupType) {
   if (savingPlugin || selectedPlugin === type) return;
@@ -68,6 +74,7 @@ function selectTab(tab: SettingsTab): boolean {
   if (activeTab === tab) return true;
   activeTab = tab;
   const url = new URL(route.url);
+  if (tab !== 'general' && url.hash === '#settings-logging') url.hash = '';
   if (tab === 'general') {
     url.searchParams.delete('tab');
   } else {
@@ -96,13 +103,15 @@ function onTabKeys(event: KeyboardEvent) {
 }
 
 async function navigateToSetting(entry: SettingsSearchTarget) {
+  const seq = ++navigationRequest;
   if (!selectTab(entry.tab)) return;
   await tick();
+  if (destroyed || seq !== navigationRequest || activeTab !== entry.tab) return;
   const target =
     document.getElementById(entry.target) ??
     (entry.fallback ? document.getElementById(entry.fallback) : null) ??
     document.getElementById(`settings-tabpanel-${entry.tab}`);
-  target?.scrollIntoView({ block: 'center' });
+  target?.scrollIntoView({ block: entry.target === 'settings-logging' ? 'start' : 'center' });
   target?.focus({ preventScroll: true });
 }
 
@@ -151,7 +160,7 @@ async function toggle() {
 
 async function handleRefresh() {
   if (activeTab === 'general') {
-    await Promise.all([load(), httpSettingsRef?.refresh()]);
+    await Promise.all([load(), httpSettingsRef?.refresh(), loggingRef?.refresh()]);
   } else if (activeTab === 'mcp-proxy') {
     await proxySettingsRef?.refresh();
   } else if (activeTab === 'behavior') {
@@ -165,7 +174,15 @@ onMount(() => {
   }
 });
 
+$effect(() => {
+  if (route.url.hash === '#settings-logging') {
+    untrack(() => void navigateToSetting({ tab: 'general', target: 'settings-logging' }));
+  }
+});
+
 onDestroy(() => {
+  destroyed = true;
+  navigationRequest += 1;
   request += 1;
 });
 </script>
@@ -332,6 +349,7 @@ onDestroy(() => {
       </div>
       <MiniIsland active={activeTab === 'general'} />
       <LidProtection active={activeTab === 'general'} />
+      <LoggingSettings active={activeTab === 'general'} bind:this={loggingRef} />
     </div>
   </section>
   <OpenCodeSettings active={activeTab === 'general'} />

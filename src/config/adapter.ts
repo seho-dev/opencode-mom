@@ -27,6 +27,7 @@ import type {
   IslandState,
   IslandView,
 } from '$src/types/island.js';
+import type { LoggingState, LogPage, LogQuery } from '$src/types/logging.js';
 import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
 import type {
   CloseMcpProxyUnitRequest,
@@ -123,6 +124,11 @@ export interface CommandAdapter {
   setAutostart(enabled: boolean): Result<boolean>;
   getLidProtection(): Result<LidState>;
   setLidProtection(enabled: boolean): Result<LidState>;
+  getLoggingState(): Result<LoggingState>;
+  setLoggingEnabled(enabled: boolean): Result<LoggingState>;
+  queryLogs(query: LogQuery): Result<LogPage>;
+  openLogsDirectory(): Result<void>;
+  clearLogs(): Result<LoggingState>;
   getIslandState(): Result<IslandState>;
   setIslandEnabled(enabled: boolean): Result<IslandState>;
   refreshIsland(): Result<IslandState>;
@@ -230,6 +236,11 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     setAutostart: (enabled) => invoke('set_autostart', { enabled }),
     getLidProtection: () => invoke('get_lid_protection'),
     setLidProtection: (enabled) => invoke('set_lid_protection', { enabled }),
+    getLoggingState: () => invoke('get_logging_state'),
+    setLoggingEnabled: (enabled) => invoke('set_logging_enabled', { enabled }),
+    queryLogs: (query) => invoke('query_logs', { query }),
+    openLogsDirectory: () => invoke('open_logs_directory'),
+    clearLogs: () => invoke('clear_logs'),
     getIslandState: () => invoke('get_island_state', {}),
     setIslandEnabled: (enabled) => invoke('set_island_enabled', { enabled }),
     refreshIsland: () => invoke('refresh_island', {}),

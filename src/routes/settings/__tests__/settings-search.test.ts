@@ -40,6 +40,10 @@ function makeAdapter() {
     getAutostart: vi.fn().mockResolvedValue(false),
     setAutostart: vi.fn(),
     getLidProtection: vi.fn().mockResolvedValue({ enabled: true, phase: 'protected', activeSessions: 2 }),
+    getLoggingState: vi
+      .fn()
+      .mockResolvedValue({ enabled: false, recording: false, directory: '/logs', error: null, droppedRecords: 0 }),
+    setLoggingEnabled: vi.fn(),
     setLidProtection: vi.fn(),
     getIslandState: vi.fn().mockResolvedValue({ supported: true, enabled: true }),
     setIslandEnabled: vi.fn(),
@@ -115,6 +119,7 @@ function expectNoWrites(adapter: ReturnType<typeof makeAdapter>) {
   for (const call of [
     adapter.setAutostart,
     adapter.setLidProtection,
+    adapter.setLoggingEnabled,
     adapter.setIslandEnabled,
     adapter.setOpenCodeServiceTarget,
     adapter.upgradeOpenCode,

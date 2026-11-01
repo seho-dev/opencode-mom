@@ -35,6 +35,11 @@ const entries: (SettingsSearchTarget & { keys: [MessageKey, MessageKey, ...Messa
   { tab: 'general', target: 'settings-island', keys: ['settings.island', 'settings.islandHint'] },
   {
     tab: 'general',
+    target: 'settings-logging',
+    keys: ['settings.logging', 'settings.loggingHint', 'settings.loggingPrivacy', 'settings.loggingView'],
+  },
+  {
+    tab: 'general',
     target: 'opencode-settings-title',
     keys: [
       'settings.opencodeUpdates',

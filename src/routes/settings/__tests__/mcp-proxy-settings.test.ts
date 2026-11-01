@@ -86,6 +86,10 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
     getAutostart: vi.fn().mockResolvedValue(false),
     setAutostart: vi.fn().mockResolvedValue(true),
     getLidProtection: vi.fn().mockResolvedValue({ enabled: false, phase: 'disabled' }),
+    getLoggingState: vi
+      .fn()
+      .mockResolvedValue({ enabled: false, recording: false, directory: '/logs', error: null, droppedRecords: 0 }),
+    setLoggingEnabled: vi.fn(),
     getAppInfo: vi.fn().mockResolvedValue({ version: '2.0.0', platform: 'macos' }),
     checkForUpdates: vi.fn(),
     getMomHttpSettings: vi.fn().mockResolvedValue(defaultHttpSettings),

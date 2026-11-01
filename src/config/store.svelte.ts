@@ -29,6 +29,7 @@ import type {
   IslandState,
   IslandView,
 } from '$src/types/island.js';
+import type { LoggingState, LogPage, LogQuery } from '$src/types/logging.js';
 import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
 import type {
   CloseMcpProxyUnitRequest,
@@ -585,6 +586,21 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     },
     setLidProtection(enabled: boolean): Promise<LidState> {
       return adapter.setLidProtection(enabled);
+    },
+    getLoggingState(): Promise<LoggingState> {
+      return adapter.getLoggingState();
+    },
+    setLoggingEnabled(enabled: boolean): Promise<LoggingState> {
+      return adapter.setLoggingEnabled(enabled);
+    },
+    queryLogs(query: LogQuery): Promise<LogPage> {
+      return adapter.queryLogs(query);
+    },
+    openLogsDirectory(): Promise<void> {
+      return adapter.openLogsDirectory();
+    },
+    clearLogs(): Promise<LoggingState> {
+      return adapter.clearLogs();
     },
     getIslandState(): Promise<IslandState> {
       return adapter.getIslandState();

@@ -13,6 +13,10 @@ function mount(overrides: Record<string, unknown> = {}) {
     getAutostart: vi.fn().mockResolvedValue(false),
     setAutostart: vi.fn().mockResolvedValue(true),
     getLidProtection: vi.fn().mockResolvedValue({ enabled: false, phase: 'disabled' }),
+    getLoggingState: vi
+      .fn()
+      .mockResolvedValue({ enabled: false, recording: false, directory: '/logs', error: null, droppedRecords: 0 }),
+    setLoggingEnabled: vi.fn(),
     setLidProtection: vi.fn().mockResolvedValue({ enabled: true, phase: 'idle' }),
     getAppInfo: vi.fn().mockResolvedValue({ version: '0.1.0', platform: 'other' }),
     checkForUpdates: vi.fn(),
@@ -163,6 +167,13 @@ test('failed default plugin persistence restores confirmed selection and allows 
       savePreferences,
       getAutostart: async () => false,
       getLidProtection: async () => ({ enabled: false, phase: 'disabled' }),
+      getLoggingState: async () => ({
+        enabled: false,
+        recording: false,
+        directory: '/logs',
+        error: null,
+        droppedRecords: 0,
+      }),
       getAppInfo: async () => ({ version: '0.1.0', platform: 'other' }),
       getMomHttpSettings: async () => ({ port: 18765, allowLan: false }),
       getMcpProxySettings: async () => ({ enabled: false, idleTimeout: 300, maxUnits: 16, revision: 1 }),

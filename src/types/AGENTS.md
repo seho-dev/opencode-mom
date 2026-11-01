@@ -12,6 +12,7 @@ types/
 ├── agents.ts             # Sources, permissions, mutations
 ├── app.ts                # Snapshots, preferences, CLI/service metadata
 ├── groups.ts             # Groups, bindings, categories
+├── logging.ts            # Diagnostic type/status vocabulary, state, records and query pages
 ├── mcp.ts                # MCP records and guarded writes
 ├── mcp-proxy.ts          # Proxy and MOM HTTP contracts
 ├── models.ts             # References, variants, catalog

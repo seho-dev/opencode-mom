@@ -4,6 +4,7 @@ import {
   Boxes,
   Cable,
   LayoutDashboard,
+  Logs,
   Network,
   Puzzle,
   Server,
@@ -24,6 +25,7 @@ export const navigationItems: NavigationItem[] = [
   { href: '/skills', labelKey: 'nav.skills', icon: BookOpen },
   { href: '/plugins', labelKey: 'nav.plugins', icon: Puzzle },
   { href: '/commands', labelKey: 'nav.commands', icon: Terminal },
+  { href: '/logs', labelKey: 'nav.logs', icon: Logs },
   { href: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];
 

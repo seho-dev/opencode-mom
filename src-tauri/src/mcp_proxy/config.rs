@@ -77,8 +77,6 @@ pub struct GatewaySettings {
     pub idle_timeout_secs: u64,
     #[serde(default = "default_max_units")]
     pub max_units: usize,
-    #[serde(default)]
-    pub token_verifier: Option<String>,
 }
 
 fn default_idle_timeout_secs() -> u64 {
@@ -95,7 +93,6 @@ impl Default for GatewaySettings {
             enabled: false,
             idle_timeout_secs: default_idle_timeout_secs(),
             max_units: default_max_units(),
-            token_verifier: None,
         }
     }
 }
@@ -146,13 +143,6 @@ pub fn validate_config(config: &ProxyConfig) -> Result<(), AppError> {
     }
     if config.gateway.max_units == 0 || config.gateway.max_units > 128 {
         return Err(AppError::validation("max units must be between 1 and 128"));
-    }
-    if let Some(ref verifier) = config.gateway.token_verifier {
-        if verifier.len() != 64 || !verifier.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(AppError::validation(
-                "token verifier must be a 64-character hex string",
-            ));
-        }
     }
     if config.services.len() > MAX_SERVICES {
         return Err(AppError::validation(format!(
@@ -226,19 +216,63 @@ pub fn validate_config(config: &ProxyConfig) -> Result<(), AppError> {
 }
 
 pub fn load_config(path: &Path) -> Result<ProxyConfig, AppError> {
+    let Some(bytes) = read_config(path)? else {
+        return Ok(ProxyConfig::default());
+    };
+    let config: ProxyConfig = serde_json::from_slice(&bytes.0)
+        .map_err(|_| AppError::configuration("invalid proxy configuration"))?;
+    validate_config(&config)?;
+    Ok(config)
+}
+
+pub(crate) fn legacy_http_verifier(path: &Path) -> Result<Option<String>, AppError> {
+    let Some(bytes) = read_config(path)
+        .map_err(|_| AppError::configuration("read legacy proxy configuration"))?
+    else {
+        return Ok(None);
+    };
+    #[derive(Deserialize)]
+    struct LegacyConfig {
+        #[serde(default)]
+        gateway: LegacyGateway,
+    }
+    #[derive(Default, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct LegacyGateway {
+        token_verifier: Option<String>,
+    }
+    let value: serde_json::Value = serde_json::from_slice(&bytes.0)
+        .map_err(|_| AppError::configuration("invalid legacy proxy configuration"))?;
+    if !value.is_object()
+        || value
+            .get("gateway")
+            .is_some_and(|gateway| !gateway.is_object())
+    {
+        return Err(AppError::configuration(
+            "invalid legacy proxy configuration",
+        ));
+    }
+    let value: LegacyConfig = serde_json::from_value(value)
+        .map_err(|_| AppError::configuration("invalid legacy proxy configuration"))?;
+    match value.gateway.token_verifier {
+        None => Ok(None),
+        Some(verifier) if crate::http_server::auth::valid_verifier(&verifier) => Ok(Some(verifier)),
+        _ => Err(AppError::configuration(
+            "invalid legacy HTTP authentication verifier",
+        )),
+    }
+}
+
+fn read_config(path: &Path) -> Result<Option<SecretBytes>, AppError> {
     #[cfg(not(windows))]
     {
         let bytes = crate::private_file::read(path, MAX_CONFIG_PAYLOAD_BYTES).map_err(|e| {
             AppError::configuration(format!("failed to read proxy configuration: {:?}", e))
         })?;
         let Some(bytes) = bytes else {
-            return Ok(ProxyConfig::default());
+            return Ok(None);
         };
-        let bytes = SecretBytes(bytes);
-        let config: ProxyConfig = serde_json::from_slice(&bytes.0)
-            .map_err(|e| AppError::configuration(format!("invalid proxy configuration: {e}")))?;
-        validate_config(&config)?;
-        Ok(config)
+        Ok(Some(SecretBytes(bytes)))
     }
 
     #[cfg(windows)]
@@ -247,7 +281,7 @@ pub fn load_config(path: &Path) -> Result<ProxyConfig, AppError> {
             AppError::configuration(format!("failed to read proxy configuration: {:?}", e))
         })?;
         let Some(bytes) = bytes else {
-            return Ok(ProxyConfig::default());
+            return Ok(None);
         };
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -256,7 +290,7 @@ pub fn load_config(path: &Path) -> Result<ProxyConfig, AppError> {
             encrypted_payload: Vec<u8>,
         }
         let envelope: WindowsEnvelope = serde_json::from_slice(&bytes)
-            .map_err(|e| AppError::configuration(format!("invalid envelope: {e}")))?;
+            .map_err(|_| AppError::configuration("invalid proxy configuration envelope"))?;
         if envelope.version != 1 {
             return Err(AppError::configuration("unsupported envelope version"));
         }
@@ -268,10 +302,7 @@ pub fn load_config(path: &Path) -> Result<ProxyConfig, AppError> {
                 "decrypted proxy configuration exceeds maximum payload limit",
             ));
         }
-        let config: ProxyConfig = serde_json::from_slice(&decrypted.0)
-            .map_err(|e| AppError::configuration(format!("invalid proxy configuration: {e}")))?;
-        validate_config(&config)?;
-        Ok(config)
+        Ok(Some(decrypted))
     }
 }
 

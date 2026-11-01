@@ -46,7 +46,7 @@ let closeUnitError = $state('');
 
 let mounted = false;
 let request = 0;
-let timer: ReturnType<typeof setTimeout> | undefined;
+let refreshQueued = false;
 
 const isRunning = $derived(!loading && !error && proxyState?.actualState === 'running');
 const services = $derived(proxyState?.services ?? []);
@@ -63,16 +63,13 @@ const filtered = $derived(
 const currentPage = $derived(Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize))));
 const rows = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
 
-function schedule() {
-  clearTimeout(timer);
-  if (mounted && !querying && !deletePending && !closeUnitPending) {
-    timer = setTimeout(() => void readState(), 2000);
+async function readState(manual = false, afterMutation = false) {
+  if (!mounted) return;
+  if (querying) {
+    refreshQueued ||= afterMutation;
+    return;
   }
-}
-
-async function readState(manual = false) {
-  if (!mounted || querying) return;
-  clearTimeout(timer);
+  refreshQueued = false;
   const seq = ++request;
   querying = true;
   refreshing = manual;
@@ -90,7 +87,7 @@ async function readState(manual = false) {
       querying = false;
       refreshing = false;
       loading = false;
-      schedule();
+      if (refreshQueued) await readState(true, true);
     }
   }
 }
@@ -112,7 +109,7 @@ async function toggleGateway(next: boolean) {
       },
       current.revision,
     );
-    await readState(true);
+    await readState(true, true);
   } catch (cause) {
     if (mounted) {
       toast({
@@ -154,7 +151,7 @@ async function toggleEnabled(summary: McpProxyServerSummaryDto) {
       enabled: !full.enabled,
     };
     await config.updateMcpProxyServer(updated, revision);
-    await readState(true);
+    await readState(true, true);
   } catch (cause) {
     if (mounted) toast({ variant: 'destructive', description: readError(cause) });
   } finally {
@@ -170,14 +167,11 @@ async function confirmDelete() {
     await config.deleteMcpProxyServer(deletingServer.id, proxyState.revision);
     if (!mounted) return;
     deletingServer = null;
-    await readState(true);
+    await readState(true, true);
   } catch (cause) {
     if (mounted) deleteError = readError(cause);
   } finally {
-    if (mounted) {
-      deletePending = false;
-      schedule();
-    }
+    if (mounted) deletePending = false;
   }
 }
 
@@ -193,14 +187,11 @@ async function submitCloseUnit() {
     if (!mounted) return;
     closeUnitOpen = false;
     closeUnitId = '';
-    await readState(true);
+    await readState(true, true);
   } catch (cause) {
     if (mounted) closeUnitError = readError(cause);
   } finally {
-    if (mounted) {
-      closeUnitPending = false;
-      schedule();
-    }
+    if (mounted) closeUnitPending = false;
   }
 }
 
@@ -212,7 +203,6 @@ onMount(() => {
 onDestroy(() => {
   mounted = false;
   request += 1;
-  clearTimeout(timer);
 });
 
 export function refresh() {
@@ -405,7 +395,7 @@ export function refresh() {
   bind:open={formOpen}
   server={editingServer}
   expectedRevision={editingRevision}
-  onSaved={() => readState(true)}
+  onSaved={() => readState(true, true)}
 />
 
 <!-- Delete Confirmation Dialog -->

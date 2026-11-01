@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::http_server::HttpServer;
+use crate::http_server::HttpServerState;
 use crate::mcp_proxy::config::{
     GatewaySettings, ProxyProtocol, ProxyServiceConfig, ServiceTimeouts,
 };
@@ -161,13 +161,13 @@ pub struct CloseMcpProxyUnitRequest {
 #[tauri::command]
 pub async fn get_mcp_proxy_state(
     proxy: tauri::State<'_, Arc<ProxyService>>,
-    http: tauri::State<'_, Arc<HttpServer>>,
+    http: tauri::State<'_, HttpServerState>,
 ) -> Result<McpProxyStateDto, AppError> {
+    let http = http.inner().as_ref().map_err(Clone::clone)?;
     let config = proxy.config().await;
     let bound = http.bound_addr().await;
     let settings = http.settings().await;
-    let is_running =
-        bound.is_some() && config.gateway.enabled && config.gateway.token_verifier.is_some();
+    let is_running = bound.is_some() && config.gateway.enabled && http.auth_ready();
     let actual_state = if proxy.cleanup_failed() {
         "cleanup_failed".to_string()
     } else if is_running {
@@ -181,8 +181,8 @@ pub async fn get_mcp_proxy_state(
         security_errors
             .push("MCP runtime cleanup failed; process outcome may be uncertain".to_string());
     }
-    if config.gateway.token_verifier.is_none() {
-        security_errors.push("Missing authentication token verifier".to_string());
+    if !http.auth_ready() {
+        security_errors.push("MOM HTTP authentication is not configured".to_string());
     }
     if settings.allow_lan {
         security_errors.push("LAN access is enabled (0.0.0.0)".to_string());
@@ -245,24 +245,15 @@ pub async fn save_mcp_proxy_settings(
     settings: McpProxySettingsDto,
     expected_revision: u64,
 ) -> Result<(), AppError> {
-    let current_config = proxy.config().await;
     let gateway = GatewaySettings {
         enabled: settings.enabled,
         idle_timeout_secs: settings.idle_timeout,
         max_units: settings.max_units,
-        token_verifier: current_config.gateway.token_verifier,
     };
 
     proxy
         .save_gateway_settings(gateway, expected_revision)
         .await
-}
-
-#[tauri::command]
-pub async fn rotate_mcp_proxy_key(
-    proxy: tauri::State<'_, Arc<ProxyService>>,
-) -> Result<String, AppError> {
-    proxy.rotate_key().await
 }
 
 #[tauri::command]

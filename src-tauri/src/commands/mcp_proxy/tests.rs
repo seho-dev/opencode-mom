@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::json;
+use tauri::Manager;
 use uuid::Uuid;
 
 use super::*;
 use crate::error::ErrorCode;
+use crate::http_server::HttpServer;
 use crate::mcp_proxy::config::{ProxyProtocol, ProxyServiceConfig};
 use crate::mcp_proxy::ProxyService;
 use crate::paths::ConfigPaths;
@@ -196,7 +198,7 @@ fn ipc_crud_and_conflict_rejection() {
 
     let app = tauri::test::mock_builder()
         .manage(service.clone())
-        .manage(http.clone())
+        .manage(Ok::<_, AppError>(http.clone()))
         .manage(paths)
         .invoke_handler(tauri::generate_handler![
             get_mcp_proxy_state,
@@ -204,7 +206,7 @@ fn ipc_crud_and_conflict_rejection() {
             crate::commands::set_mom_http_settings,
             get_mcp_proxy_settings,
             save_mcp_proxy_settings,
-            rotate_mcp_proxy_key,
+            crate::commands::rotate_mom_http_key,
             get_mcp_proxy_server,
             create_mcp_proxy_server,
             update_mcp_proxy_server,
@@ -322,14 +324,42 @@ fn ipc_crud_and_conflict_rejection() {
     assert_eq!(tauri::async_runtime::block_on(http.settings()).port, port);
     assert_eq!(updated_settings.revision, 2);
 
-    // 3. Key rotation
-    let key_res = invoke("rotate_mcp_proxy_key", json!({})).unwrap();
+    // 3. Shared HTTP key rotation does not change proxy configuration.
+    let config_before_rotate = tauri::async_runtime::block_on(service.config());
+    let generation_before_rotate = service.generation();
+    let key_res = invoke("rotate_mom_http_key", json!({})).unwrap();
     let token: String = key_res.deserialize().unwrap();
-    assert!(!token.is_empty());
+    assert_eq!(token.len(), 64);
+    assert!(http.auth_ready());
+    assert_eq!(
+        tauri::async_runtime::block_on(service.config()),
+        config_before_rotate
+    );
+    assert_eq!(service.generation(), generation_before_rotate + 1);
+    assert!(invoke("rotate_mcp_proxy_key", json!({})).is_err());
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&fs::read(home.path().join("mom-http.json")).unwrap()).unwrap();
+    assert!(crate::http_server::auth::verify_token(
+        &token,
+        persisted["auth"]["tokenVerifier"].as_str().unwrap(),
+    ));
+    assert!(!persisted.to_string().contains(&token));
+    let verifier = persisted["auth"]["tokenVerifier"].as_str().unwrap();
+    for command in [
+        "get_mom_http_settings",
+        "get_mcp_proxy_settings",
+        "get_mcp_proxy_state",
+    ] {
+        let wire: serde_json::Value = invoke(command, json!({})).unwrap().deserialize().unwrap();
+        let serialized = wire.to_string();
+        assert!(!serialized.contains(&token), "{command}");
+        assert!(!serialized.contains(verifier), "{command}");
+        assert!(!serialized.contains("tokenVerifier"), "{command}");
+    }
 
     let res = invoke("get_mcp_proxy_settings", json!({})).unwrap();
     let settings_after_rotate: McpProxySettingsDto = res.deserialize().unwrap();
-    assert_eq!(settings_after_rotate.revision, 3);
+    assert_eq!(settings_after_rotate.revision, 2);
 
     // 4. Server CRUD
     let server_dto = json!({
@@ -344,7 +374,7 @@ fn ipc_crud_and_conflict_rejection() {
             "startupTimeout": 30,
             "executionTimeout": 300
         },
-        "expectedRevision": 3
+        "expectedRevision": 2
     });
 
     let res = invoke("create_mcp_proxy_server", server_dto).unwrap();
@@ -366,7 +396,7 @@ fn ipc_crud_and_conflict_rejection() {
                 "startupTimeout": 30,
                 "executionTimeout": 300
             },
-            "expectedRevision": 4
+            "expectedRevision": 3
         }),
     )
     .unwrap_err();
@@ -402,7 +432,7 @@ fn ipc_crud_and_conflict_rejection() {
     .unwrap_err();
     assert_eq!(err["code"], "validation_failed");
 
-    // Update server with correct revision (4)
+    // Update server with correct revision (3)
     let res = invoke(
         "update_mcp_proxy_server",
         json!({
@@ -417,7 +447,7 @@ fn ipc_crud_and_conflict_rejection() {
                 "startupTimeout": 40,
                 "executionTimeout": 400
             },
-            "expectedRevision": 4
+            "expectedRevision": 3
         }),
     )
     .unwrap();
@@ -436,12 +466,12 @@ fn ipc_crud_and_conflict_rejection() {
     .unwrap_err();
     assert_eq!(err["code"], "validation_failed");
 
-    // Delete server with correct revision (5)
+    // Delete server with correct revision (4)
     invoke(
         "delete_mcp_proxy_server",
         json!({
             "id": "my-tool",
-            "expectedRevision": 5
+            "expectedRevision": 4
         }),
     )
     .unwrap();
@@ -554,18 +584,262 @@ fn ipc_crud_and_conflict_rejection() {
     tauri::async_runtime::block_on(http.shutdown(std::time::Duration::from_secs(2))).unwrap();
 }
 
+fn http_test_app(paths: ConfigPaths) -> tauri::App<tauri::test::MockRuntime> {
+    let mut app = tauri::test::mock_builder()
+        .setup(move |app| {
+            let proxy = Arc::new(ProxyService::new(&paths)?);
+            app.manage(proxy.clone());
+            app.manage(paths.clone());
+            crate::setup_http(app, &paths, &proxy);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            crate::commands::get_mom_http_settings,
+            crate::commands::set_mom_http_settings,
+            crate::commands::rotate_mom_http_key,
+            get_mcp_proxy_state,
+            get_mcp_proxy_settings,
+            save_mcp_proxy_settings,
+        ])
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    #[allow(deprecated)]
+    app.run_iteration(|_, _| {});
+    app
+}
+
+fn invoke_http_test(
+    webview: &tauri::WebviewWindow<tauri::test::MockRuntime>,
+    cmd: &str,
+    body: serde_json::Value,
+) -> Result<tauri::ipc::InvokeResponseBody, serde_json::Value> {
+    tauri::test::get_ipc_response(
+        webview,
+        tauri::webview::InvokeRequest {
+            cmd: cmd.into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: "tauri://localhost".parse().unwrap(),
+            body: tauri::ipc::InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.into(),
+        },
+    )
+}
+
+#[test]
+fn http_initialization_failure_preserves_setup_proxy_ipc_and_files() {
+    for (config, invalid_legacy_auth) in [
+        (Some(b"invalid HTTP json".as_slice()), false),
+        (Some(br#"{"port":23456,"auth":null}"#.as_slice()), false),
+        (
+            Some(br#"{"port":23456,"auth":{"tokenVerifier":"private-invalid"}}"#.as_slice()),
+            false,
+        ),
+        (Some(br#"{"port":23456}"#.as_slice()), true),
+        (None, false),
+    ] {
+        let home = TempHome::new();
+        let paths = ConfigPaths::with_resource_parts(
+            home.path().to_path_buf(),
+            None,
+            None,
+            home.path().join(".config"),
+            home.path().join("cwd"),
+        );
+        let directory = paths.app_config_dir();
+        fs::create_dir_all(&directory).unwrap();
+        let http_path = directory.join("mom-http.json");
+        if let Some(bytes) = config {
+            crate::private_file::publish(&http_path, bytes).unwrap();
+        } else {
+            fs::create_dir(&http_path).unwrap();
+            fs::write(http_path.join("untouched"), b"private-invalid").unwrap();
+        }
+        let proxy_path = directory.join("mcp-proxy.json");
+        crate::mcp_proxy::config::save_config(&proxy_path, &Default::default()).unwrap();
+        if invalid_legacy_auth {
+            let bytes = serde_json::to_vec(&json!({
+                "gateway": {"tokenVerifier": "private-invalid"},
+            }))
+            .unwrap();
+            #[cfg(windows)]
+            let bytes = serde_json::to_vec(&json!({
+                "version": 1,
+                "encryptedPayload": crate::protected_data::protect(&bytes).unwrap(),
+            }))
+            .unwrap();
+            crate::private_file::publish(&proxy_path, &bytes).unwrap();
+        }
+        let proxy_before = fs::read(&proxy_path).unwrap();
+        let app = http_test_app(paths);
+        let http = app.state::<HttpServerState>();
+        let error = http.inner().as_ref().err().unwrap();
+        assert_eq!(error.code, ErrorCode::ConfigurationFailed);
+        let expected = serde_json::to_value(error).unwrap();
+        assert!(!expected.to_string().contains("private-invalid"));
+        assert!(app.try_state::<Arc<HttpServer>>().is_none());
+        let proxy = app.state::<Arc<ProxyService>>();
+        let config_before = tauri::async_runtime::block_on(proxy.config());
+        let generation_before = proxy.generation();
+        let request_token = tauri::async_runtime::block_on(proxy.request_token());
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        for (cmd, body) in [
+            ("get_mom_http_settings", json!({})),
+            (
+                "set_mom_http_settings",
+                json!({"settings": {"port": 23457, "allowLan": false}}),
+            ),
+            ("rotate_mom_http_key", json!({})),
+            ("get_mcp_proxy_state", json!({})),
+        ] {
+            assert_eq!(invoke_http_test(&webview, cmd, body).unwrap_err(), expected);
+        }
+        let settings: McpProxySettingsDto =
+            invoke_http_test(&webview, "get_mcp_proxy_settings", json!({}))
+                .unwrap()
+                .deserialize()
+                .unwrap();
+        assert_eq!(settings.revision, config_before.revision);
+        assert_eq!(settings.max_units, config_before.gateway.max_units);
+        assert_eq!(
+            tauri::async_runtime::block_on(proxy.config()),
+            config_before
+        );
+        assert_eq!(proxy.generation(), generation_before);
+        assert!(!request_token.is_cancelled());
+        assert_eq!(fs::read(&proxy_path).unwrap(), proxy_before);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 2);
+        if let Some(bytes) = config {
+            assert_eq!(fs::read(&http_path).unwrap(), bytes);
+        } else {
+            assert!(http_path.is_dir());
+            assert_eq!(fs::read_dir(&http_path).unwrap().count(), 1);
+            assert_eq!(
+                fs::read(http_path.join("untouched")).unwrap(),
+                b"private-invalid"
+            );
+        }
+        invoke_http_test(
+            &webview,
+            "save_mcp_proxy_settings",
+            json!({
+                "settings": {"enabled": false, "idleTimeout": 301, "maxUnits": 8},
+                "expectedRevision": settings.revision,
+            }),
+        )
+        .unwrap();
+        let updated: McpProxySettingsDto =
+            invoke_http_test(&webview, "get_mcp_proxy_settings", json!({}))
+                .unwrap()
+                .deserialize()
+                .unwrap();
+        assert_eq!(updated.revision, settings.revision + 1);
+        assert_eq!(updated.idle_timeout, 301);
+        assert_eq!(updated.max_units, 8);
+        let generation = proxy.generation();
+        tauri::async_runtime::block_on(crate::shutdown_http(
+            app.handle(),
+            &proxy,
+            std::time::Duration::from_secs(2),
+        ));
+        assert!(request_token.is_cancelled());
+        assert_eq!(proxy.generation(), generation + 1);
+    }
+}
+
+#[test]
+fn occupied_http_port_does_not_block_setup_or_http_reconfiguration() {
+    let home = TempHome::new();
+    let paths = ConfigPaths::with_resource_parts(
+        home.path().to_path_buf(),
+        None,
+        None,
+        home.path().join(".config"),
+        home.path().join("cwd"),
+    );
+    fs::create_dir_all(paths.app_config_dir()).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let http_path = paths.app_config_dir().join("mom-http.json");
+    let bytes = serde_json::to_vec(&json!({
+        "port": port,
+        "allowLan": false,
+        "auth": {"tokenVerifier": null},
+    }))
+    .unwrap();
+    crate::private_file::publish(&http_path, &bytes).unwrap();
+    let app = http_test_app(paths);
+    let http = app.state::<HttpServerState>();
+    let http = http.inner().as_ref().unwrap();
+    let error = tauri::async_runtime::block_on(http.start()).unwrap_err();
+    assert_eq!(error.code, ErrorCode::ConfigurationFailed);
+    assert_eq!(fs::read(&http_path).unwrap(), bytes);
+    let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let settings: crate::http_server::MomHttpSettings =
+        invoke_http_test(&webview, "get_mom_http_settings", json!({}))
+            .unwrap()
+            .deserialize()
+            .unwrap();
+    assert_eq!(settings.port, port);
+    let state: McpProxyStateDto = invoke_http_test(&webview, "get_mcp_proxy_state", json!({}))
+        .unwrap()
+        .deserialize()
+        .unwrap();
+    assert_eq!(state.actual_state, "stopped");
+    assert_eq!(state.bound_addr, None);
+    let token: String = invoke_http_test(&webview, "rotate_mom_http_key", json!({}))
+        .unwrap()
+        .deserialize()
+        .unwrap();
+    assert_eq!(token.len(), 64);
+    let available = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = available.local_addr().unwrap().port();
+    drop(available);
+    invoke_http_test(
+        &webview,
+        "set_mom_http_settings",
+        json!({"settings": {"port": port, "allowLan": false}}),
+    )
+    .unwrap();
+    let state: McpProxyStateDto = invoke_http_test(&webview, "get_mcp_proxy_state", json!({}))
+        .unwrap()
+        .deserialize()
+        .unwrap();
+    assert_eq!(state.port, port);
+    assert_eq!(state.bound_addr, Some(format!("127.0.0.1:{port}")));
+    let proxy = app.state::<Arc<ProxyService>>();
+    tauri::async_runtime::block_on(crate::shutdown_http(
+        app.handle(),
+        &proxy,
+        std::time::Duration::from_secs(2),
+    ));
+    assert_eq!(tauri::async_runtime::block_on(http.bound_addr()), None);
+}
+
 #[tokio::test]
 async fn exit_barrier_and_shutdown_lifecycle() {
     let home = TempHome::new();
     let config_path = home.path().join("mcp-proxy.json");
     let service = Arc::new(ProxyService::new_with_path(config_path).expect("init service"));
 
-    // Rotate key to allow gateway to start if enabled
-    let _ = service.rotate_key().await.unwrap();
+    let http =
+        HttpServer::new_with_path(home.path().join("mom-http.json"), service.router()).unwrap();
+    crate::commands::app::rotate_http_key(http.clone(), service.as_ref().clone())
+        .await
+        .unwrap();
 
     // Verify shutdown completes within deadline
     let res = service.shutdown(std::time::Duration::from_secs(8)).await;
     assert!(res.is_ok());
+
+    http.shutdown(std::time::Duration::from_secs(2))
+        .await
+        .unwrap();
 
     // Second shutdown is idempotent and succeeds quickly
     let res = service.shutdown(std::time::Duration::from_secs(8)).await;

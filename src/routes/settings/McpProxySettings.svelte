@@ -37,29 +37,25 @@ let rotateDialogOpen = $state(false);
 
 let mounted = $state(false);
 let request = 0;
-let timer: ReturnType<typeof setTimeout> | undefined;
+let refreshQueued = false;
 
 const isDirty = $derived(savedSettings !== null && JSON.stringify(settings) !== JSON.stringify(savedSettings));
 const validPort = $derived(Number.isInteger(settings.port) && settings.port >= 1 && settings.port <= 65535);
 
-function schedule() {
-  clearTimeout(timer);
-  if (mounted && active && !querying && !saving) {
-    timer = setTimeout(() => void readStatus(), 2000);
+async function readStatus(manual = false, afterMutation = false) {
+  if (!mounted || !active) return;
+  if (querying || saving) {
+    refreshQueued ||= afterMutation;
+    return;
   }
-}
-
-async function readStatus(manual = false) {
-  if (!mounted || !active || querying || saving) return;
-  clearTimeout(timer);
+  refreshQueued = false;
   const seq = ++request;
   querying = true;
   refreshing = manual;
   try {
-    const [fetchedSettings, fetchedState] = await Promise.all([
-      http ? config.getMomHttpSettings() : config.getMcpProxySettings(),
-      config.getMcpProxyState(),
-    ]);
+    const [fetchedSettings, fetchedState] = http
+      ? [await config.getMomHttpSettings(), null]
+      : await Promise.all([config.getMcpProxySettings(), config.getMcpProxyState()]);
     if (!mounted || seq !== request) return;
     if (!isDirty) {
       settings = { ...settings, ...fetchedSettings };
@@ -78,14 +74,13 @@ async function readStatus(manual = false) {
       querying = false;
       refreshing = false;
       loading = false;
-      if (!saving && !querying) schedule();
+      if (refreshQueued) await readStatus(true, true);
     }
   }
 }
 
 async function save() {
   if (!mounted || !active || saving || querying || !known || (http && !validPort)) return;
-  clearTimeout(timer);
   const seq = ++request;
   saving = true;
   error = '';
@@ -103,7 +98,7 @@ async function save() {
       description: i18n.t(http ? 'settings.http.saveSuccess' : 'settings.proxy.saveSuccess'),
     });
     saving = false;
-    await readStatus(true);
+    await readStatus(true, true);
   } catch (cause) {
     if (mounted && seq === request) {
       error = readError(cause);
@@ -111,7 +106,7 @@ async function save() {
   } finally {
     if (mounted) {
       saving = false;
-      schedule();
+      if (refreshQueued) await readStatus(true, true);
     }
   }
 }
@@ -124,15 +119,12 @@ $effect(() => {
   if (!mounted) return;
   if (active) {
     untrack(() => void readStatus());
-  } else {
-    clearTimeout(timer);
   }
 });
 
 onDestroy(() => {
   mounted = false;
   request += 1;
-  clearTimeout(timer);
 });
 
 export function refresh() {
@@ -200,6 +192,26 @@ export function refresh() {
         {/if}
       </div>
 
+      <!-- Token Rotation -->
+      <div
+        id="settings-http-token"
+        tabindex="-1"
+        class="flex flex-col items-start justify-between gap-6 px-4 py-3 sm:flex-row sm:items-center sm:px-5 sm:py-4"
+      >
+        <div class="min-w-0">
+          <span class="font-[var(--font-heading)] text-[13px] leading-5 font-semibold block">
+            {i18n.t('settings.http.rotateKey')}
+          </span>
+          <p class="field-hint mt-1">
+            {i18n.t('settings.http.rotateKeyDescription')}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" disabled={!active} onclick={() => (rotateDialogOpen = true)}>
+          <KeyRound size={14} />
+          {i18n.t('settings.http.rotateKey')}
+        </Button>
+      </div>
+
       <!-- Save Button Footer -->
       <div class="flex justify-end gap-2 px-4 py-3 sm:px-5 sm:py-4">
         <Button variant="default" disabled={loading || saving || querying || !known || !validPort} onclick={save}>
@@ -208,6 +220,8 @@ export function refresh() {
       </div>
     </div>
   </section>
+
+  <RotateKeyDialog {active} bind:open={rotateDialogOpen} onRotated={() => readStatus(true, true)} />
 {:else}
   <div class="space-y-6">
     {#if error}
@@ -296,31 +310,6 @@ export function refresh() {
         </div>
       </div>
 
-      <!-- Token Rotation -->
-      <div
-        id="settings-proxy-token"
-        tabindex="-1"
-        class="flex flex-col items-start justify-between gap-6 px-4 py-3 sm:flex-row sm:items-center sm:px-5 sm:py-4"
-      >
-        <div class="min-w-0">
-          <span class="font-[var(--font-heading)] text-[13px] leading-5 font-semibold block">
-            {i18n.t('settings.proxy.rotateKey')}
-          </span>
-          <p class="field-hint mt-1">
-            {i18n.t('settings.proxy.rotateKeyDescription')}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={loading || saving || !known}
-          onclick={() => (rotateDialogOpen = true)}
-        >
-          <KeyRound size={14} />
-          {i18n.t('settings.proxy.rotateKey')}
-        </Button>
-      </div>
-
       <!-- Save Button Footer -->
       <div class="flex justify-end gap-2 px-4 py-3 sm:px-5 sm:py-4">
         <Button variant="default" disabled={loading || saving || querying || !known} onclick={save}>
@@ -329,6 +318,4 @@ export function refresh() {
       </div>
     </section>
   </div>
-
-  <RotateKeyDialog {active} bind:open={rotateDialogOpen} onRotated={() => readStatus(true)} />
 {/if}

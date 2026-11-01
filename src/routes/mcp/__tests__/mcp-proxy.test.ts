@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { goto } from '$app/navigation';
@@ -125,7 +125,7 @@ afterEach(() => {
 });
 
 test.each(['edit', 'toggle'] as const)(
-  '%s keeps its lookup revision across polling and ignores duplicate clicks',
+  '%s keeps its lookup revision across explicit refresh and ignores duplicate clicks',
   async (action) => {
     let resolve!: (value: McpProxyServerDto) => void;
     const pending = new Promise<McpProxyServerDto>((yes) => {
@@ -139,14 +139,16 @@ test.each(['edit', 'toggle'] as const)(
       .mockResolvedValue({ ...defaultProxyState, revision: 5 });
     const config = makeConfig({ getMcpProxyServer, getMcpProxyState });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+    const view = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
     await vi.advanceTimersByTimeAsync(0);
     await tick();
     const button = screen.getByRole('button', { name: action === 'edit' ? 'Edit' : 'Disabled' });
     await fireEvent.click(button);
     await fireEvent.click(button);
     expect(getMcpProxyServer).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(getMcpProxyState).toHaveBeenCalledOnce();
+    await view.component.refresh();
     await tick();
     expect(screen.getByText('Revision: 4')).toBeDefined();
 
@@ -154,17 +156,188 @@ test.each(['edit', 'toggle'] as const)(
     await pending;
     await tick();
     if (action === 'edit') {
-      await vi.advanceTimersByTimeAsync(2000);
+      const command = screen.getByRole('textbox', { name: 'Command & Arguments' }) as HTMLTextAreaElement;
+      await fireEvent.input(command, { target: { value: 'node\ncustom-server' } });
+      await view.component.refresh();
       await tick();
       expect(screen.getByText('Revision: 5')).toBeDefined();
+      expect(command.value).toBe('node\ncustom-server');
       await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
     }
     expect(config.updateMcpProxyServer).toHaveBeenCalledExactlyOnceWith(
-      { ...fullServer, enabled: action === 'edit' },
+      {
+        ...fullServer,
+        enabled: action === 'edit',
+        ...(action === 'edit' && { command: ['node', 'custom-server'] }),
+      },
       3,
     );
+    await tick();
+    const reads = getMcpProxyState.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(getMcpProxyState).toHaveBeenCalledTimes(reads);
   },
 );
+
+const mutations = [
+  ['gateway', 'saveMcpProxySettings'],
+  ['toggle', 'updateMcpProxyServer'],
+  ['save', 'updateMcpProxyServer'],
+  ['delete', 'deleteMcpProxyServer'],
+  ['close', 'closeMcpProxyUnit'],
+] as const;
+
+async function startMutation(action: (typeof mutations)[number][0]) {
+  if (action === 'gateway') {
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Enable MCP Gateway' }));
+  } else if (action === 'toggle') {
+    await fireEvent.click(screen.getByRole('button', { name: 'Disabled' }));
+  } else if (action === 'save') {
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
+  } else {
+    const name = action === 'delete' ? 'Delete' : 'Close Unit';
+    await fireEvent.click(screen.getByRole('button', { name }));
+    const dialog = within(screen.getByRole('dialog'));
+    if (action === 'close') {
+      await fireEvent.input(dialog.getByRole('textbox'), { target: { value: '  unit-abc  ' } });
+    }
+    await fireEvent.click(dialog.getByRole('button', { name }));
+  }
+}
+
+test.each(mutations)('%s queues one successful readback behind an in-flight manual refresh', async (action, method) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  let finishMutation!: () => void;
+  const pendingMutation = new Promise<void>((resolve) => {
+    finishMutation = resolve;
+  });
+  let finishRead!: (value: McpProxyStateDto) => void;
+  const pendingRead = new Promise<McpProxyStateDto>((resolve) => {
+    finishRead = resolve;
+  });
+  const mutation = vi.fn().mockReturnValue(pendingMutation);
+  const getMcpProxyState = vi
+    .fn()
+    .mockResolvedValueOnce(defaultProxyState)
+    .mockReturnValueOnce(pendingRead)
+    .mockResolvedValue({ ...defaultProxyState, revision: 4, activeSessions: 8 });
+  const config = makeConfig({ [method]: mutation, getMcpProxyState });
+  const view = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+  await vi.advanceTimersByTimeAsync(0);
+  await tick();
+  await startMutation(action);
+  if (action === 'gateway' || action === 'toggle') {
+    await startMutation(action);
+  } else if (action === 'save') {
+    await fireEvent.click(screen.getByRole('button', { name: 'Saving…' }));
+  } else {
+    await fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Updating…' }));
+  }
+  expect(mutation).toHaveBeenCalledOnce();
+  if (action === 'delete') expect(mutation).toHaveBeenCalledWith('fs-server', 3);
+  if (action === 'close') expect(mutation).toHaveBeenCalledWith({ unitId: 'unit-abc', expectedGeneration: 1 });
+  const refreshing = view.component.refresh();
+  await view.component.refresh();
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(getMcpProxyState).toHaveBeenCalledTimes(2);
+  finishMutation();
+  await pendingMutation;
+  await tick();
+  expect(getMcpProxyState).toHaveBeenCalledTimes(2);
+  finishRead(defaultProxyState);
+  await refreshing;
+  await tick();
+  expect(getMcpProxyState).toHaveBeenCalledTimes(3);
+  expect(screen.getByText('Revision: 4')).toBeDefined();
+  expect(screen.getByText('Active Sessions: 8')).toBeDefined();
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(getMcpProxyState).toHaveBeenCalledTimes(3);
+});
+
+test.each(mutations)('%s failure retains feedback without triggering another read', async (action, method) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const mutation = vi.fn().mockRejectedValue(new Error('Mutation failed'));
+  const config = makeConfig({ [method]: mutation });
+  render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+  await vi.advanceTimersByTimeAsync(0);
+  await tick();
+  await startMutation(action);
+  await tick();
+  expect(mutation).toHaveBeenCalledOnce();
+  if (action === 'gateway' || action === 'toggle') {
+    expect(toast).toHaveBeenCalledWith({ variant: 'destructive', description: 'Mutation failed' });
+  } else {
+    expect(screen.getByRole('alert').textContent).toContain('Mutation failed');
+    expect(screen.getByRole('dialog')).toBeDefined();
+  }
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(config.getMcpProxyState).toHaveBeenCalledOnce();
+});
+
+test.each(mutations)('%s completion after teardown starts no readback or feedback', async (action, method) => {
+  let finishMutation!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finishMutation = resolve;
+  });
+  const mutation = vi.fn().mockReturnValue(pending);
+  const config = makeConfig({ [method]: mutation });
+  const view = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+  await screen.findByText('Filesystem Server');
+  await startMutation(action);
+  expect(mutation).toHaveBeenCalledOnce();
+  view.unmount();
+  finishMutation();
+  await pending;
+  await tick();
+  expect(config.getMcpProxyState).toHaveBeenCalledOnce();
+  expect(toast).not.toHaveBeenCalled();
+});
+
+test('teardown drops queued mutation readback and late state results', async () => {
+  let finishRead!: (value: McpProxyStateDto) => void;
+  const pending = new Promise<McpProxyStateDto>((resolve) => {
+    finishRead = resolve;
+  });
+  const getMcpProxyState = vi.fn().mockResolvedValueOnce(defaultProxyState).mockReturnValueOnce(pending);
+  const config = makeConfig({ getMcpProxyState });
+  const view = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+  await screen.findByText('Filesystem Server');
+  const refreshing = view.component.refresh();
+  await startMutation('toggle');
+  expect(config.updateMcpProxyServer).toHaveBeenCalledOnce();
+  view.unmount();
+  finishRead({ ...defaultProxyState, revision: 99 });
+  await refreshing;
+  await tick();
+  expect(getMcpProxyState).toHaveBeenCalledTimes(2);
+  expect(toast).not.toHaveBeenCalled();
+});
+
+test('Proxy tab reads on entry and header refresh only, and remounts on reentry', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const config = makeConfig();
+  render(McpPage, {}, { wrapper: Harness, wrapperProps: { config } });
+  await vi.advanceTimersByTimeAsync(0);
+  await tick();
+  expect(config.getMcpProxyState).not.toHaveBeenCalled();
+  await fireEvent.click(screen.getByRole('tab', { name: 'MCP Proxy' }));
+  await tick();
+  expect(config.getMcpProxyState).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(config.getMcpProxyState).toHaveBeenCalledOnce();
+  const configReads = vi.mocked(config.listMcps).mock.calls.length;
+  await fireEvent.click(screen.getAllByRole('button', { name: 'Refresh' })[0] as HTMLButtonElement);
+  await tick();
+  expect(config.getMcpProxyState).toHaveBeenCalledTimes(2);
+  expect(config.listMcps).toHaveBeenCalledTimes(configReads);
+  await fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }));
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(config.getMcpProxyState).toHaveBeenCalledTimes(2);
+  await fireEvent.click(screen.getByRole('tab', { name: 'MCP Proxy' }));
+  await tick();
+  expect(config.getMcpProxyState).toHaveBeenCalledTimes(3);
+});
 
 test('status stays loading until readback and becomes unknown after a failed refresh', async () => {
   let resolve!: (value: McpProxyStateDto) => void;
@@ -355,7 +528,7 @@ test('import ignores duplicate submissions and late completion after unmount', a
   expect(toast).not.toHaveBeenCalled();
 });
 
-test('server form preserves argument boundaries and literal environment values', async () => {
+test.each([false, true])('server form dialog=%s preserves textarea borders and literal values', async (dialog) => {
   const server: McpProxyServerDto = {
     ...fullServer,
     command: ['node', '', '""', "''", '  spaced  ', '', ''],
@@ -373,14 +546,26 @@ test('server form preserves argument boundaries and literal environment values',
     ProxyServerForm,
     {
       open: true,
+      dialog,
       server,
       expectedRevision: 3,
       onSaved: vi.fn(),
     },
     { wrapper: Harness, wrapperProps: { config } },
   );
-  await screen.findByRole('dialog');
+  await screen.findByRole(dialog ? 'dialog' : 'form');
+  const command = screen.getByLabelText('Command & Arguments') as HTMLTextAreaElement;
   const env = screen.getByLabelText('Environment Variables') as HTMLTextAreaElement;
+  for (const [field, height] of [
+    [command, 'min-h-20'],
+    [env, 'min-h-16'],
+  ] as const) {
+    expect(field.getAttribute('data-slot')).toBe('textarea');
+    for (const name of ['border', 'border-[var(--border-default)]', 'font-mono', 'text-xs', height]) {
+      expect(field.classList.contains(name)).toBe(true);
+    }
+    expect(field.classList.contains('min-h-24')).toBe(false);
+  }
   await fireEvent.input(env, { target: { value: `${env.value}\n  # comment\n  MORE =  more  ` } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
   await waitFor(() =>

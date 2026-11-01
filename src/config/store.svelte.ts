@@ -640,14 +640,14 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     setMomHttpSettings(settings: MomHttpSettings): Promise<void> {
       return adapter.setMomHttpSettings(settings);
     },
+    rotateMomHttpKey(): Promise<string> {
+      return adapter.rotateMomHttpKey();
+    },
     getMcpProxySettings(): Promise<McpProxySettingsDto> {
       return adapter.getMcpProxySettings();
     },
     saveMcpProxySettings(settings: McpProxySettingsDto, expectedRevision: number): Promise<void> {
       return adapter.saveMcpProxySettings(settings, expectedRevision);
-    },
-    rotateMcpProxyKey(): Promise<string> {
-      return adapter.rotateMcpProxyKey();
     },
     getMcpProxyServer(id: string): Promise<McpProxyServerDto> {
       return adapter.getMcpProxyServer(id);

@@ -131,9 +131,14 @@ const entries: (SettingsSearchTarget & { keys: [MessageKey, MessageKey, ...Messa
     keys: ['settings.proxy.maxUnits', 'settings.proxy.maxUnitsHint', 'settings.proxy.title'],
   },
   {
-    tab: 'mcp-proxy',
-    target: 'settings-proxy-token',
-    keys: ['settings.proxy.rotateKey', 'settings.proxy.rotateKeyDescription', 'settings.proxy.title'],
+    tab: 'general',
+    target: 'settings-http-token',
+    keys: [
+      'settings.http.rotateKey',
+      'settings.http.rotateKeyDescription',
+      'settings.http.rotateKeyTitle',
+      'settings.http.title',
+    ],
   },
 ];
 

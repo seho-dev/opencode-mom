@@ -10,8 +10,7 @@ use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use crate::http_server::{HttpServer, MomHttpSettings};
-use crate::mcp_proxy::auth;
+use crate::http_server::{auth, HttpServer, MomHttpSettings};
 use crate::mcp_proxy::config::{
     save_config, GatewaySettings, ProxyConfig, ProxyProtocol, ProxyServiceConfig, ServiceTimeouts,
 };
@@ -54,8 +53,6 @@ impl TestServer {
     async fn start(max_units: usize) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let config_path = temp.path().join("mcp-proxy.json");
-
-        let key = auth::generate_key();
 
         let port = unused_port().await;
 
@@ -101,7 +98,6 @@ impl TestServer {
                 enabled: true,
                 idle_timeout_secs: 300,
                 max_units,
-                token_verifier: Some(key.verifier.clone()),
             },
             services,
         };
@@ -116,6 +112,7 @@ impl TestServer {
         let legacy_sessions = proxy.legacy_sessions().clone();
         let http =
             HttpServer::new_with_path(temp.path().join("mom-http.json"), proxy.router()).unwrap();
+        let raw_token = http.rotate_key(async { Ok(()) }).await.unwrap();
         http.set_settings(MomHttpSettings {
             port,
             allow_lan: false,
@@ -124,8 +121,8 @@ impl TestServer {
         .unwrap();
 
         Self {
-            url: format!("http://127.0.0.1:{port}/mcp"),
-            raw_token: key.raw_token,
+            url: format!("http://127.0.0.1:{port}/mcp-proxy"),
+            raw_token,
             budget,
             legacy_sessions,
             events: rx,
@@ -194,13 +191,11 @@ async fn mom_http_settings_are_independent_persisted_and_failed_updates_restore_
             .send()
             .await
             .unwrap()
-            .text()
-            .await
-            .unwrap(),
-        "ok"
+            .status(),
+        reqwest::StatusCode::SERVICE_UNAVAILABLE
     );
     assert_eq!(http.start().await.unwrap(), addr);
-    let url = format!("http://{addr}/mcp?server=missing");
+    let url = format!("http://{addr}/mcp-proxy?server=missing");
     assert_eq!(
         http_client().post(&url).send().await.unwrap().status(),
         reqwest::StatusCode::SERVICE_UNAVAILABLE
@@ -217,7 +212,19 @@ async fn mom_http_settings_are_independent_persisted_and_failed_updates_restore_
         http_client().post(&url).send().await.unwrap().status(),
         reqwest::StatusCode::SERVICE_UNAVAILABLE
     );
-    proxy.rotate_key().await.unwrap();
+    let token = http.rotate_key(async { Ok(()) }).await.unwrap();
+    assert_eq!(
+        http_client()
+            .get(format!("http://{addr}/health"))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap(),
+        "ok"
+    );
     assert_eq!(
         http_client().post(&url).send().await.unwrap().status(),
         reqwest::StatusCode::UNAUTHORIZED
@@ -254,6 +261,7 @@ async fn mom_http_settings_are_independent_persisted_and_failed_updates_restore_
     assert!(http.bound_addr().await.unwrap().ip().is_unspecified());
     let reloaded = HttpServer::new_with_path(path.clone(), proxy.router()).unwrap();
     assert_eq!(reloaded.settings().await, next);
+    assert!(reloaded.auth_ready());
     assert!(
         !serde_json::to_value(proxy.config().await).unwrap()["gateway"]
             .as_object()
@@ -305,7 +313,13 @@ async fn disabling_proxy_does_not_stop_shared_http_listener() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        client.post(&url).send().await.unwrap().status(),
+        client
+            .post(&url)
+            .bearer_auth(&server.raw_token)
+            .send()
+            .await
+            .unwrap()
+            .status(),
         reqwest::StatusCode::SERVICE_UNAVAILABLE
     );
     let mut config = server.proxy.config().await;
@@ -345,10 +359,15 @@ async fn rotation_cancels_old_http_epoch_and_rejects_old_key() {
         .unwrap();
     let epoch = server.proxy.request_token().await;
     let bound = server.http.bound_addr().await;
-    let new_key = server.proxy.rotate_key().await.unwrap();
+    let config = server.proxy.config().await;
+    let new_key =
+        crate::commands::app::rotate_http_key(server.http.clone(), server.proxy.as_ref().clone())
+            .await
+            .unwrap();
     assert!(epoch.is_cancelled());
     assert!(!server.proxy.request_token().await.is_cancelled());
     assert_eq!(server.http.bound_addr().await, bound);
+    assert_eq!(server.proxy.config().await, config);
     assert_eq!(server.legacy_sessions.active_count().await, 0);
     assert_eq!(server.budget.available_permits(), 2);
     tokio::time::timeout(DEADLINE, stream.bytes())
@@ -377,6 +396,116 @@ async fn rotation_cancels_old_http_epoch_and_rejects_old_key() {
         reqwest::StatusCode::NOT_FOUND
     );
     server.close().await;
+}
+
+#[tokio::test]
+async fn unchanged_http_settings_preserve_proxy_epoch_and_live_session() {
+    let server = TestServer::start(1).await;
+    let session = server.legacy_session().await;
+    let settings = server.http.settings().await;
+    let addr = server.http.bound_addr().await;
+    let epoch = server.proxy.request_token().await;
+    let generation = server.proxy.generation();
+    crate::commands::app::update_http_settings(
+        server.http.clone(),
+        server.proxy.as_ref().clone(),
+        settings,
+    )
+    .await
+    .unwrap();
+    assert!(!epoch.is_cancelled());
+    assert!(!session.owner.is_closed());
+    assert_eq!(server.proxy.generation(), generation);
+    assert_eq!(server.http.bound_addr().await, addr);
+    assert_eq!(server.legacy_sessions.active_count().await, 1);
+    assert_eq!(server.budget.available_permits(), 0);
+    server.close().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn rotation_cancels_legacy_initialize_waiting_for_admission_without_leaking_session() {
+    let server = TestServer::start(1).await;
+    let admission = server.proxy.admission.write().await;
+    let request = http_client()
+        .post(format!("{}?server=legacy-svc", server.url))
+        .bearer_auth(&server.raw_token)
+        .json(&initialize(LEGACY))
+        .timeout(DEADLINE);
+    let initialize = tokio::spawn(async move { request.send().await });
+    tokio::time::timeout(DEADLINE, async {
+        while server.budget.available_permits() != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("legacy initialize must reach the owned creation await");
+    let rotation = tokio::spawn(crate::commands::app::rotate_http_key(
+        server.http.clone(),
+        server.proxy.as_ref().clone(),
+    ));
+    let response = tokio::time::timeout(DEADLINE, initialize)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    drop(admission);
+    let key = tokio::time::timeout(DEADLINE, rotation)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(key.len(), 64);
+    assert_eq!(server.legacy_sessions.active_count().await, 0);
+    assert_eq!(server.budget.available_permits(), 1);
+    assert!(server.proxy.admission.try_write().is_ok());
+    assert!(!server.proxy.cleanup_failed());
+    server.close().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn revocation_drains_queued_legacy_creation_before_publishing_request_epoch() {
+    for shutdown in [false, true] {
+        let server = TestServer::start(1).await;
+        let service = server.proxy.config().await.services[0].clone();
+        let epoch = server.proxy.request_token().await;
+        let admission = server.proxy.admission.write().await;
+        let mut creation = Box::pin(server.legacy_sessions.create_session(
+            &service,
+            server.budget.try_acquire().unwrap(),
+            300,
+            server.proxy.admission.clone(),
+            tokio_util::sync::CancellationToken::new(),
+            epoch.clone(),
+        ));
+        assert!(futures::poll!(&mut creation).is_pending());
+        tokio::task::yield_now().await;
+        let mut revocation = Box::pin(server.proxy.revoke_http_requests());
+        assert!(futures::poll!(&mut revocation).is_pending());
+        assert!(epoch.is_cancelled());
+        let mut next_epoch = Box::pin(server.proxy.request_token());
+        assert!(futures::poll!(&mut next_epoch).is_pending());
+        if shutdown {
+            let mut stop = Box::pin(server.proxy.shutdown(DEADLINE));
+            assert!(futures::poll!(&mut stop).is_pending());
+            drop(admission);
+            let (created, revoked, stopped) = tokio::join!(creation, revocation, stop);
+            assert!(created.is_err());
+            revoked.unwrap();
+            stopped.unwrap();
+        } else {
+            drop(admission);
+            let (created, revoked) = tokio::join!(creation, revocation);
+            assert!(created.is_err());
+            revoked.unwrap();
+        }
+        assert_eq!(next_epoch.await.is_cancelled(), shutdown);
+        assert_eq!(server.legacy_sessions.active_count().await, 0);
+        assert_eq!(server.budget.available_permits(), 1);
+        assert!(server.proxy.admission.try_write().is_ok());
+        assert!(!server.proxy.cleanup_failed());
+        server.close().await;
+    }
 }
 
 fn http_client() -> reqwest::Client {
@@ -451,6 +580,64 @@ async fn until_result(response: &mut SseReader) -> Value {
 // -----------------------------------------------------------------------------
 // Test 1: Inbound Pipeline Security Gates (Zero Process Spawns)
 // -----------------------------------------------------------------------------
+
+#[tokio::test]
+async fn external_proxy_path_requires_auth_and_old_mcp_path_is_not_found() {
+    let mut server = TestServer::start(4).await;
+    let client = http_client();
+    let addr = server.http.bound_addr().await.unwrap();
+
+    for (path, expected) in [
+        ("/mcp-proxy", reqwest::StatusCode::UNAUTHORIZED),
+        (
+            "/mcp-proxy?server=legacy-svc",
+            reqwest::StatusCode::UNAUTHORIZED,
+        ),
+        ("/mcp", reqwest::StatusCode::NOT_FOUND),
+        ("/mcp?server=legacy-svc", reqwest::StatusCode::NOT_FOUND),
+    ] {
+        for method in [
+            reqwest::Method::POST,
+            reqwest::Method::GET,
+            reqwest::Method::DELETE,
+        ] {
+            let response = client
+                .request(method.clone(), format!("http://{addr}{path}"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected, "{method} {path}");
+        }
+    }
+
+    for path in ["/mcp", "/mcp?server=legacy-svc"] {
+        for method in [
+            reqwest::Method::GET,
+            reqwest::Method::POST,
+            reqwest::Method::DELETE,
+        ] {
+            let response = client
+                .request(method.clone(), format!("http://{addr}{path}"))
+                .bearer_auth(&server.raw_token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                reqwest::StatusCode::NOT_FOUND,
+                "{method} {path}"
+            );
+        }
+    }
+    assert_eq!(server.budget.available_permits(), 4);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), server.events.recv())
+            .await
+            .is_err()
+    );
+
+    server.close().await;
+}
 
 #[tokio::test]
 async fn unauthenticated_request_rejected_401_zero_spawns() {
@@ -824,6 +1011,96 @@ async fn modern_fresh_process_per_request_and_cancellation_reaps_child() {
 }
 
 #[tokio::test]
+async fn modern_unread_stdin_cancellation_and_timeout_reap_owner_and_release_admission() {
+    for action in ["disconnect", "rotate", "shutdown", "timeout"] {
+        let mut server = TestServer::start(1).await;
+        let mut config = server.proxy.config().await;
+        let revision = config.revision;
+        let service = config
+            .services
+            .iter_mut()
+            .find(|service| service.id == "modern-svc")
+            .unwrap();
+        service.command[1] = "unread".into();
+        service.timeouts.execution_secs = if action == "timeout" { 1 } else { 30 };
+        server.proxy.save_config(config, revision).await.unwrap();
+
+        let mut wire = call(17, "wait", Some(metadata("unread-client")));
+        wire["params"]["arguments"] = json!({"payload": "x".repeat(4 * 1024 * 1024)});
+        let response = http_client()
+            .post(format!("{}?server=modern-svc", server.url))
+            .bearer_auth(&server.raw_token)
+            .header("Accept", "application/json, text/event-stream")
+            .header("MCP-Protocol-Version", MODERN)
+            .header("Mcp-Method", "tools/call")
+            .json(&wire)
+            .timeout(DEADLINE)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let pid = match server.event().await {
+            Observation::Started(pid) => pid,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        assert_eq!(server.budget.available_permits(), 0);
+        assert!(server.proxy.admission.try_write().is_err());
+
+        match action {
+            "disconnect" => drop(response),
+            "rotate" => {
+                let key = tokio::time::timeout(
+                    Duration::from_secs(4),
+                    crate::commands::app::rotate_http_key(
+                        server.http.clone(),
+                        server.proxy.as_ref().clone(),
+                    ),
+                )
+                .await
+                .expect("rotation must not wait for a blocked stdin write")
+                .unwrap();
+                assert_eq!(key.len(), 64);
+                drop(response);
+            }
+            "shutdown" => {
+                let (http, proxy) = tokio::join!(
+                    server.http.shutdown(Duration::from_secs(4)),
+                    server.proxy.shutdown(Duration::from_secs(4)),
+                );
+                http.unwrap();
+                proxy.unwrap();
+                drop(response);
+            }
+            "timeout" => {
+                let mut reader: SseReader = Box::pin(sse_stream::SseStream::from_bytes_stream(
+                    response.bytes_stream(),
+                ));
+                let result = until_result(&mut reader).await;
+                assert!(result["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("timed out sending request"));
+            }
+            _ => unreachable!(),
+        }
+        assert!(matches!(server.event().await, Observation::Closed(closed) if closed == pid));
+        assert_eq!(server.budget.available_permits(), 1, "{action}");
+        assert!(server.proxy.admission.try_write().is_ok(), "{action}");
+        assert!(!server.proxy.cleanup_failed(), "{action}");
+        #[cfg(unix)]
+        {
+            // SAFETY: signal zero only checks the test child's PID after owner cleanup.
+            assert_eq!(unsafe { libc::kill(pid as libc::pid_t, 0) }, -1);
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::ESRCH)
+            );
+        }
+        server.close().await;
+    }
+}
+
+#[tokio::test]
 async fn modern_mrtr_stateless_fresh_processes() {
     let mut server = TestServer::start(4).await;
     let client = http_client();
@@ -932,7 +1209,6 @@ fn config_persistence_validation_and_permissions() {
     let temp = tempfile::tempdir().unwrap();
     let config_path = temp.path().join("mcp-proxy.json");
 
-    let key = auth::generate_key();
     let config = ProxyConfig {
         schema_version: 1,
         revision: 1,
@@ -940,7 +1216,6 @@ fn config_persistence_validation_and_permissions() {
             enabled: true,
             idle_timeout_secs: 180,
             max_units: 8,
-            token_verifier: Some(key.verifier),
         },
         services: vec![ProxyServiceConfig {
             id: "test-svc".into(),
@@ -1018,11 +1293,10 @@ fn config_temporary_plaintext_is_wiped_on_parse_and_publication_failures() {
 // -----------------------------------------------------------------------------
 
 #[tokio::test]
-async fn proxy_service_rotate_key_invalidates_sessions_and_shutdown() {
+async fn shared_http_key_rotation_persists_verifier_without_changing_proxy_revision() {
     let temp = tempfile::tempdir().unwrap();
     let config_path = temp.path().join("mcp-proxy.json");
 
-    let initial_key = auth::generate_key();
     let config = ProxyConfig {
         schema_version: 1,
         revision: 1,
@@ -1030,48 +1304,145 @@ async fn proxy_service_rotate_key_invalidates_sessions_and_shutdown() {
             enabled: true,
             idle_timeout_secs: 300,
             max_units: 4,
-            token_verifier: Some(initial_key.verifier),
         },
         services: vec![],
     };
     save_config(&config_path, &config).unwrap();
 
     let service = ProxyService::new_with_path(config_path.clone()).unwrap();
+    let http_path = temp.path().join("mom-http.json");
+    let http = HttpServer::new_with_path(http_path.clone(), service.router()).unwrap();
+    assert!(!http.auth_ready());
     assert_eq!(service.generation(), 1);
 
-    // Rotate key
-    let new_token = service.rotate_key().await.unwrap();
+    let new_token = crate::commands::app::rotate_http_key(http.clone(), service.clone())
+        .await
+        .unwrap();
     assert_eq!(new_token.len(), 64);
     assert_eq!(service.generation(), 2);
+    assert!(http.auth_ready());
 
     let updated_config = service.config().await;
-    assert_eq!(updated_config.revision, 2);
-    let verifier = updated_config.gateway.token_verifier.unwrap();
-    assert!(auth::verify_token(&new_token, &verifier));
+    assert_eq!(updated_config, config);
+    let persisted: Value = serde_json::from_slice(&std::fs::read(&http_path).unwrap()).unwrap();
+    let verifier = persisted["auth"]["tokenVerifier"].as_str().unwrap();
+    assert!(auth::verify_token(&new_token, verifier));
+    assert!(!persisted.to_string().contains(&new_token));
+    assert!(
+        HttpServer::new_with_path(http_path.clone(), service.router())
+            .unwrap()
+            .auth_ready()
+    );
 
-    // Verify on-disk persistence of rotated verifier
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(std::fs::metadata(&http_path).unwrap().mode() & 0o777, 0o600);
+    }
+
     let on_disk = crate::mcp_proxy::config::load_config(&config_path).unwrap();
-    assert_eq!(on_disk.revision, 2);
-    assert_eq!(on_disk.gateway.token_verifier.unwrap(), verifier);
+    assert_eq!(on_disk, config);
+    let proxy_wire = serde_json::to_value(on_disk).unwrap();
+    assert!(!proxy_wire["gateway"]
+        .as_object()
+        .unwrap()
+        .contains_key("tokenVerifier"));
 
     // Shutdown completes within bounded deadline
     service.shutdown(Duration::from_secs(2)).await.unwrap();
+    http.shutdown(Duration::from_secs(2)).await.unwrap();
+}
+
+#[tokio::test]
+async fn cancelled_shared_rotation_waiter_still_commits_and_revokes_sessions() {
+    let server = TestServer::start(1).await;
+    let session = server.legacy_session().await;
+    let before = server.proxy.config().await;
+    let generation = server.proxy.generation();
+    let epoch = server.proxy.request_token().await;
+    let path = server._temp.path().join("mom-http.json");
+    let guard = server.proxy.config.write().await;
+    let http = server.http.clone();
+    let proxy = server.proxy.as_ref().clone();
+    let waiter = tokio::spawn(crate::commands::app::rotate_http_key(http, proxy));
+    tokio::time::timeout(DEADLINE, async {
+        loop {
+            let persisted: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            if !auth::verify_token(
+                &server.raw_token,
+                persisted["auth"]["tokenVerifier"].as_str().unwrap(),
+            ) {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("shared HTTP rotation must persist before proxy revocation");
+    waiter.abort();
+    assert!(waiter.await.unwrap_err().is_cancelled());
+    drop(guard);
+    tokio::time::timeout(DEADLINE, async {
+        while !epoch.is_cancelled() || !session.owner.is_closed() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("owned key rotation must outlive its waiter");
+    assert_eq!(server.proxy.config().await, before);
+    assert_eq!(server.proxy.generation(), generation + 1);
+    assert_eq!(server.legacy_sessions.active_count().await, 0);
+    assert_eq!(server.budget.available_permits(), 1);
+    assert_eq!(
+        http_client()
+            .get(format!("{}?server=legacy-svc", server.url))
+            .bearer_auth(&server.raw_token)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::UNAUTHORIZED
+    );
+    server.close().await;
 }
 
 #[tokio::test]
 async fn failed_rotation_preserves_config_and_revision() {
-    let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("mcp-proxy.json");
-    let service = ProxyService::new_with_path(path.clone()).unwrap();
-    service.rotate_key().await.unwrap();
-    let before = service.config().await;
-    let generation = service.generation();
+    let server = TestServer::start(1).await;
+    let session = server.legacy_session().await;
+    let before = server.proxy.config().await;
+    let generation = server.proxy.generation();
+    let epoch = server.proxy.request_token().await;
+    let path = server._temp.path().join("mom-http.json");
+    let persisted = std::fs::read(&path).unwrap();
     std::fs::remove_file(&path).unwrap();
     std::fs::create_dir(&path).unwrap();
 
-    assert!(service.rotate_key().await.is_err());
-    assert_eq!(service.config().await, before);
-    assert_eq!(service.generation(), generation);
+    assert!(crate::commands::app::rotate_http_key(
+        server.http.clone(),
+        server.proxy.as_ref().clone(),
+    )
+    .await
+    .is_err());
+    assert_eq!(server.proxy.config().await, before);
+    assert_eq!(server.proxy.generation(), generation);
+    assert!(!epoch.is_cancelled());
+    assert!(!session.owner.is_closed());
+    assert_eq!(server.legacy_sessions.active_count().await, 1);
+    assert_eq!(server.budget.available_permits(), 0);
+    assert_eq!(
+        http_client()
+            .get(format!("{}?server=missing", server.url))
+            .bearer_auth(&server.raw_token)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::NOT_FOUND
+    );
+    std::fs::remove_dir(&path).unwrap();
+    crate::private_file::publish(&path, &persisted).unwrap();
+    server.close().await;
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -1079,9 +1450,12 @@ async fn cancelled_publication_waiter_still_commits_disk_and_memory() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("mcp-proxy.json");
     let service = ProxyService::new_with_path(path.clone()).unwrap();
+    let mut config = service.config().await;
+    let revision = config.revision;
+    config.gateway.max_units = 3;
     let guard = service.config.write().await;
     let publisher = service.clone();
-    let waiter = tokio::spawn(async move { publisher.rotate_key().await });
+    let waiter = tokio::spawn(async move { publisher.save_config(config, revision).await });
     tokio::task::yield_now().await;
     waiter.abort();
     assert!(waiter.await.unwrap_err().is_cancelled());
@@ -1257,7 +1631,11 @@ async fn cancelled_failed_publication_preserves_memory_budget_and_epoch() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("mcp-proxy.json");
     let mut service = ProxyService::new_with_path(path.clone()).unwrap();
-    service.rotate_key().await.unwrap();
+    let config = service.config().await;
+    service
+        .save_config(config.clone(), config.revision)
+        .await
+        .unwrap();
     let before = service.config().await;
     let generation = service.generation();
     let token = service.request_token().await;
@@ -1288,7 +1666,7 @@ async fn cancelled_failed_publication_preserves_memory_budget_and_epoch() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn single_worker_publication_offloads_io_and_survives_cancel() {
-    for rotation in [false, true] {
+    for settings_only in [false, true] {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mcp-proxy.json");
         let mut service = ProxyService::new_with_path(path.clone()).unwrap();
@@ -1310,8 +1688,10 @@ async fn single_worker_publication_offloads_io_and_survives_cancel() {
         let revision = updated.revision;
         updated.gateway.max_units = 3;
         let waiter = tokio::spawn(async move {
-            if rotation {
-                publisher.rotate_key().await.map(|_| ())
+            if settings_only {
+                publisher
+                    .save_gateway_settings(updated.gateway, revision)
+                    .await
             } else {
                 publisher.save_config(updated, revision).await
             }
@@ -1426,7 +1806,14 @@ async fn failed_legacy_spawn_removes_sdk_session_and_releases_budget() {
         timeouts: ServiceTimeouts::default(),
     };
     assert!(sessions
-        .create_session(&service, budget.try_acquire().unwrap(), 300)
+        .create_session(
+            &service,
+            budget.try_acquire().unwrap(),
+            300,
+            Arc::new(tokio::sync::RwLock::new(())),
+            tokio_util::sync::CancellationToken::new(),
+            tokio_util::sync::CancellationToken::new(),
+        )
         .await
         .is_err());
     assert_eq!(sessions.active_count().await, 0);
@@ -1440,7 +1827,6 @@ async fn shutdown_closes_live_streams_and_sessions_before_waiting_for_listener()
     let config = ProxyConfig {
         gateway: GatewaySettings {
             enabled: true,
-            token_verifier: Some(auth::generate_key().verifier),
             max_units: 5,
             ..GatewaySettings::default()
         },
@@ -1458,9 +1844,9 @@ async fn shutdown_closes_live_streams_and_sessions_before_waiting_for_listener()
     };
     save_config(&path, &config).unwrap();
     let service = Arc::new(ProxyService::new_with_path(path).unwrap());
-    let token = service.rotate_key().await.unwrap();
     let http =
         HttpServer::new_with_path(temp.path().join("mom-http.json"), service.router()).unwrap();
+    let token = http.rotate_key(async { Ok(()) }).await.unwrap();
     http.set_settings(MomHttpSettings {
         port: unused_port().await,
         allow_lan: false,
@@ -1468,7 +1854,7 @@ async fn shutdown_closes_live_streams_and_sessions_before_waiting_for_listener()
     .await
     .unwrap();
     let addr = http.bound_addr().await.unwrap();
-    let url = format!("http://{addr}/mcp?server=legacy");
+    let url = format!("http://{addr}/mcp-proxy?server=legacy");
     let client = http_client();
     let mut streams = Vec::new();
     for _ in 0..4 {
@@ -1501,7 +1887,7 @@ async fn shutdown_closes_live_streams_and_sessions_before_waiting_for_listener()
         .await
         .unwrap();
     let response = client
-        .post(format!("http://{addr}/mcp?server=modern"))
+        .post(format!("http://{addr}/mcp-proxy?server=modern"))
         .bearer_auth(&token)
         .header("MCP-Protocol-Version", MODERN)
         .header("Mcp-Method", "tools/call")

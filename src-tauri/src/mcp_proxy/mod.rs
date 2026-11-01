@@ -1,4 +1,3 @@
-pub(crate) mod auth;
 pub(crate) mod config;
 pub(crate) mod http;
 pub(crate) mod process;
@@ -29,6 +28,8 @@ pub struct ProxyService {
     budget: OwnerBudget,
     legacy_sessions: LegacySessionManager,
     shutdown_token: Arc<Mutex<CancellationToken>>,
+    stopped: CancellationToken,
+    admission: Arc<RwLock<()>>,
     generation: Arc<AtomicU64>,
     events: Option<tokio::sync::mpsc::UnboundedSender<Observation>>,
     #[cfg(test)]
@@ -56,12 +57,15 @@ impl ProxyService {
 
     fn from_config(config_path: PathBuf, config: ProxyConfig) -> Self {
         let max_units = config.gateway.max_units;
+        let stopped = CancellationToken::new();
         Self {
             config_path,
             config: Arc::new(RwLock::new(config)),
             budget: OwnerBudget::new(max_units),
             legacy_sessions: LegacySessionManager::new(),
-            shutdown_token: Arc::new(Mutex::new(CancellationToken::new())),
+            shutdown_token: Arc::new(Mutex::new(stopped.child_token())),
+            stopped,
+            admission: Arc::new(RwLock::new(())),
             generation: Arc::new(AtomicU64::new(1)),
             events: None,
             #[cfg(test)]
@@ -97,55 +101,37 @@ impl ProxyService {
         self.shutdown_token.lock().await.clone()
     }
 
-    pub async fn rotate_key(&self) -> Result<String, AppError> {
-        let service = self.clone();
-        tokio::spawn(async move {
-            let result = service.rotate_key_owned().await;
-            if let Err(error) = &result {
-                eprintln!("warning: MCP proxy key rotation failed: {error}");
-            }
-            result
-        })
-        .await
-        .map_err(|error| {
-            AppError::configuration(format!("MCP proxy key rotation task failed: {error}"))
-        })?
-    }
-
-    async fn rotate_key_owned(&self) -> Result<String, AppError> {
-        let key = auth::generate_key();
-        let mut config_guard = self.config.write().await;
-        let mut updated = config_guard.clone();
-        updated.gateway.token_verifier = Some(key.verifier);
-        updated.revision = updated.revision.saturating_add(1);
-
-        let path = self.config_path.clone();
-        #[cfg(test)]
-        let publish_hook = self.publish_hook.clone();
-        let updated = tokio::task::spawn_blocking(move || {
-            #[cfg(test)]
-            if let Some(hook) = publish_hook {
-                hook();
-            }
-            config::save_config(&path, &updated)?;
-            Ok::<_, AppError>(updated)
-        })
-        .await
-        .map_err(|error| {
-            AppError::configuration(format!("save MCP proxy key task failed: {error}"))
-        })??;
+    pub(crate) async fn revoke_http_requests(&self) -> Result<(), AppError> {
+        let config = self.config.write().await;
         let mut token = self.shutdown_token.lock().await;
         token.cancel();
-        *token = CancellationToken::new();
-        *config_guard = updated;
         self.generation.fetch_add(1, Ordering::SeqCst);
-        drop(token);
+        drop(config);
 
-        if let Err(error) = self.legacy_sessions.close_all().await {
-            eprintln!("warning: MCP proxy key saved; session cleanup failed: {error}");
+        // Keep fresh request snapshots blocked until previous owners and queued permits drain.
+        let result = tokio::time::timeout(Duration::from_secs(8), async {
+            let admission = self.admission.write().await;
+            let cleanup = self.legacy_sessions.close_all().await;
+            drop(admission);
+            cleanup?;
+            if self.budget.cleanup_failed() {
+                return Err(AppError::configuration(
+                    "MCP process cleanup failed; outcome uncertain",
+                ));
+            }
+            self.budget.wait_idle().await;
+            Ok(())
+        })
+        .await
+        .map_err(|_| AppError::configuration("timed out revoking MCP HTTP requests"))
+        .and_then(|result| result);
+        if result.is_err() {
+            self.stopped.cancel();
+            self.budget.record_cleanup_failure();
+        } else if !self.stopped.is_cancelled() {
+            *token = self.stopped.child_token();
         }
-
-        Ok(key.raw_token)
+        result
     }
 
     pub async fn save_gateway_settings(
@@ -224,7 +210,7 @@ impl ProxyService {
         if disabling {
             let mut token = self.shutdown_token.lock().await;
             token.cancel();
-            *token = CancellationToken::new();
+            *token = self.stopped.child_token();
         }
         *config_guard = new_config;
         self.generation.fetch_add(1, Ordering::SeqCst);
@@ -248,6 +234,7 @@ impl ProxyService {
     }
 
     pub async fn shutdown(&self, deadline: Duration) -> Result<(), AppError> {
+        self.stopped.cancel();
         let service = self.clone();
         tokio::spawn(async move { service.shutdown_owned(deadline).await })
             .await
@@ -257,10 +244,11 @@ impl ProxyService {
     }
 
     async fn shutdown_owned(&self, deadline: Duration) -> Result<(), AppError> {
-        self.shutdown_token.lock().await.cancel();
         let mut cleanup = None;
         let wait = tokio::time::timeout(deadline, async {
+            let admission = self.admission.write().await;
             cleanup = Some(self.legacy_sessions.close_all().await);
+            drop(admission);
             self.budget.wait_idle().await;
         })
         .await

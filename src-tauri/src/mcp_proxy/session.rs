@@ -192,13 +192,24 @@ impl LegacySessionManager {
         service: &ProxyServiceConfig,
         permit: OwnerPermit,
         idle_timeout_secs: u64,
+        admission: Arc<RwLock<()>>,
+        http_token: CancellationToken,
+        proxy_token: CancellationToken,
     ) -> Result<Arc<LegacySession>, AppError> {
         let manager = self.clone();
         let service = service.clone();
         tokio::spawn(async move {
+            let _admission = admission.read().await;
+            if http_token.is_cancelled() || proxy_token.is_cancelled() {
+                return Err(AppError::configuration("MOM HTTP request was revoked"));
+            }
             let session = manager
                 .create_session_owned(&service, permit, idle_timeout_secs)
                 .await?;
+            if http_token.is_cancelled() || proxy_token.is_cancelled() {
+                manager.close_session(&session.id).await?;
+                return Err(AppError::configuration("MOM HTTP request was revoked"));
+            }
             Ok::<_, AppError>(manager.pending_session(session))
         })
         .await
@@ -508,6 +519,9 @@ pub struct ModernBridge {
     pub service: ProxyServiceConfig,
     pub budget: OwnerBudget,
     pub events: Option<tokio::sync::mpsc::UnboundedSender<Observation>>,
+    admission: Arc<RwLock<()>>,
+    http_token: CancellationToken,
+    proxy_token: CancellationToken,
 }
 
 impl ModernBridge {
@@ -515,11 +529,17 @@ impl ModernBridge {
         service: ProxyServiceConfig,
         budget: OwnerBudget,
         events: Option<tokio::sync::mpsc::UnboundedSender<Observation>>,
+        admission: Arc<RwLock<()>>,
+        http_token: CancellationToken,
+        proxy_token: CancellationToken,
     ) -> Self {
         Self {
             service,
             budget,
             events,
+            admission,
+            http_token,
+            proxy_token,
         }
     }
 
@@ -540,7 +560,11 @@ impl ModernBridge {
         request: ClientJsonRpcMessage,
         context: RequestContext<RoleServer>,
     ) -> Result<ServerResult, ErrorData> {
-        if context.ct.is_cancelled() {
+        let _admission = self.admission.read().await;
+        if context.ct.is_cancelled()
+            || self.http_token.is_cancelled()
+            || self.proxy_token.is_cancelled()
+        {
             return Err(ErrorData::internal_error("request cancelled", None));
         }
         let permit = self
@@ -603,22 +627,43 @@ impl ModernBridge {
         let mut process_transport =
             AsyncRwTransport::new_client(stdout, stdin).with_max_line_length(8 * 1024 * 1024);
 
-        let result = match process_transport.send(request).await {
-            Err(error) => Err(ErrorData::internal_error(
-                format!("failed to send request to process: {error}"),
-                None,
-            )),
+        let cancelled = async {
+            tokio::select! {
+                _ = context.ct.cancelled() => {},
+                _ = self.http_token.cancelled() => {},
+                _ = self.proxy_token.cancelled() => {},
+            }
+        };
+        tokio::pin!(cancelled);
+        let sent = tokio::select! {
+            biased;
+            _ = &mut cancelled => Err(ErrorData::internal_error("request cancelled; outcome uncertain", None)),
+            sent = tokio::time::timeout(
+                Duration::from_secs(self.service.timeouts.execution_secs),
+                process_transport.send(request),
+            ) => match sent {
+                Ok(result) => result.map_err(|error| ErrorData::internal_error(
+                    format!("failed to send request to process: {error}"),
+                    None,
+                )),
+                Err(_) => Err(ErrorData::internal_error("timed out sending request to process; outcome uncertain", None)),
+            },
+        };
+        let result = match sent {
+            Err(error) => Err(error),
             Ok(()) => loop {
                 tokio::select! {
                     biased;
-                    _ = context.ct.cancelled() => {
+                    _ = &mut cancelled => {
                         let cancel_msg = ClientJsonRpcMessage::notification(
                             ClientNotification::CancelledNotification(CancelledNotification::new(
                                 CancelledNotificationParam::new(Some(context.id.clone()), None),
                             )),
                         );
-                        let _ = process_transport.send(cancel_msg).await;
                         let seen = tokio::time::timeout(Duration::from_secs(1), async {
+                            if process_transport.send(cancel_msg).await.is_err() {
+                                return false;
+                            }
                             loop {
                                 let reply = process_transport.receive().await;
                                 let Some(msg) = reply else { break false; };

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer } from 'vite';
 
-test('MCP proxy adapter maps commands and arguments accurately to Tauri IPC', async () => {
+test('MOM HTTP and MCP proxy adapter map separate commands and exact payloads to Tauri IPC', async () => {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   try {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
@@ -48,7 +48,7 @@ test('MCP proxy adapter maps commands and arguments accurately to Tauri IPC', as
       if (command === 'save_mcp_proxy_settings') {
         return undefined;
       }
-      if (command === 'rotate_mcp_proxy_key') {
+      if (command === 'rotate_mom_http_key') {
         return 'test-secret-token-12345';
       }
       if (command === 'get_mcp_proxy_server') {
@@ -113,10 +113,9 @@ test('MCP proxy adapter maps commands and arguments accurately to Tauri IPC', as
     await adapter.saveMcpProxySettings(settings, 1);
     assert.deepEqual(calls.at(-1), ['save_mcp_proxy_settings', { settings, expectedRevision: 1 }]);
 
-    // 4. rotateMcpProxyKey
-    const key = await adapter.rotateMcpProxyKey();
+    const key = await adapter.rotateMomHttpKey();
     assert.equal(key, 'test-secret-token-12345');
-    assert.deepEqual(calls.at(-1), ['rotate_mcp_proxy_key', undefined]);
+    assert.deepEqual(calls.at(-1), ['rotate_mom_http_key', undefined]);
 
     // 5. getMcpProxyServer
     const srv = await adapter.getMcpProxyServer('srv-1');
@@ -219,7 +218,7 @@ test('ConfigStore MCP proxy facades are lazy pass-throughs and do not trigger ru
           throw err;
         }
       },
-      rotateMcpProxyKey: async () => 'key-abc',
+      rotateMomHttpKey: async () => 'key-abc',
       getMcpProxyServer: async (id) => ({
         id,
         name: 'Srv',
@@ -272,8 +271,50 @@ test('ConfigStore MCP proxy facades are lazy pass-throughs and do not trigger ru
     await assert.rejects(store.saveMcpProxySettings(settings, 1));
     assert.equal(store.draftRecovery, null);
 
-    const key = await store.rotateMcpProxyKey();
+    const key = await store.rotateMomHttpKey();
     assert.equal(key, 'key-abc');
+  } finally {
+    await vite.close();
+  }
+});
+
+test('MOM HTTP token rotation stays lazy, untracked and secret-local without Proxy reads or global refresh', async () => {
+  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  try {
+    const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
+    const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
+    const calls = [];
+    let finish;
+    let failure;
+    const pending = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const adapter = createTauriAdapter(async (command, args) => {
+      calls.push([command, args]);
+      assert.equal(command, 'rotate_mom_http_key');
+      if (failure) throw failure;
+      return pending;
+    });
+    const store = createConfigStore(adapter, false, false);
+    assert.deepEqual(calls, []);
+    const before = JSON.stringify(store);
+    const rotating = store.rotateMomHttpKey();
+    assert.deepEqual(calls, [['rotate_mom_http_key', undefined]]);
+    assert.equal(store.saving, false);
+    assert.equal(store.loading, false);
+    assert.equal(store.error, null);
+    assert.equal(store.notice, null);
+    assert.equal(store.draftRecovery, null);
+    finish('one-time-private-http-token');
+    assert.equal(await rotating, 'one-time-private-http-token');
+    assert.equal(JSON.stringify(store), before);
+    failure = { code: 'configuration_failed', message: 'private-rotation-failure', detail: 'private-detail' };
+    await assert.rejects(store.rotateMomHttpKey(), (cause) => cause === failure);
+    assert.equal(JSON.stringify(store), before);
+    assert.deepEqual(calls, [
+      ['rotate_mom_http_key', undefined],
+      ['rotate_mom_http_key', undefined],
+    ]);
   } finally {
     await vite.close();
   }

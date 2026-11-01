@@ -69,7 +69,7 @@ function makeAdapter() {
       generation: 1,
     }),
     saveMcpProxySettings: vi.fn(),
-    rotateMcpProxyKey: vi.fn(),
+    rotateMomHttpKey: vi.fn(),
     getGlobalBehavior: vi.fn().mockResolvedValue({
       path: '/global/AGENTS.md',
       resolvedPath: '/resolved/AGENTS.md',
@@ -121,7 +121,7 @@ function expectNoWrites(adapter: ReturnType<typeof makeAdapter>) {
     adapter.checkForUpdates,
     adapter.setMomHttpSettings,
     adapter.saveMcpProxySettings,
-    adapter.rotateMcpProxyKey,
+    adapter.rotateMomHttpKey,
     adapter.saveGlobalBehavior,
   ])
     expect(call).not.toHaveBeenCalled();
@@ -256,7 +256,7 @@ test('search and same-tab navigation retain URL, password, clear-password and HT
   expect(config.draftRecovery).toBeNull();
   await vi.advanceTimersByTimeAsync(2000);
   expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
-  expect(adapter.getMomHttpSettings).toHaveBeenCalledTimes(2);
+  expect(adapter.getMomHttpSettings).toHaveBeenCalledOnce();
   expect(port.value).toBe('23456');
   expect(password.value).toBe('draft-only-private-password');
   await fireEvent.click(clear);
@@ -267,13 +267,15 @@ test('search and same-tab navigation retain URL, password, clear-password and HT
   expect(password.isConnected).toBe(false);
   await vi.advanceTimersByTimeAsync(4000);
   expect(adapter.getLidProtection).toHaveBeenCalledTimes(2);
-  expect(adapter.getMomHttpSettings).toHaveBeenCalledTimes(2);
+  expect(adapter.getMomHttpSettings).toHaveBeenCalledOnce();
 });
 
-test('proxy drafts and revisions survive search, empty results, locale changes and polling; header refresh remains active-tab only', async () => {
+test('proxy drafts and revisions survive search, empty results, locale changes and explicit refresh', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   const { adapter, config, unmount } = mountPage('mcp-proxy');
   await settle();
+  expect(adapter.getMcpProxySettings).toHaveBeenCalledOnce();
+  expect(adapter.getMcpProxyState).toHaveBeenCalledOnce();
   const timeout = activePanel().getByRole('spinbutton', { name: 'Session Idle Timeout (seconds)' }) as HTMLInputElement;
   const units = activePanel().getByRole('spinbutton', { name: 'Maximum Concurrent Units' }) as HTMLInputElement;
   await fireEvent.input(timeout, { target: { value: '7654' } });
@@ -295,8 +297,10 @@ test('proxy drafts and revisions survive search, empty results, locale changes a
   );
   await settle();
   expect(adapter.getMcpProxySettings).toHaveBeenCalledTimes(2);
+  expect(adapter.getMcpProxyState).toHaveBeenCalledTimes(2);
   await vi.advanceTimersByTimeAsync(2000);
-  expect(adapter.getMcpProxySettings).toHaveBeenCalledTimes(3);
+  expect(adapter.getMcpProxySettings).toHaveBeenCalledTimes(2);
+  expect(adapter.getMcpProxyState).toHaveBeenCalledTimes(2);
   expect(timeout.value).toBe('7654');
   expect(units.value).toBe('77');
   expect(adapter.getMomHttpSettings).not.toHaveBeenCalled();
@@ -313,10 +317,16 @@ test('proxy drafts and revisions survive search, empty results, locale changes a
     { enabled: true, idleTimeout: 7654, maxUnits: 77, revision: 1 },
     1,
   );
+  expect(adapter.getMcpProxySettings).toHaveBeenCalledTimes(3);
+  expect(adapter.getMcpProxyState).toHaveBeenCalledTimes(3);
+  await vi.advanceTimersByTimeAsync(4000);
+  expect(adapter.getMcpProxySettings).toHaveBeenCalledTimes(3);
+  expect(adapter.getMcpProxyState).toHaveBeenCalledTimes(3);
   unmount();
   const reads = adapter.getMcpProxySettings.mock.calls.length;
   await vi.advanceTimersByTimeAsync(4000);
   expect(adapter.getMcpProxySettings).toHaveBeenCalledTimes(reads);
+  expect(adapter.getMcpProxyState).toHaveBeenCalledTimes(3);
 });
 
 test('cross-tab results navigate and focus without activating controls; only explicit navigation changes lifecycles', async () => {
@@ -324,12 +334,12 @@ test('cross-tab results navigate and focus without activating controls; only exp
   const { adapter, unmount } = mountPage();
   await settle();
   const search = screen.getByRole('searchbox', { name: 'Search settings' }) as HTMLInputElement;
-  await fireEvent.input(search, { target: { value: 'rotate' } });
+  await fireEvent.input(search, { target: { value: 'idleTimeout' } });
   expect(adapter.getMcpProxySettings).not.toHaveBeenCalled();
-  await fireEvent.click(within(results()).getByRole('button', { name: /Rotate Secret Token/ }));
+  await fireEvent.click(within(results()).getByRole('button', { name: /Session Idle Timeout/ }));
   await settle();
   expect(screen.getByRole('tab', { name: 'MCP Proxy' }).getAttribute('aria-selected')).toBe('true');
-  expect(document.activeElement?.id).toBe('settings-proxy-token');
+  expect(document.activeElement?.id).toBe('settings-proxy-timeout');
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(adapter.getMcpProxySettings).toHaveBeenCalledOnce();
   const lidReads = adapter.getLidProtection.mock.calls.length;
@@ -337,13 +347,14 @@ test('cross-tab results navigate and focus without activating controls; only exp
   await vi.advanceTimersByTimeAsync(2000);
   expect(adapter.getLidProtection).toHaveBeenCalledTimes(lidReads);
   expect(adapter.getMomHttpSettings).toHaveBeenCalledTimes(httpReads);
-  expect(adapter.getMcpProxySettings).toHaveBeenCalledTimes(2);
-  await fireEvent.input(search, { target: { value: '18765' } });
-  await fireEvent.click(within(results()).getByRole('button', { name: /Port/ }));
+  expect(adapter.getMcpProxySettings).toHaveBeenCalledOnce();
+  await fireEvent.input(search, { target: { value: 'MOM HTTP token' } });
+  await fireEvent.click(within(results()).getByRole('button', { name: /General Rotate Secret Token/ }));
   await settle();
-  expect(document.activeElement?.id).toBe('settings-http-port');
+  expect(document.activeElement?.id).toBe('settings-http-token');
   expect(screen.getByRole('tab', { name: 'General' }).getAttribute('aria-selected')).toBe('true');
-  expect(search.value).toBe('18765');
+  expect(search.value).toBe('MOM HTTP token');
+  expect(screen.queryByRole('dialog')).toBeNull();
   expect(goto).toHaveBeenCalledTimes(2);
   expect(vi.mocked(goto).mock.calls[0]?.[0]).toBe('http://localhost/settings?tab=mcp-proxy');
   expectNoWrites(adapter);
@@ -351,7 +362,7 @@ test('cross-tab results navigate and focus without activating controls; only exp
   unmount();
 });
 
-test('cross-tab search retains both panels and all drafts while inactive polling stays paused', async () => {
+test('cross-tab search retains both panels and all drafts without periodic reads', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   const confirm = vi.spyOn(window, 'confirm');
   const { adapter } = mountPage();
@@ -447,7 +458,7 @@ test('inactive native info completion cannot start CLI installation or Island re
   expectNoWrites(adapter);
 });
 
-test('HTTP in-flight guards survive fast tab round trips and completion while inactive never resumes polling', async () => {
+test('HTTP in-flight guards survive fast tab round trips and inactive completion starts no readback', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   const read = deferred<{ port: number; allowLan: boolean }>();
   const save = deferred<void>();

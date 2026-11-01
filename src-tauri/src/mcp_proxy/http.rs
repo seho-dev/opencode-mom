@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::{Extension, Request, State};
-use axum::http::{HeaderMap, Method, StatusCode};
+use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use futures::StreamExt;
 use rmcp::model::*;
@@ -26,82 +26,14 @@ pub struct HttpState {
     pub shutdown_token: CancellationToken,
     pub proxy_token: CancellationToken,
     pub events: Option<tokio::sync::mpsc::UnboundedSender<Observation>>,
+    pub admission: std::sync::Arc<tokio::sync::RwLock<()>>,
 }
 
 pub fn create_router(proxy_state: ProxyService) -> axum::Router {
     axum::Router::new()
-        .route("/mcp", axum::routing::any(handle_mcp))
+        .route("/mcp-proxy", axum::routing::any(handle_mcp))
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(proxy_state)
-}
-
-fn validate_host(headers: &HeaderMap, allow_lan: bool, gateway_port: u16) -> bool {
-    let Some(host_val) = headers.get("host").and_then(|h| h.to_str().ok()) else {
-        return false;
-    };
-    let host_part = if let Some(stripped) = host_val.strip_prefix('[') {
-        if let Some(end) = stripped.find(']') {
-            &stripped[..end]
-        } else {
-            return false;
-        }
-    } else if let Some((h, port_str)) = host_val.split_once(':') {
-        if let Ok(p) = port_str.parse::<u16>() {
-            if p != gateway_port {
-                return false;
-            }
-        }
-        h
-    } else {
-        host_val
-    };
-
-    if host_part == "127.0.0.1" || host_part == "localhost" || host_part == "::1" {
-        return true;
-    }
-
-    if allow_lan {
-        if host_part == "0.0.0.0" {
-            return true;
-        }
-        if host_part.parse::<std::net::Ipv4Addr>().is_ok() {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn validate_origin(headers: &HeaderMap, gateway_port: u16) -> Result<(), StatusCode> {
-    let Some(origin_val) = headers.get("origin").and_then(|h| h.to_str().ok()) else {
-        return Ok(());
-    };
-    if origin_val == "null" {
-        return Err(StatusCode::FORBIDDEN);
-    }
-    if origin_val == format!("http://127.0.0.1:{gateway_port}")
-        || origin_val == format!("http://localhost:{gateway_port}")
-        || origin_val == format!("http://[::1]:{gateway_port}")
-    {
-        return Ok(());
-    }
-    Err(StatusCode::FORBIDDEN)
-}
-
-fn validate_token(headers: &HeaderMap, token_verifier: Option<&str>) -> Result<(), StatusCode> {
-    let Some(verifier) = token_verifier else {
-        return Err(StatusCode::SERVICE_UNAVAILABLE);
-    };
-    let Some(auth_val) = headers.get("authorization").and_then(|h| h.to_str().ok()) else {
-        return Err(StatusCode::UNAUTHORIZED);
-    };
-    let Some(token) = auth_val.strip_prefix("Bearer ") else {
-        return Err(StatusCode::UNAUTHORIZED);
-    };
-    if !crate::mcp_proxy::auth::verify_token(token.trim(), verifier) {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-    Ok(())
 }
 
 fn extract_server_id(query_str: &str) -> Result<String, StatusCode> {
@@ -158,6 +90,7 @@ async fn handle_mcp(
         shutdown_token: http.shutdown_token,
         proxy_token,
         events: proxy.events.clone(),
+        admission: proxy.admission.clone(),
     };
     if state.shutdown_token.is_cancelled() || state.proxy_token.is_cancelled() {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -169,18 +102,6 @@ async fn handle_mcp(
 
     if !gateway.enabled {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    }
-
-    if !validate_host(req.headers(), http.settings.allow_lan, http.settings.port) {
-        return StatusCode::BAD_REQUEST.into_response();
-    }
-
-    if let Err(status) = validate_origin(req.headers(), http.settings.port) {
-        return status.into_response();
-    }
-
-    if let Err(status) = validate_token(req.headers(), gateway.token_verifier.as_deref()) {
-        return status.into_response();
     }
 
     let query_str = req.uri().query().unwrap_or("");
@@ -256,7 +177,14 @@ async fn handle_legacy(
 
             let session = match state
                 .legacy_sessions
-                .create_session(&service, permit, idle_timeout_secs)
+                .create_session(
+                    &service,
+                    permit,
+                    idle_timeout_secs,
+                    state.admission.clone(),
+                    state.shutdown_token.clone(),
+                    state.proxy_token.clone(),
+                )
                 .await
             {
                 Ok(s) => s,
@@ -456,7 +384,14 @@ async fn handle_modern(state: HttpState, service: ProxyServiceConfig, req: Reque
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
 
-    let bridge = ModernBridge::new(service, state.budget, state.events);
+    let bridge = ModernBridge::new(
+        service,
+        state.budget,
+        state.events,
+        state.admission,
+        state.shutdown_token.clone(),
+        state.proxy_token.clone(),
+    );
     let low_bridge = LowLevelBridge(bridge);
 
     let (transport, receiver) = OneshotTransport::<RoleServer>::new(message);

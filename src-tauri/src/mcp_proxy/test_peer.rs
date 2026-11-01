@@ -138,6 +138,10 @@ async fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().expect("mode");
     let tag = args.next().expect("tag");
+    if mode == "unread" {
+        std::future::pending::<()>().await;
+        return;
+    }
     let peer = FakePeer { mode, tag };
     let server = peer
         .serve((tokio::io::stdin(), tokio::io::stdout()))

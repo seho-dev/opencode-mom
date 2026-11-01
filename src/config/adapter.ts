@@ -146,9 +146,9 @@ export interface CommandAdapter {
   getMcpProxyState(): Result<McpProxyStateDto>;
   getMomHttpSettings(): Result<MomHttpSettings>;
   setMomHttpSettings(settings: MomHttpSettings): Result<void>;
+  rotateMomHttpKey(): Result<string>;
   getMcpProxySettings(): Result<McpProxySettingsDto>;
   saveMcpProxySettings(settings: McpProxySettingsDto, expectedRevision: number): Result<void>;
-  rotateMcpProxyKey(): Result<string>;
   getMcpProxyServer(id: string): Result<McpProxyServerDto>;
   createMcpProxyServer(server: McpProxyServerDto, expectedRevision: number): Result<McpProxyServerDto>;
   updateMcpProxyServer(server: McpProxyServerDto, expectedRevision: number): Result<McpProxyServerDto>;
@@ -249,10 +249,10 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     getMcpProxyState: () => invoke('get_mcp_proxy_state'),
     getMomHttpSettings: () => invoke('get_mom_http_settings'),
     setMomHttpSettings: (settings) => invoke('set_mom_http_settings', { settings }),
+    rotateMomHttpKey: () => invoke('rotate_mom_http_key'),
     getMcpProxySettings: () => invoke('get_mcp_proxy_settings'),
     saveMcpProxySettings: (settings, expectedRevision) =>
       invoke('save_mcp_proxy_settings', { settings, expectedRevision }),
-    rotateMcpProxyKey: () => invoke('rotate_mcp_proxy_key'),
     getMcpProxyServer: (id) => invoke('get_mcp_proxy_server', { id }),
     createMcpProxyServer: (server, expectedRevision) => invoke('create_mcp_proxy_server', { server, expectedRevision }),
     updateMcpProxyServer: (server, expectedRevision) => invoke('update_mcp_proxy_server', { server, expectedRevision }),

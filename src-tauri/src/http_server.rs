@@ -1,9 +1,9 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use axum::{Extension, Router};
+use axum::Router;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
@@ -12,6 +12,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::AppError;
 use crate::paths::ConfigPaths;
+
+pub(crate) mod auth;
+
+#[cfg(test)]
+mod tests_auth;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
@@ -64,6 +69,7 @@ mod tests {
         let path = temp.path().join("mom-http.json");
         let router = Router::new().route("/health", axum::routing::get(|| async { "ok" }));
         let mut http = HttpServer::new_with_path(path.clone(), router).unwrap();
+        let key = http.rotate_key(async { Ok(()) }).await.unwrap();
         let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
         let release_rx = std::sync::Mutex::new(release_rx);
@@ -102,6 +108,7 @@ mod tests {
         assert_eq!(
             reqwest::Client::new()
                 .get(format!("http://{addr}/health"))
+                .bearer_auth(&key)
                 .send()
                 .await
                 .unwrap()
@@ -132,8 +139,28 @@ impl MomHttpSettings {
 
 #[derive(Clone)]
 pub(crate) struct HttpContext {
-    pub settings: MomHttpSettings,
     pub shutdown_token: CancellationToken,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HttpConfig {
+    #[serde(flatten)]
+    settings: MomHttpSettings,
+    #[serde(default)]
+    auth: auth::AuthConfig,
+}
+
+fn publish_config(path: &std::path::Path, config: &HttpConfig) -> Result<(), AppError> {
+    let bytes = serde_json::to_vec_pretty(config)
+        .map_err(|_| AppError::configuration("serialize MOM HTTP configuration"))?;
+    if let Some(directory) = path.parent() {
+        std::fs::create_dir_all(directory)?;
+    }
+    crate::private_file::publish(path, &bytes).map_err(|error| {
+        AppError::configuration(format!("save MOM HTTP configuration: {error:?}"))
+    })?;
+    Ok(())
 }
 
 struct Runtime {
@@ -148,10 +175,13 @@ pub struct HttpServer {
     config_path: PathBuf,
     router: Router,
     runtime: Arc<Mutex<Runtime>>,
+    auth: Arc<RwLock<auth::AuthState>>,
     shutdown_token: CancellationToken,
     #[cfg(test)]
     publish_hook: Option<Arc<dyn Fn() + Send + Sync>>,
 }
+
+pub(crate) type HttpServerState = Result<Arc<HttpServer>, AppError>;
 
 impl HttpServer {
     pub fn new(paths: &ConfigPaths, router: Router) -> Result<Self, AppError> {
@@ -159,26 +189,54 @@ impl HttpServer {
     }
 
     pub(crate) fn new_with_path(config_path: PathBuf, router: Router) -> Result<Self, AppError> {
-        let settings: MomHttpSettings = match crate::private_file::read(&config_path, 8192)
-            .map_err(|error| {
-                AppError::configuration(format!("read MOM HTTP settings: {error:?}"))
-            })? {
-            Some(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
-                AppError::configuration(format!("invalid MOM HTTP settings: {error}"))
-            })?,
-            None => MomHttpSettings::default(),
+        let bytes = crate::private_file::read(&config_path, 8192).map_err(|error| {
+            AppError::configuration(format!("read MOM HTTP settings: {error:?}"))
+        })?;
+        let value: serde_json::Value = match bytes {
+            Some(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|_| AppError::configuration("invalid MOM HTTP configuration"))?,
+            None => serde_json::json!({}),
         };
-        settings.validate()?;
+        if !value.is_object() || value.get("auth").is_some_and(|auth| !auth.is_object()) {
+            return Err(AppError::configuration("invalid MOM HTTP configuration"));
+        }
+        let mut config: HttpConfig = serde_json::from_value(value.clone())
+            .map_err(|_| AppError::configuration("invalid MOM HTTP configuration"))?;
+        config.settings.validate()?;
+        if !value
+            .as_object()
+            .is_some_and(|object| object.contains_key("auth"))
+        {
+            config.auth.token_verifier = crate::mcp_proxy::config::legacy_http_verifier(
+                &config_path.with_file_name("mcp-proxy.json"),
+            )?;
+            publish_config(&config_path, &config)?;
+        }
+        if config
+            .auth
+            .token_verifier
+            .as_deref()
+            .is_some_and(|verifier| !auth::valid_verifier(verifier))
+        {
+            return Err(AppError::configuration(
+                "invalid MOM HTTP authentication verifier",
+            ));
+        }
+        let shutdown_token = CancellationToken::new();
         Ok(Self {
             config_path,
             router,
             runtime: Arc::new(Mutex::new(Runtime {
-                settings,
+                settings: config.settings,
                 bound_addr: None,
                 listener_handle: None,
-                shutdown_token: CancellationToken::new(),
+                shutdown_token: shutdown_token.child_token(),
             })),
-            shutdown_token: CancellationToken::new(),
+            auth: Arc::new(RwLock::new(auth::AuthState {
+                config: config.auth,
+                epoch: shutdown_token.child_token(),
+            })),
+            shutdown_token,
             #[cfg(test)]
             publish_hook: None,
         })
@@ -186,6 +244,75 @@ impl HttpServer {
 
     pub async fn settings(&self) -> MomHttpSettings {
         self.runtime.lock().await.settings
+    }
+
+    pub fn auth_ready(&self) -> bool {
+        let state = self.auth.read().unwrap_or_else(|error| error.into_inner());
+        !self.shutdown_token.is_cancelled() && state.config.token_verifier.is_some()
+    }
+
+    pub(crate) async fn rotate_key(
+        &self,
+        cleanup: impl std::future::Future<Output = Result<(), AppError>> + Send + 'static,
+    ) -> Result<String, AppError> {
+        let server = self.clone();
+        tokio::spawn(async move { server.rotate_key_owned(cleanup).await })
+            .await
+            .map_err(|error| {
+                AppError::configuration(format!("MOM HTTP key rotation task failed: {error}"))
+            })?
+    }
+
+    async fn rotate_key_owned(
+        &self,
+        cleanup: impl std::future::Future<Output = Result<(), AppError>>,
+    ) -> Result<String, AppError> {
+        let runtime = self.runtime.lock().await;
+        if self.shutdown_token.is_cancelled() {
+            return Err(AppError::configuration("MOM HTTP service is shutting down"));
+        }
+        let key = auth::generate_key();
+        let config = HttpConfig {
+            settings: runtime.settings,
+            auth: auth::AuthConfig {
+                token_verifier: Some(key.verifier),
+            },
+        };
+        let path = self.config_path.clone();
+        #[cfg(test)]
+        let publish_hook = self.publish_hook.clone();
+        let config = tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
+            if let Some(hook) = publish_hook {
+                hook();
+            }
+            publish_config(&path, &config)?;
+            Ok::<_, AppError>(config)
+        })
+        .await
+        .map_err(|error| {
+            AppError::configuration(format!("save MOM HTTP key task failed: {error}"))
+        })??;
+        {
+            let mut state = self.auth.write().unwrap_or_else(|error| error.into_inner());
+            state.epoch.cancel();
+            state.config = config.auth;
+        }
+        // Keep admission closed until all owners of the previous epoch are gone.
+        if let Err(error) = cleanup.await {
+            self.shutdown_token.cancel();
+            eprintln!("warning: MOM HTTP key committed; admission remains closed: {error}");
+            return Ok(key.raw_token);
+        }
+        let mut state = self.auth.write().unwrap_or_else(|error| error.into_inner());
+        if !self.shutdown_token.is_cancelled() {
+            state.epoch = if runtime.listener_handle.is_some() {
+                runtime.shutdown_token.child_token()
+            } else {
+                self.shutdown_token.child_token()
+            };
+        }
+        Ok(key.raw_token)
     }
 
     pub async fn bound_addr(&self) -> Option<SocketAddr> {
@@ -232,10 +359,22 @@ impl HttpServer {
             return Err(AppError::configuration("MOM HTTP service is shutting down"));
         }
         let shutdown_token = self.shutdown_token.child_token();
-        let router = self.router.clone().layer(Extension(HttpContext {
-            settings: runtime.settings,
-            shutdown_token: shutdown_token.clone(),
-        }));
+        {
+            let mut state = self.auth.write().unwrap_or_else(|error| error.into_inner());
+            state.epoch.cancel();
+            state.epoch = shutdown_token.child_token();
+        }
+        let mut router = self.router.clone();
+        if router.has_routes() {
+            router = router.route_layer(axum::middleware::from_fn_with_state(
+                auth::HttpAuth {
+                    settings: runtime.settings,
+                    listener_token: shutdown_token.clone(),
+                    state: self.auth.clone(),
+                },
+                auth::enforce,
+            ));
+        }
         let stop = shutdown_token.clone();
         runtime.listener_handle = Some(tokio::spawn(async move {
             if let Err(error) = axum::serve(listener, router)
@@ -251,10 +390,19 @@ impl HttpServer {
     }
 
     pub async fn set_settings(&self, settings: MomHttpSettings) -> Result<(), AppError> {
+        self.set_settings_with_cleanup(settings, async { Ok(()) })
+            .await
+    }
+
+    pub(crate) async fn set_settings_with_cleanup(
+        &self,
+        settings: MomHttpSettings,
+        cleanup: impl std::future::Future<Output = Result<(), AppError>> + Send + 'static,
+    ) -> Result<(), AppError> {
         settings.validate()?;
         let server = self.clone();
         tokio::spawn(async move {
-            let result = server.set_settings_owned(settings).await;
+            let result = server.set_settings_owned(settings, cleanup).await;
             if let Err(error) = &result {
                 eprintln!("warning: MOM HTTP settings update failed: {error}");
             }
@@ -266,7 +414,11 @@ impl HttpServer {
         })?
     }
 
-    async fn set_settings_owned(&self, settings: MomHttpSettings) -> Result<(), AppError> {
+    async fn set_settings_owned(
+        &self,
+        settings: MomHttpSettings,
+        cleanup: impl std::future::Future<Output = Result<(), AppError>>,
+    ) -> Result<(), AppError> {
         let mut runtime = self.runtime.lock().await;
         if self.shutdown_token.is_cancelled() {
             return Err(AppError::configuration("MOM HTTP service is shutting down"));
@@ -281,10 +433,30 @@ impl HttpServer {
         }
 
         let was_running = runtime.bound_addr.is_some();
-        Self::stop(&mut runtime, Duration::from_secs(8)).await?;
+        self.auth
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .epoch
+            .cancel();
+        if let Err(error) = Self::stop(&mut runtime, Duration::from_secs(8)).await {
+            if let Err(cleanup) = cleanup.await {
+                self.shutdown_token.cancel();
+                eprintln!("warning: MOM HTTP stopped; MCP cleanup failed: {cleanup}");
+            }
+            return Err(error);
+        }
         let prepared = async {
             let listener = Self::bind(settings).await?;
             let path = self.config_path.clone();
+            let config = HttpConfig {
+                settings,
+                auth: self
+                    .auth
+                    .read()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .config
+                    .clone(),
+            };
             #[cfg(test)]
             let publish_hook = self.publish_hook.clone();
             tokio::task::spawn_blocking(move || {
@@ -292,16 +464,7 @@ impl HttpServer {
                 if let Some(hook) = publish_hook {
                     hook();
                 }
-                let bytes = serde_json::to_vec_pretty(&settings).map_err(|error| {
-                    AppError::configuration(format!("serialize MOM HTTP settings: {error}"))
-                })?;
-                if let Some(directory) = path.parent() {
-                    std::fs::create_dir_all(directory)?;
-                }
-                crate::private_file::publish(&path, &bytes).map_err(|error| {
-                    AppError::configuration(format!("save MOM HTTP settings: {error:?}"))
-                })?;
-                Ok::<_, AppError>(())
+                publish_config(&path, &config)
             })
             .await
             .map_err(|error| {
@@ -310,14 +473,23 @@ impl HttpServer {
             Ok::<_, AppError>(listener)
         }
         .await;
+        let cleanup = cleanup.await;
+        if let Err(error) = &cleanup {
+            self.shutdown_token.cancel();
+            eprintln!(
+                "warning: MOM HTTP admission remains closed after MCP cleanup failed: {error}"
+            );
+        }
         match prepared {
             Ok(listener) => {
                 runtime.settings = settings;
-                self.serve(&mut runtime, listener)?;
+                if cleanup.is_ok() {
+                    self.serve(&mut runtime, listener)?;
+                }
                 Ok(())
             }
             Err(error) => {
-                if was_running {
+                if was_running && cleanup.is_ok() {
                     let restored = Self::bind(runtime.settings).await;
                     match restored.and_then(|listener| self.serve(&mut runtime, listener)) {
                         Ok(_) => {}

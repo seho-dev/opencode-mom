@@ -56,19 +56,10 @@ pub fn run() {
                     mcp_proxy::ProxyService::new_disabled(&paths)
                 },
             ));
-            let http = std::sync::Arc::new(http_server::HttpServer::new(
-                &paths,
-                axum::Router::new().merge(proxy.router()),
-            )?);
-            app.manage(http.clone());
-            app.manage(proxy);
+            app.manage(proxy.clone());
             app.manage(power::PowerService::new(paths.app_config_dir())?);
             app.manage(paths.clone());
-            tauri::async_runtime::spawn(async move {
-                if let Err(error) = http.start().await {
-                    eprintln!("warning: failed to start MOM HTTP service: {error}");
-                }
-            });
+            setup_http(app, &paths, &proxy);
             *setup_notifications
                 .lock()
                 .unwrap_or_else(|error| error.into_inner()) = Some(app.handle().clone());
@@ -161,7 +152,7 @@ pub fn run() {
             commands::get_mcp_proxy_state,
             commands::get_mcp_proxy_settings,
             commands::save_mcp_proxy_settings,
-            commands::rotate_mcp_proxy_key,
+            commands::rotate_mom_http_key,
             commands::get_mcp_proxy_server,
             commands::create_mcp_proxy_server,
             commands::update_mcp_proxy_server,
@@ -225,15 +216,44 @@ pub fn run() {
         });
 }
 
-async fn shutdown_http(
-    app: &tauri::AppHandle,
+fn setup_http<R: tauri::Runtime>(
+    app: &tauri::App<R>,
+    paths: &paths::ConfigPaths,
+    proxy: &mcp_proxy::ProxyService,
+) {
+    let http: http_server::HttpServerState =
+        http_server::HttpServer::new(paths, axum::Router::new().merge(proxy.router()))
+            .map(std::sync::Arc::new);
+    app.manage(http.clone());
+    match http {
+        Ok(http) => {
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = http.start().await {
+                    eprintln!("warning: failed to start MOM HTTP service: {error}");
+                }
+            });
+        }
+        Err(error) => {
+            eprintln!(
+                "warning: MOM HTTP service initialization failed; disabling HTTP service: {error}"
+            );
+        }
+    }
+}
+
+async fn shutdown_http<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
     proxy: &mcp_proxy::ProxyService,
     deadline: std::time::Duration,
 ) {
     let (http_result, proxy_result) = tokio::join!(
         async {
-            if let Some(http) = app.try_state::<std::sync::Arc<http_server::HttpServer>>() {
-                http.shutdown(deadline).await
+            if let Some(http) = app.try_state::<http_server::HttpServerState>() {
+                if let Ok(http) = http.inner().as_ref() {
+                    http.shutdown(deadline).await
+                } else {
+                    Ok(())
+                }
             } else {
                 Ok(())
             }

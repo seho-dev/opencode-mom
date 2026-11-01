@@ -22,27 +22,32 @@ let newKey = $state('');
 let copied = $state(false);
 let mounted = true;
 let displayGeneration = 0;
+let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+function clearDisplay() {
+  displayGeneration += 1;
+  newKey = '';
+  error = '';
+  copied = false;
+  clearTimeout(copyTimer);
+  copyTimer = undefined;
+}
 
 $effect(() => {
   if (!open || !active) {
-    displayGeneration += 1;
-    newKey = '';
-    error = '';
-    copied = false;
+    clearDisplay();
   }
 });
 
 onDestroy(() => {
   mounted = false;
-  newKey = '';
+  clearDisplay();
 });
 
 function close() {
   if (pending) return;
   const hadKey = newKey.length > 0;
-  newKey = '';
-  error = '';
-  copied = false;
+  clearDisplay();
   open = false;
   if (hadKey && onRotated) {
     void onRotated();
@@ -56,7 +61,7 @@ async function rotate() {
   error = '';
   copied = false;
   try {
-    const key = await config.rotateMcpProxyKey();
+    const key = await config.rotateMomHttpKey();
     if (!mounted || !active || !open || generation !== displayGeneration) return;
     newKey = key;
   } catch (cause) {
@@ -71,12 +76,16 @@ async function rotate() {
 }
 
 async function copy() {
-  if (!mounted || !active || !newKey) return;
+  if (!mounted || !active || !open || !newKey) return;
+  const generation = displayGeneration;
   try {
     await navigator.clipboard.writeText(newKey);
+    if (!mounted || !active || !open || generation !== displayGeneration) return;
+    clearTimeout(copyTimer);
     copied = true;
-    setTimeout(() => {
+    copyTimer = setTimeout(() => {
       copied = false;
+      copyTimer = undefined;
     }, 2000);
   } catch {
     // fallback if clipboard API fails
@@ -92,9 +101,9 @@ async function copy() {
     onInteractOutside={(event) => { if (pending) event.preventDefault(); }}
   >
     <Dialog.Header>
-      <Dialog.Title>{i18n.t('settings.proxy.rotateKeyTitle')}</Dialog.Title>
+      <Dialog.Title>{i18n.t('settings.http.rotateKeyTitle')}</Dialog.Title>
       <Dialog.Description class="break-words [overflow-wrap:anywhere]">
-        {i18n.t('settings.proxy.rotateKeyDescription')}
+        {i18n.t('settings.http.rotateKeyDescription')}
       </Dialog.Description>
     </Dialog.Header>
 
@@ -107,24 +116,25 @@ async function copy() {
     {#if newKey}
       <div class="space-y-3">
         <div class="state-banner warning text-xs leading-5" role="alert">
-          {i18n.t('settings.proxy.rotateKeyWarning')}
+          {i18n.t('settings.http.rotateKeyWarning')}
         </div>
         <div class="flex items-center gap-2">
           <input
             type="text"
-            name="mcp-proxy-new-token"
+            id="mom-http-new-token"
+            name="mom-http-new-token"
             readonly
             value={newKey}
             class="input-field font-mono text-xs flex-1 select-all break-all"
-            aria-label={i18n.t('settings.proxy.rotateKeySuccess')}
+            aria-label={i18n.t('settings.http.rotateKeySuccess')}
           >
           <Button variant="outline" size="sm" onclick={copy}>
             {#if copied}
               <Check size={14} class="text-[var(--status-success)]" />
-              {i18n.t('settings.proxy.copied')}
+              {i18n.t('settings.http.copied')}
             {:else}
               <Copy size={14} />
-              {i18n.t('settings.proxy.copyKey')}
+              {i18n.t('settings.http.copyKey')}
             {/if}
           </Button>
         </div>
@@ -133,11 +143,11 @@ async function copy() {
 
     <Dialog.Footer>
       {#if newKey}
-        <Button variant="default" onclick={close}>{i18n.t('settings.proxy.close')}</Button>
+        <Button variant="default" onclick={close}>{i18n.t('settings.http.close')}</Button>
       {:else}
         <Button variant="outline" disabled={pending} onclick={close}>{i18n.t('common.cancel')}</Button>
         <Button variant="destructive" disabled={pending} onclick={rotate}>
-          {pending ? i18n.t('settings.saving') : i18n.t('settings.proxy.rotateKeyConfirm')}
+          {pending ? i18n.t('settings.saving') : i18n.t('settings.http.rotateKeyConfirm')}
         </Button>
       {/if}
     </Dialog.Footer>

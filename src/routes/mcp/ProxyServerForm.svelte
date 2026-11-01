@@ -8,6 +8,7 @@ import FormActions from '$src/components/FormActions.svelte';
 import { Input } from '$src/components/input/index.js';
 import Select from '$src/components/Select.svelte';
 import { Switch } from '$src/components/switch/index.js';
+import { Textarea } from '$src/components/textarea/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { McpServer } from '$src/types/mcp.js';
@@ -304,13 +305,13 @@ async function save() {
         <label for="proxy-srv-cmd" class="font-medium text-[var(--text-primary)] block mb-1">
           {i18n.t('mcp.proxy.form.command')}
         </label>
-        <textarea
+        <Textarea
           id="proxy-srv-cmd"
-          class="input-field font-mono text-xs w-full min-h-20"
+          class="font-mono text-xs min-h-20"
           disabled={pending}
           bind:value={commandText}
           placeholder="npx&#10;-y&#10;@modelcontextprotocol/server-filesystem"
-        ></textarea>
+        />
         <span class="field-hint mt-1">
           {i18n.t('mcp.proxy.form.commandHint')}
         </span>
@@ -332,13 +333,13 @@ async function save() {
         <label for="proxy-srv-env" class="font-medium text-[var(--text-primary)] block mb-1">
           {i18n.t('mcp.proxy.form.env')}
         </label>
-        <textarea
+        <Textarea
           id="proxy-srv-env"
-          class="input-field font-mono text-xs w-full min-h-16"
+          class="font-mono text-xs min-h-16"
           disabled={pending}
           bind:value={envText}
           placeholder="KEY=VALUE&#10;ANOTHER_KEY=VALUE"
-        ></textarea>
+        />
         <span class="field-hint mt-1">
           {i18n.t('mcp.proxy.form.envHint')}
         </span>

@@ -14,17 +14,51 @@ type CommandResult<T> = Result<T, AppError>;
 
 #[tauri::command]
 pub async fn get_mom_http_settings(
-    http: State<'_, std::sync::Arc<crate::http_server::HttpServer>>,
+    http: State<'_, crate::http_server::HttpServerState>,
 ) -> CommandResult<crate::http_server::MomHttpSettings> {
+    let http = http.inner().as_ref().map_err(Clone::clone)?;
     Ok(http.settings().await)
 }
 
 #[tauri::command]
 pub async fn set_mom_http_settings(
-    http: State<'_, std::sync::Arc<crate::http_server::HttpServer>>,
+    http: State<'_, crate::http_server::HttpServerState>,
+    proxy: State<'_, std::sync::Arc<crate::mcp_proxy::ProxyService>>,
     settings: crate::http_server::MomHttpSettings,
 ) -> CommandResult<()> {
-    http.set_settings(settings).await
+    let http = http.inner().as_ref().map_err(Clone::clone)?;
+    update_http_settings(
+        http.as_ref().clone(),
+        proxy.inner().as_ref().clone(),
+        settings,
+    )
+    .await
+}
+
+pub(crate) async fn update_http_settings(
+    http: crate::http_server::HttpServer,
+    proxy: crate::mcp_proxy::ProxyService,
+    settings: crate::http_server::MomHttpSettings,
+) -> CommandResult<()> {
+    http.set_settings_with_cleanup(settings, async move { proxy.revoke_http_requests().await })
+        .await
+}
+
+#[tauri::command]
+pub async fn rotate_mom_http_key(
+    http: State<'_, crate::http_server::HttpServerState>,
+    proxy: State<'_, std::sync::Arc<crate::mcp_proxy::ProxyService>>,
+) -> CommandResult<String> {
+    let http = http.inner().as_ref().map_err(Clone::clone)?;
+    rotate_http_key(http.as_ref().clone(), proxy.inner().as_ref().clone()).await
+}
+
+pub(crate) async fn rotate_http_key(
+    http: crate::http_server::HttpServer,
+    proxy: crate::mcp_proxy::ProxyService,
+) -> CommandResult<String> {
+    http.rotate_key(async move { proxy.revoke_http_requests().await })
+        .await
 }
 
 #[tauri::command]

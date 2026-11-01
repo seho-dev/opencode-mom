@@ -275,16 +275,22 @@ fn save_config_partial_write_failure_preserves_original_bytes() {
     let Some(directory) = std::env::var_os(CHILD_DIRECTORY) else {
         let directory = ConfigDirectory::new();
         fs::write(directory.path().join("config.json"), "{}").unwrap();
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "models::tests::save_config_partial_write_failure_preserves_original_bytes",
                 "--nocapture",
             ])
             .env(CHILD_DIRECTORY, directory.path())
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        assert!(
+            output.status.success(),
+            "child {}: {}{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
         return;
     };
     let directory = std::path::PathBuf::from(directory);

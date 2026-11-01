@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -488,16 +488,14 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
                 version,
                 outdated,
                 updating,
-            } => {
-                if !bounded_text(target, 4096)
-                    || version
-                        .as_ref()
-                        .is_some_and(|version| !bounded_text(version, 4096))
-                    || *outdated == Some(false)
-                    || *updating == Some(false)
-                {
-                    return Err(invalid_runtime());
-                }
+            } if !bounded_text(target, 4096)
+                || version
+                    .as_ref()
+                    .is_some_and(|version| !bounded_text(version, 4096))
+                || *outdated == Some(false)
+                || *updating == Some(false) =>
+            {
+                return Err(invalid_runtime());
             }
             _ => {}
         }
@@ -604,7 +602,7 @@ fn validate_requested_directory(
     directory: Option<&Path>,
     runtime: &PluginRuntime,
 ) -> Result<(), AppError> {
-    if directory.is_some_and(|directory| PathBuf::from(&runtime.directory) != directory) {
+    if directory.is_some_and(|directory| Path::new(&runtime.directory) != directory) {
         return Err(AppError::configuration(
             "Plugin runtime location differs from the requested location",
         ));

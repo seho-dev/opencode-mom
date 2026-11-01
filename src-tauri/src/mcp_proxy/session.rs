@@ -667,8 +667,15 @@ impl ModernBridge {
                             loop {
                                 let reply = process_transport.receive().await;
                                 let Some(msg) = reply else { break false; };
-                                let value = serde_json::to_value(msg).unwrap_or_default();
-                                if value["params"]["progressToken"] == "cancel-seen" {
+                                if matches!(&msg,
+                                    JsonRpcMessage::Notification(reply)
+                                        if matches!(&reply.notification,
+                                            ServerNotification::ProgressNotification(progress)
+                                                if matches!(&progress.params.progress_token.0,
+                                                    NumberOrString::String(token) if token.as_ref() == "cancel-seen"
+                                                )
+                                        )
+                                ) {
                                     break true;
                                 }
                             }

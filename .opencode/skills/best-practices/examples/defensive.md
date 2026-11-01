@@ -101,7 +101,7 @@ function canPublishArticle(article: Article): boolean {
 }
 ```
 
-### 2. Normalization at Ingestion Boundary
+### 2. Parse and Validate at Ingestion Boundary
 
 ```ts
 // ❌ Bad: Scattering ad-hoc parsing and case checks across multiple UI components
@@ -112,8 +112,9 @@ function OrderBadge({ status }: { status: string }) {
   return <span className="badge-default">Pending</span>;
 }
 
-// ✅ Good: Normalize at data receipt; downstream logic uses consistent enum/map lookup
+// ✅ Good: Validate exact allowed values at receipt; downstream logic uses consistent enum/map lookup
 type OrderStatus = 'paid' | 'pending' | 'canceled';
+const ALLOWED_ORDER_STATUSES: readonly OrderStatus[] = ['paid', 'pending', 'canceled'];
 
 const STATUS_LABEL_MAP: Record<OrderStatus, string> = {
   paid: 'Paid',
@@ -121,9 +122,14 @@ const STATUS_LABEL_MAP: Record<OrderStatus, string> = {
   canceled: 'Canceled',
 };
 
-function normalizeOrderStatus(raw: unknown): OrderStatus {
-  const normalized = String(raw ?? '').trim().toLowerCase();
-  return normalized in STATUS_LABEL_MAP ? (normalized as OrderStatus) : 'pending';
+function parseOrderStatus(raw: unknown): OrderStatus {
+  if (typeof raw !== 'string') {
+    throw new TypeError('order status must be a string');
+  }
+  if (!ALLOWED_ORDER_STATUSES.includes(raw as OrderStatus)) {
+    throw new RangeError(`invalid order status: ${raw}`);
+  }
+  return raw as OrderStatus;
 }
 
 function OrderBadge({ status }: { status: OrderStatus }) {

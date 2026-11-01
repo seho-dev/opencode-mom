@@ -10,7 +10,7 @@ Source-relative paths below are relative to `src/routes/mcp/`, not this docs dir
 
 ## Literal form values and private drafts
 
-- **Proxy form fidelity**: Each command line is one literal argument, preserving blank empty arguments, quotes and surrounding whitespace; never shell-unquote, and require a nonblank executable. Preserve environment values after the first `=` verbatim, including whitespace/empty/quotes/additional `=`; ignore only blank/comment environment lines, without shell-identifier key restrictions.
+- **Proxy form fidelity**: Each command line is one literal argument, preserving blank empty arguments, quotes and surrounding whitespace; never shell-unquote, and require a nonblank executable. Preserve environment values after the first `=` verbatim, including whitespace/empty/quotes/additional `=`; non-blank non-comment environment lines require `KEY=VALUE` with a non-empty key without shell-identifier key restrictions, or save is rejected with an error; ignore only blank or `#` comment lines. Timeouts must be whole seconds within backend ranges (startup 1–3600s, execution 1–86400s; blank, non-integer, or out-of-range values reject save); default timeouts (30s/300s) apply only when initializing new server drafts, while editing and importing preserve fetched/imported timeouts without fallback replacement.
 
 - **Ephemeral Secrets**: Plaintext tokens and sensitive environment variables are never stored in `AppState`, global `draftRecovery`, `localStorage`, or debug logs.
 

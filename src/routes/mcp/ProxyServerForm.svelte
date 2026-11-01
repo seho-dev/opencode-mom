@@ -64,8 +64,8 @@ $effect(() => {
       .map(([k, v]) => `${k}=${v}`)
       .join('\n');
     protocol = (server.protocol?.toLowerCase() as McpProxyProtocol) || 'auto';
-    startupTimeout = server.startupTimeout ?? 30;
-    executionTimeout = server.executionTimeout ?? 300;
+    startupTimeout = server.startupTimeout;
+    executionTimeout = server.executionTimeout;
   } else {
     id = '';
     name = '';
@@ -134,8 +134,8 @@ async function performImport() {
       .map(([k, v]) => `${k}=${v}`)
       .join('\n');
     protocol = (imported.protocol?.toLowerCase() as McpProxyProtocol) || 'auto';
-    startupTimeout = imported.startupTimeout ?? 30;
-    executionTimeout = imported.executionTimeout ?? 300;
+    startupTimeout = imported.startupTimeout;
+    executionTimeout = imported.executionTimeout;
     importMode = false;
   } catch (cause) {
     if (mounted) error = readError(cause);
@@ -144,15 +144,17 @@ async function performImport() {
   }
 }
 
-function parseEnv(text: string): Record<string, string> {
+function parseEnv(text: string): Record<string, string> | null {
   const entries: [string, string][] = [];
-  for (const line of text.split(/\r?\n/)) {
-    if (line.trimStart().startsWith('#')) continue;
+  for (const [index, line] of text.split(/\r?\n/).entries()) {
+    if (!line.trim() || line.trimStart().startsWith('#')) continue;
     const idx = line.indexOf('=');
-    if (idx > 0) {
-      const k = line.slice(0, idx).trim();
-      entries.push([k, line.slice(idx + 1)]);
+    const key = line.slice(0, idx).trim();
+    if (idx < 1 || !key) {
+      error = i18n.t('mcp.proxy.form.validationEnv', { line: index + 1 });
+      return null;
     }
+    entries.push([key, line.slice(idx + 1)]);
   }
   return Object.fromEntries(entries);
 }
@@ -169,6 +171,21 @@ async function save() {
     error = i18n.t('mcp.proxy.form.validationCommand');
     return;
   }
+  const env = parseEnv(envText);
+  if (env === null) return;
+  const startupSeconds = Number(startupTimeout);
+  const executionSeconds = Number(executionTimeout);
+  if (
+    !Number.isInteger(startupSeconds) ||
+    startupSeconds < 1 ||
+    startupSeconds > 3600 ||
+    !Number.isInteger(executionSeconds) ||
+    executionSeconds < 1 ||
+    executionSeconds > 86400
+  ) {
+    error = i18n.t('mcp.proxy.form.validationTimeout');
+    return;
+  }
 
   const payload: McpProxyServerDto = {
     id: trimmedId,
@@ -176,10 +193,10 @@ async function save() {
     enabled,
     command: cmd,
     cwd: cwd.trim(),
-    env: parseEnv(envText),
+    env,
     protocol,
-    startupTimeout: Number(startupTimeout) || 30,
-    executionTimeout: Number(executionTimeout) || 300,
+    startupTimeout: startupSeconds,
+    executionTimeout: executionSeconds,
   };
 
   pending = true;
@@ -355,7 +372,7 @@ async function save() {
             id="proxy-srv-startup"
             type="number"
             min={1}
-            max={300}
+            max={3600}
             disabled={pending}
             bind:value={startupTimeout}
           />
@@ -369,7 +386,7 @@ async function save() {
             id="proxy-srv-exec"
             type="number"
             min={1}
-            max={3600}
+            max={86400}
             disabled={pending}
             bind:value={executionTimeout}
           />

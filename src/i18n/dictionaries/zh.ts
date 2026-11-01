@@ -1172,6 +1172,8 @@ export const zh: Record<MessageKey, string> = {
   'mcp.proxy.form.saveFailed': '保存代理服务失败。',
   'mcp.proxy.form.validationId': '服务 ID 必须为非空字母数字标识符。',
   'mcp.proxy.form.validationCommand': '执行命令不能为空。',
+  'mcp.proxy.form.validationEnv': '环境变量第 {line} 行必须使用 KEY=VALUE 格式，且键不能为空。',
+  'mcp.proxy.form.validationTimeout': '超时必须为整数秒：启动 1–3600 秒，执行 1–86400 秒。',
   'mcp.proxy.import.title': '导入 MCP 服务',
   'mcp.proxy.import.select': '选择要导入的已有 MCP 服务',
   'mcp.proxy.import.empty': '未找到可导入的已有 MCP 服务。',

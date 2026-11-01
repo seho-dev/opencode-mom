@@ -1197,6 +1197,8 @@ export const en = {
   'mcp.proxy.form.saveFailed': 'Failed to save proxy server.',
   'mcp.proxy.form.validationId': 'Server ID must be a non-empty alphanumeric slug.',
   'mcp.proxy.form.validationCommand': 'Command must not be empty.',
+  'mcp.proxy.form.validationEnv': 'Environment line {line} must use KEY=VALUE with a non-empty key.',
+  'mcp.proxy.form.validationTimeout': 'Timeouts must be whole seconds: startup 1–3600; execution 1–86400.',
   'mcp.proxy.import.title': 'Import MCP Server',
   'mcp.proxy.import.select': 'Select existing MCP server to import',
   'mcp.proxy.import.empty': 'No existing MCP servers found to import.',

@@ -579,6 +579,72 @@ test.each([false, true])('server form dialog=%s preserves textarea borders and l
   );
 });
 
+test.each([false, true])('server form dialog=%s rejects invalid env and timeout boundaries', async (dialog) => {
+  const config = makeConfig();
+  const server: McpProxyServerDto = {
+    id: 'srv-validation',
+    name: 'Server',
+    enabled: true,
+    command: ['node', 'srv.js'],
+    cwd: '/workspace',
+    env: {},
+    protocol: 'auto',
+    startupTimeout: 45,
+    executionTimeout: 450,
+  };
+
+  render(
+    ProxyServerForm,
+    {
+      dialog,
+      open: true,
+      server,
+      expectedRevision: 1,
+      onSaved: vi.fn(),
+    },
+    { wrapper: Harness, wrapperProps: { config } },
+  );
+
+  const env = screen.getByLabelText('Environment Variables') as HTMLTextAreaElement;
+  const startupTimeout = screen.getByLabelText(/Startup Timeout/i) as HTMLInputElement;
+  const executionTimeout = screen.getByLabelText(/Execution Timeout/i) as HTMLInputElement;
+
+  // Preserves existing server values on edit instead of forcing default 30/300
+  expect(startupTimeout.value).toBe('45');
+  expect(executionTimeout.value).toBe('450');
+
+  // Missing '=' in non-comment/non-blank line shows error banner and rejects
+  await fireEvent.input(env, { target: { value: 'TOKEN_NO_EQUALS' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
+  expect(config.updateMcpProxyServer).not.toHaveBeenCalled();
+  expect(env.value).toBe('TOKEN_NO_EQUALS');
+  expect(screen.getByRole('alert')).toBeDefined();
+
+  // Empty key before '=' rejects
+  await fireEvent.input(env, { target: { value: '=value' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
+  expect(config.updateMcpProxyServer).not.toHaveBeenCalled();
+
+  // Valid env with literal and comment
+  await fireEvent.input(env, { target: { value: '# comment\nVALID_KEY=literal_val' } });
+
+  // Invalid timeout: 0 rejects
+  await fireEvent.input(startupTimeout, { target: { value: '0' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
+  expect(config.updateMcpProxyServer).not.toHaveBeenCalled();
+
+  // Invalid timeout: exceed backend boundary (startup > 3600)
+  await fireEvent.input(startupTimeout, { target: { value: '3601' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
+  expect(config.updateMcpProxyServer).not.toHaveBeenCalled();
+
+  // Valid positive integer timeouts
+  await fireEvent.input(startupTimeout, { target: { value: '15' } });
+  await fireEvent.input(executionTimeout, { target: { value: '300' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
+  expect(config.updateMcpProxyServer).toHaveBeenCalledOnce();
+});
+
 test('MCP page displays tabs and switches between config and proxy', async () => {
   const config = makeConfig();
   render(McpPage, {}, { wrapper: Harness, wrapperProps: { config } });

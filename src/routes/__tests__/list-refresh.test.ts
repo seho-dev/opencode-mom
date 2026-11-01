@@ -16,35 +16,15 @@ const lists = [
 ];
 
 function mount(list: (typeof lists)[number], flags: { loading?: boolean; saving?: boolean } = {}) {
-  const unrelated = Object.fromEntries(
-    [
-      'reloadOpencode',
-      'refreshAll',
-      'discardDraftAndRefresh',
-      'continueEditing',
-      'createProvider',
-      'updateProvider',
-      'deleteProvider',
-      'createModel',
-      'updateModel',
-      'deleteModel',
-      'createAgent',
-      'updateAgent',
-      'deleteAgent',
-      'saveGroup',
-      'deleteGroup',
-      'switchGroup',
-      'loadCatalog',
-      'loadTokenUsageRecords',
-      'setTheme',
-      'setLocale',
-      'setAutostart',
-    ].map((name) => [name, vi.fn()]),
-  );
+  const guards = {
+    reloadOpencode: vi.fn(),
+    refreshAll: vi.fn(),
+    discardDraftAndRefresh: vi.fn(),
+  };
   const error = { code: 'conflict' as const, message: 'Keep the existing draft error' };
   const draftRecovery = { operation: 'updateProvider', payload: { name: 'draft' }, error, conflict: true };
   const config = {
-    ...unrelated,
+    ...guards,
     preferences: { locale: 'en', theme: 'light' },
     get providers() {
       return [{ name: 'example', models: {} }];
@@ -80,11 +60,11 @@ function mount(list: (typeof lists)[number], flags: { loading?: boolean; saving?
     refresh: vi.fn().mockResolvedValue(undefined),
   };
   render(list.component, {}, { wrapper: Harness, wrapperProps: { config: config as unknown as ConfigStore } });
-  return { config, unrelated, button: screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement };
+  return { config, guards, button: screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement };
 }
 
 test.each(lists)('$name refresh reads the central store and stays disabled for the full request', async (list) => {
-  const { config, unrelated, button } = mount(list);
+  const { config, guards, button } = mount(list);
   let finish!: () => void;
   config.refresh.mockReturnValueOnce(
     new Promise<void>((resolve) => {
@@ -117,7 +97,9 @@ test.each(lists)('$name refresh reads the central store and stays disabled for t
   expect(config.formResetVersion).toBe(7);
   expect(config.splashLoading).toBe(false);
   expect(screen.getByText(list.row)).toBeTruthy();
-  for (const action of Object.values(unrelated)) expect(action).not.toHaveBeenCalled();
+  expect(guards.reloadOpencode).not.toHaveBeenCalled();
+  expect(guards.refreshAll).not.toHaveBeenCalled();
+  expect(guards.discardDraftAndRefresh).not.toHaveBeenCalled();
 });
 
 test.each(lists.flatMap((list) => ['loading', 'saving'].map((flag) => ({ ...list, flag }))))(

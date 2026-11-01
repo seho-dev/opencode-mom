@@ -573,25 +573,10 @@ mod tests {
         }
     }
 
-    struct TempDir(std::path::PathBuf);
-    impl TempDir {
-        fn new() -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("opencode-mom-provider-{}", uuid::Uuid::new_v4()));
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-    }
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
     #[test]
     fn update_provider_preserves_unknown_settings_fields() {
-        let temp_dir = TempDir::new();
-        let opencode_file = temp_dir.0.join("opencode.jsonc");
+        let temp_dir = tempfile::tempdir().unwrap();
+        let opencode_file = temp_dir.path().join("opencode.jsonc");
         fs::write(
             &opencode_file,
             r#"{

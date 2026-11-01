@@ -39,8 +39,8 @@ utils/
   counts rather than silently coercing them. Keep exact parsing and error behavior in the linked contracts.
 - **Calendar semantics**: Respect the supplied timezone and UTC period arithmetic; keep future/padding
   usage null rather than zero, with week and grid alignment defined in the linked contracts.
-- **Existing coverage**: Extend matching helper tests; model `.test.mjs` tests load `index.ts` through
-  Vite's `ssrLoadModule` and must close the server in `finally`.
+- **Existing coverage**: Extend matching helper tests; model selection and token-limit tests share
+  `__tests__/model-options.test.ts` and import helpers directly through Vitest.
 
 ## Details
 

@@ -437,3 +437,37 @@ test('inline edit echoes backend content unchanged after JavaScript numeric norm
   expect(mutation?.fields).not.toHaveProperty('nested');
   expect(mutation?.fields).not.toHaveProperty('array');
 });
+
+test('agentSchema validates id, description, steps, and permissions directly', async () => {
+  const { agentSchema, emptyAgentValues, fieldError } = await import('../agentForm.js');
+  const messages = {
+    idRequired: 'id required',
+    idReserved: 'reserved',
+    descriptionRequired: 'description required',
+    stepsInvalid: 'invalid steps',
+    permissionsInvalid: 'invalid permissions',
+  };
+  const schema = agentSchema(messages, true);
+  const valid = { ...emptyAgentValues, id: 'my-agent', description: 'Description' };
+  expect(schema.safeParse(valid).success).toBe(true);
+  expect(schema.safeParse({ ...valid, permission: '[{"action":"*","resource":"*","effect":"ask"}]' }).success).toBe(
+    true,
+  );
+
+  for (const [name, value, error] of [
+    ['id', '   ', messages.idRequired],
+    ['description', '  ', messages.descriptionRequired],
+    ['steps', '0', messages.stepsInvalid],
+    ['steps', '9007199254740992', messages.stepsInvalid],
+    ['permission', '{', messages.permissionsInvalid],
+    ['permission', '[1]', messages.permissionsInvalid],
+  ] as const) {
+    const result = schema.safeParse({ ...valid, [name]: value });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.find((issue) => issue.path[0] === name)?.message).toBe(error);
+  }
+  const reserved = schema.safeParse({ ...valid, id: 'build' });
+  expect(reserved.success).toBe(false);
+  expect(reserved.error?.issues.find((issue) => issue.path[0] === 'id')?.message).toBe(messages.idReserved);
+  expect(fieldError([{ message: 'bad field' }])).toBe('bad field');
+});

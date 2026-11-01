@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::json;
 use tauri::Manager;
-use uuid::Uuid;
 
 use super::*;
 use crate::error::ErrorCode;
@@ -13,27 +12,6 @@ use crate::http_server::HttpServer;
 use crate::mcp_proxy::config::{ProxyProtocol, ProxyServiceConfig};
 use crate::mcp_proxy::ProxyService;
 use crate::paths::ConfigPaths;
-
-struct TempHome(PathBuf);
-
-impl Drop for TempHome {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-impl TempHome {
-    fn new() -> Self {
-        let dir =
-            std::env::temp_dir().join(format!("opencode-mom-proxy-ipc-test-{}", Uuid::new_v4()));
-        fs::create_dir_all(&dir).unwrap();
-        Self(dir)
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
 
 #[test]
 fn dto_conversions_and_protocol_mapping() {
@@ -180,7 +158,7 @@ fn slugify_id_and_command_extraction() {
 
 #[test]
 fn ipc_crud_and_conflict_rejection() {
-    let home = TempHome::new();
+    let home = tempfile::tempdir().unwrap();
     let config_path = home.path().join("mcp-proxy.json");
 
     let service = Arc::new(ProxyService::new_with_path(config_path).expect("init service"));
@@ -639,7 +617,7 @@ fn http_initialization_failure_preserves_setup_proxy_ipc_and_files() {
         (Some(br#"{"port":23456}"#.as_slice()), true),
         (None, false),
     ] {
-        let home = TempHome::new();
+        let home = tempfile::tempdir().unwrap();
         let paths = ConfigPaths::with_resource_parts(
             home.path().to_path_buf(),
             None,
@@ -752,7 +730,7 @@ fn http_initialization_failure_preserves_setup_proxy_ipc_and_files() {
 
 #[test]
 fn occupied_http_port_does_not_block_setup_or_http_reconfiguration() {
-    let home = TempHome::new();
+    let home = tempfile::tempdir().unwrap();
     let paths = ConfigPaths::with_resource_parts(
         home.path().to_path_buf(),
         None,
@@ -823,7 +801,7 @@ fn occupied_http_port_does_not_block_setup_or_http_reconfiguration() {
 
 #[tokio::test]
 async fn exit_barrier_and_shutdown_lifecycle() {
-    let home = TempHome::new();
+    let home = tempfile::tempdir().unwrap();
     let config_path = home.path().join("mcp-proxy.json");
     let service = Arc::new(ProxyService::new_with_path(config_path).expect("init service"));
 

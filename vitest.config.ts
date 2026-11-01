@@ -3,11 +3,10 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [sveltekit()],
-  resolve: {
-    conditions: ['browser']
-  },
+  resolve: { conditions: ['browser'] },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.ts']
-  }
+    include: ['src/**/__tests__/*.test.ts'],
+    setupFiles: ['src/test-utils/setup.ts'],
+  },
 });

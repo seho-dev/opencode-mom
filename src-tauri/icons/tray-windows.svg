@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img">
+  <title>OpenCode-MOM Windows tray icon</title>
+  <path
+    d="M4 28V4H10L16 14L22 4H28V28H22V14L16 24L10 14V28Z"
+    fill="#071113"
+    stroke="#071113"
+    stroke-width="4"
+    stroke-linejoin="round"
+  />
+  <path d="M4 28V4H10L16 14L22 4H28V28H22V14L16 24L10 14V28Z" fill="#00e5ff" />
+</svg>

@@ -10,5 +10,12 @@ build/
 dist/
 /test-results/
 src-tauri/target/
+src-tauri/native/macos-helper/target/
 .graymatter/
 .slim
+.slim/deepwork/
+# BEGIN oh-my-opencode-slim worktrees
+.slim/worktrees/
+.slim/worktrees.json
+# END oh-my-opencode-slim worktrees
+.codegraph/

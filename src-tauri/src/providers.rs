@@ -1,0 +1,639 @@
+use std::collections::BTreeMap;
+use std::fmt;
+use std::path::Path;
+
+use serde::Deserialize;
+use serde_json::{Map, Value};
+
+use crate::document::{JsoncDoc, OPENCODE_SCHEMA};
+use crate::error::AppError;
+use crate::models::{ModelDef, ProviderDef};
+
+/// A stable OpenCode model reference. Only `provider/model` is valid.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ModelRef {
+    pub provider_id: String,
+    pub model_id: String,
+}
+
+impl ModelRef {
+    pub fn new(
+        provider_id: impl Into<String>,
+        model_id: impl Into<String>,
+    ) -> Result<Self, AppError> {
+        let provider_id = provider_id.into();
+        let model_id = model_id.into();
+        validate_id(&provider_id, IdKind::Provider)?;
+        validate_id(&model_id, IdKind::Model)?;
+        Ok(Self {
+            provider_id,
+            model_id,
+        })
+    }
+
+    pub fn parse(value: &str) -> Result<Self, AppError> {
+        // V2 selectors may carry a `#variant` suffix; it is not part of the model identity.
+        let value = value.split('#').next().unwrap_or(value);
+        let (provider_id, model_id) = value
+            .split_once('/')
+            .filter(|(provider_id, model_id)| !provider_id.is_empty() && !model_id.is_empty())
+            .ok_or_else(|| invalid_model_ref(value))?;
+        Self::new(provider_id, model_id)
+    }
+
+    pub fn as_str(&self) -> String {
+        format!("{}/{}", self.provider_id, self.model_id)
+    }
+}
+
+impl fmt::Display for ModelRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.as_str())
+    }
+}
+
+fn invalid_model_ref(value: &str) -> AppError {
+    AppError::validation(format!("invalid model reference: {value}"))
+}
+
+pub fn list_providers(opencode_file: &Path) -> Result<Vec<ProviderDef>, AppError> {
+    providers_from_root(JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?.raw())
+}
+
+pub fn custom_provider_ids(
+    opencode_file: &Path,
+) -> Result<std::collections::HashSet<String>, AppError> {
+    let doc = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
+    let raw = doc.raw();
+    let mut set = std::collections::HashSet::new();
+    if let Some(Value::Object(providers)) = raw.get("providers") {
+        for key in providers.keys() {
+            set.insert(key.clone());
+        }
+    }
+    Ok(set)
+}
+
+pub fn is_custom_provider(opencode_file: &Path, provider_id: &str) -> Result<bool, AppError> {
+    Ok(custom_provider_ids(opencode_file)?.contains(provider_id))
+}
+
+fn ensure_custom_provider_in_doc(
+    root: &Map<String, Value>,
+    provider_id: &str,
+) -> Result<(), AppError> {
+    let is_custom = root
+        .get("providers")
+        .and_then(Value::as_object)
+        .is_some_and(|providers| providers.contains_key(provider_id));
+    if !is_custom {
+        return Err(AppError::validation(format!(
+            "model operations are only allowed for custom providers: {provider_id}"
+        )));
+    }
+    Ok(())
+}
+
+pub fn get_provider(opencode_file: &Path, provider_id: &str) -> Result<ProviderDef, AppError> {
+    validate_id(provider_id, IdKind::Provider)?;
+    list_providers(opencode_file)?
+        .into_iter()
+        .find(|provider| provider.name == provider_id)
+        .ok_or_else(|| AppError::not_found(format!("provider not found: {provider_id}")))
+}
+
+pub fn create_provider(
+    opencode_file: &Path,
+    provider: ProviderDef,
+) -> Result<ProviderDef, AppError> {
+    validate_provider(&provider)?;
+    if provider
+        .package
+        .as_deref()
+        .is_none_or(|package| package.trim().is_empty())
+    {
+        return Err(AppError::validation("provider package is required"));
+    }
+    let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
+    let providers = providers_from_root(document.raw())?;
+    if providers.iter().any(|item| item.name == provider.name) {
+        return Err(AppError::validation(format!(
+            "provider already exists: {}",
+            provider.name
+        )));
+    }
+    document.patch(
+        &["providers", &provider.name],
+        Some(provider_value(&provider)),
+    )?;
+    document.save(opencode_file)?;
+    Ok(provider)
+}
+
+pub fn update_provider(
+    opencode_file: &Path,
+    provider: ProviderDef,
+) -> Result<ProviderDef, AppError> {
+    validate_provider(&provider)?;
+    let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
+    let providers = providers_from_root(document.raw())?;
+    let current = providers
+        .iter()
+        .find(|item| item.name == provider.name)
+        .ok_or_else(|| AppError::not_found(format!("provider not found: {}", provider.name)))?;
+    if current.models != provider.models {
+        return Err(AppError::validation(format!(
+            "provider updates cannot change models directly: providers.{}.models",
+            provider.name
+        )));
+    }
+    apply_patches(&mut document, provider_field_patches(&provider))?;
+    document.save(opencode_file)?;
+    Ok(provider)
+}
+
+pub fn delete_provider(opencode_file: &Path, provider_id: &str) -> Result<(), AppError> {
+    validate_id(provider_id, IdKind::Provider)?;
+    let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
+    let provider = provider_from_root_value(document.raw(), provider_id)?;
+    if !provider.models.is_empty() {
+        return Err(AppError::validation(format!(
+            "provider still contains models: {provider_id}"
+        )));
+    }
+    document.patch(&["providers", provider_id], None)?;
+    document.save(opencode_file)?;
+    Ok(())
+}
+
+pub fn create_model(
+    opencode_file: &Path,
+    provider_id: &str,
+    model: ModelDef,
+) -> Result<ModelDef, AppError> {
+    validate_id(provider_id, IdKind::Provider)?;
+    validate_id(&model.id, IdKind::Model)?;
+    let model = with_model_name(model);
+    let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
+    ensure_custom_provider_in_doc(document.raw(), provider_id)?;
+    let provider = provider_from_root_value(document.raw(), provider_id)?;
+    if provider.models.contains_key(&model.id) {
+        return Err(AppError::validation(format!(
+            "model already exists: {}/{}",
+            provider_id, model.id
+        )));
+    }
+    document.patch(
+        &["providers", provider_id, "models", &model.id],
+        Some(model_value(&model)),
+    )?;
+    document.save(opencode_file)?;
+    Ok(model)
+}
+
+pub fn update_model(
+    opencode_file: &Path,
+    model_ref: &ModelRef,
+    model: ModelDef,
+) -> Result<ModelDef, AppError> {
+    validate_id(&model.id, IdKind::Model)?;
+    if model.id != model_ref.model_id {
+        return Err(AppError::validation(format!(
+            "invalid model ID: {}",
+            model.id
+        )));
+    }
+    let model = with_model_name(model);
+    let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
+    ensure_custom_provider_in_doc(document.raw(), &model_ref.provider_id)?;
+    ensure_model_exists(document.raw(), model_ref)?;
+    apply_patches(&mut document, model_field_patches(model_ref, &model)?)?;
+    document.save(opencode_file)?;
+    Ok(model)
+}
+
+pub fn delete_model(opencode_file: &Path, model_ref: &ModelRef) -> Result<(), AppError> {
+    let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
+    ensure_custom_provider_in_doc(document.raw(), &model_ref.provider_id)?;
+    ensure_model_exists(document.raw(), model_ref)?;
+    let path = model_path_vec(model_ref);
+    let segments: Vec<&str> = path.iter().map(String::as_str).collect();
+    document.patch(&segments, None)?;
+    document.save(opencode_file)?;
+    Ok(())
+}
+
+fn apply_patches(
+    document: &mut JsoncDoc,
+    patches: Vec<(Vec<String>, Option<Value>)>,
+) -> Result<(), AppError> {
+    for (path, value) in patches {
+        let segments: Vec<_> = path.iter().map(String::as_str).collect();
+        document.patch(&segments, value)?;
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderPayload {
+    package: Option<String>,
+    settings: Option<crate::models::ProviderSettings>,
+    headers: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    models: BTreeMap<String, Value>,
+}
+
+fn providers_from_root(root: &Map<String, Value>) -> Result<Vec<ProviderDef>, AppError> {
+    let providers = match root.get("providers") {
+        None => return Ok(Vec::new()),
+        Some(Value::Object(providers)) => providers,
+        Some(_) => {
+            return Err(AppError::validation(
+                "invalid OpenCode provider shape at: providers",
+            ))
+        }
+    };
+    let mut parsed = providers
+        .iter()
+        .map(|(name, value)| provider_from_value(name, value))
+        .collect::<Result<Vec<_>, _>>()?;
+    parsed.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(parsed)
+}
+
+pub fn provider_from_root_value(
+    root: &Map<String, Value>,
+    provider_id: &str,
+) -> Result<ProviderDef, AppError> {
+    root.get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get(provider_id))
+        .ok_or_else(|| AppError::not_found(format!("provider not found: {provider_id}")))
+        .and_then(|value| provider_from_value(provider_id, value))
+}
+
+fn provider_from_value(name: &str, value: &Value) -> Result<ProviderDef, AppError> {
+    validate_id(name, IdKind::Provider)?;
+    let payload: ProviderPayload = serde_json::from_value(value.clone()).map_err(|_| {
+        AppError::validation(format!(
+            "invalid OpenCode provider shape at: providers.{name}"
+        ))
+    })?;
+    let mut models = BTreeMap::new();
+    for (model_id, model_value) in payload.models {
+        let model = model_from_value(&model_id, model_value)?;
+        models.insert(model_id, model);
+    }
+    Ok(ProviderDef {
+        name: name.to_owned(),
+        package: payload.package,
+        settings: payload.settings,
+        headers: payload.headers,
+        models,
+    })
+}
+
+pub fn model_from_value(id: &str, value: Value) -> Result<ModelDef, AppError> {
+    validate_id(id, IdKind::Model)?;
+    #[derive(Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    struct ModelPayload {
+        name: Option<String>,
+        family: Option<String>,
+        disabled: Option<bool>,
+        capabilities: Option<crate::models::ModelCapabilities>,
+        cost: Option<crate::models::ModelCost>,
+        limit: Option<crate::models::ModelLimit>,
+        settings: Option<BTreeMap<String, Value>>,
+        headers: Option<BTreeMap<String, String>>,
+        variants: Option<Vec<crate::models::ModelVariant>>,
+    }
+    let payload: ModelPayload = serde_json::from_value(value).map_err(|_| {
+        AppError::validation(format!(
+            "invalid OpenCode provider shape at: providers.*.models.{id}"
+        ))
+    })?;
+    Ok(ModelDef {
+        id: id.to_owned(),
+        name: payload.name,
+        family: payload.family,
+        disabled: payload.disabled,
+        capabilities: payload.capabilities,
+        cost: payload.cost,
+        limit: payload.limit,
+        settings: payload.settings,
+        headers: payload.headers,
+        variants: payload.variants,
+    })
+}
+
+fn provider_value(provider: &ProviderDef) -> Value {
+    let mut value = Map::new();
+    put_optional(
+        &mut value,
+        "package",
+        provider.package.clone().map(Value::String),
+    );
+    put_optional(
+        &mut value,
+        "settings",
+        provider.settings.as_ref().and_then(to_value),
+    );
+    put_optional(
+        &mut value,
+        "headers",
+        provider.headers.as_ref().and_then(to_value),
+    );
+    let models = provider
+        .models
+        .iter()
+        .map(|(id, model)| (id.clone(), model_value(model)))
+        .collect();
+    value.insert("models".to_owned(), Value::Object(models));
+    Value::Object(value)
+}
+
+/// The model id is stored both as the map key and as the `name` field, so the UI only collects it once.
+fn with_model_name(mut model: ModelDef) -> ModelDef {
+    model.name = Some(model.id.clone());
+    model
+}
+
+pub fn model_value(model: &ModelDef) -> Value {
+    let mut value = Map::new();
+    put_optional(&mut value, "name", model.name.clone().map(Value::String));
+    put_optional(
+        &mut value,
+        "family",
+        model.family.clone().map(Value::String),
+    );
+    put_optional(&mut value, "disabled", model.disabled.map(Value::Bool));
+    put_optional(
+        &mut value,
+        "capabilities",
+        model.capabilities.as_ref().and_then(to_value),
+    );
+    put_optional(&mut value, "cost", model.cost.as_ref().and_then(to_value));
+    put_optional(&mut value, "limit", model.limit.as_ref().and_then(to_value));
+    put_optional(
+        &mut value,
+        "settings",
+        model.settings.as_ref().and_then(to_value),
+    );
+    put_optional(
+        &mut value,
+        "headers",
+        model.headers.as_ref().and_then(to_value),
+    );
+    put_optional(
+        &mut value,
+        "variants",
+        model.variants.as_ref().and_then(to_value),
+    );
+    Value::Object(value)
+}
+
+fn provider_field_patches(provider: &ProviderDef) -> Vec<(Vec<String>, Option<Value>)> {
+    let mut patches = vec![
+        (
+            vec![
+                "providers".to_owned(),
+                provider.name.clone(),
+                "package".to_owned(),
+            ],
+            provider.package.clone().map(Value::String),
+        ),
+        (
+            vec![
+                "providers".to_owned(),
+                provider.name.clone(),
+                "headers".to_owned(),
+            ],
+            provider.headers.as_ref().and_then(to_value),
+        ),
+    ];
+    if let Some(ref s) = provider.settings {
+        patches.push((
+            vec![
+                "providers".to_owned(),
+                provider.name.clone(),
+                "settings".to_owned(),
+                "apiKey".to_owned(),
+            ],
+            s.api_key.clone().map(Value::String),
+        ));
+        patches.push((
+            vec![
+                "providers".to_owned(),
+                provider.name.clone(),
+                "settings".to_owned(),
+                "baseURL".to_owned(),
+            ],
+            s.base_url.clone().map(Value::String),
+        ));
+    }
+    patches
+}
+
+const MODEL_FIELDS: &[&str] = &[
+    "name",
+    "family",
+    "disabled",
+    "capabilities",
+    "cost",
+    "limit",
+    "settings",
+    "headers",
+    "variants",
+];
+
+type FieldPatch = (Vec<String>, Option<Value>);
+
+fn model_field_patches(
+    model_ref: &ModelRef,
+    model: &ModelDef,
+) -> Result<Vec<FieldPatch>, AppError> {
+    let base = model_path_vec(model_ref);
+    let value = model_value(model);
+    let updated = value
+        .as_object()
+        .ok_or_else(|| AppError::configuration("model value must be an object"))?;
+    Ok(updated
+        .iter()
+        .map(|(field, value)| {
+            let mut path = base.clone();
+            path.push(field.clone());
+            (path, Some(value.clone()))
+        })
+        .chain(
+            MODEL_FIELDS
+                .iter()
+                .filter(|field| !updated.contains_key(**field))
+                .map(|field| {
+                    let mut path = base.clone();
+                    path.push((*field).to_owned());
+                    (path, None)
+                }),
+        )
+        .collect())
+}
+
+pub fn model_path_vec(model_ref: &ModelRef) -> Vec<String> {
+    vec![
+        "providers".to_owned(),
+        model_ref.provider_id.clone(),
+        "models".to_owned(),
+        model_ref.model_id.clone(),
+    ]
+}
+
+fn put_optional(target: &mut Map<String, Value>, key: &str, value: Option<Value>) {
+    if let Some(value) = value {
+        target.insert(key.to_owned(), value);
+    }
+}
+
+fn to_value<T: serde::Serialize>(value: T) -> Option<Value> {
+    serde_json::to_value(value).ok()
+}
+
+fn validate_provider(provider: &ProviderDef) -> Result<(), AppError> {
+    validate_id(&provider.name, IdKind::Provider)?;
+    for (id, model) in &provider.models {
+        if id != &model.id {
+            return Err(AppError::validation(format!(
+                "invalid model ID: {}",
+                model.id
+            )));
+        }
+        validate_id(&model.id, IdKind::Model)?;
+    }
+    Ok(())
+}
+
+enum IdKind {
+    Provider,
+    Model,
+}
+
+fn validate_id(value: &str, kind: IdKind) -> Result<(), AppError> {
+    // V2 model IDs may contain `/` (e.g. openrouter/anthropic/claude) but never `#`.
+    if !(value.is_empty()
+        || value.trim() != value
+        || value.contains('#')
+        || (matches!(kind, IdKind::Provider) && value.contains('/'))
+        || value.chars().any(char::is_whitespace))
+    {
+        return Ok(());
+    }
+    Err(match kind {
+        IdKind::Provider => AppError::validation(format!("invalid provider ID: {value}")),
+        IdKind::Model => AppError::validation(format!("invalid model ID: {value}")),
+    })
+}
+
+fn ensure_model_exists(root: &Map<String, Value>, model_ref: &ModelRef) -> Result<(), AppError> {
+    let exists = provider_from_root_value(root, &model_ref.provider_id)
+        .map(|provider| provider.models.contains_key(&model_ref.model_id))
+        .or_else(|error| match error.code {
+            crate::error::ErrorCode::NotFound => Ok(false),
+            _ => Err(error),
+        })?;
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::not_found(format!(
+            "model not found: {}",
+            model_ref.as_str()
+        )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn model_patches_set_present_fields_and_remove_absent_fields() {
+        let model_ref = ModelRef::parse("custom/nested/model").unwrap();
+        let model = model_from_value("nested/model", serde_json::json!({"name": "Model"})).unwrap();
+        let patches = model_field_patches(&model_ref, &model).unwrap();
+        assert_eq!(patches.len(), MODEL_FIELDS.len());
+        for field in MODEL_FIELDS {
+            let mut path = model_path_vec(&model_ref);
+            path.push((*field).to_owned());
+            let value = if *field == "name" {
+                Some(serde_json::json!("Model"))
+            } else {
+                None
+            };
+            assert!(patches.contains(&(path, value)), "{field}");
+        }
+    }
+
+    #[test]
+    fn update_provider_preserves_unknown_settings_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let opencode_file = temp_dir.path().join("opencode.jsonc");
+        fs::write(
+            &opencode_file,
+            r#"{
+  "providers": {
+    "custom_llm": {
+      "package": "@pkg/old",
+      "settings": {
+        "apiKey": "sk-12345",
+        "baseURL": "https://old.api.com",
+        "vendorExtra": {
+          "customOption": "preserved_value"
+        }
+      },
+      "models": {}
+    }
+  }
+}"#,
+        )
+        .unwrap();
+
+        let mut provider = get_provider(&opencode_file, "custom_llm").unwrap();
+        provider.package = Some("@pkg/new".to_owned());
+        update_provider(&opencode_file, provider).unwrap();
+
+        let updated_doc = JsoncDoc::read(&opencode_file, OPENCODE_SCHEMA).unwrap();
+        let raw = updated_doc.raw();
+        let provider_val = raw
+            .get("providers")
+            .and_then(Value::as_object)
+            .and_then(|p| p.get("custom_llm"))
+            .and_then(Value::as_object)
+            .unwrap();
+
+        assert_eq!(
+            provider_val.get("package").and_then(Value::as_str),
+            Some("@pkg/new")
+        );
+
+        let settings = provider_val
+            .get("settings")
+            .and_then(Value::as_object)
+            .unwrap();
+        assert_eq!(
+            settings.get("apiKey").and_then(Value::as_str),
+            Some("sk-12345")
+        );
+        assert_eq!(
+            settings.get("baseURL").and_then(Value::as_str),
+            Some("https://old.api.com")
+        );
+        let vendor_extra = settings
+            .get("vendorExtra")
+            .and_then(Value::as_object)
+            .unwrap();
+        assert_eq!(
+            vendor_extra.get("customOption").and_then(Value::as_str),
+            Some("preserved_value")
+        );
+    }
+}

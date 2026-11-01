@@ -5,11 +5,11 @@
     "baseColor": "neutral"
   },
   "aliases": {
-    "lib": "$lib",
-    "utils": "$lib/utils",
-    "components": "$lib/components",
-    "ui": "$lib/components/ui",
-    "hooks": "$lib/hooks"
+    "lib": "$src",
+    "utils": "$src/utils/index",
+    "components": "$src/components",
+    "ui": "$src/components",
+    "hooks": "$src/hooks"
   },
   "typescript": true,
   "registry": "https://shadcn-svelte.com/registry/styles/vega"

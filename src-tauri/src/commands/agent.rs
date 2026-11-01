@@ -1,0 +1,364 @@
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use tauri::State;
+use uuid::Uuid;
+
+use crate::agents::{
+    self, AgentCreate, AgentDefinition, AgentFieldOverride, AgentMutation, AgentReferenceIndex,
+    AgentSource, AgentStorage, InlineAgentSource, MarkdownAgentSource,
+};
+use crate::error::AppError;
+use crate::paths::{reject_project_write, ConfigPaths};
+use crate::providers;
+use crate::refs;
+
+type CommandResult<T> = Result<T, AppError>;
+
+/// One V2 permission rule: ordered `{action, resource, effect}` entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPermissionRule {
+    pub action: String,
+    pub resource: String,
+    pub effect: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDefinitionDto {
+    pub id: String,
+    pub source: AgentSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage: Option<AgentStorageDto>,
+    #[serde(default)]
+    pub sources: Vec<AgentSourcePreviewDto>,
+    #[serde(default)]
+    pub overrides: Vec<AgentFieldOverride>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mutation: Option<AgentMutation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inline: Option<Map<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub markdown: Option<Map<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective: Option<Map<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hidden: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steps: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<Vec<AgentPermissionRule>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentStorageDto {
+    Inline,
+    GlobalMarkdown,
+}
+
+impl From<AgentStorageDto> for AgentStorage {
+    fn from(storage: AgentStorageDto) -> Self {
+        match storage {
+            AgentStorageDto::Inline => Self::Inline,
+            AgentStorageDto::GlobalMarkdown => Self::GlobalMarkdown,
+        }
+    }
+}
+
+impl From<AgentStorage> for AgentStorageDto {
+    fn from(storage: AgentStorage) -> Self {
+        match storage {
+            AgentStorage::Inline => Self::Inline,
+            AgentStorage::GlobalMarkdown => Self::GlobalMarkdown,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSourcePreviewDto {
+    pub storage: AgentStorageDto,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub resolved_path: String,
+    #[serde(default)]
+    pub content: String,
+    pub raw: Value,
+    pub fields: Map<String, Value>,
+    pub prompt: Option<String>,
+}
+
+impl From<AgentDefinition> for AgentDefinitionDto {
+    fn from(agent: AgentDefinition) -> Self {
+        let storage = match agent.source {
+            AgentSource::Inline => Some(AgentStorageDto::Inline),
+            AgentSource::Markdown => unique_markdown_storage(&agent),
+            AgentSource::Both => None,
+        };
+        let inline = agent.inline.and_then(|source| object(source.raw));
+        let markdown = markdown_fields(&agent.markdown);
+        let effective = object(agent.effective);
+        let fields = effective.as_ref();
+        Self {
+            id: agent.id,
+            source: agent.source,
+            storage,
+            sources: source_previews(&agent.inline_sources, &agent.markdown),
+            overrides: agent.overrides,
+            mutation: None,
+            inline,
+            markdown,
+            model_ref: string_field(fields, "model"),
+            mode: string_field(fields, "mode"),
+            description: string_field(fields, "description"),
+            disabled: bool_field(fields, "disabled"),
+            hidden: bool_field(fields, "hidden"),
+            color: string_field(fields, "color"),
+            prompt: string_field(fields, "system"),
+            steps: unsigned_field(fields, "steps"),
+            permissions: permission_rules(fields),
+            effective,
+        }
+    }
+}
+
+/// Reads a V2 `permissions` array; anything but well-formed rules yields `None`.
+fn permission_rules(fields: Option<&Map<String, Value>>) -> Option<Vec<AgentPermissionRule>> {
+    let rules = fields?.get("permissions")?.as_array()?.clone();
+    serde_json::from_value(Value::Array(rules)).ok()
+}
+
+fn source_previews(
+    inline: &[InlineAgentSource],
+    markdown: &[MarkdownAgentSource],
+) -> Vec<AgentSourcePreviewDto> {
+    let mut sources = Vec::new();
+    for inline in inline {
+        sources.push(AgentSourcePreviewDto {
+            storage: AgentStorageDto::Inline,
+            path: Some(inline.path.display().to_string()),
+            resolved_path: inline.resolved_path.display().to_string(),
+            // Generate before JavaScript can normalize floats or round large integers.
+            content: inline.raw.to_string(),
+            fields: inline.raw.as_object().cloned().unwrap_or_default(),
+            raw: inline.raw.clone(),
+            prompt: None,
+        });
+    }
+    sources.extend(markdown.iter().map(|source| {
+        let mut fields = source.frontmatter.clone();
+        fields.remove("prompt");
+        AgentSourcePreviewDto {
+            storage: source.storage.into(),
+            path: Some(source.path.display().to_string()),
+            resolved_path: source.resolved_path.display().to_string(),
+            content: source.raw.clone(),
+            raw: Value::String(source.raw.clone()),
+            fields,
+            prompt: Some(source.prompt.clone()),
+        }
+    }));
+    sources
+}
+
+fn unique_markdown_storage(agent: &AgentDefinition) -> Option<AgentStorageDto> {
+    let mut storages = agent.markdown.iter().map(|source| source.storage);
+    let storage = storages.next()?;
+    storages
+        .all(|candidate| candidate == storage)
+        .then_some(storage.into())
+}
+
+fn markdown_fields(markdown: &[MarkdownAgentSource]) -> Option<Map<String, Value>> {
+    let mut fields = Map::new();
+    for source in markdown {
+        fields.extend(source.frontmatter.clone());
+        // The Markdown body is the V2 system prompt.
+        fields.insert("system".to_owned(), Value::String(source.prompt.clone()));
+    }
+    (!fields.is_empty()).then_some(fields)
+}
+
+fn object(value: Value) -> Option<Map<String, Value>> {
+    match value {
+        Value::Object(value) => Some(value),
+        _ => None,
+    }
+}
+
+fn string_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<String> {
+    fields?.get(key)?.as_str().map(ToOwned::to_owned)
+}
+
+fn bool_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<bool> {
+    fields?.get(key)?.as_bool()
+}
+
+fn unsigned_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<u64> {
+    fields?.get(key)?.as_u64()
+}
+
+#[tauri::command]
+pub async fn list_agents(
+    state: State<'_, ConfigPaths>,
+    project_id: Option<Uuid>,
+) -> CommandResult<Vec<AgentDefinitionDto>> {
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Agent discovery", move || {
+        let agents = agents::list(&paths.for_project(project_id)?)?;
+        Ok(agents.into_iter().map(Into::into).collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_agent(
+    state: State<'_, ConfigPaths>,
+    id: String,
+    project_id: Option<Uuid>,
+) -> CommandResult<AgentDefinitionDto> {
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Read agent", move || {
+        agents::get(&paths.for_project(project_id)?, &id).map(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn create_agent(
+    state: State<'_, ConfigPaths>,
+    agent: AgentDefinitionDto,
+    project_id: Option<Uuid>,
+) -> CommandResult<AgentDefinitionDto> {
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Create agent", move || {
+        reject_project_write(project_id)?;
+        let storage = agent.storage.map(Into::into).ok_or_else(|| {
+            AppError::validation("agent creation requires an explicit storage target")
+        })?;
+        let mutation = agent.mutation.unwrap_or_default();
+        validate_agent_model_reference(&paths, &mutation.fields)?;
+        agents::create(
+            &paths,
+            AgentCreate {
+                id: agent.id,
+                storage,
+                fields: mutation.fields,
+                prompt: mutation.prompt,
+            },
+        )
+        .map(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn update_agent(
+    state: State<'_, ConfigPaths>,
+    agent: AgentDefinitionDto,
+    project_id: Option<Uuid>,
+) -> CommandResult<AgentDefinitionDto> {
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Update agent", move || {
+        reject_project_write(project_id)?;
+        let storage = agent.storage.map(Into::into).ok_or_else(|| {
+            AppError::validation("agent update requires an explicit storage target")
+        })?;
+        let mutation = agent.mutation.unwrap_or_default();
+        validate_agent_model_reference(&paths, &mutation.fields)?;
+        agents::update(&paths, &agent.id, storage, mutation).map(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_agent(
+    state: State<'_, ConfigPaths>,
+    id: String,
+    storage: Option<AgentStorageDto>,
+    project_id: Option<Uuid>,
+) -> CommandResult<()> {
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Delete agent", move || {
+        reject_project_write(project_id)?;
+        let storage: AgentStorage = match storage {
+            Some(storage) => storage.into(),
+            None => {
+                let current: AgentDefinition = agents::get(&paths, &id)?;
+                match current.source {
+                    AgentSource::Inline => AgentStorage::Inline,
+                    AgentSource::Both => {
+                        return Err(AppError::validation(
+                            "agent has multiple sources; provide an explicit storage target",
+                        ));
+                    }
+                    AgentSource::Markdown => {
+                        let mut storages = current.markdown.iter().map(|source| source.storage);
+                        let first = storages.next().ok_or_else(|| {
+                            AppError::validation(
+                                "agent has multiple sources; provide an explicit storage target",
+                            )
+                        })?;
+                        if storages.all(|candidate| candidate == first) {
+                            first
+                        } else {
+                            return Err(AppError::validation(
+                                "agent has multiple sources; provide an explicit storage target",
+                            ));
+                        }
+                    }
+                }
+            }
+        };
+        let references: AgentReferenceIndex = refs::collect_agent_references(&paths)?;
+        agents::delete(&paths, &id, storage, &references).map(|_| ())
+    })
+    .await
+}
+
+fn validate_agent_model_reference(
+    paths: &ConfigPaths,
+    fields: &serde_json::Map<String, Value>,
+) -> CommandResult<()> {
+    let Some(model) = fields.get("model") else {
+        return Ok(());
+    };
+    let model = model
+        .as_str()
+        .ok_or_else(|| AppError::validation("agent model must be a string when provided"))?;
+    if model.is_empty() {
+        return Ok(());
+    }
+    let model_ref = crate::providers::ModelRef::parse(model).map_err(|error| {
+        AppError::validation(format!("agent model must be provider/model: {error}"))
+    })?;
+    let provider = providers::get_provider(&paths.opencode_file(), &model_ref.provider_id)
+        .map_err(|error| {
+            AppError::validation(format!(
+                "agent model '{}' does not exist: {error}",
+                model_ref.as_str()
+            ))
+        })?;
+    if provider.models.contains_key(&model_ref.model_id) {
+        Ok(())
+    } else {
+        Err(AppError::validation(format!(
+            "agent model '{}' does not exist",
+            model_ref.as_str()
+        )))
+    }
+}

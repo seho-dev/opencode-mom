@@ -1,0 +1,346 @@
+/* Forms: panels, grids, fields, key-value rows and fieldset groups. */
+.form-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: 860px;
+  padding: 24px;
+  overflow: hidden;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 16px;
+}
+.field {
+  display: grid;
+  gap: 8px;
+}
+.field.full {
+  grid-column: 1 / -1;
+}
+.field label,
+.group-title {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.field input:not([type="checkbox"]):not([type="radio"]),
+.field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  background: var(--surface-input);
+  color: var(--text-primary);
+  min-height: 36px;
+  padding: 8px 10px;
+}
+.field textarea {
+  min-height: 132px;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Agent storage-source radios: size the raw control to the compact form scale. */
+.check-row.source-options {
+  gap: 16px;
+}
+.check-row.source-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.check-row.source-options input[type="radio"] {
+  flex: none;
+  inline-size: 14px;
+  block-size: 14px;
+  margin: 0;
+  accent-color: var(--accent-primary);
+}
+.form-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+/* Only the explicit form page owns the available workspace height. */
+.content:has(> .form-page) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.form-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.form-page > :not(.form-panel) {
+  flex-shrink: 0;
+}
+.form-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 4px 12px;
+  /* Breathing room so focus outlines on edge fields are not clipped and the
+     last field clears the pinned footer. */
+  padding: 4px 4px 8px;
+}
+.form-panel textarea {
+  resize: vertical;
+}
+.field-hint,
+.form-hint,
+.form-body :where(small.muted, p.muted) {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.field-hint {
+  display: block;
+}
+.form-hint {
+  grid-column: 1 / -1;
+}
+.form-body .field > .field-hint {
+  margin-top: -4px;
+}
+.group-submit {
+  min-height: 32px;
+  border: 1px solid var(--accent-solid);
+  border-radius: 2px;
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
+  padding: 0 16px;
+  font-family: var(--font-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.group-submit:hover {
+  background: var(--accent-primary);
+}
+.group-submit:disabled {
+  cursor: not-allowed;
+  opacity: var(--disabled-opacity);
+}
+.type-note {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border-default);
+  border-left: 2px solid var(--accent-primary);
+  padding: 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 20px;
+}
+.dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dialog-field label {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.dialog-field p {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+.group-fieldset {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.group-fieldset legend {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.group-fieldset legend span {
+  margin-left: 8px;
+  color: var(--text-muted);
+}
+/* Model form: numeric sub-fields, variant rows and inline errors. */
+.field textarea.small {
+  min-height: 72px;
+}
+.num-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+.sub-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.sub-field label {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.sub-field input {
+  width: 100%;
+  min-width: 0;
+}
+.num-section-label {
+  margin: 12px 0 6px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.field-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--status-error);
+  font-size: 11px;
+  line-height: 16px;
+}
+.form-body > .state-banner,
+.form-body > .field-error,
+.form-body > .form-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.form-body > .state-banner {
+  overflow-wrap: anywhere;
+}
+.variant-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr) 32px;
+  gap: 8px;
+  align-items: start;
+  margin-top: 8px;
+}
+.mapping-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.6fr) 32px;
+  gap: 8px;
+  align-items: start;
+  margin-top: 8px;
+}
+.mapping-row .combo,
+.mapping-row .select {
+  min-width: 0;
+}
+.variant-row input,
+.variant-row textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  background: var(--surface-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+.variant-row input {
+  min-height: 32px;
+}
+.variant-row textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+.variants-actions {
+  margin-top: 12px;
+}
+/* Agent form: sectioned fieldsets, compact limits grid and permission rule rows. */
+.form-section {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  padding-top: 16px;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.form-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.form-section > legend {
+  margin: 0 0 14px;
+  padding: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.form-section .form-grid {
+  gap: 16px;
+}
+.limits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px 16px;
+  align-items: start;
+}
+.field-required {
+  margin-left: 4px;
+  color: var(--status-error);
+}
+.permission-rule-head,
+.permission-rule-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr) 130px 96px;
+  gap: 8px;
+  align-items: center;
+}
+.permission-rule-head {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.permission-rule-row {
+  margin-bottom: 8px;
+}
+.permission-rule-row input {
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  background: var(--surface-input);
+  color: var(--text-primary);
+  padding: 6px 8px;
+}
+.permission-rule-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.permission-add {
+  margin-bottom: 14px;
+}

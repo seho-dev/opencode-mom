@@ -1,0 +1,453 @@
+<script lang="ts">
+import { Eye, Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
+import { untrack } from 'svelte';
+import { Button } from '$src/components/button/index.js';
+import { readError } from '$src/components/configuration/read-error.js';
+import DataTable from '$src/components/DataTable.svelte';
+import * as Dialog from '$src/components/dialog/index.js';
+import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
+import PageHead from '$src/components/PageHead.svelte';
+import ResourceScope from '$src/components/ResourceScope.svelte';
+import Select from '$src/components/Select.svelte';
+import { getConfig } from '$src/config/context.js';
+import { getI18n } from '$src/i18n/context.js';
+import type { AgentDefinition, AgentStorage } from '$src/types/agents.js';
+import {
+  GROUP_TYPE_NATIVE,
+  GROUP_TYPE_OMO,
+  GROUP_TYPE_SLIM,
+  GROUP_TYPES,
+  type GroupType,
+  STORAGE_OPTIONS,
+} from '$src/utils/constants.js';
+import { BUILTIN_AGENTS, type BuiltinAgent, isBuiltinAgentId } from '$src/utils/index.js';
+
+type AgentTab = 'custom' | 'native' | 'slim' | 'omo';
+const config = getConfig();
+const i18n = getI18n();
+const defaultPlugin = $derived(config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE);
+const pluginTabOrder = $derived<GroupType[]>([defaultPlugin, ...GROUP_TYPES.filter((type) => type !== defaultPlugin)]);
+const tabOrder = $derived<AgentTab[]>(['custom', ...pluginTabOrder]);
+let query = $state('');
+let deleting = $state<string | null>(null);
+let refreshing = $state(false);
+let projectAgents = $state<AgentDefinition[]>([]);
+let projectLoading = $state(false);
+let projectError = $state('');
+let comparisonAgents = $state<AgentDefinition[]>([]);
+let comparisonLoading = $state(false);
+let comparisonError = $state('');
+let showGlobal = $state(false);
+let request = 0;
+let comparisonRequest = 0;
+const projectId = $derived(config.selectedProjectId ?? null);
+let storage = $state<AgentStorage>('inline');
+let activeTab = $state<AgentTab>('custom');
+let customTabEl = $state<HTMLButtonElement | null>(null);
+let nativeTabEl = $state<HTMLButtonElement | null>(null);
+let slimTabEl = $state<HTMLButtonElement | null>(null);
+let omoTabEl = $state<HTMLButtonElement | null>(null);
+const pageSize = 5;
+let page = $state(1);
+// Only truly custom agents (not catalog ids) are editable or deletable.
+const globalAgents = $derived(config.agents.filter((agent) => !isBuiltinAgentId(agent.id)));
+const customAgents = $derived(projectId === null ? globalAgents : projectAgents);
+const entries = $derived([
+  ...customAgents.map((entry) => ({ entry, projectId })),
+  ...(projectId && showGlobal ? comparisonAgents.map((entry) => ({ entry, projectId: null })) : []),
+]);
+const agents = $derived(
+  entries.filter(({ entry: agent }) =>
+    `${agent.id} ${agent.description ?? ''}`.toLowerCase().includes(query.toLowerCase()),
+  ),
+);
+const nativeAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === GROUP_TYPE_NATIVE));
+const slimAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === GROUP_TYPE_SLIM));
+const omoAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === GROUP_TYPE_OMO));
+const maxPage = $derived(Math.max(1, Math.ceil(agents.length / pageSize)));
+const currentPage = $derived(Math.min(page, maxPage));
+const pagedAgents = $derived(agents.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+$effect(() => {
+  // Reset to the first page whenever the filtered row count changes (search or delete).
+  void agents.length;
+  page = 1;
+});
+function selectTab(tab: AgentTab) {
+  activeTab = tab;
+  query = '';
+  page = 1;
+}
+function tabElement(tab: AgentTab) {
+  return tab === 'custom' ? customTabEl : tab === 'native' ? nativeTabEl : tab === 'slim' ? slimTabEl : omoTabEl;
+}
+function onTabKeys(event: KeyboardEvent) {
+  const index = tabOrder.indexOf(activeTab);
+  let next: AgentTab;
+  if (event.key === 'ArrowRight') next = tabOrder[(index + 1) % tabOrder.length] ?? 'custom';
+  else if (event.key === 'ArrowLeft') next = tabOrder[(index - 1 + tabOrder.length) % tabOrder.length] ?? 'custom';
+  else if (event.key === 'Home') next = tabOrder[0] ?? 'custom';
+  else if (event.key === 'End') next = tabOrder[tabOrder.length - 1] ?? 'custom';
+  else return;
+  event.preventDefault();
+  selectTab(next);
+  tabElement(next)?.focus();
+}
+const canSelect = $derived(!!deleting && config.agents.find((agent) => agent.id === deleting)?.source === 'both');
+$effect(() => {
+  const scope = projectId;
+  query = '';
+  page = 1;
+  deleting = null;
+  projectAgents = [];
+  projectError = '';
+  if (scope !== null)
+    untrack(() => {
+      void loadProject(scope);
+    });
+  else projectLoading = false;
+  return () => {
+    request += 1;
+  };
+});
+async function loadProject(scope: string) {
+  const id = ++request;
+  projectLoading = true;
+  projectError = '';
+  try {
+    const result = await config.listAgents(scope);
+    if (id === request) projectAgents = result;
+  } catch (cause) {
+    if (id === request) {
+      projectAgents = [];
+      projectError = readError(cause);
+    }
+  } finally {
+    if (id === request) projectLoading = false;
+  }
+}
+$effect(() => {
+  const compare = projectId !== null && showGlobal;
+  comparisonAgents = [];
+  comparisonError = '';
+  if (compare)
+    untrack(() => {
+      void loadComparison();
+    });
+  else comparisonLoading = false;
+  return () => {
+    comparisonRequest += 1;
+  };
+});
+async function loadComparison() {
+  const id = ++comparisonRequest;
+  comparisonLoading = true;
+  comparisonAgents = [];
+  comparisonError = '';
+  try {
+    const result = await config.listAgents();
+    if (id === comparisonRequest) comparisonAgents = result.filter((agent) => !isBuiltinAgentId(agent.id));
+  } catch (cause) {
+    if (id === comparisonRequest) comparisonError = readError(cause);
+  } finally {
+    if (id === comparisonRequest) comparisonLoading = false;
+  }
+}
+async function refresh() {
+  if (config.loading || config.saving || refreshing) return;
+  if (projectId !== null) {
+    await Promise.all([loadProject(projectId), ...(showGlobal ? [loadComparison()] : [])]);
+    return;
+  }
+  refreshing = true;
+  try {
+    await config.refresh(true);
+  } finally {
+    refreshing = false;
+  }
+}
+async function remove() {
+  if (!deleting || projectId !== null || config.saving) return;
+  try {
+    await config.deleteAgent(deleting, canSelect ? storage : undefined);
+    deleting = null;
+  } catch {
+    /* ConfigFeedback renders the command error. */
+  }
+}
+</script>
+
+<svelte:head><title>{i18n.t('agents.metaTitle')}</title></svelte:head>
+<PageHead eyebrow={i18n.t('agents.eyebrow')} title={i18n.t('agents.title')}
+  >{#snippet children()}
+    <div class="flex flex-wrap justify-end gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={config.loading || config.saving || refreshing || projectLoading || comparisonLoading}
+        aria-busy={refreshing || projectLoading || comparisonLoading}
+        onclick={refresh}
+      >
+        <RefreshCw
+          size={14}
+          class={refreshing || projectLoading || comparisonLoading ? 'animate-spin motion-reduce:animate-none' : ''}
+          aria-hidden="true"
+        /> {i18n.t('configuration.refresh')}
+      </Button>
+      {#if activeTab === 'custom' && projectId === null}
+        <Button size="sm" href="/agents/new"><Plus size={14} /> {i18n.t('agents.new')}</Button>
+      {/if}
+    </div>
+  {/snippet}</PageHead
+>
+<ResourceScope disabled={!!deleting || config.saving} bind:showGlobal />
+{#if activeTab === 'custom' && projectId !== null && showGlobal}
+  {#if comparisonLoading}
+    <div class="state-banner" role="status">{i18n.t('scope.global')} · {i18n.t('common.loadingConfiguration')}</div>
+  {/if}
+  {#if comparisonError}
+    <div class="state-banner error" role="alert">
+      <span class="min-w-0 break-words [overflow-wrap:anywhere]"
+        >{i18n.t('scope.globalComparisonFailed')} {comparisonError}</span
+      ><Button variant="outline" size="sm" onclick={loadComparison}>{i18n.t('configuration.retry')}</Button>
+    </div>
+  {/if}
+{/if}
+{#if activeTab === 'custom' && projectError}
+  <div class="state-banner error" role="alert">
+    <span class="min-w-0 break-words [overflow-wrap:anywhere]">{i18n.t('agents.loadFailed')} {projectError}</span
+    ><Button variant="outline" size="sm" onclick={() => { if (projectId !== null) void loadProject(projectId); }}
+      >{i18n.t('configuration.retry')}</Button
+    >
+  </div>
+{/if}
+
+{#snippet builtinTable(label: string, list: BuiltinAgent[])}
+  <DataTable {label} total={list.length} pageSize={list.length}
+    ><thead>
+      <tr>
+        <th>{i18n.t('agents.colId')}</th>
+        <th>{i18n.t('common.type')}</th>
+        <th>{i18n.t('common.description')}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {#if !list.length}
+        <EmptyTableRow colspan={3} message={i18n.t('empty.agents')} />
+      {:else}
+        {#each list as agent}
+          <tr>
+            <td class="model-name">{agent.id}</td>
+            <td>{agent.type}</td>
+            <td>{agent.description}</td>
+          </tr>
+        {/each}
+      {/if}
+    </tbody></DataTable
+  >
+{/snippet}
+
+{#if activeTab === 'custom'}
+  <div class="search-toolbar">
+    <input
+      aria-label={i18n.t('agents.searchLabel')}
+      bind:value={query}
+      placeholder={i18n.t('agents.searchPlaceholder')}
+    >
+  </div>
+{/if}
+{#snippet builtinTabButton(type: GroupType)}
+  {#if type === GROUP_TYPE_NATIVE}
+    <Button
+      bind:ref={nativeTabEl}
+      id="agents-tab-native"
+      role="tab"
+      variant={activeTab === 'native' ? 'default' : 'outline'}
+      size="sm"
+      aria-selected={activeTab === 'native'}
+      aria-controls="agents-tabpanel-native"
+      tabindex={activeTab === 'native' ? 0 : -1}
+      onclick={() => selectTab('native')}
+      onkeydown={onTabKeys}
+    >
+      {i18n.t('agents.tabNative', { count: nativeAgents.length })}
+    </Button>
+  {:else if type === GROUP_TYPE_SLIM}
+    <Button
+      bind:ref={slimTabEl}
+      id="agents-tab-slim"
+      role="tab"
+      variant={activeTab === 'slim' ? 'default' : 'outline'}
+      size="sm"
+      aria-selected={activeTab === 'slim'}
+      aria-controls="agents-tabpanel-slim"
+      tabindex={activeTab === 'slim' ? 0 : -1}
+      onclick={() => selectTab('slim')}
+      onkeydown={onTabKeys}
+    >
+      {i18n.t('agents.tabSlim', { count: slimAgents.length })}
+    </Button>
+  {:else if type === GROUP_TYPE_OMO}
+    <Button
+      bind:ref={omoTabEl}
+      id="agents-tab-omo"
+      role="tab"
+      variant={activeTab === 'omo' ? 'default' : 'outline'}
+      size="sm"
+      aria-selected={activeTab === 'omo'}
+      aria-controls="agents-tabpanel-omo"
+      tabindex={activeTab === 'omo' ? 0 : -1}
+      onclick={() => selectTab('omo')}
+      onkeydown={onTabKeys}
+    >
+      {i18n.t('agents.tabOmo', { count: omoAgents.length })}
+    </Button>
+  {/if}
+{/snippet}
+
+<div class="flex flex-wrap gap-2 mb-3" role="tablist" aria-label={i18n.t('agents.sourceTabLabel')}>
+  <Button
+    bind:ref={customTabEl}
+    id="agents-tab-custom"
+    role="tab"
+    variant={activeTab === 'custom' ? 'default' : 'outline'}
+    size="sm"
+    aria-selected={activeTab === 'custom'}
+    aria-controls="agents-tabpanel-custom"
+    tabindex={activeTab === 'custom' ? 0 : -1}
+    onclick={() => selectTab('custom')}
+    onkeydown={onTabKeys}
+  >
+    {i18n.t('agents.tabCustom', { count: customAgents.length })}
+  </Button>
+  {#each pluginTabOrder as type (type)}
+    {@render builtinTabButton(type)}
+  {/each}
+</div>
+{#if activeTab === 'custom'}
+  <div id="agents-tabpanel-custom" role="tabpanel" aria-labelledby="agents-tab-custom">
+    <DataTable
+      label={i18n.t('agents.tableLabel')}
+      total={projectLoading || projectError ? 0 : agents.length}
+      bind:page
+      {pageSize}
+      ><thead>
+        <tr>
+          <th>{i18n.t('agents.colId')}</th>
+          <th>{i18n.t('agents.colMode')}</th>
+          <th>{i18n.t('agents.colSource')}</th>
+          <th>{i18n.t('agents.colModel')}</th>
+          <th class="th-actions">{i18n.t('agents.colActions')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#if projectId !== null ? projectLoading : config.loading}
+          <EmptyTableRow colspan={5} message={i18n.t('agents.loading')} />
+        {:else if projectError}
+          <EmptyTableRow colspan={5} message={i18n.t('agents.loadFailed')} />
+        {:else if !agents.length}
+          <EmptyTableRow
+            colspan={5}
+            message={i18n.t(query.trim() ? 'common.noMatches' : projectId !== null ? 'scope.empty' : 'empty.agents')}
+          />
+        {:else}
+          {#each pagedAgents as { entry: agent, projectId: rowProjectId } (`${rowProjectId ?? 'global'}:${agent.id}`)}
+            <tr>
+              <td class="model-name">
+                {#if projectId !== null}
+                  <a
+                    class="break-words [overflow-wrap:anywhere] hover:underline"
+                    href={`/agents/${encodeURIComponent(agent.id)}${rowProjectId !== null ? `?project=${encodeURIComponent(rowProjectId)}` : ''}`}
+                    >{agent.id}</a
+                  >
+                {:else}
+                  {agent.id}
+                {/if}
+              </td>
+              <td>{agent.mode ?? i18n.t('common.unset')}</td>
+              <td>
+                {#if projectId !== null}
+                  <span
+                    class="mr-2 inline-block border border-[var(--border-default)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]"
+                    >{i18n.t(rowProjectId ? 'scope.project' : 'scope.global')}</span
+                  >
+                {/if}
+                {agent.source}
+              </td>
+              <td>{agent.modelRef ?? i18n.t('common.inherited')}</td>
+              <td class="row-actions">
+                {#if projectId !== null}
+                  <Button
+                    href={`/agents/${encodeURIComponent(agent.id)}${rowProjectId !== null ? `?project=${encodeURIComponent(rowProjectId)}` : ''}`}
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={i18n.t('configuration.viewAria', { name: agent.id })}
+                    ><Eye size={14} /></Button
+                  >
+                {:else}
+                  <Button
+                    href={`/agents/${encodeURIComponent(agent.id)}/edit`}
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={i18n.t('agents.editAria', { id: agent.id })}
+                    ><Pencil size={14} /></Button
+                  ><Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={i18n.t('agents.deleteAria', { id: agent.id })}
+                    onclick={() => (deleting = agent.id)}
+                    ><Trash2 size={14} /></Button
+                  >
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        {/if}
+      </tbody></DataTable
+    >
+  </div>
+{:else if activeTab === 'native'}
+  <div id="agents-tabpanel-native" role="tabpanel" aria-labelledby="agents-tab-native">
+    {@render builtinTable(i18n.t('agents.nativeBuiltin'), nativeAgents)}
+  </div>
+{:else if activeTab === 'slim'}
+  <div id="agents-tabpanel-slim" role="tabpanel" aria-labelledby="agents-tab-slim">
+    {@render builtinTable(i18n.t('agents.slimBuiltin'), slimAgents)}
+  </div>
+{:else}
+  <div id="agents-tabpanel-omo" role="tabpanel" aria-labelledby="agents-tab-omo">
+    {@render builtinTable(i18n.t('agents.omoBuiltin'), omoAgents)}
+  </div>
+{/if}
+<Dialog.Root
+  open={deleting !== null}
+  onOpenChange={(open) => {
+    if (!open && !config.saving) deleting = null;
+  }}
+>
+  <Dialog.Content
+    onEscapeKeydown={(event) => { if (config.saving) event.preventDefault(); }}
+    onInteractOutside={(event) => { if (config.saving) event.preventDefault(); }}
+  >
+    <Dialog.Header>
+      <Dialog.Title>{i18n.t('agents.deleteTitle')}</Dialog.Title>
+      <Dialog.Description>{i18n.t('agents.deleteConfirm', { name: deleting ?? '' })}</Dialog.Description>
+    </Dialog.Header>
+    {#if canSelect}
+      <div class="dialog-field">
+        <label for="source-to-delete">{i18n.t('agents.sourceToDelete')}</label>
+        <Select
+          id="source-to-delete"
+          bind:value={storage}
+          options={STORAGE_OPTIONS.map((option) => ({ value: option.value, label: i18n.t(option.label) }))}
+        />
+        <p class="text-xs text-muted-foreground">{i18n.t('agents.sourceDeleteHint')}</p>
+      </div>
+    {/if}
+    <Dialog.Footer>
+      <Button variant="outline" disabled={config.saving} onclick={() => (deleting = null)}
+        >{i18n.t('common.cancel')}</Button
+      >
+      <Button variant="destructive" disabled={config.saving} onclick={remove}>{i18n.t('common.delete')}</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>

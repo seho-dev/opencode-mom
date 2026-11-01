@@ -1,112 +1,123 @@
-# omo-switch
+<div align="center">
 
-omo-switch is a cross-platform desktop app for switching Oh My OpenAgent model groups. It maintains named category mappings, Oh My OpenAgent agent overrides, and optional OpenCode agent model overrides, then syncs the selected group into the matching config files.
+![opencode-mom logo](shared/mom-logo.svg)
 
-The active application is built with Tauri 2. The Svelte 5 and TypeScript frontend provides the quick-switch and settings interfaces, while the Rust backend owns config persistence, projection, backups, tray integration, and native Windows/macOS behavior.
+# opencode-mom
 
-## Features
+**Model-group manager for OpenCode v2.**<br />
+One window. Three runtimes — **Native**, **Slim**, and **OMO**. One click to switch model groups without touching hand-tuned configuration.
 
-- Model groups with category and agent mappings.
-- Quick switching from the system tray or menu bar.
-- Conditional OpenCode agent model overrides.
-- Native Windows NSIS and macOS app/DMG packages.
+[![Latest release](https://img.shields.io/github/v/release/seho-dev/opencode-mom?label=release&color=00E5FF)](https://github.com/seho-dev/opencode-mom/releases/latest)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-6AA4FF)
+![OpenCode v2 only](https://img.shields.io/badge/OpenCode-v2%20only-FF6B6B)
+![License: MIT](https://img.shields.io/badge/license-MIT-3DA639)
+![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
+![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
+[![GitHub stars](https://img.shields.io/github/stars/seho-dev/opencode-mom?style=social)](https://github.com/seho-dev/opencode-mom/stargazers)
 
-## Requirements
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-- Node.js 22.23.0 and npm.
-- Rust 1.77.2 or later with Cargo. CI and release workflows build with Rust 1.96.0.
-- Platform prerequisites required by Tauri 2 for Windows or macOS desktop builds.
-- Oh My OpenAgent config location: `~/.config/opencode/oh-my-openagent.json`.
-- Optional OpenCode config location: `~/.config/opencode/opencode.json`.
+</div>
 
-## Download
+> [!IMPORTANT]
+> **opencode-mom requires OpenCode v2.** It manages v2 configuration schemas, `provider/model#variant` selectors, and v2 permission rules. V1 configs are neither migrated nor managed.
 
-Tagged release workflows produce these Tauri artifacts:
+<div align="center">
 
-- GitHub Release asset: `omo-switch_0.1.0_x64-setup.exe` (Windows NSIS installer).
-- GitHub Release asset: `omo-switch_0.1.0_aarch64.dmg` (macOS disk image).
-- GitHub Release asset: `omo-switch_0.1.0_aarch64.app.tar.gz` (macOS app bundle archive preserving bundle metadata and executable permissions).
+![opencode-mom dashboard](shared/app.png)
 
-<https://github.com/seho-dev/omo-switch/releases/latest>
+</div>
 
-## Unsigned macOS builds
+## 🌟 Overview
 
-Current macOS release artifacts are unsigned and not notarized. macOS may block the app or require approval in **System Settings > Privacy & Security**. After moving `omo-switch.app` into `/Applications`, the quarantine attribute can be removed manually:
+**opencode-mom** ("MOM") is a cross-platform desktop application designed to keep multi-runtime OpenCode v2 configurations clean, organized, and instantly switchable. It manages named **model groups**, binding providers, models, agents, and categories across three runtimes:
 
-```bash
-sudo xattr -dr com.apple.quarantine /Applications/omo-switch.app
-```
+- **Native** — OpenCode builtin agents, written to `~/.config/opencode/opencode.jsonc` (or `opencode.json`).
+- **Slim** — Oh My OpenCode Slim, written to `~/.config/opencode/oh-my-opencode-slim.json`.
+- **OMO** — Oh My OpenAgent, written to `~/.omo/omo.jsonc`.
 
-No signing or notarization is performed by the current release workflow.
+Projection is **non-destructive**: keys outside the active group definition are preserved untouched.
 
-## Configuration behavior
+## ✨ Features
 
-omo-switch stores its own groups and selection state in one config file, separately from target application configs.
+- **🧩 One-Click Model Group Switching**: Switch between preset configurations instantly from the **Dashboard**, **Groups** view, or the **System Tray**.
+- **🧠 Providers, Models & Agents**: Register custom API endpoints (OpenAI-compatible, Anthropic, or custom), configure models and pricing, and manage agent permissions and system prompts (inline JSON or Markdown).
+- **🔌 MCP & Skills Management**: Manage MCP servers with masked credentials and automatic recovery snapshots. Includes a built-in **MCP HTTP Proxy** bridging local stdio MCP servers over HTTP/SSE for external clients.
+- **🏝️ MOM Mini Island (macOS)**: Notch-integrated status capsule providing glanceable session health, live status waveforms, and fast interactions (approve permissions, answer prompts, or interrupt sessions).
+- **💤 Lid Protection (macOS / Windows)**: Prevents your laptop from sleeping **only while OpenCode sessions are actively working**, automatically restoring your normal power policy when tasks finish.
+- **📊 Dashboard & System Tray**: Real-time service health, active session counts, token consumption analytics, activity heatmaps, and a lightweight tray menu for background operation.
 
-| File                                      | Purpose                                                           |
-| ----------------------------------------- | ----------------------------------------------------------------- |
-| `~/.config/omo-switch/config.json`        | omo-switch group definitions, selection, and write metadata.      |
-| `~/.config/opencode/oh-my-openagent.json` | Rewritten when switching groups or saving the active group.       |
-| `~/.config/opencode/opencode.json`        | Patched only when effective OpenCode agent model overrides exist. |
+### 🪵 Local Diagnostic Logs
 
-Before rewriting target configs, omo-switch creates backups under its config directory. Only `config.json` is read or written for omo-switch data; legacy split files are ignored and are not migrated.
+- **Dedicated Controls & Viewer**: Independent logging switch in **Settings → General** (off by default); disabling recording preserves existing history. An independent `/logs` viewer in the navigation menu (not embedded in Settings) supports manual refresh, opening the log directory, and confirmed clearing.
+- **Correlated Tracing & State Recording**: Records results of critical mutations; ordinary polling successes are omitted, while power and Mini Island record only published state transitions. Each entry requires `type`, `status` (`success` | `error`), and links checkpoints via `operationId` (a successful step checkpoint does not imply the entire operation succeeded).
+- **Viewer & Filtering**: Supports filtering by type, status, and time range. Loads older pages via cursor pagination (50 records per page), and operation traces retain up to 100 events. Pagination cursors expire on file rotation or clear; manual refresh resets the query.
+- **Storage & Permissions**: Stored locally in `~/.config/opencode-mom/logs` (Windows: `%USERPROFILE%\.config\opencode-mom\logs`), rotating up to 5 JSONL files capped at 5 MiB each. Unix sets directory `0700` and file `0600` permissions; Windows uses inherited permissions (without verified private ACLs).
+- **Safe Allowlist & Diagnostic Scope**: Strictly allowlisted fields; never records credentials, passwords, tokens and their verification data, prompts, session messages, configuration contents, request/response bodies, or raw errors, with no automatic upload. Intended for local diagnostics rather than compliance auditing; process termination, disk errors, or queue overflow may cause record loss.
 
-When switching groups, omo-switch rewrites the Oh My OpenAgent projection. Saving the active group reapplies that projection immediately. OpenCode sync is skipped when no effective OpenCode overrides exist, so a missing `opencode.json` only blocks operations that actually require OpenCode changes.
+## 📦 Install
 
-For OpenCode, omo-switch patches only `agent.<name>.model`. Existing fields inside agent objects and unrelated top-level keys such as `$schema`, `plugin`, and `provider` are preserved.
+Download pre-built binaries from **[GitHub Releases](https://github.com/seho-dev/opencode-mom/releases/latest)**:
 
-## Development
+| Platform | Artifact | Note |
+| :--- | :--- | :--- |
+| **macOS (Apple Silicon)** | `opencode-mom_*_aarch64.dmg` | M1/M2/M3/M4 chips |
+| **macOS (Intel)** | `opencode-mom_*_x64.dmg` | Intel Macs |
+| **Windows (x64)** | `opencode-mom_*_x64-setup.exe` | NSIS installer |
 
-Install dependencies:
+### macOS First Launch
+Builds are ad-hoc signed. If macOS blocks opening the application:
+1. Open **System Settings → Privacy & Security**.
+2. Click **Open Anyway** next to the `opencode-mom` notification.
+3. *Alternative (terminal)*:
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/opencode-mom.app"
+   ```
 
-```bash
-npm ci
-```
+### Requirements
+- **[OpenCode v2](https://opencode.ai/v2/docs/)** installed for live service status, session monitoring, and Mini Island. (Editing configuration files works standalone).
 
-Run the frontend and contract tests:
+## 🔧 How MOM Writes Config
 
-```bash
-npm test
-```
+MOM persists its own state in `~/.config/opencode-mom/config.json` and patches target configuration files without overwriting unmanaged fields:
 
-Run the six native delivery contract tests from PowerShell:
+The logging switch is stored as `state.loggingEnabled` (default `false`), independent of theme, locale, model groups, and project selection. Log records are saved separately in JSONL files under `logs/` and never written to `config.json`.
 
-```powershell
-$env:OMO_CHARACTERIZE_NATIVE_GAPS='1'; npm test -- --run src/native-gaps.test.ts
-```
+| Group Type | Target File | Patched Keys |
+| :--- | :--- | :--- |
+| `native` | `~/.config/opencode/opencode.jsonc` (fallback `opencode.json`) | `agents.<name>.model` |
+| `slim` | `~/.config/opencode/oh-my-opencode-slim.json` | Agent model bindings |
+| `omo` | `~/.omo/omo.jsonc` | Categories & agent overrides |
 
-Run the same six tests from a POSIX shell:
+## 🛠️ Development
 
-```bash
-OMO_CHARACTERIZE_NATIVE_GAPS=1 npm test -- --run src/native-gaps.test.ts
-```
-
-Run the Tauri app in development:
-
-```bash
-npm run tauri dev
-```
-
-Build the frontend and Rust backend independently:
-
-```bash
-npm run build
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-```
-
-Build native Tauri packages for the current platform:
+Requirements: Node.js 22.x, npm, Rust ≥ 1.77.2, and Tauri 2 system prerequisites.
 
 ```bash
-npm run tauri build
+npm ci                 # Install dependencies
+npm run tauri dev      # Launch app in development mode
+npm run tauri build    # Package desktop app for current platform
 ```
 
-The configured package identity is `dev.seho.omo-switch`, product name `omo-switch`, version `0.1.0`. Tauri targets are Windows NSIS plus macOS app and DMG.
+Quality checks:
 
-## Release process
+```bash
+npm run check          # Biome format & lint check
+npm run test:unit      # Frontend unit tests
+cargo check --manifest-path src-tauri/Cargo.toml   # Rust backend check
+cargo test --manifest-path src-tauri/Cargo.toml    # Rust backend tests
+```
 
-Pushing a `v*` tag starts the release workflow. Each build job first requires the pushed tag to exactly equal `v<version>` from `src-tauri/tauri.conf.json`, then uses the pinned Node and Rust versions above to build and assert the exact Tauri artifact paths. The macOS job packages `omo-switch.app` as `omo-switch_0.1.0_aarch64.app.tar.gz` with macOS `tar` so bundle metadata and executable permissions survive transfer. A least-privilege publishing job downloads each platform artifact into an explicit directory and creates or updates the GitHub Release with the exact NSIS installer, app archive, and DMG.
+### Release
 
-## License
+The project uses the GitHub Actions **Release** workflow on the default branch:
 
-No license has been declared yet.
+- **Automated**: Commit to the default branch with `release` or `release: description` (bumps the next patch version, e.g. `2.0.1`), or `release: X.Y.Z` (bumps to an explicit newer stable version).
+- **Manual**: Dispatch the `Release` workflow on the default branch with optional `version` (`X.Y.Z`, leave empty for next patch).
+- **Dry Run**: Pass `dry_run: true` on manual dispatch (defaults to `false`) to preview the resolved version and notes without committing, tagging, pushing, building, or publishing.
+- **Notes & Safety Notice**: GitHub Release notes use the exact tagged section from `CHANGELOG.md` (falling back to commit history if absent) with platform security notices appended. Pushing a version-matching `vX.Y.Z` tag directly verifies manifests and publishes without changelog writeback.
+- **Pipeline & Permissions**: The workflow uses the built-in `GITHUB_TOKEN` with `contents: write`; branch and tag rules must permit the release bot's generated commit and tag. Token write permission alone does not bypass branch protection. Release preparation prepends `CHANGELOG.md`, synchronizes 5 manifests (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`) while leaving `macos-helper` untouched, and pushes the branch and tag atomically. Publication waits for all platform builds. If build or publish fails, rerun the original failed workflow without another version bump.
+
+## 📄 License
+
+Released under the [MIT License](LICENSE). © 2026 seho-dev.

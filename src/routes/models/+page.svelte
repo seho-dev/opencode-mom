@@ -1,0 +1,221 @@
+<script lang="ts">
+import { Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
+import { Button } from '$src/components/button/index.js';
+import DataTable from '$src/components/DataTable.svelte';
+import * as Dialog from '$src/components/dialog/index.js';
+import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
+import PageHead from '$src/components/PageHead.svelte';
+import { getConfig } from '$src/config/context.js';
+import { getI18n } from '$src/i18n/context.js';
+import { toast } from '$src/shell/toast.svelte.js';
+
+const config = getConfig();
+const i18n = getI18n();
+let query = $state('');
+let deleting = $state<string | null>(null);
+let refreshing = $state(false);
+let activeTab = $state<'custom' | 'builtin'>('custom');
+const pageSize = 5;
+let page = $state(1);
+const errorMessage = (error: unknown) =>
+  error && typeof error === 'object' && 'message' in error
+    ? String((error as { message: unknown }).message)
+    : String(error);
+
+// Surface catalog load failures as error toasts with a Retry action.
+$effect(() => {
+  const catalogError = config.catalogError;
+  if (!catalogError) return;
+  toast({
+    variant: 'error',
+    description: i18n.t('models.catalogFailed', { message: catalogError.message }),
+    action: { label: i18n.t('models.retry'), onclick: () => retryCatalog() },
+  });
+});
+
+const filteredCatalog = $derived(
+  config.catalog.filter((m) => `${m.ref} ${m.name ?? ''} ${m.providerId}`.toLowerCase().includes(query.toLowerCase())),
+);
+const builtinModels = $derived(filteredCatalog.filter((m) => !m.isCustom));
+const customModels = $derived(filteredCatalog.filter((m) => m.isCustom));
+const visibleModels = $derived(activeTab === 'custom' ? customModels : builtinModels);
+const maxPage = $derived(Math.max(1, Math.ceil(visibleModels.length / pageSize)));
+const currentPage = $derived(Math.min(page, maxPage));
+const pagedModels = $derived(visibleModels.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+$effect(() => {
+  // Reset to the first page whenever the visible row count changes (search, tab switch, or delete).
+  void visibleModels.length;
+  page = 1;
+});
+
+type ModelTab = 'custom' | 'builtin';
+const tabOrder: ModelTab[] = ['custom', 'builtin'];
+let customTabEl = $state<HTMLButtonElement | null>(null);
+let builtinTabEl = $state<HTMLButtonElement | null>(null);
+
+function selectTab(tab: ModelTab) {
+  activeTab = tab;
+}
+
+function onTabKeys(event: KeyboardEvent) {
+  const current = tabOrder.indexOf(activeTab);
+  let next: ModelTab | undefined;
+  if (event.key === 'ArrowRight') next = tabOrder[(current + 1) % tabOrder.length];
+  else if (event.key === 'ArrowLeft') next = tabOrder[(current - 1 + tabOrder.length) % tabOrder.length];
+  else if (event.key === 'Home') next = tabOrder[0];
+  else if (event.key === 'End') next = tabOrder[tabOrder.length - 1];
+  if (!next) return;
+  event.preventDefault();
+  selectTab(next);
+  if (next === 'custom') customTabEl?.focus();
+  else if (next === 'builtin') builtinTabEl?.focus();
+}
+
+async function refresh() {
+  if (config.loading || config.saving || refreshing) return;
+  refreshing = true;
+  try {
+    await config.refresh(true);
+  } finally {
+    refreshing = false;
+  }
+}
+async function retryCatalog() {
+  try {
+    await config.loadCatalog();
+  } catch {
+    // Failures are surfaced as an error toast via the catalogError watcher above.
+  }
+}
+async function remove() {
+  if (!deleting) return;
+  try {
+    await config.deleteModel(deleting as `${string}/${string}`);
+    deleting = null;
+  } catch (error) {
+    toast({ variant: 'error', description: errorMessage(error) });
+  }
+}
+</script>
+
+<svelte:head><title>{i18n.t('models.metaTitle')}</title></svelte:head
+><PageHead eyebrow={i18n.t('models.eyebrow')} title={i18n.t('models.title')}
+  >{#snippet children()}
+    <div class="flex flex-wrap justify-end gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={config.loading || config.saving || refreshing}
+        aria-busy={refreshing}
+        onclick={refresh}
+      >
+        <RefreshCw size={14} class={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />
+        {i18n.t('configuration.refresh')}
+      </Button>
+      <Button size="sm" href="/models/new"><Plus size={14} /> {i18n.t('models.new')}</Button>
+    </div>
+  {/snippet}</PageHead
+>
+<div class="search-toolbar">
+  <input aria-label={i18n.t('models.searchLabel')} bind:value={query} placeholder={i18n.t('models.searchPlaceholder')}>
+</div>
+<div class="flex gap-2 mb-3" role="tablist" aria-label={i18n.t('models.title')}>
+  <Button
+    bind:ref={customTabEl}
+    id="models-tab-custom"
+    role="tab"
+    variant={activeTab === 'custom' ? 'default' : 'outline'}
+    size="sm"
+    aria-selected={activeTab === 'custom'}
+    aria-controls="models-tabpanel-custom"
+    tabindex={activeTab === 'custom' ? 0 : -1}
+    onclick={() => selectTab('custom')}
+    onkeydown={onTabKeys}
+  >
+    {i18n.t('models.tabCustom', { count: customModels.length })}
+  </Button>
+  <Button
+    bind:ref={builtinTabEl}
+    id="models-tab-builtin"
+    role="tab"
+    variant={activeTab === 'builtin' ? 'default' : 'outline'}
+    size="sm"
+    aria-selected={activeTab === 'builtin'}
+    aria-controls="models-tabpanel-builtin"
+    tabindex={activeTab === 'builtin' ? 0 : -1}
+    onclick={() => selectTab('builtin')}
+    onkeydown={onTabKeys}
+  >
+    {i18n.t('models.tabBuiltin', { count: builtinModels.length })}
+  </Button>
+</div>
+<div id={`models-tabpanel-${activeTab}`} role="tabpanel" aria-labelledby={`models-tab-${activeTab}`}>
+  <DataTable label={i18n.t('models.tableLabel')} total={visibleModels.length} bind:page {pageSize}
+    ><thead>
+      <tr>
+        <th>{i18n.t('models.colProvider')}</th>
+        <th>{i18n.t('models.colName')}</th>
+        <th>{i18n.t('models.colContext')}</th>
+        <th class="th-actions">{i18n.t('models.colActions')}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {#if config.catalogLoading}
+        <EmptyTableRow colspan={4} message={i18n.t('models.loadingConfiguration')} />
+      {:else if !visibleModels.length}
+        <EmptyTableRow
+          colspan={4}
+          message={activeTab === 'custom' ? i18n.t('empty.modelsCustomShort') : i18n.t('empty.modelsBuiltinShort')}
+        />
+      {:else}
+        {#each pagedModels as model}
+          <tr>
+            <td>{model.providerId}</td>
+            <td>{model.name ?? i18n.t('common.unnamed')}</td>
+            <td>{(model.limit as { context?: number })?.context ?? i18n.t('common.unset')}</td>
+            <td class="row-actions">
+              {#if model.isCustom}
+                <Button
+                  href={`/models/${encodeURIComponent(model.ref)}/edit`}
+                  variant="ghost"
+                  size="icon-sm"
+                  title={i18n.t('models.editTitle')}
+                  aria-label={i18n.t('models.editAria', { ref: model.ref })}
+                  ><Pencil size={14} /></Button
+                ><Button
+                  variant="ghost"
+                  size="icon-sm"
+                  title={i18n.t('models.deleteTitle')}
+                  aria-label={i18n.t('models.deleteAria', { ref: model.ref })}
+                  onclick={() => {
+                  deleting = model.ref;
+                }}
+                  ><Trash2 size={14} /></Button
+                >
+              {:else}
+                <span class="text-xs text-muted-foreground">{i18n.t('common.readOnly')}</span>
+              {/if}
+            </td>
+          </tr>
+        {/each}
+      {/if}
+    </tbody></DataTable
+  >
+</div>
+<Dialog.Root
+  open={deleting !== null}
+  onOpenChange={(open) => {
+    if (!open) deleting = null;
+  }}
+>
+  <Dialog.Content>
+    <Dialog.Header>
+      <Dialog.Title>{i18n.t('models.deleteTitle')}</Dialog.Title>
+      <Dialog.Description>{i18n.t('models.deleteConfirm', { name: deleting ?? '' })}</Dialog.Description>
+    </Dialog.Header>
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => (deleting = null)}>{i18n.t('common.cancel')}</Button>
+      <Button variant="destructive" onclick={remove}>{i18n.t('common.delete')}</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>

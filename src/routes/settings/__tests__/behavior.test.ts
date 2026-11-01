@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { beforeNavigate } from '$app/navigation';
 import type { ConfigStore } from '$src/config/store.svelte.js';
@@ -20,6 +21,18 @@ function mount(overrides: Record<string, unknown> = {}, active = true) {
     selectedProjectId: 'project-a',
     getGlobalBehavior: vi.fn().mockResolvedValue(document),
     saveGlobalBehavior: vi.fn().mockResolvedValue(document),
+    generatePrompt: vi.fn().mockResolvedValue('Generated preview content'),
+    catalogModels: vi.fn().mockReturnValue([
+      {
+        ref: 'demo/fast',
+        providerId: 'demo',
+        modelId: 'fast',
+        name: 'Fast',
+        isCustom: true,
+        variants: [{ id: 'quick' }],
+      },
+    ]),
+    models: vi.fn().mockReturnValue([]),
     ...overrides,
   } as unknown as ConfigStore;
   return { ...render(Behavior, { active }, { wrapper: Harness, wrapperProps: { config } }), config };
@@ -130,4 +143,176 @@ test('route leave protects dirty local text but switching settings tabs never pr
   expect(confirm).toHaveBeenCalledWith(en['settings.behaviorLeaveConfirm'] ?? 'settings.behaviorLeaveConfirm');
   expect(cancel).toHaveBeenCalledOnce();
   confirm.mockRestore();
+});
+
+test('behavior PromptGenerator closing discards late results and reopen is not contaminated', async () => {
+  let resolve!: (value: string) => void;
+  const pendingPromise = new Promise<string>((res) => {
+    resolve = res;
+  });
+  const { config } = mount({ generatePrompt: vi.fn().mockImplementation(() => pendingPromise) }, true);
+  await waitFor(() =>
+    expect((screen.getByLabelText(en['settings.behaviorContent']) as HTMLTextAreaElement).disabled).toBe(false),
+  );
+  await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.open'] }));
+  await fireEvent.input(screen.getByLabelText(en['promptGenerator.instructions']), {
+    target: { value: 'Instructions for session 1' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.generate'] }));
+  expect(config.generatePrompt).toHaveBeenCalledTimes(1);
+  await fireEvent.click(screen.getByRole('button', { name: en['common.close'] }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.open'] }));
+  expect(screen.getByRole('heading', { name: en['promptGenerator.behaviorTitle'] })).toBeTruthy();
+  expect((screen.getByLabelText(en['promptGenerator.instructions']) as HTMLTextAreaElement).value).toBe('');
+  resolve('Late arriving result from session 1');
+  await pendingPromise;
+  await tick();
+  expect(screen.queryByLabelText(en['promptGenerator.preview'])).toBeNull();
+  expect((screen.getByLabelText(en['settings.behaviorContent']) as HTMLTextAreaElement).value).toBe(document.content);
+  expect(config.saveGlobalBehavior).not.toHaveBeenCalled();
+});
+
+test('behavior PromptGenerator integration happy: edited draft, lazy catalog, preview-only, explicit Save', async () => {
+  const catalogModels = vi.fn().mockReturnValue([
+    {
+      ref: 'demo/fast',
+      providerId: 'demo',
+      modelId: 'fast',
+      name: 'Fast',
+      isCustom: true,
+      variants: [{ id: 'quick' }],
+    },
+  ]);
+  const models = vi.fn().mockReturnValue([]);
+  const { config } = mount(
+    {
+      catalogModels,
+      models,
+      generatePrompt: vi.fn().mockResolvedValue('Generated behavior preview'),
+      saveGlobalBehavior: vi.fn().mockResolvedValue({ ...document, content: 'Generated behavior preview' }),
+    },
+    true,
+  );
+  const input = screen.getByLabelText(en['settings.behaviorContent']) as HTMLTextAreaElement;
+  await waitFor(() => expect(input.disabled).toBe(false));
+  expect(catalogModels).not.toHaveBeenCalled();
+  expect(models).not.toHaveBeenCalled();
+  await fireEvent.input(input, { target: { value: 'my local draft' } });
+  await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.open'] }));
+  expect(catalogModels).toHaveBeenCalled();
+  await fireEvent.input(screen.getByLabelText(en['promptGenerator.instructions']), {
+    target: { value: 'Improve rules' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.generate'] }));
+  expect(config.generatePrompt).toHaveBeenCalledExactlyOnceWith({
+    kind: 'behavior',
+    preset: 'improve',
+    instructions: 'Improve rules',
+    currentPrompt: 'my local draft',
+    model: undefined,
+    variant: undefined,
+  });
+  await waitFor(() => expect(screen.getByLabelText(en['promptGenerator.preview'])).toBeTruthy());
+  expect(input.value).toBe('my local draft');
+  expect(config.saveGlobalBehavior).not.toHaveBeenCalled();
+  await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.apply'] }));
+  expect(input.value).toBe('Generated behavior preview');
+  expect(config.saveGlobalBehavior).not.toHaveBeenCalled();
+  const saveBtn = screen.getByRole('button', { name: en['settings.behaviorSave'] });
+  expect((saveBtn as HTMLButtonElement).disabled).toBe(false);
+  await fireEvent.click(saveBtn);
+  await waitFor(() =>
+    expect(config.saveGlobalBehavior).toHaveBeenCalledExactlyOnceWith({
+      content: 'Generated behavior preview',
+      expectedPath: document.resolvedPath,
+      expectedContent: document.content,
+    }),
+  );
+  await screen.findByText(en['settings.behaviorSaved']);
+});
+
+test('behavior PromptGenerator disabled when inactive prevents opening and leaves draft unchanged', async () => {
+  const getGlobalBehavior = vi.fn().mockResolvedValue(document);
+  const saveGlobalBehavior = vi.fn().mockResolvedValue(document);
+  const { config } = mount(
+    { getGlobalBehavior, saveGlobalBehavior, generatePrompt: vi.fn().mockResolvedValue('Generated content') },
+    false,
+  );
+  const trigger = screen.getByRole('button', { name: en['promptGenerator.open'] }) as HTMLButtonElement;
+  expect(trigger.disabled).toBe(true);
+  await fireEvent.click(trigger);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(config.generatePrompt).not.toHaveBeenCalled();
+  expect(getGlobalBehavior).not.toHaveBeenCalled();
+  expect(saveGlobalBehavior).not.toHaveBeenCalled();
+});
+
+test('behavior generator stays disabled during pending document reads and saves', async () => {
+  let getResolve!: (value: typeof document) => void;
+  let saveResolve!: (value: typeof document) => void;
+  const getPromise = new Promise<typeof document>((res) => {
+    getResolve = res;
+  });
+  const savePromise = new Promise<typeof document>((res) => {
+    saveResolve = res;
+  });
+  const { config } = mount(
+    {
+      getGlobalBehavior: vi.fn().mockImplementation(() => getPromise),
+      saveGlobalBehavior: vi.fn().mockImplementation(() => savePromise),
+      generatePrompt: vi.fn().mockResolvedValue('Generated'),
+    },
+    true,
+  );
+  await waitFor(() => expect(config.getGlobalBehavior).toHaveBeenCalledOnce());
+  const trigger = screen.getByRole('button', { name: en['promptGenerator.open'] }) as HTMLButtonElement;
+  expect(trigger.disabled).toBe(true);
+  await fireEvent.click(trigger);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(config.generatePrompt).not.toHaveBeenCalled();
+  getResolve(document);
+  await waitFor(() =>
+    expect((screen.getByLabelText(en['settings.behaviorContent']) as HTMLTextAreaElement).disabled).toBe(false),
+  );
+  const input = screen.getByLabelText(en['settings.behaviorContent']) as HTMLTextAreaElement;
+  await fireEvent.input(input, { target: { value: 'draft' } });
+  await fireEvent.click(screen.getByRole('button', { name: en['settings.behaviorSave'] }));
+  expect(config.saveGlobalBehavior).toHaveBeenCalledOnce();
+  const savingTrigger = screen.getByRole('button', { name: en['promptGenerator.open'] }) as HTMLButtonElement;
+  expect(savingTrigger.disabled).toBe(true);
+  await fireEvent.click(savingTrigger);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(config.generatePrompt).not.toHaveBeenCalled();
+  expect(input.value).toBe('draft');
+  saveResolve({ ...document, content: 'draft' });
+  await screen.findByText(en['settings.behaviorSaved']);
+  expect((screen.getByRole('button', { name: en['promptGenerator.open'] }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+test('deactivating behavior discards in-flight generation without changing the retained draft', async () => {
+  let resolve!: (value: string) => void;
+  const pendingPromise = new Promise<string>((res) => {
+    resolve = res;
+  });
+  const { config, rerender } = mount({ generatePrompt: vi.fn().mockImplementation(() => pendingPromise) }, true);
+  const input = screen.getByLabelText(en['settings.behaviorContent']) as HTMLTextAreaElement;
+  await waitFor(() => expect(input.disabled).toBe(false));
+  await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.open'] }));
+  await fireEvent.input(screen.getByLabelText(en['promptGenerator.instructions']), {
+    target: { value: 'Instructions before unmount' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.generate'] }));
+  expect(config.generatePrompt).toHaveBeenCalledTimes(1);
+  await rerender({ active: false });
+  resolve('Result for unmounted component');
+  await pendingPromise;
+  await tick();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(input.value).toBe(document.content);
+  expect(config.saveGlobalBehavior).not.toHaveBeenCalled();
+  await rerender({ active: true });
+  await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.open'] }));
+  expect(screen.getByRole('heading', { name: en['promptGenerator.behaviorTitle'] })).toBeTruthy();
+  expect(screen.queryByLabelText(en['promptGenerator.preview'])).toBeNull();
 });

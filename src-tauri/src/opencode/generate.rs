@@ -23,6 +23,7 @@ const COMMON_GUIDE: &str = "Write a prompt, not an answer to the task described 
 pub enum PromptGenerationKind {
     Agent,
     Command,
+    Behavior,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -139,6 +140,7 @@ impl PromptGenerationRequest {
         let kind = match self.kind {
             PromptGenerationKind::Agent => "Write the body of an agent system prompt in Markdown. Define its role, behavior and constraints; do not add YAML frontmatter or agent configuration.\n\n",
             PromptGenerationKind::Command => "Write the complete command Markdown document. Preserve any existing YAML frontmatter exactly, including its delimiters; never invent metadata or frontmatter when none exists. Preserve all existing runtime placeholders, including $ARGUMENTS, $1, $2 and @file references, verbatim; do not expand or execute them.\n\n",
+            PromptGenerationKind::Behavior => "Write the global OpenCode AGENTS.md behavior instructions in Markdown. Define reusable behavior, workflows and constraints across projects and tasks, not a per-agent persona, command invocation or task answer. Do not add YAML frontmatter or agent configuration.\n\n",
         };
         let preset = match self.preset {
             PromptGenerationPreset::Generate => "Draft a prompt from the user's requirements, using the existing prompt as a starting point when present.\n\n",

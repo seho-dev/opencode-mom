@@ -361,3 +361,46 @@ test('disabled prop prevents opening dialog and triggering prompt generation', a
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(config.generatePrompt).not.toHaveBeenCalled();
 });
+
+test('behavior kind renders localized behaviorTitle and behaviorPlaceholder and passes behavior/currentPrompt draft', async () => {
+  const onapply = vi.fn();
+  const { config } = createMockConfig();
+  vi.mocked(config.generatePrompt).mockResolvedValue('Global behavior prompt');
+  render(
+    PromptGenerator,
+    { kind: 'behavior', value: 'current behavior content', disabled: false, onapply },
+    {
+      wrapper: Harness,
+      wrapperProps: { config },
+    },
+  );
+  await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.open'] }));
+  expect(screen.getByRole('heading', { name: en['promptGenerator.behaviorTitle'] })).toBeTruthy();
+  expect((screen.getByLabelText(en['promptGenerator.instructions']) as HTMLTextAreaElement).placeholder).toBe(
+    en['promptGenerator.behaviorPlaceholder'],
+  );
+
+  await fireEvent.input(screen.getByLabelText(en['promptGenerator.instructions']), {
+    target: { value: 'Make rules stricter' },
+  });
+  const generateBtn = screen.getByRole('button', { name: en['promptGenerator.generate'] }) as HTMLButtonElement;
+  expect(generateBtn.disabled).toBe(false);
+  await fireEvent.click(generateBtn);
+  expect(config.generatePrompt).toHaveBeenCalledExactlyOnceWith({
+    kind: 'behavior',
+    preset: 'improve',
+    instructions: 'Make rules stricter',
+    currentPrompt: 'current behavior content',
+    model: undefined,
+    variant: undefined,
+  } satisfies PromptGenerationRequest);
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(en['promptGenerator.preview'])).toBeTruthy();
+  });
+
+  const applyBtn = screen.getByRole('button', { name: en['promptGenerator.apply'] });
+  await fireEvent.click(applyBtn);
+  expect(onapply).toHaveBeenCalledExactlyOnceWith('Global behavior prompt');
+  expect(screen.queryByRole('dialog')).toBeNull();
+});

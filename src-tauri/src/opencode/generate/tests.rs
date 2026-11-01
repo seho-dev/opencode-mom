@@ -142,10 +142,11 @@ fn presets_and_kind_have_fixed_order_and_preserve_source_material() {
         ),
         (PromptGenerationPreset::Shorten, "Shorten the prompt"),
     ] {
-        for kind in [PromptGenerationKind::Agent, PromptGenerationKind::Command] {
+        for kind in ["agent", "command", "behavior"] {
             let mut input = request();
             input.preset = preset;
-            input.kind = kind;
+            input.kind = serde_json::from_value(json!(kind)).unwrap();
+            let kind = input.kind;
             input.current_prompt =
                 "---\r\ndescription: existing\r\n---\r\n$ARGUMENTS $1 $2 @file.md".into();
             let current = input.current_prompt.clone();
@@ -160,6 +161,17 @@ fn presets_and_kind_have_fixed_order_and_preserve_source_material() {
                     assert!(body.prompt.contains("never invent metadata"));
                     assert!(body.prompt.contains("$ARGUMENTS, $1, $2 and @file"));
                     "complete command Markdown document"
+                }
+                PromptGenerationKind::Behavior => {
+                    assert!(body.prompt.contains(
+                        "reusable behavior, workflows and constraints across projects and tasks"
+                    ));
+                    assert!(body
+                        .prompt
+                        .contains("not a per-agent persona, command invocation or task answer"));
+                    assert!(!body.prompt.contains("body of an agent system prompt"));
+                    assert!(!body.prompt.contains("complete command Markdown document"));
+                    "global OpenCode AGENTS.md behavior instructions"
                 }
             };
             assert!(body.prompt.find(kind_guide).unwrap() < body.prompt.find(guide).unwrap());
@@ -177,6 +189,42 @@ fn presets_and_kind_have_fixed_order_and_preserve_source_material() {
         value[field] = json!("unknown");
         assert!(serde_json::from_value::<PromptGenerationRequest>(value).is_err());
     }
+}
+
+#[test]
+fn behavior_wire_request_generates_via_selected_service_with_model_override() {
+    let (_directory, runtime) = runtime();
+    let server = FakeApi::new(|path, _, body, stream| match path {
+        "/api/info" => health(stream),
+        "/api/experimental/generate" => {
+            assert_eq!(body.as_object().unwrap().len(), 2);
+            let prompt = body["prompt"].as_str().unwrap();
+            assert!(prompt.starts_with(COMMON_GUIDE));
+            assert!(prompt.contains("global OpenCode AGENTS.md behavior instructions"));
+            assert!(prompt.contains("Improve the existing prompt"));
+            assert!(prompt.ends_with(
+                "User instructions:\nPRIVATE_INSTRUCTIONS\n\nExisting prompt:\nPRIVATE_CURRENT"
+            ));
+            assert_eq!(
+                body["model"],
+                json!({"providerID":"provider","id":"org/model","variant":"high"})
+            );
+            respond(
+                stream,
+                200,
+                "",
+                br##"{"data":{"text":"# Global behavior\n"}}"##,
+            );
+        }
+        _ => panic!("unexpected route: {path}"),
+    });
+    let input = serde_json::from_value(json!({
+        "kind": "behavior", "preset": "improve", "instructions": "PRIVATE_INSTRUCTIONS",
+        "currentPrompt": "PRIVATE_CURRENT", "model": "provider/org/model", "variant": "high"
+    }))
+    .unwrap();
+    let snapshot = runtime.set(Some(server.url()), None, || Ok(())).unwrap();
+    assert_eq!(generate(input, snapshot).unwrap(), "# Global behavior\n");
 }
 
 #[test]

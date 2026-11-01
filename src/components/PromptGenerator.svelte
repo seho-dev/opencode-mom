@@ -148,9 +148,7 @@ function apply() {
     }}
   >
     <Dialog.Header>
-      <Dialog.Title
-        >{i18n.t(kind === 'agent' ? 'promptGenerator.agentTitle' : 'promptGenerator.commandTitle')}</Dialog.Title
-      >
+      <Dialog.Title>{i18n.t(`promptGenerator.${kind}Title`)}</Dialog.Title>
       <Dialog.Description>{i18n.t('promptGenerator.description')}</Dialog.Description>
     </Dialog.Header>
 
@@ -215,7 +213,7 @@ function apply() {
           bind:this={instructionsElement}
           bind:value={instructions}
           disabled={pending || blocked}
-          placeholder={i18n.t(kind === 'agent' ? 'promptGenerator.agentPlaceholder' : 'promptGenerator.commandPlaceholder')}
+          placeholder={i18n.t(`promptGenerator.${kind}Placeholder`)}
           aria-describedby={`${uid}-input-hint ${uid}-privacy`}
           spellcheck="false"
           autocomplete="off"

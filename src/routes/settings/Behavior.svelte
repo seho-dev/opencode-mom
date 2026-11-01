@@ -4,6 +4,7 @@ import { beforeNavigate } from '$app/navigation';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import FormActions from '$src/components/FormActions.svelte';
+import PromptGenerator from '$src/components/PromptGenerator.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { BehaviorDocument } from '$src/types/behavior.js';
@@ -139,6 +140,14 @@ async function save() {
           aria-describedby="settings-behavior-apply-hint"
         ></textarea>
         <small id="settings-behavior-apply-hint" class="field-hint">{i18n.t('settings.behaviorNextRequest')}</small>
+        {#key active && !busy}
+          <PromptGenerator
+            kind="behavior"
+            value={content}
+            disabled={!active || busy || !snapshot}
+            onapply={(text) => (content = text)}
+          />
+        {/key}
       </div>
     </div>
     <FormActions>

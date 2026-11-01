@@ -89,6 +89,7 @@ export const en = {
   'promptGenerator.entryHint': 'Preview first · no auto-save',
   'promptGenerator.agentTitle': 'Generate agent prompt',
   'promptGenerator.commandTitle': 'Generate command prompt',
+  'promptGenerator.behaviorTitle': 'Generate Global behavior prompt',
   'promptGenerator.description': 'Review the preview, then replace the draft. Save separately to keep your changes.',
   'promptGenerator.experimental': '⚠️ Experimental API · requires support from the connected OpenCode service.',
   'promptGenerator.defaultModel': 'OpenCode service default',
@@ -102,6 +103,7 @@ export const en = {
   'promptGenerator.instructions': 'Requirements',
   'promptGenerator.agentPlaceholder': 'Describe the agent’s role, tasks and constraints…',
   'promptGenerator.commandPlaceholder': 'Describe what the command should do and how to use its arguments…',
+  'promptGenerator.behaviorPlaceholder': 'Describe the Global rules, workflow and constraints OpenCode should follow…',
   'promptGenerator.includesDraft': 'Includes the draft as it was when this dialog opened.',
   'promptGenerator.requirementsNeeded': 'The draft is empty. Enter requirements to generate a prompt.',
   'promptGenerator.privacy':

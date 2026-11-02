@@ -16,6 +16,10 @@ correctness = { level = "deny", priority = -1 }
 undocumented_unsafe_blocks = "warn"
 redundant_clone = "warn"
 
+[features]
+default = []
+test-peer = []
+
 [[bin]]
 name = "opencode-mom"
 path = "src/main.rs"
@@ -23,6 +27,7 @@ path = "src/main.rs"
 [[bin]]
 name = "mcp-test-peer"
 path = "src/mcp_proxy/test_peer.rs"
+required-features = ["test-peer"]
 
 [package.metadata]
 

@@ -50,8 +50,13 @@
   --focus-width: 1px;
   --focus-offset: 2px;
   --disabled-opacity: 0.45;
-  --font-primary: "JetBrains Mono", monospace;
-  --font-heading: "Space Grotesk", sans-serif;
+  --font-primary:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+  --font-code:
+    "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", "PingFang SC",
+    "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+  --font-heading: "Space Grotesk", var(--font-primary);
   --font-caption-weight: 500;
   --font-caption-size: 12px;
   --font-caption-line: 16px;
@@ -66,6 +71,10 @@
   --scrollbar-thumb: #3b494c;
   --scrollbar-thumb-hover: #00e5ff;
   --scrollbar-thumb-active: #72f2ff;
+}
+
+@theme inline {
+  --font-mono: var(--font-code);
 }
 
 /* Light theme: every color-bearing token is overridden so the whole app flips coherently. */

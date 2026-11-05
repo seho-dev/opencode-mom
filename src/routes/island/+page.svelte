@@ -1233,7 +1233,7 @@ onMount(() => {
   pointer-events: auto;
   color: #f0f0f3;
   color-scheme: dark;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-family: var(--font-primary);
   -webkit-font-smoothing: antialiased;
   transition: border-radius 220ms var(--island-ease);
 }
@@ -1657,7 +1657,7 @@ onMount(() => {
   padding: 0;
   background: transparent;
   color: #f0f0f3;
-  font-family: monospace;
+  font-family: var(--font-code);
   font-size: 10px;
   line-height: 13px;
 }

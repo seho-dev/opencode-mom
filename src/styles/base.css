@@ -10,6 +10,8 @@ body {
   background: var(--surface-app);
   color: var(--text-primary);
   font-family: var(--font-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 body {
   font-size: var(--font-body-size);
@@ -22,6 +24,14 @@ textarea,
 select {
   font: inherit;
   letter-spacing: 0;
+}
+code,
+pre,
+kbd,
+samp,
+textarea[spellcheck="false"] {
+  --font-primary: var(--font-code);
+  font-family: var(--font-code);
 }
 button {
   cursor: pointer;

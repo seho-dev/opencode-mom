@@ -1689,7 +1689,7 @@ test('late header hover/focus during explicit expanded resize cannot replace the
 });
 
 test.each([
-  [0, 0, 200, 28],
+  [0, 0, 200, 36],
   [180, 32, 292, 32],
   [300, 24, 412, 28],
   [40, 40, 200, 40],
@@ -2326,7 +2326,7 @@ test.each([
     const main = view.container.querySelector('main') as HTMLElement;
     expect(main.dataset.view).toBe('compact');
     expect(main.style.getPropertyValue('--compact-width')).toBe('200px');
-    expect(main.style.getPropertyValue('--compact-height')).toBe('28px');
+    expect(main.style.getPropertyValue('--compact-height')).toBe('36px');
     expect(main.querySelector('.compact-secondary')?.textContent).toBe(pending);
     expect(main.querySelector('#compact-status-hint')?.textContent).toBe(fullStatus);
     expect(main.querySelector('#compact-pending-hint')?.textContent).toBe(fullPending);

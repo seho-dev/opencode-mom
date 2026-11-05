@@ -773,7 +773,7 @@ onMount(() => {
   style:--top-inset={`${topInset}px`}
   style:--notch-width={`${notchWidth}px`}
   style:--idle-width={`${idleWidth}px`}
-  style:--compact-height={`${Math.max(topInset, 28)}px`}
+  style:--compact-height={`${hasNotch ? Math.max(topInset, 28) : 36}px`}
   style:--compact-width={`${peeking ? 400 : idleWidth}px`}
   aria-label={i18n.t('island.title')}
   onpointerenter={() => enterDetails('dom')}
@@ -1365,12 +1365,17 @@ onMount(() => {
   justify-content: flex-start;
   padding-left: 14px;
 }
+.unnotched-compact .compact-shell,
+.unnotched-compact .compact-header,
+.unnotched-compact .compact {
+  height: var(--compact-height);
+}
 .unnotched-compact .compact-left {
   justify-content: flex-start;
-  padding: 0 8px 0 12px;
+  padding: 4px 8px 4px 12px;
 }
 .unnotched-compact .compact-lane {
-  flex-basis: 36px;
+  flex-basis: 44px;
 }
 .unnotched-compact .compact-status-control {
   padding: 0;
@@ -1381,7 +1386,7 @@ onMount(() => {
   max-width: 100%;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
+  gap: 2px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -1393,14 +1398,14 @@ onMount(() => {
 }
 .compact-primary {
   color: #e3e3e8;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 550;
-  line-height: 12px;
+  line-height: 14px;
 }
 .compact-secondary {
   color: #b4b4be;
-  font-size: 9px;
-  line-height: 11px;
+  font-size: 10px;
+  line-height: 12px;
 }
 .compact-wing-state {
   display: flex;

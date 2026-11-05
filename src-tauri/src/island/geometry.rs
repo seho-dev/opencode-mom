@@ -79,7 +79,8 @@ pub(super) fn placement(screen: Screen, mode: IslandView) -> Placement {
         );
     }
     let height = match mode {
-        IslandView::Compact => top_inset.max(28.0),
+        IslandView::Compact if notch_width > 0.0 => top_inset.max(28.0),
+        IslandView::Compact => 36.0,
         IslandView::Peek => top_inset + 132.0,
         IslandView::Expanded => 520.0,
     }
@@ -302,7 +303,7 @@ mod tests {
             notch_right: 0.0,
         };
         for (mode, width, height) in [
-            (IslandView::Compact, 200.0, 28.0),
+            (IslandView::Compact, 200.0, 36.0),
             (IslandView::Peek, 400.0, 132.0),
             (IslandView::Expanded, 560.0, 520.0),
         ] {
@@ -351,9 +352,9 @@ mod tests {
             placement(screen, IslandView::Compact).frame,
             Rect {
                 x: 220.0,
-                y: -672.0,
+                y: -680.0,
                 width: 200.0,
-                height: 28.0
+                height: 36.0,
             }
         );
         assert_eq!(

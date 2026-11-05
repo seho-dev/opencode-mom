@@ -16,6 +16,8 @@ This directory connects typed command calls to shared application state and Svel
 
 - **Prompt generation**: `generatePrompt(request)` forwards to `opencode_generate_prompt` through the service-target guard, without `run()`, refresh, retries, draft recovery or retained input/output. Rust owns preset instructions; applying generated text and saving remain separate form actions.
 
+- **Plugin package updates**: `updatePluginPackage(target)` forwards to backend `update_plugin_package` with Global-only scope. Updating validates Global eligibility and health before dispatch; HTTP 204 from the runtime confirms success and resolves void. The subsequent UI runtime list query is an independent read where status-unavailable warnings do not alter the confirmed update. On network timeout or bad HTTP status, the outcome is unknown without automatic retries. Safe diagnostic categories surface as `detail` strings on the existing `configuration_failed` code.
+
 ## Local diagnostic logs
 
 `getLoggingState`, `setLoggingEnabled`, `queryLogs`, `openLogsDirectory` and `clearLogs` are lazy, untracked adapter pass-throughs. They neither prefetch at startup nor enter `AppState`, `AppPreferences`, draft recovery or localStorage. Enablement is persisted by Rust as `state.loggingEnabled`, independently of theme/locale preferences.

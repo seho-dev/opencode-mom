@@ -129,7 +129,13 @@ export const en = {
   'plugins.updateUnavailable': 'Updating is not available for this plugin.',
   'plugins.updatingPackage': 'Updating package cache…',
   'plugins.updatePackageFailed': 'Package cache update could not be confirmed. Refresh runtime before retrying.',
+  'plugins.updateDiagnosticTimeout': 'The plugin update operation timed out.',
+  'plugins.updateDiagnosticConnection': 'The plugin update could not connect to the runtime.',
+  'plugins.updateDiagnosticHttp': 'The runtime returned HTTP {status} during the plugin update.',
+  'plugins.updateDiagnosticVerification': 'Runtime verification could not be completed during the plugin update.',
   'plugins.packageUpdated': 'Package cache updated. Runtime status is reported by the service.',
+  'plugins.packageUpdatedRuntimeUnavailable':
+    'Package cache updated, but runtime status is unavailable. Refresh runtime to check it.',
   'plugins.outdated': 'Update available',
   'plugins.updating': 'Updating',
   'plugins.updateConfirmTitle': 'Update plugin package cache?',

@@ -55,6 +55,12 @@ export const zh: Record<MessageKey, string> = {
   'logs.recordCount': '已显示 {count} 条记录',
   'logs.loadMore': '较早记录',
   'logs.details': '记录详情',
+  'logs.copyDetails': '复制详情',
+  'logs.detailsCopied': '已将日志记录复制为 JSON。',
+  'logs.copyFailed': '无法复制到剪贴板。请重试，或展开记录详情后手动选取并复制文本。',
+  'logs.copyTrace': '复制操作过程',
+  'logs.copyTraceHint': '将此操作过程当前已加载的全部 {count} 条事件复制为 JSON，不会读取更多历史。',
+  'logs.traceCopied': '已将操作过程当前已加载的全部 {count} 条事件复制为 JSON，不包含更早或缺失的事件。',
   'logs.traceTitle': '操作过程',
   'logs.traceHint':
     '按时间顺序显示最近保留的最多 {count} 条事件。日志轮转或记录丢弃可能造成缺失；单个事件成功不代表整个操作成功。',

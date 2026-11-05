@@ -58,6 +58,13 @@ export const en = {
   'logs.recordCount': '{count} records shown',
   'logs.loadMore': 'Older records',
   'logs.details': 'Record details',
+  'logs.copyDetails': 'Copy details',
+  'logs.detailsCopied': 'Log record copied as JSON.',
+  'logs.copyFailed':
+    'Could not copy to the clipboard. Try again, or expand the record details to select and copy text manually.',
+  'logs.copyTrace': 'Copy trace',
+  'logs.copyTraceHint': 'Copy all {count} events currently loaded in this trace as JSON, without loading more history.',
+  'logs.traceCopied': 'All {count} loaded trace events copied as JSON. Earlier or missing events are not included.',
   'logs.traceTitle': 'Operation trace',
   'logs.traceHint':
     'Up to {count} latest retained events, oldest first. Rotation or dropped records may leave gaps. A successful event does not confirm the whole operation.',

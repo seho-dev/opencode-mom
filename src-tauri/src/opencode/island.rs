@@ -107,6 +107,24 @@ pub(crate) async fn connect() -> Result<IslandApi, AppError> {
     connect_snapshot(snapshot, deadline).await
 }
 
+pub(crate) async fn connect_notifications() -> Result<IslandApi, AppError> {
+    let snapshot = super::target::snapshot()?;
+    let deadline = Instant::now() + REQUEST_TIMEOUT;
+    let connection = tauri::async_runtime::spawn_blocking(move || {
+        let registration = snapshot.registration()?.to_owned();
+        // Background notifications observe the selected service; they never start one.
+        transport::connect_target(snapshot, &registration, deadline, |_| {
+            Err(failure("selected service unavailable"))
+        })?
+        .into_async()
+    })
+    .await
+    .map_err(|_| failure("notification connection worker failed"))??;
+    Ok(IslandApi {
+        connection: Arc::new(connection),
+    })
+}
+
 pub(super) async fn connect_snapshot(
     snapshot: super::target::Snapshot,
     deadline: Instant,
@@ -210,6 +228,10 @@ async fn body(mut response: Response) -> Result<Vec<u8>, AppError> {
 }
 
 impl IslandApi {
+    pub(crate) fn ensure_current(&self) -> Result<(), AppError> {
+        self.connection.ensure_current()
+    }
+
     fn request(&self, method: Method, path: &[&str]) -> Result<RequestBuilder, AppError> {
         Ok(self
             .connection

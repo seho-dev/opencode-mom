@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CircleQuestionMark,
   RefreshCw,
   Send,
   ShieldCheck,
@@ -23,6 +24,7 @@ import type {
   IslandState,
   IslandView,
 } from '$src/types/island.js';
+import PerimeterLight from './PerimeterLight.svelte';
 import QuestionForm from './QuestionForm.svelte';
 
 const config = getConfig();
@@ -76,6 +78,13 @@ let nativeView: IslandView = 'compact';
 let timer: ReturnType<typeof setTimeout> | undefined;
 let peekTimer: ReturnType<typeof setTimeout> | undefined;
 let entryTimer: ReturnType<typeof setTimeout> | undefined;
+let completionTimer: ReturnType<typeof setTimeout> | undefined;
+let seenCompletionSequence: number | null = null;
+let completion = $state<number | null>(null);
+let completionCount = $state(0);
+let completionSerial = 0;
+let completionRemaining = 3600;
+let completionStartedAt = 0;
 const pendingIds = $derived(
   new Set([...(snapshot?.permissions ?? []), ...(snapshot?.questions ?? [])].map((entry) => entry.sessionId)),
 );
@@ -113,7 +122,7 @@ const geometryKnown = $derived(
 const topInset = $derived(Number.isFinite(snapshot?.topInset) ? Math.max(0, snapshot?.topInset ?? 0) : 0);
 const notchWidth = $derived(Number.isFinite(snapshot?.notchWidth) ? Math.max(0, snapshot?.notchWidth ?? 0) : 0);
 const hasNotch = $derived(topInset > 0 && notchWidth > 0);
-const idleWidth = $derived(Math.max(notchWidth + 112, 200));
+const idleWidth = $derived(hasNotch ? Math.max(notchWidth + 112, 200) : 320);
 const notchedCompact = $derived(view === 'compact' && hasNotch);
 const compactPermissions = $derived(snapshot?.permissions ?? []);
 const compactPermission = $derived(
@@ -129,6 +138,16 @@ const compactStatusLabel = $derived(
     : i18n.t('island.runningCount', { count: runningCount }),
 );
 const compactConnected = $derived(snapshot?.enabled === true && connection === 'connected');
+const completionActive = $derived(compactConnected && completion !== null);
+const notificationLabel = $derived(
+  hasCompactAttention
+    ? i18n.t('island.notification.approval', { count: compactPermissions.length })
+    : completionActive
+      ? i18n.t(completionCount > 1 ? 'island.notification.completedCount' : 'island.notification.completed', {
+          count: completionCount,
+        })
+      : '',
+);
 const compactSummary = $derived(
   runningCount === null
     ? i18n.t(
@@ -156,18 +175,19 @@ const compactStateLabel = $derived(
   ),
 );
 const compactSessionCount = $derived(snapshot?.sessions.length ?? 0);
-const compactPrimary = $derived(
-  compactConnected
-    ? `${compactSummary} · ${i18n.t('island.compact.sessionCount', { count: compactSessionCount > 99 ? '99+' : compactSessionCount })}`
-    : compactSummary,
+const compactContextSession = $derived(
+  compactConnected && stateAvailable
+    ? sessions
+        .filter((session) => !session.parentId)
+        .sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || b.updatedAt - a.updatedAt)[0]
+    : undefined,
 );
-const compactSecondary = $derived(
-  compactConnected
-    ? i18n.t('island.compact.requestCounts', {
-        permissions: (snapshot?.permissions.length ?? 0) > 99 ? '99+' : (snapshot?.permissions.length ?? 0),
-        questions: (snapshot?.questions.length ?? 0) > 99 ? '99+' : (snapshot?.questions.length ?? 0),
-      })
-    : i18n.t('island.compact.unknownCounts'),
+const compactContextLabel = $derived(
+  compactContextSession
+    ? `${project(compactContextSession)} · ${compactContextSession.title || i18n.t('island.untitled')}`
+    : i18n.t(
+        compactConnected && stateAvailable ? 'island.compact.noMainSessions' : 'island.compact.contextUnavailable',
+      ),
 );
 const compactCountsLabel = $derived(
   compactConnected
@@ -192,6 +212,58 @@ function samePermission(a: IslandPermission, b: { sessionId: string; id: string 
 }
 function permissionKey(permission: IslandPermission) {
   return `${permission.sessionId}/${permission.id}`;
+}
+function clearCompletion() {
+  clearTimeout(completionTimer);
+  completionTimer = undefined;
+  completion = null;
+  completionCount = 0;
+  completionSerial = 0;
+  completionRemaining = 3600;
+}
+function presentCompletion() {
+  if (!mounted || !completionCount || !compactConnected || hasCompactAttention || completionTimer !== undefined) return;
+  if (completion === null) {
+    completion = ++completionSerial;
+    completionRemaining = 3600;
+  }
+  completionStartedAt = performance.now();
+  completionTimer = setTimeout(() => {
+    completionTimer = undefined;
+    if (!mounted) return;
+    completionCount -= 1;
+    completion = null;
+    presentCompletion();
+  }, completionRemaining);
+}
+function syncCompletion(result: IslandState) {
+  const sequence = result.completionSequence;
+  if (
+    !result.enabled ||
+    result.connection !== 'connected' ||
+    typeof sequence !== 'number' ||
+    !Number.isSafeInteger(sequence) ||
+    sequence < 0
+  ) {
+    clearCompletion();
+    seenCompletionSequence = null;
+    return;
+  }
+  const previous = seenCompletionSequence;
+  seenCompletionSequence = Math.max(sequence, previous ?? sequence);
+  if (previous !== null && sequence > previous) {
+    // ponytail: cap bursts at 256 cues; aggregate notices if sustained completion volume requires it.
+    completionCount = Math.min(256, completionCount + sequence - previous);
+  }
+  if (result.permissions.length) {
+    if (completionTimer !== undefined) {
+      clearTimeout(completionTimer);
+      completionTimer = undefined;
+      completionRemaining = Math.max(0, completionRemaining - (performance.now() - completionStartedAt));
+    }
+    return;
+  }
+  presentCompletion();
 }
 function syncPermission(result: IslandState, manual: boolean) {
   if (
@@ -421,6 +493,8 @@ function invalidate() {
   timer = setTimeout(() => requestRead(), 200);
 }
 function resetConnection(generation: number) {
+  clearCompletion();
+  seenCompletionSequence = null;
   connectionGeneration = generation;
   stateVersion += 1;
   viewVersion += 1;
@@ -476,12 +550,15 @@ async function read() {
       }
       stateAvailable = true;
       syncPermission(result, manual);
+      syncCompletion(result);
       config.applyPreferences(result.preferences);
       queryError = '';
       if (!sessions.some((entry) => entry.id === selectedId)) choose(sessions[0]?.id ?? '', false);
       if (expanded && selectedId && result.enabled && result.connection === 'connected') void readMessages(manual);
     } catch (cause) {
       if (mounted && stateSeq === stateVersion) {
+        clearCompletion();
+        seenCompletionSequence = null;
         stateAvailable = false;
         queryError = readError(cause);
       }
@@ -693,6 +770,7 @@ onMount(() => {
     stateVersion += 1;
     resizeVersion += 1;
     clearTimeout(timer);
+    clearCompletion();
     dismissDetails();
     for (const stop of unlisteners) stop();
   };
@@ -769,11 +847,14 @@ onMount(() => {
   class:unnotched-compact={view === 'compact' && !hasNotch}
   class:geometry-pending={!geometryKnown && isTauri()}
   data-view={view}
+  data-notification={hasCompactAttention ? 'approval' : completionActive ? 'completed' : undefined}
+  data-completion-count={completionCount || undefined}
+  data-completion-cue={completion ?? undefined}
   data-state={compactAttention ? 'attention' : running ? 'running' : connection === 'connected' ? 'idle' : 'unavailable'}
   style:--top-inset={`${topInset}px`}
   style:--notch-width={`${notchWidth}px`}
   style:--idle-width={`${idleWidth}px`}
-  style:--compact-height={`${hasNotch ? Math.max(topInset, 28) : 36}px`}
+  style:--compact-height={`${hasNotch ? Math.max(topInset, 28) : 48}px`}
   style:--compact-width={`${peeking ? 400 : idleWidth}px`}
   aria-label={i18n.t('island.title')}
   onpointerenter={() => enterDetails('dom')}
@@ -783,6 +864,19 @@ onMount(() => {
   onfocusin={compactFocus}
   onfocusout={compactFocus}
 >
+  {#if geometryKnown}
+    {#if hasCompactAttention}
+      <PerimeterLight attention={true} {view} {notchedCompact} />
+    {/if}
+    {#if completionActive}
+      {#key completion}
+        <PerimeterLight attention={false} paused={hasCompactAttention} {view} {notchedCompact} />
+      {/key}
+    {/if}
+  {/if}
+  <span class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+    {notificationLabel}
+  </span>
   {#if !notchedCompact}
     <div class="notch-gap" aria-hidden="true"></div>
   {/if}
@@ -795,7 +889,7 @@ onMount(() => {
           aria-label={i18n.t('island.peek')}
           aria-expanded={peeking}
           aria-controls={hasCompactAttention ? 'compact-permission-details' : 'compact-quick-area'}
-          aria-describedby={!peeking ? `compact-status-hint compact-counts-hint${compactConnected && pendingCount ? ' compact-pending-hint' : ''}` : undefined}
+          aria-describedby={!peeking ? `compact-status-hint compact-counts-hint${!hasNotch ? ' compact-context-hint' : ''}${compactConnected && pendingCount ? ' compact-pending-hint' : ''}` : undefined}
           aria-busy={resizing}
           onclick={() => revealDetails(true)}
         >
@@ -807,9 +901,13 @@ onMount(() => {
               <span class="wing-count">{compactConnected ? (runningCount ?? 0) > 99 ? '99+' : runningCount : '—'}</span>
             </span>
           {:else}
-            <span class="compact-summary content-arrival" aria-hidden="true">
-              <span class="compact-primary">{compactPrimary}</span>
-              <span class="compact-secondary">{compactSecondary}</span>
+            <span class="compact-summary content-arrival" class:unavailable={!compactConnected} aria-hidden="true">
+              <span class="compact-session-title">
+                {compactContextSession?.title || (compactContextSession ? i18n.t('island.untitled') : compactContextLabel)}
+              </span>
+              <span class="compact-project">
+                {compactContextSession ? project(compactContextSession) : compactConnected ? i18n.t('island.connection.connected') : compactSummary}
+              </span>
             </span>
           {/if}
         </button>
@@ -825,11 +923,14 @@ onMount(() => {
             aria-expanded={peeking}
             aria-controls={hasCompactAttention ? 'compact-permission-details' : 'compact-quick-area'}
             aria-label={i18n.t('island.statusControl')}
-            aria-describedby={`compact-status-hint${!peeking ? ' compact-counts-hint' : ''}${compactConnected && pendingCount ? ' compact-pending-hint' : ''}${snapshot?.questions.length ? ' compact-questions-hint' : ''}`}
+            aria-describedby={`compact-status-hint${!peeking ? ` compact-counts-hint${!hasNotch ? ' compact-context-hint' : ''}` : ''}${compactConnected && pendingCount ? ' compact-pending-hint' : ''}${snapshot?.questions.length ? ' compact-questions-hint' : ''}`}
             onclick={() => revealDetails(true)}
           >
             <span class="compact-status">
               <span class="compact-activity-row" aria-hidden="true">
+                {#if !hasNotch && !peeking}
+                  <span class="compact-run-label">{compactSummary}</span>
+                {/if}
                 <span
                   class="activity"
                   class:running
@@ -843,11 +944,35 @@ onMount(() => {
                   >
                 {/if}
               </span>
+              {#if !hasNotch && !peeking}
+                <span class="compact-metrics" aria-hidden="true">
+                  {#if compactConnected && snapshot?.permissions.length}
+                    <span class="compact-metric compact-permission-total">
+                      <ShieldCheck size={10} aria-hidden="true" />
+                      <span>{snapshot.permissions.length > 99 ? '99+' : snapshot.permissions.length}</span>
+                    </span>
+                  {/if}
+                  {#if compactConnected && snapshot?.questions.length}
+                    <span class="compact-metric compact-question-total">
+                      <CircleQuestionMark size={10} aria-hidden="true" />
+                      <span>{snapshot.questions.length > 99 ? '99+' : snapshot.questions.length}</span>
+                    </span>
+                  {/if}
+                  <span class="compact-metric compact-session-total">
+                    <span
+                      >{i18n.t('island.compact.sessionCount', { count: compactConnected ? compactSessionCount > 99 ? '99+' : compactSessionCount : '—' })}</span
+                    >
+                  </span>
+                </span>
+              {/if}
               {#if notchedCompact}
                 <span class="wing-label" aria-hidden="true">{i18n.t('island.compact.pendingLabel')}</span>
               {/if}
               <span id="compact-status-hint" class="sr-only">{compactStatusLabel}</span>
               <span id="compact-counts-hint" class="sr-only">{compactCountsLabel}</span>
+              {#if !hasNotch && !peeking}
+                <span id="compact-context-hint" class="sr-only">{compactContextLabel}</span>
+              {/if}
               {#if compactConnected && pendingCount}
                 <span id="compact-pending-hint" class="sr-only"
                   >{i18n.t('island.pendingCount', { count: pendingCount })}</span
@@ -1223,6 +1348,7 @@ onMount(() => {
   --island-amber: #edc786;
   --island-muted: #97979f;
   --island-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
   /* Native frames own the size; keep their entire changing viewport opaque. */
   width: 100vw;
   height: 100dvh;
@@ -1372,40 +1498,83 @@ onMount(() => {
 }
 .unnotched-compact .compact-left {
   justify-content: flex-start;
-  padding: 4px 8px 4px 12px;
+  padding: 5px 8px 5px 12px;
 }
 .unnotched-compact .compact-lane {
-  flex-basis: 44px;
+  flex-basis: 156px;
 }
 .unnotched-compact .compact-status-control {
-  padding: 0;
+  justify-content: flex-end;
+  padding: 5px 12px 5px 6px;
+}
+.compact-run-label {
+  overflow: hidden;
+  color: #c8c8d0;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compact-metrics {
+  display: flex;
+  min-width: 0;
+  height: 14px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  color: #97979f;
+  font-size: 10px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.compact-metric {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+}
+.compact-permission-total,
+.compact-question-total {
+  color: var(--island-amber);
 }
 .compact-summary {
   display: flex;
   min-width: 0;
-  max-width: 100%;
+  width: 100%;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  font-variant-numeric: tabular-nums;
+  gap: 3px;
+  text-align: left;
   white-space: nowrap;
 }
-.compact-primary,
-.compact-secondary {
+.compact-project,
+.compact-session-title {
+  display: block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.compact-primary {
-  color: #e3e3e8;
-  font-size: 11px;
-  font-weight: 550;
-  line-height: 14px;
-}
-.compact-secondary {
-  color: #b4b4be;
+.compact-project {
+  color: #97979f;
   font-size: 10px;
   line-height: 12px;
+}
+.compact-summary.unavailable .compact-project {
+  display: none;
+}
+.compact-session-title {
+  color: #f0f0f3;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 15px;
+}
+.compact-summary.unavailable .compact-session-title {
+  display: -webkit-box;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .compact-wing-state {
   display: flex;
@@ -1451,6 +1620,18 @@ onMount(() => {
   align-items: center;
   gap: 8px;
   color: var(--island-muted);
+}
+.unnotched-compact .compact-status {
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.unnotched-compact .compact-activity-row {
+  width: 100%;
+  height: 18px;
+  justify-content: flex-end;
+  gap: 7px;
 }
 .activity {
   display: flex;

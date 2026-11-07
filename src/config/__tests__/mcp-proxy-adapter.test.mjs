@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'vite';
+import { withServer } from './vite-harness.mjs';
 
 test('MOM HTTP and MCP proxy adapter map separate commands and exact payloads to Tauri IPC', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
 
     const calls = [];
@@ -157,14 +156,11 @@ test('MOM HTTP and MCP proxy adapter map separate commands and exact payloads to
     // 10. closeMcpProxyUnit
     await adapter.closeMcpProxyUnit({ unitId: 'unit-99', expectedGeneration: 5 });
     assert.deepEqual(calls.at(-1), ['close_mcp_proxy_unit', { request: { unitId: 'unit-99', expectedGeneration: 5 } }]);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('ConfigStore MCP proxy facades are lazy pass-throughs and do not trigger run() or draftRecovery', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
 
     let failOnSave = false;
@@ -273,14 +269,11 @@ test('ConfigStore MCP proxy facades are lazy pass-throughs and do not trigger ru
 
     const key = await store.rotateMomHttpKey();
     assert.equal(key, 'key-abc');
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('MOM HTTP token rotation stays lazy, untracked and secret-local without Proxy reads or global refresh', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -315,7 +308,5 @@ test('MOM HTTP token rotation stays lazy, untracked and secret-local without Pro
       ['rotate_mom_http_key', undefined],
       ['rotate_mom_http_key', undefined],
     ]);
-  } finally {
-    await vite.close();
-  }
+  });
 });

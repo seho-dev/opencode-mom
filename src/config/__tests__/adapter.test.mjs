@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'vite';
+import { withServer } from './vite-harness.mjs';
 
 const group = (id, type) => ({
   id,
@@ -16,8 +16,7 @@ const group = (id, type) => ({
 });
 
 test('all target-bound Island IPCs forward the caller generation unchanged and never retry conflicts', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     let failure;
@@ -69,14 +68,11 @@ test('all target-bound Island IPCs forward the caller generation unchanged and n
       assert.equal(calls.length, before + 1);
       assert.deepEqual(calls.at(-1), [command, { ...payload, expectedConnectionGeneration: 17 }]);
     }
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
-test('group IPC reads wire types and writes canonical types for save and copy', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+test('group IPC reads wire types and writes canonical types for save', async () => {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     const saved = [];
@@ -93,7 +89,6 @@ test('group IPC reads wire types and writes canonical types for save and copy', 
         saved.push(args.group);
         return args.group;
       }
-      if (command === 'copy_group') return group('copy', 'oh-my-openagent');
       throw new Error(`Unexpected command: ${command}`);
     });
 
@@ -116,16 +111,11 @@ test('group IPC reads wire types and writes canonical types for save and copy', 
       assert.equal(input.type, type);
       assert.deepEqual(saved.at(-1), { ...input, type: wire });
     }
-    assert.deepEqual(await adapter.copyGroup('omo', 'Copy'), group('copy', 'omo'));
-    assert.deepEqual(calls.at(-1), ['copy_group', { id: 'omo', name: 'Copy' }]);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('deleteAgent passes storage through IPC when provided', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     const adapter = createTauriAdapter(async (command, args) => {
@@ -137,14 +127,11 @@ test('deleteAgent passes storage through IPC when provided', async () => {
       ['delete_agent', { id: 'custom', storage: 'global_markdown' }],
       ['delete_agent', { id: 'inline', storage: undefined }],
     ]);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('updateAgent preserves both expected snapshots through store and IPC without retrying', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -176,14 +163,11 @@ test('updateAgent preserves both expected snapshots through store and IPC withou
       assert.deepEqual(calls.at(-1), ['update_agent', { agent }]);
       assert.equal(calls.at(-1)[1].agent.mutation.expectedContent, expectedContent);
     }
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('app info, manual updates, and project pages preserve IPC names, payloads, results, and errors', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     const info = { version: '0.1.0', platform: 'macos' };
@@ -209,14 +193,11 @@ test('app info, manual updates, and project pages preserve IPC names, payloads, 
     await assert.rejects(adapter.getAppInfo(), failure);
     await assert.rejects(adapter.checkForUpdates(), failure);
     await assert.rejects(adapter.openProjectPage('releases'), failure);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('token usage records invoke the no-argument IPC command and preserve timestamp and count data', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     const records = [
@@ -233,14 +214,11 @@ test('token usage records invoke the no-argument IPC command and preserve timest
       { time: 1791030514564, input: 1_250_000, output: 20 },
       { time: 1791116914564, input: 0, output: 0 },
     ]);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('OpenCode installation, explicit checks, and guarded upgrades preserve IPC contracts and errors', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     const installation = {
@@ -273,14 +251,11 @@ test('OpenCode installation, explicit checks, and guarded upgrades preserve IPC 
     await assert.rejects(adapter.getOpenCodeInstallation(), failure);
     await assert.rejects(adapter.checkOpenCodeUpdate(), failure);
     await assert.rejects(adapter.upgradeOpenCode('/exact/bin/opencode', '2.0.0', '2.1.0'), failure);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('MCP, skills, autostart, and lid protection preserve IPC commands, payloads, and results', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     const result = { data: [], diagnostics: [] };
@@ -326,14 +301,11 @@ test('MCP, skills, autostart, and lid protection preserve IPC commands, payloads
       ['set_lid_protection', { enabled: true }],
       ['set_lid_protection', { enabled: false }],
     ]);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('local service target IPC preserves nullable fields and omitted, retained, new, and cleared passwords', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     const status = {
@@ -369,14 +341,11 @@ test('local service target IPC preserves nullable fields and omitted, retained, 
     failure = { code: 'busy', message: 'Disable monitoring and restore power settings first.' };
     await assert.rejects(adapter.getOpenCodeServiceStatus(), failure);
     await assert.rejects(adapter.setOpenCodeServiceTarget(null), failure);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('preferences defaultPlugin contract reads and saves native, slim, and omo', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     const plugins = ['native', 'slim', 'omo'];
@@ -413,7 +382,5 @@ test('preferences defaultPlugin contract reads and saves native, slim, and omo',
       await adapter.savePreferences(payload);
       assert.deepEqual(calls.at(-1), ['save_preferences', { preferences: payload }]);
     }
-  } finally {
-    await vite.close();
-  }
+  });
 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'vite';
+import { deferred, withServer } from './vite-harness.mjs';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const secret = 'private-plugin-command-instructions';
@@ -70,19 +70,8 @@ const commandOperations = [
 ];
 const writes = commandOperations.filter(([method]) => /^(create|update|delete)SlashCommand$/.test(method));
 
-function deferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-
 test('plugins stay Global-only while commands and behavior preserve snapshots, nullable fields and command scopes', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     const result = { data: [], diagnostics: [] };
@@ -119,14 +108,11 @@ test('plugins stay Global-only while commands and behavior preserve snapshots, n
       await assert.rejects(adapter[method](...args, projectId), failure);
     await assert.rejects(adapter.getGlobalBehavior(), failure);
     await assert.rejects(adapter.saveGlobalBehavior(behavior), failure);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('plugin facades stay Global-only with a selected project and commands retain explicit scope without global refresh', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -194,14 +180,11 @@ test('plugin facades stay Global-only with a selected project and commands retai
     assert.equal(store.loading, false);
     assert.equal(store.draftRecovery, null);
     assert.ok(calls.every(([ipc]) => !['load_app_state', 'opencode_list_models'].includes(ipc)));
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('plugin runtime list stays lazy and Global-only, without global mutation or retry after failure', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -251,14 +234,11 @@ test('plugin runtime list stays lazy and Global-only, without global mutation or
       for (const [key, value] of Object.entries(original)) assert.strictEqual(store[key], value);
     }
     assert.ok(!JSON.stringify(store).includes(secret));
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('plugin removal echoes complete package and local plans without startup work, global state, reload or retries', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -306,14 +286,11 @@ test('plugin removal echoes complete package and local plans without startup wor
         }
       }
     }
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('every command and behavior write redacts recovery, returned errors and deleted snapshots', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     let pending;
@@ -344,14 +321,11 @@ test('every command and behavior write redacts recovery, returned errors and del
         assert.equal(store.saving, false);
       }
     }
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('resource reads redact private failures without creating or replacing global recovery', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -410,14 +384,11 @@ test('resource reads redact private failures without creating or replacing globa
         assert.ok(!JSON.stringify([store.error, store.draftRecovery]).includes(secret));
       }
     }
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('plugin runtime operations reject old service replies without retries or dispatch during target saves', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
     let pending;
@@ -470,7 +441,5 @@ test('plugin runtime operations reject old service replies without retries or di
       calls,
       methods.map(([method, args]) => [method, args]),
     );
-  } finally {
-    await vite.close();
-  }
+  });
 });

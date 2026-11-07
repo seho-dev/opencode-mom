@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'vite';
+import { withServer } from './vite-harness.mjs';
 
 test('island IPC and lazy store preserve exact arguments without config preload or write retries', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -115,7 +114,5 @@ test('island IPC and lazy store preserve exact arguments without config preload 
     assert.equal(store.error, null);
     assert.equal(store.saving, false);
     assert.equal(store.draftRecovery, null);
-  } finally {
-    await vite.close();
-  }
+  });
 });

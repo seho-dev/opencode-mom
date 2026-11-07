@@ -79,26 +79,25 @@ export interface CommandAdapter {
   getOpenCodeServiceStatus(): Result<OpenCodeServiceStatus>;
   setOpenCodeServiceTarget(url: string | null, password?: string | null): Result<OpenCodeServiceStatus>;
   checkOpenCodeUpdate(): Result<OpenCodeUpdateCheck>;
+
   upgradeOpenCode(
     expectedBinaryPath: string,
     expectedVersion: string,
     targetVersion: string,
   ): Result<OpenCodeInstallation>;
+
   openProjectPage(page: ProjectPage): Result<void>;
   pickProjectFolder(): Result<string | null>;
   addProject(path: string): Result<ProjectFolder>;
   removeProject(id: string): Result<void>;
   selectProject(id: string | null): Result<void>;
-  listProviders(): Result<ProviderDef[]>;
   opencodeListModels(provider?: string): Result<ModelCatalogEntry[]>;
   generatePrompt(request: PromptGenerationRequest): Result<string>;
-  opencodeResolveBinary(): Result<string>;
   opencodeReload(): Result<void>;
   opencodeTokenUsageRecords(): Result<TokenUsageRecord[]>;
   createProvider(value: ProviderDef): Result<ProviderDef>;
   updateProvider(value: ProviderDef): Result<ProviderDef>;
   deleteProvider(id: string): Result<void>;
-  listModels(): Result<ProviderDef[]>;
   createModel(providerId: string, value: ModelDef): Result<ModelDef>;
   updateModel(providerId: string, value: ModelDef): Result<ModelDef>;
   deleteModel(ref: ModelRef): Result<void>;
@@ -142,18 +141,21 @@ export interface CommandAdapter {
   setIslandView(view: IslandView): Result<void>;
   islandMessages(sessionId: string, expectedConnectionGeneration: number): Result<IslandMessage[]>;
   islandSend(sessionId: string, text: string, messageId: string, expectedConnectionGeneration: number): Result<void>;
+
   islandReplyPermission(
     sessionId: string,
     requestId: string,
     decision: IslandPermissionDecision,
     expectedConnectionGeneration: number,
   ): Result<void>;
+
   islandReplyQuestion(
     sessionId: string,
     formId: string,
     answer: IslandAnswer,
     expectedConnectionGeneration: number,
   ): Result<void>;
+
   islandCancelQuestion(sessionId: string, formId: string, expectedConnectionGeneration: number): Result<void>;
   islandInterrupt(sessionId: string, expectedConnectionGeneration: number): Result<void>;
   getMcpProxyState(): Result<McpProxyStateDto>;
@@ -169,17 +171,18 @@ export interface CommandAdapter {
   importMcpProxyServer(request: ImportMcpProxyServerRequest): Result<McpProxyServerDto>;
   closeMcpProxyUnit(request: CloseMcpProxyUnitRequest): Result<void>;
   saveGroup(value: Group): Result<Group>;
-  copyGroup(id: string, name: string): Result<Group>;
   deleteGroup(id: string): Result<void>;
   switchGroup(id: string): Result<void>;
   savePreferences(preferences: AppPreferences): Result<void>;
 }
 
 export type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+
 // Persisted group.type uses frozen wire values; canonicalize at the IPC boundary only.
 const readGroup = (group: Group): Group => ({ ...group, type: groupTypeFromWire(group.type) });
 const writeGroup = (group: Group): Group => ({ ...group, type: groupTypeToWire(group.type) as GroupType });
 const projectScope = (projectId?: string | null) => (projectId == null ? {} : { projectId });
+
 export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
   return {
     loadAppState: async () => {
@@ -200,16 +203,13 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     addProject: (path) => invoke('add_project', { path }),
     removeProject: (id) => invoke('remove_project', { id }),
     selectProject: (id) => invoke('select_project', { id }),
-    listProviders: () => invoke('list_providers'),
     opencodeListModels: (provider) => invoke('opencode_list_models', { provider }),
     generatePrompt: (request) => invoke('opencode_generate_prompt', { request }),
-    opencodeResolveBinary: () => invoke('opencode_resolve_binary'),
     opencodeReload: () => invoke('opencode_reload'),
     opencodeTokenUsageRecords: () => invoke('opencode_token_usage_records'),
     createProvider: (value) => invoke('create_provider', { provider: value }),
     updateProvider: (value) => invoke('update_provider', { provider: value }),
     deleteProvider: (id) => invoke('delete_provider', { id }),
-    listModels: () => invoke('list_models'),
     createModel: (providerId, value) => invoke('create_model', { providerId, model: value }),
     updateModel: (providerId, value) => invoke('update_model', { providerId, model: value }),
     deleteModel: (modelRef) => invoke('delete_model', { modelRef }),
@@ -278,15 +278,16 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     importMcpProxyServer: (request) => invoke('import_mcp_proxy_server', { request }),
     closeMcpProxyUnit: (request) => invoke('close_mcp_proxy_unit', { request }),
     saveGroup: async (value) => readGroup(await invoke<Group>('save_group', { group: writeGroup(value) })),
-    copyGroup: async (id, name) => readGroup(await invoke<Group>('copy_group', { id, name })),
     deleteGroup: (id) => invoke('delete_group', { id }),
     switchGroup: (id) => invoke('switch_group', { id }),
     savePreferences: (preferences) => invoke('save_preferences', { preferences }),
   };
 }
+
 export function createCommandAdapter(): CommandAdapter {
   const invoke: TauriInvoke = async (command, args) => {
     const { invoke: call } = await import('@tauri-apps/api/core');
+
     try {
       return await call(command, args);
     } catch (error) {
@@ -295,5 +296,6 @@ export function createCommandAdapter(): CommandAdapter {
       ) as CommandError;
     }
   };
+
   return createTauriAdapter(invoke);
 }

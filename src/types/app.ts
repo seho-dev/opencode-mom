@@ -3,19 +3,24 @@ import type { Group, GroupType } from './groups.js';
 import type { ProviderDef } from './providers.js';
 
 export type ThemePreference = 'light' | 'dark';
+
 export type LocalePreference = 'en' | 'zh';
+
 export interface AppInfo {
   version: string;
   platform: 'macos' | 'windows' | 'linux' | 'other';
 }
+
 export interface UpdateCheck {
   currentVersion: string;
   latestVersion: string | null;
   updateAvailable: boolean;
 }
+
 export interface OpenCodeInstallation {
   binaryPath: string | null;
   version: string | null;
+
   method:
     | 'curl'
     | 'npm'
@@ -28,7 +33,9 @@ export interface OpenCodeInstallation {
     | 'bundled'
     | 'unknown'
     | 'not-found';
+
   canUpgrade: boolean;
+
   upgradeReason:
     | 'not_found'
     | 'unsupported'
@@ -38,18 +45,22 @@ export interface OpenCodeInstallation {
     | 'manager_unavailable'
     | 'ambiguous'
     | null;
+
   manualCommand: string | null;
 }
+
 export interface OpenCodeUpdateCheck {
   installation: OpenCodeInstallation;
   latestVersion: string;
   updateAvailable: boolean;
 }
+
 export interface OpenCodeServiceTarget {
   mode: 'shared' | 'explicit';
   url: string | null;
   hasPassword: boolean;
 }
+
 export interface OpenCodeServiceStatus {
   target: OpenCodeServiceTarget;
   connected: boolean;
@@ -58,16 +69,20 @@ export interface OpenCodeServiceStatus {
   version: string | null;
   error: string | null;
 }
+
 export type ProjectPage = 'repository' | 'releases';
+
 export interface AppPreferences {
   theme: ThemePreference;
   locale: LocalePreference;
   defaultPlugin?: GroupType;
 }
+
 export interface ProjectFolder {
   id: string;
   path: string;
 }
+
 export interface AppState {
   providers: ProviderDef[];
   agents: AgentDefinition[];
@@ -78,6 +93,7 @@ export interface AppState {
   preferences: AppPreferences;
   diagnostics?: string[];
 }
+
 export type CommandErrorCode =
   | 'not_found'
   | 'references_blocked'
@@ -86,6 +102,7 @@ export type CommandErrorCode =
   | 'busy'
   | 'conflict'
   | 'ipc_error';
+
 export interface CommandError {
   code: CommandErrorCode;
   message: string;

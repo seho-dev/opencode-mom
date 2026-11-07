@@ -5,7 +5,6 @@ export const GROUP_TYPE_NATIVE = 'native';
 export const GROUP_TYPE_SLIM = 'slim';
 export const GROUP_TYPE_OMO = 'omo';
 
-export const AGENT_SOURCES = ['inline', 'markdown', 'both'] as const;
 export const AGENT_STORAGES = ['inline', 'global_markdown'] as const;
 export const GROUP_TYPES = [GROUP_TYPE_NATIVE, GROUP_TYPE_SLIM, GROUP_TYPE_OMO] as const;
 export const AGENT_MODES = ['primary', 'subagent', 'all'] as const;
@@ -29,14 +28,18 @@ export const PERMISSION_ACTIONS = [
   'question',
   'execute',
 ] as const;
-export const MAPPING_KINDS = [GROUP_TYPE_NATIVE, GROUP_TYPE_SLIM, GROUP_TYPE_OMO, 'category'] as const;
 
-export type AgentSource = (typeof AGENT_SOURCES)[number];
+export type AgentSource = 'inline' | 'markdown' | 'both';
+
 export type AgentStorage = (typeof AGENT_STORAGES)[number];
+
 export type GroupType = (typeof GROUP_TYPES)[number];
+
 export type BuiltinSystem = GroupType;
+
 export type AgentMode = (typeof AGENT_MODES)[number];
-export type MappingKind = (typeof MAPPING_KINDS)[number];
+
+export type MappingKind = GroupType | 'category';
 
 // Labels are i18n message keys; components translate them via getI18n().t().
 export const STORAGE_LABELS: Record<AgentStorage, MessageKey> = {

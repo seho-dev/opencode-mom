@@ -32,7 +32,9 @@ export function groupBindings(group: Group) {
 
 export function isCalendarDate(value: string): boolean {
   if (!/^[1-9]\d{3}-\d{2}-\d{2}$/.test(value)) return false;
+
   const date = new Date(`${value}T00:00:00Z`);
+
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
@@ -43,11 +45,13 @@ export function calendarDate(now: Date, timezone: string): string {
     month: '2-digit',
     day: '2-digit',
   }).formatToParts(now);
+
   return ['year', 'month', 'day'].map((type) => parts.find((part) => part.type === type)?.value).join('-');
 }
 
 function tokenCount(input: number, output: number): number {
   const count = input + output;
+
   if (
     !Number.isSafeInteger(input) ||
     input < 0 ||
@@ -57,6 +61,7 @@ function tokenCount(input: number, output: number): number {
   ) {
     throw new RangeError('Token counts and their sums must be nonnegative safe integers.');
   }
+
   return count;
 }
 
@@ -68,19 +73,24 @@ export function dailyTokenUsage(records: TokenUsageRecord[], timezone: string): 
     day: '2-digit',
   });
   const days = new Map<string, DailyTokenUsage>();
+
   for (const record of records) {
     if (!Number.isSafeInteger(record.time) || record.time < 0 || record.time > 8_640_000_000_000_000) {
       throw new RangeError('Token usage timestamps must be valid nonnegative integer milliseconds.');
     }
+
     tokenCount(record.input, record.output);
+
     const parts = formatter.formatToParts(new Date(record.time));
     const date = ['year', 'month', 'day'].map((type) => parts.find((part) => part.type === type)?.value).join('-');
     const previous = days.get(date);
     const input = (previous?.input ?? 0) + record.input;
     const output = (previous?.output ?? 0) + record.output;
+
     tokenCount(input, output);
     days.set(date, { date, input, output });
   }
+
   return [...days.values()].sort((a, b) => a.date.length - b.date.length || a.date.localeCompare(b.date));
 }
 
@@ -103,12 +113,15 @@ export type ActivityPeriod = 'day' | 'week' | 'month' | 'year';
 
 export function periodActivity(activity: DailyTokenUsage[], period: ActivityPeriod, today: string, year?: number) {
   year = period === 'year' ? (year ?? Number(today.slice(0, 4))) : Number(today.slice(0, 4));
+
   if (!Number.isInteger(year) || year < 1000 || year > 9999 || !isCalendarDate(today)) {
     throw new RangeError('A valid calendar year and current date are required.');
   }
+
   const current = new Date(`${today}T00:00:00Z`);
   let first = current.getTime();
   let last = first;
+
   if (period === 'week') {
     first -= ((current.getUTCDay() + 6) % 7) * 86_400_000;
     last = first + 6 * 86_400_000;
@@ -119,9 +132,11 @@ export function periodActivity(activity: DailyTokenUsage[], period: ActivityPeri
     first = Date.UTC(year, 0, 1);
     last = Date.UTC(year + 1, 0, 1) - 86_400_000;
   }
+
   const from = new Date(first).toISOString().slice(0, 10);
   const to = new Date(last).toISOString().slice(0, 10);
   const counts = new Map<string, { input: number; output: number }>();
+
   for (const day of activity) {
     if (
       !isCalendarDate(day.date) ||
@@ -134,12 +149,15 @@ export function periodActivity(activity: DailyTokenUsage[], period: ActivityPeri
       day.output < 0
     )
       continue;
+
     const previous = counts.get(day.date);
     const input = (previous?.input ?? 0) + day.input;
     const output = (previous?.output ?? 0) + day.output;
+
     tokenCount(input, output);
     counts.set(day.date, { input, output });
   }
+
   const offset = new Date(first).getUTCDay();
   const days = (last - first) / 86_400_000 + 1;
   const columns = Math.ceil((offset + days) / 7);
@@ -155,11 +173,13 @@ export function periodActivity(activity: DailyTokenUsage[], period: ActivityPeri
   let output = 0;
   let activeDays = 0;
   let peak: { date: string; count: number; input: number; output: number } | null = null;
+
   for (let index = 0; index < columns * 7; index++) {
     const day = index - offset;
     const date = day < 0 || day >= days ? null : new Date(first + day * 86_400_000).toISOString().slice(0, 10);
     const usage = date === null || date > today ? null : (counts.get(date) ?? { input: 0, output: 0 });
     const count = usage === null ? null : tokenCount(usage.input, usage.output);
+
     if (date !== null && usage !== null && count !== null) {
       input += usage.input;
       output += usage.output;
@@ -167,6 +187,7 @@ export function periodActivity(activity: DailyTokenUsage[], period: ActivityPeri
       if (count > 0) activeDays++;
       if (count > 0 && (!peak || count > peak.count)) peak = { date, count, ...usage };
     }
+
     cells.push({
       date,
       count,
@@ -175,9 +196,12 @@ export function periodActivity(activity: DailyTokenUsage[], period: ActivityPeri
       level: count === null ? 0 : activityLevel(count),
     });
   }
+
   const months: { date: string; column: number }[] = [];
   const month = new Date(first);
+
   month.setUTCDate(1);
+
   while (month.getTime() <= last) {
     months.push({
       date: month.toISOString().slice(0, 10),
@@ -185,5 +209,6 @@ export function periodActivity(activity: DailyTokenUsage[], period: ActivityPeri
     });
     month.setUTCMonth(month.getUTCMonth() + 1);
   }
+
   return { cells, columns, months, total, input, output, activeDays, peak, from, to };
 }

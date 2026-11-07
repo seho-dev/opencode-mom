@@ -4,6 +4,7 @@ import type { ModelRef } from './models.js';
 export { PROMPT_GENERATION_PRESETS } from '$src/utils/constants.js';
 
 export type PromptGenerationKind = (typeof PROMPT_GENERATION_KINDS)[number];
+
 export type PromptGenerationPreset = (typeof PROMPT_GENERATION_PRESETS)[number];
 
 export interface PromptGenerationRequest {

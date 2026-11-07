@@ -8,11 +8,13 @@ export interface AgentModelBinding {
   modelRef: ModelRef;
   variant?: string;
 }
+
 export interface CategoryMapping {
   categoryName: string;
   modelRef: ModelRef;
   variant?: string;
 }
+
 export interface Group {
   id: string;
   name: string;

@@ -12,4 +12,5 @@ export type SkillEntry = {
 export type SkillList = { data: SkillEntry[]; diagnostics: string[] };
 
 export type SkillDraft = { id: string; content: string };
+
 export type SkillUpdate = SkillDraft & { expectedContent: string; expectedPath: string };

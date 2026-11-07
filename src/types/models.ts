@@ -1,27 +1,32 @@
 export type ModelRef = `${string}/${string}`;
 
 export type ModelModality = 'text' | 'audio' | 'image' | 'video' | 'pdf';
+
 export interface ModelCapabilities {
   tools?: boolean;
   input?: ModelModality[];
   output?: ModelModality[];
 }
+
 export interface ModelCost {
   input?: number | null;
   output?: number | null;
   cache?: { read?: number | null; write?: number | null } | null;
 }
+
 export interface ModelLimit {
   context?: number | null;
   output?: number | null;
   input?: number | null;
 }
+
 export interface ModelVariant {
   id: string;
   settings?: Record<string, unknown>;
   headers?: Record<string, string>;
   body?: unknown;
 }
+
 export interface ModelDef {
   id: string;
   name?: string;

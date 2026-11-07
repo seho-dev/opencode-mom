@@ -4,11 +4,13 @@ import type { ModelRef } from './models.js';
 export type { AgentMode, AgentSource, AgentStorage };
 
 export type PermissionEffect = 'allow' | 'ask' | 'deny';
+
 export interface PermissionRule {
   action: string;
   resource: string;
   effect: PermissionEffect | string;
 }
+
 export interface AgentSourcePreview {
   storage: AgentStorage;
   path?: string;
@@ -18,12 +20,14 @@ export interface AgentSourcePreview {
   fields: Record<string, unknown>;
   prompt?: string | null;
 }
+
 export interface AgentFieldOverride {
   field: string;
   inline: unknown;
   markdown: unknown;
   effective: unknown;
 }
+
 export interface AgentDefinition {
   id: string;
   source: AgentSource;
@@ -43,10 +47,12 @@ export interface AgentDefinition {
   steps?: number;
   permissions?: PermissionRule[];
 }
+
 export type AgentMutation = {
   fields: Record<string, unknown>;
   clearFields?: string[];
   expectedPath?: string;
   expectedContent?: string;
 };
+
 export type AgentWrite = AgentDefinition & { mutation?: AgentMutation };

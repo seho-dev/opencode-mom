@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Pencil, Play, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
+import { Copy, Pencil, Play, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
 import { Button } from '$src/components/button/index.js';
 import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
@@ -258,12 +258,20 @@ async function reloadNow() {
                 disabled={busy || !group.isEnabled}
                 ><Play size={14} /></Button
               ><Button
-                href={`/groups/${group.id}/edit`}
+                href={`/groups/${encodeURIComponent(group.id)}/edit`}
                 variant="ghost"
                 size="icon-sm"
                 disabled={busy}
                 aria-label={i18n.t('groups.editAria', { name: group.name })}
                 ><Pencil size={14} /></Button
+              ><Button
+                href={`/groups/new?copyFrom=${encodeURIComponent(group.id)}`}
+                variant="ghost"
+                size="icon-sm"
+                disabled={busy}
+                aria-label={i18n.t('groups.copyAria', { name: group.name })}
+                title={i18n.t('groups.copyTitle')}
+                ><Copy size={14} aria-hidden="true" /></Button
               ><Button
                 variant="ghost"
                 size="icon-sm"

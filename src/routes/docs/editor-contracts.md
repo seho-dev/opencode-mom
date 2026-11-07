@@ -10,9 +10,9 @@ Source-relative paths below are relative to `src/routes/`, not this docs directo
 
 ## Navigation and immutable edit drafts
 
-- **Navigation**: Use links for route entry and `goto` from `$app/navigation` after successful saves; read IDs through `$app/state`. Model/agent/MCP/skill links encode identifiers with `encodeURIComponent`.
+- **Navigation**: Use links for route entry and `goto` from `$app/navigation` after successful saves; read IDs through `$app/state`. Model/agent/MCP/skill links encode identifiers with `encodeURIComponent`. Group copy opens `/groups/new?copyFrom=<encoded-source-id>` without writing until explicit save.
 
-- **Detail editing**: MCP/skill `?edit=1` opens editing after loading; keyed forms retain immutable expected snapshots, keep drafts on failure, and do not automatically reload OpenCode. Remote skills remain read-only.
+- **Detail editing**: MCP/skill `?edit=1` opens editing after loading; keyed forms retain immutable expected snapshots, keep drafts on failure, and do not automatically reload OpenCode. Remote skills remain read-only. Group copying loads a detached in-memory draft of native, slim, and OMO settings with a localized copy name; a fresh ID and update timestamp are minted only on explicit save. Unsaved group drafts do not affect running configurations or group switching until explicitly saved; invalid or missing source groups show an error banner with a link back to the group list.
 
 - **Draft resets**: Agent/group forms initialize on identity changes and `config.formResetVersion`, not every reactive update. Agent edits freeze selected source fields/clear-fields baseline and backend `resolvedPath`/`content`; refresh/failed retry cannot replace them, but explicit source change/reset reloads them. Echo `expectedPath`/`expectedContent`, never stringify `raw` into a numeric-lossy token; create stays unchanged, missing update snapshots are backend-rejected.
 
@@ -35,5 +35,5 @@ Source-relative paths below are relative to `src/routes/`, not this docs directo
 | Provider validation | `providers/schema.ts` | Requires package on creation; parses optional string-valued headers. |
 | Model mapping | `models/modelForm.ts` | Converts editor strings/variant rows to model definitions and back; maps nullish numeric limits/costs to empty strings while preserving zero values, and omits blank optional numeric fields on save. |
 | Agent editing | `agents/agentForm.ts`, `agents/PermissionEditor.svelte` | Validates fields, joins model variants, and serializes ordered permission rules. |
-| Group editing | `groups/GroupForm.svelte` | Edits runtime-specific bindings and confirms type changes when mappings exist. |
+| Group editing | `groups/GroupForm.svelte` | Edits runtime-specific bindings, supports detached group copying via `/groups/new?copyFrom=`, and confirms type changes when mappings exist. |
 | Document editors | `mcp/McpForm.svelte`, `skills/SkillForm.svelte` | Preserve full documents and send expected source snapshots on updates. |

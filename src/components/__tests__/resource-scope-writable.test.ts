@@ -8,6 +8,7 @@ import { makeScopedConfig } from './scope-config.js';
 
 test('scope remains readonly by default and enables project copy only by explicit opt-in', async () => {
   const view = render(ResourceScope, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig() } });
+
   expect(screen.getByText(en['scope.projectReadOnly'])).toBeTruthy();
   await view.rerender({ writable: true });
   expect(screen.getByText(en['scope.projectWritable'])).toBeTruthy();
@@ -20,6 +21,7 @@ test('destination notice uses captured scope, and readonly comparison always ove
     { writable: true },
     { wrapper: Harness, wrapperProps: { config: makeScopedConfig() } },
   );
+
   expect(screen.getByText(en['scope.globalDestination'])).toBeTruthy();
   expect(screen.queryByText('/work/alpha')).toBeNull();
   await view.rerender({ projectId: 'project-b', writable: true });

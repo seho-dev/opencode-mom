@@ -25,8 +25,10 @@ const filtered = $derived(
 );
 const selectedGroup = $derived(groups.find((group) => group.id === selected));
 const label = $derived(runtime ? i18n.t(GROUP_TYPE_LABELS[runtime]) : '');
+
 $effect(() => {
   const type = runtime;
+
   if (type)
     untrack(() => {
       query = '';
@@ -34,11 +36,15 @@ $effect(() => {
       failed = false;
     });
 });
+
 async function confirm() {
   if (isBusy() || !selectedGroup?.isEnabled || selectedGroup.id === config.selectedGroupId) return;
+
   const target = selectedGroup;
+
   submitting = true;
   failed = false;
+
   try {
     await config.switchGroup(target.id);
     runtime = null;
@@ -49,9 +55,12 @@ async function confirm() {
     submitting = false;
   }
 }
+
 async function reloadNow() {
   if (busy) return;
+
   submitting = true;
+
   try {
     await config.reloadOpencode();
     switchedGroup = null;

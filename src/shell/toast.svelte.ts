@@ -32,12 +32,15 @@ const EXIT_MS = 250;
 
 function remove(id: number) {
   const index = toasts.findIndex((entry) => entry.id === id);
+
   if (index !== -1) toasts.splice(index, 1);
 }
 
 function dismiss(id: number) {
   const entry = toasts.find((item) => item.id === id);
+
   if (!entry || entry.leaving) return;
+
   entry.leaving = true;
   setTimeout(() => remove(id), EXIT_MS);
 }
@@ -53,9 +56,13 @@ export function toast(options: ToastOptions) {
     actions: options.actions ?? (options.action ? [options.action] : []),
     leaving: false,
   };
+
   toasts.push(entry);
+
   const duration = options.duration ?? (options.variant === 'error' ? ERROR_DURATION : DEFAULT_DURATION);
+
   setTimeout(() => dismiss(id), duration);
+
   return id;
 }
 

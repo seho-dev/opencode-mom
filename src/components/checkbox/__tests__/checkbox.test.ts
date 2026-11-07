@@ -17,6 +17,7 @@ test('toggles checked state via click, label association, and Space while ignori
   };
 
   const checkbox = screen.getByRole('checkbox', { name: 'Enable feature' }) as HTMLButtonElement;
+
   expect(checkbox.type).toBe('button');
   expect(checkbox.getAttribute('data-slot')).toBe('checkbox');
   expect(checkbox.getAttribute('aria-checked')).toBe('false');
@@ -35,7 +36,9 @@ test('toggles checked state via click, label association, and Space while ignori
   expect(onCheckedChange).toHaveBeenLastCalledWith(false);
 
   checkbox.focus();
+
   const space = createEvent.keyDown(checkbox, { key: ' ' });
+
   await fireEvent(checkbox, space);
   expect(space.defaultPrevented).toBe(true);
   expect(checkbox.getAttribute('aria-checked')).toBe('true');
@@ -43,6 +46,7 @@ test('toggles checked state via click, label association, and Space while ignori
   expect(onCheckedChange).toHaveBeenLastCalledWith(true);
 
   const enter = createEvent.keyDown(checkbox, { key: 'Enter' });
+
   await fireEvent(checkbox, enter);
   expect(enter.defaultPrevented).toBe(true);
   expect(checkbox.getAttribute('aria-checked')).toBe('true');
@@ -65,6 +69,7 @@ test('supports indeterminate state and transitions to checked on user activation
   };
 
   const checkbox = screen.getByRole('checkbox', { name: 'Enable feature' }) as HTMLButtonElement;
+
   expect(checkbox.getAttribute('aria-checked')).toBe('mixed');
   expect(checkbox.getAttribute('data-state')).toBe('indeterminate');
   expect(checkbox.querySelector('[data-slot="checkbox-indicator"] svg')).not.toBeNull();
@@ -80,9 +85,11 @@ test('supports indeterminate state and transitions to checked on user activation
 
 test('prevents pointer and keyboard changes when disabled', async () => {
   const onCheckedChange = vi.fn();
+
   render(Harness, { initialChecked: true, disabled: true, onCheckedChange });
 
   const checkbox = screen.getByRole('checkbox', { name: 'Enable feature' }) as HTMLButtonElement;
+
   expect(checkbox.disabled).toBe(true);
   expect(checkbox.getAttribute('aria-checked')).toBe('true');
 
@@ -97,6 +104,7 @@ test('synchronizes hidden form input with name/value for FormData and omits it w
   const { container } = render(Harness, { onSubmitFormData });
 
   const hiddenInput = container.querySelector('input[type="checkbox"][name="featureFlag"]') as HTMLInputElement;
+
   expect(hiddenInput).not.toBeNull();
   expect(hiddenInput.getAttribute('aria-hidden')).toBe('true');
   expect(hiddenInput.tabIndex).toBe(-1);
@@ -110,6 +118,7 @@ test('synchronizes hidden form input with name/value for FormData and omits it w
 
   const props: CheckboxProps = { 'aria-label': 'Standalone' };
   const standalone = render(Checkbox, props);
+
   expect(standalone.container.querySelector('input[type="checkbox"]')).toBeNull();
 });
 
@@ -133,6 +142,7 @@ test('QuestionForm uses Space for selection and Enter never submits option or cu
     ],
   };
   const config = { preferences: { locale: 'en' } } as unknown as ConfigStore;
+
   render(
     QuestionForm,
     { question, busy: false, onanswer, onskip },
@@ -140,6 +150,7 @@ test('QuestionForm uses Space for selection and Enter never submits option or cu
   );
 
   const option = screen.getByRole('checkbox', { name: 'Web label' }) as HTMLButtonElement;
+
   option.focus();
   await fireEvent.keyDown(option, { key: ' ' });
   expect(option.getAttribute('aria-checked')).toBe('true');
@@ -148,16 +159,20 @@ test('QuestionForm uses Space for selection and Enter never submits option or cu
     target: { value: 'Custom value' },
   });
   await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
   const custom = screen.getByRole('checkbox', { name: 'Custom value' }) as HTMLButtonElement;
 
   for (const checkbox of [option, custom]) {
     expect(checkbox.type).toBe('button');
     checkbox.focus();
+
     const enter = createEvent.keyDown(checkbox, { key: 'Enter' });
+
     await fireEvent(checkbox, enter);
     expect(enter.defaultPrevented).toBe(true);
     expect(checkbox.getAttribute('aria-checked')).toBe('true');
   }
+
   expect(onanswer).not.toHaveBeenCalled();
   expect(onskip).not.toHaveBeenCalled();
 

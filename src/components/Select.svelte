@@ -63,9 +63,12 @@ function matches(option: SelectOption, needle: string) {
 
 function openList() {
   if (disabled) return;
+
   query = '';
   open = true;
+
   const current = options.findIndex((option) => option.value === value && !option.disabled);
+
   highlight = current >= 0 ? current : options.findIndex((option) => !option.disabled);
 }
 
@@ -77,7 +80,9 @@ function close(focusTrigger = false) {
 
 function choose(option: SelectOption) {
   if (option.disabled) return;
+
   const changed = option.value !== value;
+
   value = option.value;
   close(true);
   if (changed) onchange?.(option.value);
@@ -85,9 +90,12 @@ function choose(option: SelectOption) {
 
 function move(step: number) {
   if (!filtered.length) return;
+
   let index = highlight < 0 ? (step > 0 ? -1 : 0) : highlight;
+
   for (let count = 0; count < filtered.length; count++) {
     index = (index + step + filtered.length) % filtered.length;
+
     if (!filtered[index]?.disabled) {
       highlight = index;
       return;
@@ -97,29 +105,39 @@ function move(step: number) {
 
 function onTriggerKeydown(event: KeyboardEvent) {
   if (disabled) return;
+
   const key = event.key;
+
   if (key === 'Escape') {
     if (open) {
       event.preventDefault();
       close(true);
     }
+
     return;
   }
+
   if (key === 'Tab') {
     if (open) close();
     return;
   }
+
   if (key === 'ArrowDown' || key === 'ArrowUp') {
     event.preventDefault();
+
     if (!open) openList();
     else move(key === 'ArrowDown' ? 1 : -1);
+
     return;
   }
+
   if (key === 'Enter' || key === ' ') {
     event.preventDefault();
+
     if (!open) openList();
     else if (highlight >= 0) {
       const option = filtered[highlight];
+
       if (option) choose(option);
     }
   }
@@ -133,23 +151,31 @@ function onSearchInput(event: Event) {
 
 function onSearchKeydown(event: KeyboardEvent) {
   const key = event.key;
+
   if (key === 'Escape') {
     event.preventDefault();
     close(true);
+
     return;
   }
+
   if (key === 'Tab') {
     close(true);
     return;
   }
+
   if (key === 'ArrowDown' || key === 'ArrowUp') {
     event.preventDefault();
     move(key === 'ArrowDown' ? 1 : -1);
+
     return;
   }
+
   if (key === 'Enter') {
     event.preventDefault();
+
     const option = filtered[highlight];
+
     if (option) choose(option);
   }
 }
@@ -157,6 +183,7 @@ function onSearchKeydown(event: KeyboardEvent) {
 // Keep the highlighted option visible while navigating with the keyboard.
 $effect(() => {
   if (!open || highlight < 0) return;
+
   list?.querySelector<HTMLElement>(`[data-index="${highlight}"]`)?.scrollIntoView({ block: 'nearest' });
 });
 

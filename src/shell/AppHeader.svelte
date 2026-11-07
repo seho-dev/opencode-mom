@@ -15,8 +15,11 @@ let request = 0;
 
 async function openRepository() {
   if (opening) return;
+
   const seq = ++request;
+
   opening = true;
+
   try {
     await config.openProjectPage('repository');
   } catch (cause) {
@@ -27,6 +30,7 @@ async function openRepository() {
     if (seq === request) opening = false;
   }
 }
+
 onDestroy(() => {
   request += 1;
 });

@@ -21,6 +21,7 @@ function mount(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
   const view = render(AppHeader, {}, { wrapper: Harness, wrapperProps: { config: config as unknown as ConfigStore } });
+
   return { config, ...view };
 }
 
@@ -32,8 +33,11 @@ test('translated GitHub icon has a title, opens through config and guards repeat
         finish = resolve;
       }),
   );
+
   mount({ preferences: { locale: 'zh', theme: 'dark' }, openProjectPage });
+
   const button = screen.getByRole('button', { name: '在默认浏览器中打开 GitHub 项目' }) as HTMLButtonElement;
+
   expect(button.title).toBe('在默认浏览器中打开 GitHub 项目');
   expect(screen.getByRole('group', { name: '页眉控件' })).toBeTruthy();
   expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
@@ -54,10 +58,13 @@ test('opener failure gives translated error feedback and leaves the GitHub icon 
     .fn()
     .mockRejectedValueOnce(new Error('No default browser'))
     .mockResolvedValueOnce(undefined);
+
   mount({ openProjectPage });
+
   const button = screen.getByRole('button', {
     name: 'Open project on GitHub in your default browser',
   }) as HTMLButtonElement;
+
   await fireEvent.click(button);
   await waitFor(() =>
     expect(toast).toHaveBeenCalledExactlyOnceWith({
@@ -80,6 +87,7 @@ test('late opener failure after header teardown does not create a stale toast', 
       }),
   );
   const view = mount({ openProjectPage });
+
   await fireEvent.click(screen.getByRole('button', { name: 'Open project on GitHub in your default browser' }));
   view.unmount();
   reject(new Error('Late browser error'));

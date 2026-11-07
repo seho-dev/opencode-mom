@@ -8,10 +8,12 @@ import ConfigFeedback from '../ConfigFeedback.svelte';
 import type { ToastOptions } from '../toast.svelte.js';
 
 const { toast } = vi.hoisted(() => ({ toast: vi.fn() }));
+
 vi.mock('../toast.svelte.js', () => ({ toast }));
 
 test('offers the correct recovery action for conflict, busy, and blocked references', async () => {
   toast.mockClear();
+
   const state = new SvelteMap<string, { code: string; message: string } | null>([['error', null]]);
   const reloadKeepingDraft = vi.fn();
   const continueEditing = vi.fn();
@@ -25,11 +27,14 @@ test('offers the correct recovery action for conflict, busy, and blocked referen
     continueEditing,
     discardDraftAndRefresh,
   } as unknown as ConfigStore;
+
   render(ConfigFeedback, {}, { wrapper: Harness, wrapperProps: { config } });
 
   state.set('error', { code: 'conflict', message: 'Outdated draft' });
   await tick();
+
   const conflict = toast.mock.lastCall?.[0] as ToastOptions;
+
   expect(conflict).toMatchObject({
     variant: 'error',
     title: 'Outdated draft',
@@ -48,14 +53,18 @@ test('offers the correct recovery action for conflict, busy, and blocked referen
 
   state.set('error', { code: 'busy', message: 'Try later' });
   await tick();
+
   const busy = toast.mock.lastCall?.[0] as ToastOptions;
+
   expect(busy).toMatchObject({ variant: 'error', action: { label: 'Continue editing' } });
   expect(busy.actions).toBeUndefined();
   busy.action?.onclick();
 
   state.set('error', { code: 'references_blocked', message: 'Still in use' });
   await tick();
+
   const blocked = toast.mock.lastCall?.[0] as ToastOptions;
+
   expect(blocked).toMatchObject({ variant: 'error', action: { label: 'Back to draft' } });
   blocked.action?.onclick();
   expect(continueEditing).toHaveBeenCalledTimes(3);

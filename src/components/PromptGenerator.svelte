@@ -77,6 +77,7 @@ $effect(() => {
 
 function setOpen(next: boolean) {
   if (next && disabled) return;
+
   requestToken += 1;
   pending = false;
   invalidated = false;
@@ -95,11 +96,14 @@ function setOpen(next: boolean) {
 
 async function generate() {
   if (!canGenerate) return;
+
   const token = ++requestToken;
   const current = () => active && open && token === requestToken && !blocked;
+
   pending = true;
   error = '';
   result = null;
+
   try {
     const text = await config.generatePrompt({
       kind: originalKind,
@@ -109,7 +113,9 @@ async function generate() {
       model: model ? (model as ModelRef) : undefined,
       variant: model && variants.includes(variant) ? variant : undefined,
     });
+
     if (!current()) return;
+
     if (text.trim()) result = text;
     else error = i18n.t('promptGenerator.emptyResult');
   } catch {
@@ -121,7 +127,9 @@ async function generate() {
 
 function apply() {
   if (!canApply || result === null) return;
+
   const text = result;
+
   setOpen(false);
   onapply(text);
 }

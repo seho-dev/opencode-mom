@@ -24,6 +24,7 @@ let initialized = false;
 
 $effect.pre(() => {
   if (initialized) return;
+
   initialized = true;
   checked = initialChecked;
   indeterminate = initialIndeterminate;

@@ -12,6 +12,7 @@ const config = getConfig();
 const i18n = getI18n();
 const ref = $derived(decodeURIComponent(page.params.id ?? ''));
 const found = $derived(config.models().find((model) => model.ref === ref));
+
 async function update(providerId: string, value: ModelDef) {
   await config.updateModel(providerId, value);
   await goto('/models');

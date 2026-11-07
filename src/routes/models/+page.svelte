@@ -1,6 +1,7 @@
 <script lang="ts">
 import { Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
 import { Button } from '$src/components/button/index.js';
+import { readError } from '$src/components/configuration/read-error.js';
 import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
@@ -17,15 +18,13 @@ let refreshing = $state(false);
 let activeTab = $state<'custom' | 'builtin'>('custom');
 const pageSize = 5;
 let page = $state(1);
-const errorMessage = (error: unknown) =>
-  error && typeof error === 'object' && 'message' in error
-    ? String((error as { message: unknown }).message)
-    : String(error);
 
 // Surface catalog load failures as error toasts with a Retry action.
 $effect(() => {
   const catalogError = config.catalogError;
+
   if (!catalogError) return;
+
   toast({
     variant: 'error',
     description: i18n.t('models.catalogFailed', { message: catalogError.message }),
@@ -34,7 +33,9 @@ $effect(() => {
 });
 
 const filteredCatalog = $derived(
-  config.catalog.filter((m) => `${m.ref} ${m.name ?? ''} ${m.providerId}`.toLowerCase().includes(query.toLowerCase())),
+  config.catalog.filter((m) =>
+    `${m.ref} ${m.name ?? ''} ${m.providerId}`.toLowerCase().includes(query.trim().toLowerCase()),
+  ),
 );
 const builtinModels = $derived(filteredCatalog.filter((m) => !m.isCustom));
 const customModels = $derived(filteredCatalog.filter((m) => m.isCustom));
@@ -42,6 +43,7 @@ const visibleModels = $derived(activeTab === 'custom' ? customModels : builtinMo
 const maxPage = $derived(Math.max(1, Math.ceil(visibleModels.length / pageSize)));
 const currentPage = $derived(Math.min(page, maxPage));
 const pagedModels = $derived(visibleModels.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+
 $effect(() => {
   // Reset to the first page whenever the visible row count changes (search, tab switch, or delete).
   void visibleModels.length;
@@ -49,6 +51,7 @@ $effect(() => {
 });
 
 type ModelTab = 'custom' | 'builtin';
+
 const tabOrder: ModelTab[] = ['custom', 'builtin'];
 let customTabEl = $state<HTMLButtonElement | null>(null);
 let builtinTabEl = $state<HTMLButtonElement | null>(null);
@@ -60,26 +63,33 @@ function selectTab(tab: ModelTab) {
 function onTabKeys(event: KeyboardEvent) {
   const current = tabOrder.indexOf(activeTab);
   let next: ModelTab | undefined;
+
   if (event.key === 'ArrowRight') next = tabOrder[(current + 1) % tabOrder.length];
   else if (event.key === 'ArrowLeft') next = tabOrder[(current - 1 + tabOrder.length) % tabOrder.length];
   else if (event.key === 'Home') next = tabOrder[0];
   else if (event.key === 'End') next = tabOrder[tabOrder.length - 1];
+
   if (!next) return;
+
   event.preventDefault();
   selectTab(next);
+
   if (next === 'custom') customTabEl?.focus();
   else if (next === 'builtin') builtinTabEl?.focus();
 }
 
 async function refresh() {
   if (config.loading || config.saving || refreshing) return;
+
   refreshing = true;
+
   try {
     await config.refresh(true);
   } finally {
     refreshing = false;
   }
 }
+
 async function retryCatalog() {
   try {
     await config.loadCatalog();
@@ -87,13 +97,15 @@ async function retryCatalog() {
     // Failures are surfaced as an error toast via the catalogError watcher above.
   }
 }
+
 async function remove() {
   if (!deleting) return;
+
   try {
     await config.deleteModel(deleting as `${string}/${string}`);
     deleting = null;
   } catch (error) {
-    toast({ variant: 'error', description: errorMessage(error) });
+    toast({ variant: 'error', description: readError(error) });
   }
 }
 </script>

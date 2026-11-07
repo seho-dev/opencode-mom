@@ -7,6 +7,7 @@ import EditProviderPage from '../[id]/edit/+page.svelte';
 import NewProviderPage from '../new/+page.svelte';
 
 const { goto, params } = vi.hoisted(() => ({ goto: vi.fn(), params: { id: 'existing' } }));
+
 vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$app/state', () => ({ page: { params } }));
 
@@ -21,6 +22,7 @@ function configWith(providers: ProviderDef[] = []) {
     createProvider,
     updateProvider,
   } as unknown as ConfigStore;
+
   return { config, createProvider, updateProvider };
 }
 
@@ -35,12 +37,15 @@ beforeEach(() => {
 
 test('new provider requires an NPM adapter and rejects invalid headers', async () => {
   const { config, createProvider } = configWith();
+
   mount(NewProviderPage, config);
 
   await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'example' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save provider' }));
   expect(await screen.findByText('Fix the highlighted fields before saving.')).toBeTruthy();
+
   const npmAdapter = screen.getByRole('combobox', { name: 'NPM adapter' });
+
   expect(npmAdapter.getAttribute('aria-invalid')).toBe('true');
   expect(npmAdapter.getAttribute('aria-describedby')).toBe('provider-npm-error');
   expect(document.getElementById('provider-npm-error')?.textContent?.trim()).toBe(
@@ -67,6 +72,7 @@ test('new provider requires an NPM adapter and rejects invalid headers', async (
 
 test('new provider parses JSON headers and navigates after saving', async () => {
   const { config, createProvider } = configWith();
+
   mount(NewProviderPage, config);
 
   await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), { target: { value: '  example  ' } });
@@ -103,9 +109,11 @@ test('edit keeps name immutable and existing models, and allows clearing package
     models: { 'my-model': { id: 'my-model', name: 'My model' } },
   };
   const { config, updateProvider } = configWith([source]);
+
   mount(EditProviderPage, config);
 
   const name = screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement;
+
   expect(name.disabled).toBe(true);
   expect(name.value).toBe('existing');
   expect((screen.getByLabelText('API key') as HTMLInputElement).value).toBe('old-secret');

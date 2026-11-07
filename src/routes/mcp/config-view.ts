@@ -29,9 +29,11 @@ function maskText(value: string): string {
 
 export function maskTarget(server: Pick<McpServer, 'type' | 'target' | 'config'>): string {
   const command = server.config.command;
+
   if (server.type === 'local' && Array.isArray(command) && command.every((entry) => typeof entry === 'string')) {
     return (maskConfig(command) as string[]).join(' ');
   }
+
   return maskText(server.target);
 }
 
@@ -39,7 +41,9 @@ export function maskConfig(value: unknown, key = ''): unknown {
   if (/^(headers|env|environment)$/i.test(key) && value && typeof value === 'object') {
     return Object.fromEntries(Object.keys(value).map((name) => [name, hidden]));
   }
+
   if (credential.test(key)) return hidden;
+
   if (Array.isArray(value)) {
     return value.map((entry, index) => {
       const previous = value[index - 1];
@@ -48,8 +52,10 @@ export function maskConfig(value: unknown, key = ''): unknown {
       return maskConfig(entry);
     });
   }
+
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([name, entry]) => [name, maskConfig(entry, name)]));
   }
+
   return typeof value === 'string' ? maskText(value) : value;
 }

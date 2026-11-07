@@ -18,6 +18,7 @@ vi.mock('$app/state', async () => {
   });
   let params = {};
   let url = new URL('http://localhost/commands/new');
+
   return {
     page: {
       get url() {
@@ -104,17 +105,21 @@ test('command form generates preview and applies into content field preserving s
 
   const contentTextarea = screen.getByLabelText(en['commands.content']) as HTMLTextAreaElement;
   const initialContent = `---\ndescription: Initial\n---\n\n$ARGUMENTS\n`;
+
   await fireEvent.input(contentTextarea, { target: { value: initialContent } });
 
   const openBtn = screen.getByRole('button', { name: en['promptGenerator.open'] });
+
   await fireEvent.click(openBtn);
 
   expect(screen.getByRole('heading', { name: en['promptGenerator.commandTitle'] })).toBeTruthy();
 
   const instructions = screen.getByLabelText(en['promptGenerator.instructions']);
+
   await fireEvent.input(instructions, { target: { value: 'Add tester agent and npm test command' } });
 
   const generateBtn = screen.getByRole('button', { name: en['promptGenerator.generate'] });
+
   await fireEvent.click(generateBtn);
 
   expect(generatePrompt).toHaveBeenCalledExactlyOnceWith({
@@ -131,6 +136,7 @@ test('command form generates preview and applies into content field preserving s
   });
 
   const applyBtn = screen.getByRole('button', { name: en['promptGenerator.apply'] });
+
   await fireEvent.click(applyBtn);
 
   expect(contentTextarea.value).toBe(generatedCommandContent);
@@ -138,9 +144,11 @@ test('command form generates preview and applies into content field preserving s
   expect(updateSlashCommand).not.toHaveBeenCalled();
 
   const nameInput = screen.getByLabelText(en['commands.name']);
+
   await fireEvent.input(nameInput, { target: { value: 'run-tests' } });
 
   const saveBtn = screen.getByRole('button', { name: en['configuration.save'] });
+
   await fireEvent.click(saveBtn);
 
   expect(createSlashCommand).toHaveBeenCalledExactlyOnceWith(
@@ -151,6 +159,7 @@ test('command form generates preview and applies into content field preserving s
 
 test('readonly command form disables prompt generator trigger', async () => {
   page.url = new URL('http://localhost/commands/new?readonly=1');
+
   const { store, generatePrompt } = createCommandTestStore();
 
   render(
@@ -163,6 +172,7 @@ test('readonly command form disables prompt generator trigger', async () => {
   );
 
   const triggerBtn = screen.getByRole('button', { name: en['promptGenerator.open'] }) as HTMLButtonElement;
+
   expect(triggerBtn.disabled).toBe(true);
 
   await fireEvent.click(triggerBtn);

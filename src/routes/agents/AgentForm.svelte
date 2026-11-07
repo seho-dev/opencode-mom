@@ -22,6 +22,7 @@ import {
 import PermissionEditor from './PermissionEditor.svelte';
 
 let { id }: { id?: string } = $props();
+
 type SourceSnapshot = {
   storage: AgentStorage;
   path?: string;
@@ -30,6 +31,7 @@ type SourceSnapshot = {
   prompt?: string;
   fields?: Record<string, unknown>;
 };
+
 const config = getConfig();
 const i18n = getI18n();
 const edit = $derived(id !== undefined);
@@ -58,7 +60,9 @@ const values = $derived(formState.current);
 
 const snapshots = (value: AgentDefinition | undefined) => {
   const raw = (value as (AgentDefinition & Record<string, unknown>) | undefined)?.['sources'];
+
   if (!Array.isArray(raw)) return [] as SourceSnapshot[];
+
   return raw
     .filter(
       (item): item is SourceSnapshot =>
@@ -66,6 +70,7 @@ const snapshots = (value: AgentDefinition | undefined) => {
     )
     .map((item) => {
       const record = item as Record<string, unknown>;
+
       return {
         storage: record['storage'] as AgentStorage,
         path: typeof record['path'] === 'string' ? record['path'] : undefined,
@@ -80,12 +85,15 @@ const snapshots = (value: AgentDefinition | undefined) => {
     });
 };
 const selectedSource = $derived(snapshots(agent).find((entry) => entry.storage === storage));
+
 function loadSource() {
   draftSource = $state.snapshot(selectedSource);
+
   const fields = draftSource?.fields ?? {};
   const selector =
     typeof fields['model'] === 'string' ? splitModelSelector(fields['model']) : { model: '', variant: '' };
   const rules = Array.isArray(fields['permissions']) ? fields['permissions'] : [];
+
   form.reset({
     id: agent?.id ?? '',
     model: selector.model,
@@ -100,8 +108,10 @@ function loadSource() {
     permission: JSON.stringify(rules, null, 2),
   });
 }
+
 $effect(() => {
   if (!edit || !agent) return;
+
   if (initialized !== agent.id) {
     initialized = agent.id;
     storage = snapshots(agent)[0]?.storage ?? 'inline';
@@ -112,25 +122,32 @@ $effect(() => {
     loadSource();
   }
 });
+
 async function submit(values: AgentFormValues) {
   if (edit && (!agent || !draftSource)) {
     toast({ variant: 'error', description: i18n.t('agents.sourceCannotEdit') });
     return;
   }
+
   try {
     const fields = agentMutationFields(values);
+
     if (edit && agent && draftSource) {
       const original = draftSource.fields ?? {};
       const clearFields: string[] = ['model', 'mode', 'color', 'steps'].filter(
         (key) => fields[key] === undefined && key in original,
       );
+
       if (fields['permissions'] === undefined && 'permissions' in original) clearFields.push('permissions');
+
       const hadPrompt = (draftSource.prompt ?? '') !== '' || 'prompt' in original || 'system' in original;
+
       if (hadPrompt && !values.prompt) clearFields.push('prompt');
       await config.updateAgent({
         id: agent.id,
         source: agent.source,
         storage,
+
         mutation: {
           fields,
           clearFields,
@@ -146,6 +163,7 @@ async function submit(values: AgentFormValues) {
         mutation: { fields },
       } as AgentWrite);
     }
+
     await goto('/agents');
   } catch (error) {
     toast({
@@ -177,9 +195,11 @@ const variantHint = $derived(
 const promptHint = $derived(
   i18n.t((edit ? storage : source) === 'inline' ? 'agents.promptHintInline' : 'agents.promptHintMarkdown'),
 );
+
 function changeModel(model: string) {
   if (values.variant && !buildModelVariants(config.catalogModels(), config.models(), model).includes(values.variant))
     form.setFieldValue('variant', '');
+
   form.setFieldValue('model', model);
 }
 </script>

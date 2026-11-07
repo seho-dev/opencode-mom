@@ -39,15 +39,19 @@ async function load(edit = false) {
   const id = page.params.id ?? '';
   const scope = projectId;
   const key = identity;
+
   loading = true;
   error = '';
   missing = false;
   editing = false;
   saved = false;
   data = null;
+
   try {
     const result = await config.getSlashCommand(id, scope);
+
     if (!mounted || seq !== request || key !== identity) return;
+
     data = result;
     loadedIdentity = key;
     editing = edit && !readonly;
@@ -60,15 +64,19 @@ async function load(edit = false) {
     if (mounted && seq === request) loading = false;
   }
 }
+
 $effect(() => {
   void identity;
+
   const edit = page.url.searchParams.get('edit') === '1';
+
   deleteTarget = null;
   deleteError = '';
   deleting = false;
   untrack(() => {
     void load(edit);
   });
+
   return () => {
     request += 1;
     deleteRequest += 1;
@@ -79,12 +87,16 @@ onDestroy(() => {
   request += 1;
   deleteRequest += 1;
 });
+
 async function remove() {
   if (!deleteTarget || readonly || deleting) return;
+
   const target = deleteTarget;
   const seq = ++deleteRequest;
+
   deleting = true;
   deleteError = '';
+
   try {
     await config.deleteSlashCommand(
       {
@@ -95,6 +107,7 @@ async function remove() {
       target.scope,
     );
     if (!mounted || seq !== deleteRequest || target.identity !== identity) return;
+
     deleteTarget = null;
     await goto('/commands');
   } catch (cause) {

@@ -16,27 +16,33 @@ let refreshing = $state(false);
 const pageSize = 5;
 let page = $state(1);
 const filtered = $derived(
-  config.providers.filter((provider) => provider.name.toLowerCase().includes(query.toLowerCase())),
+  config.providers.filter((provider) => provider.name.toLowerCase().includes(query.trim().toLowerCase())),
 );
 const maxPage = $derived(Math.max(1, Math.ceil(filtered.length / pageSize)));
 const currentPage = $derived(Math.min(page, maxPage));
 const pagedProviders = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+
 $effect(() => {
   // Reset to the first page whenever the filtered row count changes (search or delete).
   void filtered.length;
   page = 1;
 });
+
 async function refresh() {
   if (config.loading || config.saving || refreshing) return;
+
   refreshing = true;
+
   try {
     await config.refresh(true);
   } finally {
     refreshing = false;
   }
 }
+
 async function remove() {
   if (!deleting) return;
+
   try {
     await config.deleteProvider(deleting);
     deleting = null;

@@ -13,29 +13,38 @@ const i18n = getI18n();
 let pending = $state(false);
 let failed = $state(false);
 let active = true;
+
 onDestroy(() => {
   active = false;
 });
 
 function close() {
   if (pending) return;
+
   server = null;
   failed = false;
 }
+
 async function remove() {
   if (!server || pending) return;
+
   const name = server.name;
+
   pending = true;
   failed = false;
+
   try {
     await config.deleteMcp(name);
   } catch {
     if (active && server?.name === name) failed = true;
     pending = false;
+
     return;
   }
+
   pending = false;
   if (!active || server?.name !== name) return;
+
   close();
   await onDeleted();
 }

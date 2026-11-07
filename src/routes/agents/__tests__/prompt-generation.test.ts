@@ -50,11 +50,14 @@ const editableAgent: AgentDefinition = {
         description: 'Reviews code',
         prompt: 'Initial agent prompt',
       }),
+
       raw: {
         description: 'Reviews code',
         prompt: 'Initial agent prompt',
       },
+
       prompt: 'Initial agent prompt',
+
       fields: {
         description: 'Reviews code',
         prompt: 'Initial agent prompt',
@@ -114,17 +117,21 @@ test('agent form generates preview and applies into prompt field without auto-sa
   );
 
   const promptTextarea = (await screen.findByLabelText(en['agents.prompt'])) as HTMLTextAreaElement;
+
   expect(promptTextarea.value).toBe('Initial agent prompt');
 
   const openBtn = screen.getByRole('button', { name: en['promptGenerator.open'] });
+
   await fireEvent.click(openBtn);
 
   expect(screen.getByRole('heading', { name: en['promptGenerator.agentTitle'] })).toBeTruthy();
 
   const instructions = screen.getByLabelText(en['promptGenerator.instructions']);
+
   await fireEvent.input(instructions, { target: { value: 'Focus on performance and security' } });
 
   const generateBtn = screen.getByRole('button', { name: en['promptGenerator.generate'] });
+
   await fireEvent.click(generateBtn);
 
   expect(generatePrompt).toHaveBeenCalledExactlyOnceWith({
@@ -141,6 +148,7 @@ test('agent form generates preview and applies into prompt field without auto-sa
   });
 
   const applyBtn = screen.getByRole('button', { name: en['promptGenerator.apply'] });
+
   await fireEvent.click(applyBtn);
 
   expect(promptTextarea.value).toBe('Replaced agent prompt from AI');
@@ -151,6 +159,7 @@ test('agent form generates preview and applies into prompt field without auto-sa
 test('built-in agent disables prompt generator trigger', async () => {
   currentRouteId = 'build';
   currentUrl = new URL('http://localhost/agents/build/edit');
+
   const { config, generatePrompt } = createAgentTestConfig([builtinAgent]);
 
   render(
@@ -167,6 +176,7 @@ test('built-in agent disables prompt generator trigger', async () => {
   });
 
   const promptGeneratorBtn = screen.queryByRole('button', { name: en['promptGenerator.open'] });
+
   expect(promptGeneratorBtn).toBeNull();
   expect(generatePrompt).not.toHaveBeenCalled();
 });

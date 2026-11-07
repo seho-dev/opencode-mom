@@ -28,6 +28,7 @@ vi.mock('$app/state', async () => {
     url: new URL('http://localhost/mcp'),
     params: {},
   };
+
   return {
     page: {
       get url() {
@@ -138,11 +139,16 @@ test.each(['edit', 'toggle'] as const)(
       .mockResolvedValueOnce({ ...defaultProxyState, revision: 4 })
       .mockResolvedValue({ ...defaultProxyState, revision: 5 });
     const config = makeConfig({ getMcpProxyServer, getMcpProxyState });
+
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
     const view = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+
     await vi.advanceTimersByTimeAsync(0);
     await tick();
+
     const button = screen.getByRole('button', { name: action === 'edit' ? 'Edit' : 'Disabled' });
+
     await fireEvent.click(button);
     await fireEvent.click(button);
     expect(getMcpProxyServer).toHaveBeenCalledTimes(1);
@@ -155,8 +161,10 @@ test.each(['edit', 'toggle'] as const)(
     resolve(fullServer);
     await pending;
     await tick();
+
     if (action === 'edit') {
       const command = screen.getByRole('textbox', { name: 'Command & Arguments' }) as HTMLTextAreaElement;
+
       await fireEvent.input(command, { target: { value: 'node\ncustom-server' } });
       await view.component.refresh();
       await tick();
@@ -164,6 +172,7 @@ test.each(['edit', 'toggle'] as const)(
       expect(command.value).toBe('node\ncustom-server');
       await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
     }
+
     expect(config.updateMcpProxyServer).toHaveBeenCalledExactlyOnceWith(
       {
         ...fullServer,
@@ -173,7 +182,9 @@ test.each(['edit', 'toggle'] as const)(
       3,
     );
     await tick();
+
     const reads = getMcpProxyState.mock.calls.length;
+
     await vi.advanceTimersByTimeAsync(60000);
     expect(getMcpProxyState).toHaveBeenCalledTimes(reads);
   },
@@ -208,6 +219,7 @@ async function startMutation(action: (typeof mutations)[number][0]) {
 
 test.each(mutations)('%s queues one successful readback behind an in-flight manual refresh', async (action, method) => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   let finishMutation!: () => void;
   const pendingMutation = new Promise<void>((resolve) => {
     finishMutation = resolve;
@@ -224,9 +236,11 @@ test.each(mutations)('%s queues one successful readback behind an in-flight manu
     .mockResolvedValue({ ...defaultProxyState, revision: 4, activeSessions: 8 });
   const config = makeConfig({ [method]: mutation, getMcpProxyState });
   const view = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await vi.advanceTimersByTimeAsync(0);
   await tick();
   await startMutation(action);
+
   if (action === 'gateway' || action === 'toggle') {
     await startMutation(action);
   } else if (action === 'save') {
@@ -234,10 +248,13 @@ test.each(mutations)('%s queues one successful readback behind an in-flight manu
   } else {
     await fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Updating…' }));
   }
+
   expect(mutation).toHaveBeenCalledOnce();
   if (action === 'delete') expect(mutation).toHaveBeenCalledWith('fs-server', 3);
   if (action === 'close') expect(mutation).toHaveBeenCalledWith({ unitId: 'unit-abc', expectedGeneration: 1 });
+
   const refreshing = view.component.refresh();
+
   await view.component.refresh();
   await vi.advanceTimersByTimeAsync(60000);
   expect(getMcpProxyState).toHaveBeenCalledTimes(2);
@@ -257,20 +274,24 @@ test.each(mutations)('%s queues one successful readback behind an in-flight manu
 
 test.each(mutations)('%s failure retains feedback without triggering another read', async (action, method) => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const mutation = vi.fn().mockRejectedValue(new Error('Mutation failed'));
   const config = makeConfig({ [method]: mutation });
+
   render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
   await vi.advanceTimersByTimeAsync(0);
   await tick();
   await startMutation(action);
   await tick();
   expect(mutation).toHaveBeenCalledOnce();
+
   if (action === 'gateway' || action === 'toggle') {
     expect(toast).toHaveBeenCalledWith({ variant: 'destructive', description: 'Mutation failed' });
   } else {
     expect(screen.getByRole('alert').textContent).toContain('Mutation failed');
     expect(screen.getByRole('dialog')).toBeDefined();
   }
+
   await vi.advanceTimersByTimeAsync(60000);
   expect(config.getMcpProxyState).toHaveBeenCalledOnce();
 });
@@ -283,6 +304,7 @@ test.each(mutations)('%s completion after teardown starts no readback or feedbac
   const mutation = vi.fn().mockReturnValue(pending);
   const config = makeConfig({ [method]: mutation });
   const view = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await screen.findByText('Filesystem Server');
   await startMutation(action);
   expect(mutation).toHaveBeenCalledOnce();
@@ -302,8 +324,11 @@ test('teardown drops queued mutation readback and late state results', async () 
   const getMcpProxyState = vi.fn().mockResolvedValueOnce(defaultProxyState).mockReturnValueOnce(pending);
   const config = makeConfig({ getMcpProxyState });
   const view = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await screen.findByText('Filesystem Server');
+
   const refreshing = view.component.refresh();
+
   await startMutation('toggle');
   expect(config.updateMcpProxyServer).toHaveBeenCalledOnce();
   view.unmount();
@@ -316,7 +341,9 @@ test('teardown drops queued mutation readback and late state results', async () 
 
 test('Proxy tab reads on entry and header refresh only, and remounts on reentry', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const config = makeConfig();
+
   render(McpPage, {}, { wrapper: Harness, wrapperProps: { config } });
   await vi.advanceTimersByTimeAsync(0);
   await tick();
@@ -326,7 +353,9 @@ test('Proxy tab reads on entry and header refresh only, and remounts on reentry'
   expect(config.getMcpProxyState).toHaveBeenCalledOnce();
   await vi.advanceTimersByTimeAsync(60000);
   expect(config.getMcpProxyState).toHaveBeenCalledOnce();
+
   const configReads = vi.mocked(config.listMcps).mock.calls.length;
+
   await fireEvent.click(screen.getAllByRole('button', { name: 'Refresh' })[0] as HTMLButtonElement);
   await tick();
   expect(config.getMcpProxyState).toHaveBeenCalledTimes(2);
@@ -347,6 +376,7 @@ test('status stays loading until readback and becomes unknown after a failed ref
   const config = makeConfig({
     getMcpProxyState: vi.fn().mockReturnValueOnce(pending).mockRejectedValue(new Error('Read failed')),
   });
+
   render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
   expect(screen.getAllByText('Loading configuration...').length).toBeGreaterThan(0);
   expect(screen.queryByText('Stopped')).toBeNull();
@@ -361,6 +391,7 @@ test('status stays loading until readback and becomes unknown after a failed ref
 
 test('failed initial state read stays unknown rather than stopped', async () => {
   const config = makeConfig({ getMcpProxyState: vi.fn().mockRejectedValue(new Error('Read failed')) });
+
   render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByText('Read failed');
   expect(screen.getByText('Status unknown')).toBeDefined();
@@ -375,6 +406,7 @@ test('gateway does not save settings read after unmount', async () => {
   });
   const config = makeConfig({ getMcpProxySettings: vi.fn().mockReturnValue(pending) });
   const { unmount } = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await screen.findByText('Filesystem Server');
   await fireEvent.click(screen.getByRole('checkbox', { name: 'Enable MCP Gateway' }));
   unmount();
@@ -393,6 +425,7 @@ test.each(['edit', 'toggle'] as const)('%s ignores a server lookup completed aft
   const getMcpProxyServer = vi.fn().mockReturnValue(pending);
   const config = makeConfig({ getMcpProxyServer });
   const { unmount } = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await screen.findByText('Filesystem Server');
   expect(screen.getByText('Active Units: 2 / 32')).toBeDefined();
   expect(screen.getByText('Active Sessions: 7')).toBeDefined();
@@ -414,6 +447,7 @@ test('does not toast an edit lookup error after unmount', async () => {
   });
   const config = makeConfig({ getMcpProxyServer: vi.fn().mockReturnValue(pending) });
   const { unmount } = render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await screen.findByText('Filesystem Server');
   await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   unmount();
@@ -425,12 +459,15 @@ test('does not toast an edit lookup error after unmount', async () => {
 
 test('server enabled switch binds its named checkbox to the saved draft', async () => {
   const config = makeConfig();
+
   render(
     ProxyServerForm,
     { dialog: false, server: fullServer, expectedRevision: 3 },
     { wrapper: Harness, wrapperProps: { config } },
   );
+
   const checkbox = screen.getByRole('checkbox', { name: 'Enabled' }) as HTMLInputElement;
+
   expect(checkbox.id).toBe('proxy-srv-enabled');
   expect(checkbox.name).toBe('proxy-srv-enabled');
   expect(checkbox.checked).toBe(true);
@@ -447,6 +484,7 @@ test('create does not mutate or navigate when its revision read finishes after u
   });
   const config = makeConfig({ getMcpProxyState: vi.fn().mockReturnValue(pending) });
   const { unmount } = render(ProxyNewPage, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await fireEvent.input(screen.getByLabelText('Server ID'), { target: { value: 'custom-mcp' } });
   await fireEvent.input(screen.getByRole('textbox', { name: /Command/ }), { target: { value: 'npx' } });
   await fireEvent.submit(screen.getByRole('form'));
@@ -479,10 +517,12 @@ test.each(['create', 'update'] as const)(
             { dialog: false, server: fullServer, expectedRevision: 3, onSaved },
             { wrapper: Harness, wrapperProps: { config } },
           );
+
     if (action === 'create') {
       await fireEvent.input(screen.getByLabelText('Server ID'), { target: { value: 'custom-mcp' } });
       await fireEvent.input(screen.getByRole('textbox', { name: /Command/ }), { target: { value: 'npx' } });
     }
+
     await fireEvent.submit(screen.getByRole('form'));
     await waitFor(() => expect(mutation).toHaveBeenCalledTimes(1));
     await fireEvent.submit(screen.getByRole('form'));
@@ -510,6 +550,7 @@ test('import ignores duplicate submissions and late completion after unmount', a
     importMcpProxyServer: vi.fn().mockReturnValue(pending),
   });
   const { unmount } = render(ProxyNewPage, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await fireEvent.click(screen.getByRole('button', { name: 'Import Server' }));
   await screen.findByRole('button', { name: 'local-fs (local)' });
   await fireEvent.submit(screen.getByRole('form'));
@@ -542,6 +583,7 @@ test.each([false, true])('server form dialog=%s preserves textarea borders and l
     ]),
   };
   const config = makeConfig();
+
   render(
     ProxyServerForm,
     {
@@ -554,18 +596,23 @@ test.each([false, true])('server form dialog=%s preserves textarea borders and l
     { wrapper: Harness, wrapperProps: { config } },
   );
   await screen.findByRole(dialog ? 'dialog' : 'form');
+
   const command = screen.getByLabelText('Command & Arguments') as HTMLTextAreaElement;
   const env = screen.getByLabelText('Environment Variables') as HTMLTextAreaElement;
+
   for (const [field, height] of [
     [command, 'min-h-20'],
     [env, 'min-h-16'],
   ] as const) {
     expect(field.getAttribute('data-slot')).toBe('textarea');
+
     for (const name of ['border', 'border-[var(--border-default)]', 'font-mono', 'text-xs', height]) {
       expect(field.classList.contains(name)).toBe(true);
     }
+
     expect(field.classList.contains('min-h-24')).toBe(false);
   }
+
   await fireEvent.input(env, { target: { value: `${env.value}\n  # comment\n  MORE =  more  ` } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
   await waitFor(() =>
@@ -647,6 +694,7 @@ test.each([false, true])('server form dialog=%s rejects invalid env and timeout 
 
 test('MCP page displays tabs and switches between config and proxy', async () => {
   const config = makeConfig();
+
   render(McpPage, {}, { wrapper: Harness, wrapperProps: { config } });
 
   expect(screen.getByRole('tab', { name: 'Configuration' })).toBeDefined();
@@ -654,15 +702,19 @@ test('MCP page displays tabs and switches between config and proxy', async () =>
 
   // Click MCP Proxy tab
   const proxyTab = screen.getByRole('tab', { name: 'MCP Proxy' });
+
   await fireEvent.click(proxyTab);
 
   expect(vi.mocked(goto)).toHaveBeenCalled();
+
   const calledUrl = vi.mocked(goto).mock.calls[0]?.[0] as string;
+
   expect(calledUrl).toContain('tab=proxy');
 });
 
 test('ProxyPanel renders running status, server list and supports close unit', async () => {
   page.url = new URL('http://localhost/mcp?tab=proxy');
+
   const closeMcpProxyUnit = vi.fn().mockResolvedValue(undefined);
   const config = makeConfig({ closeMcpProxyUnit });
 
@@ -679,16 +731,21 @@ test('ProxyPanel renders running status, server list and supports close unit', a
   // Click Close Unit button
   const buttons = screen.getAllByRole('button', { name: /Close Unit/i });
   const triggerBtn = buttons[0];
+
   if (!triggerBtn) throw new Error('Trigger button not found');
+
   await fireEvent.click(triggerBtn);
 
   // Modal appears with input
   const input = screen.getByRole('textbox', { name: 'Enter unit or session ID to close:' });
+
   await fireEvent.input(input, { target: { value: 'unit-abc' } });
 
   const modalButtons = screen.getAllByRole('button', { name: /Close Unit/i });
   const confirmBtn = modalButtons[1];
+
   if (!confirmBtn) throw new Error('Confirm button not found');
+
   await fireEvent.click(confirmBtn);
 
   await waitFor(() => {
@@ -701,6 +758,7 @@ test('ProxyPanel renders running status, server list and supports close unit', a
 
 test('ProxyPanel master switch toggles gateway enablement', async () => {
   page.url = new URL('http://localhost/mcp?tab=proxy');
+
   const getMcpProxySettings = vi.fn().mockResolvedValue({
     enabled: true,
     idleTimeout: 300,
@@ -714,6 +772,7 @@ test('ProxyPanel master switch toggles gateway enablement', async () => {
   await waitFor(() => expect(config.getMcpProxyState).toHaveBeenCalled());
 
   const masterSwitch = screen.getByRole('checkbox', { name: 'Enable MCP Gateway' });
+
   expect((masterSwitch as HTMLInputElement).checked).toBe(true);
 
   await fireEvent.click(masterSwitch);
@@ -724,11 +783,14 @@ test('ProxyPanel master switch toggles gateway enablement', async () => {
 
 test('Add Server button links to /mcp/proxy/new', async () => {
   page.url = new URL('http://localhost/mcp?tab=proxy');
+
   const config = makeConfig();
+
   render(McpPage, {}, { wrapper: Harness, wrapperProps: { config } });
   await waitFor(() => expect(config.getMcpProxyState).toHaveBeenCalled());
 
   const addLink = screen.getByRole('link', { name: 'Add Server' });
+
   expect(addLink.getAttribute('href')).toBe('/mcp/proxy/new');
 });
 
@@ -739,6 +801,7 @@ test('ProxyNewPage creates proxy server and navigates on save', async () => {
   render(ProxyNewPage, {}, { wrapper: Harness, wrapperProps: { config } });
 
   await screen.findByRole('heading', { name: 'Add Proxy Server' });
+
   const idInput = screen.getByLabelText('Server ID');
   const cmdInput = screen.getByLabelText('Command & Arguments');
 
@@ -746,6 +809,7 @@ test('ProxyNewPage creates proxy server and navigates on save', async () => {
   await fireEvent.input(cmdInput, { target: { value: 'npx\n-y\ncustom-pkg' } });
 
   const saveBtn = screen.getByRole('button', { name: 'Save Server' });
+
   await fireEvent.click(saveBtn);
 
   await waitFor(() => {

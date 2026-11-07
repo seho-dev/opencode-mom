@@ -1,11 +1,14 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterAll, beforeAll, expect, test, vi } from 'vitest';
 import { makeScopedConfig } from '$src/components/__tests__/scope-config.js';
-import type { ConfigStore } from '$src/config/store.svelte.js';
+import type { CommandAdapter } from '$src/config/adapter.js';
+import { type ConfigStore, createConfigStore } from '$src/config/store.svelte.js';
 import Harness from '$src/test-utils/harness.svelte';
 import AgentList from '../+page.svelte';
 
 const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
 beforeAll(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
 });
@@ -22,20 +25,27 @@ test('cancel keeps both sources, while confirming removes only the selected stor
     loading: false,
     deleteAgent,
   } as unknown as ConfigStore;
+
   render(AgentList, {}, { wrapper: Harness, wrapperProps: { config } });
 
   await fireEvent.click(screen.getByRole('button', { name: 'Delete helper' }));
+
   const dialog = screen.getByRole('dialog');
+
   expect(within(dialog).getByText('Source to delete')).toBeTruthy();
   await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(deleteAgent).not.toHaveBeenCalled();
 
   await fireEvent.click(screen.getByRole('button', { name: 'Delete helper' }));
+
   const confirmation = screen.getByRole('dialog');
   const source = within(confirmation).getByRole('button', { name: 'Source to delete' });
+
   await fireEvent.click(source);
+
   const option = await screen.findByRole('option', { name: 'Global Markdown' });
+
   expect(option.closest('[role="listbox"]')?.id).toBe(source.getAttribute('aria-controls'));
   expect(confirmation.contains(option)).toBe(false);
   await fireEvent.click(option);
@@ -50,8 +60,11 @@ test('project agents are independent of Global state, readonly, and builtin tabs
     .fn()
     .mockResolvedValue([{ id: 'project-helper', source: 'markdown', description: 'Project only' }]);
   const config = makeScopedConfig({ agents: globalAgents, listAgents });
+
   render(AgentList, {}, { wrapper: Harness, wrapperProps: { config } });
+
   const link = await screen.findByRole('link', { name: 'project-helper' });
+
   expect(link.getAttribute('href')).toBe('/agents/project-helper?project=project-a');
   expect(listAgents).toHaveBeenCalledExactlyOnceWith('project-a');
   expect(config.agents).toEqual(globalAgents);
@@ -59,7 +72,9 @@ test('project agents are independent of Global state, readonly, and builtin tabs
   expect(screen.queryByRole('link', { name: 'Edit project-helper' })).toBeNull();
   expect(screen.queryByRole('link', { name: 'New agent' })).toBeNull();
   await fireEvent.click(screen.getByRole('tab', { name: /^Native/ }));
+
   const builtin = screen.getByRole('tabpanel').textContent;
+
   expect(builtin).not.toContain('project-helper');
   await fireEvent.click(screen.getByRole('button', { name: 'Return to Global' }));
   await waitFor(() => expect(config.selectedProjectId).toBeNull());
@@ -75,6 +90,7 @@ test('same-name project and Global agents remain distinct readonly entries', asy
     agents: [{ id: 'helper', source: 'inline' }],
     listAgents: vi.fn().mockResolvedValue([{ id: 'helper', source: 'markdown' }]),
   });
+
   render(AgentList, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('link', { name: 'helper' });
   await fireEvent.click(screen.getByRole('checkbox', { name: 'Show global configuration' }));
@@ -96,6 +112,7 @@ test('late project agent read cannot replace Global state or reappear after retu
       }),
   );
   const config = makeScopedConfig({ agents: [{ id: 'global-helper', source: 'inline' }], listAgents });
+
   render(AgentList, {}, { wrapper: Harness, wrapperProps: { config } });
   await waitFor(() => expect(listAgents).toHaveBeenCalledWith('project-a'));
   await fireEvent.click(screen.getByRole('button', { name: 'Return to Global' }));
@@ -114,6 +131,7 @@ test('project Refresh lazily rereads both scopes without replacing Global agents
     .mockResolvedValueOnce([{ id: 'project-new', source: 'markdown' }])
     .mockResolvedValueOnce([{ id: 'global-new', source: 'inline' }]);
   const config = makeScopedConfig({ agents: globalAgents, listAgents });
+
   render(AgentList, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('link', { name: 'project-old' });
   expect(listAgents).toHaveBeenCalledTimes(1);
@@ -143,9 +161,12 @@ test('older Global comparison read cannot overwrite a newer toggle read or leak 
     )
     .mockResolvedValueOnce([{ id: 'current-comparison', source: 'inline' }]);
   const config = makeScopedConfig({ agents: [{ id: 'cached-global', source: 'inline' }], listAgents });
+
   render(AgentList, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('link', { name: 'project-helper' });
+
   const checkbox = screen.getByRole('checkbox', { name: 'Show global configuration' });
+
   await fireEvent.click(checkbox);
   await waitFor(() => expect(listAgents).toHaveBeenCalledTimes(2));
   await fireEvent.click(checkbox);
@@ -165,14 +186,128 @@ test('Agent Global comparison failure stays separate from project data and retri
     .mockResolvedValueOnce([{ id: 'project-helper', source: 'markdown' }])
     .mockRejectedValueOnce(new Error('Global read denied'))
     .mockResolvedValueOnce([{ id: 'global-helper', source: 'inline' }]);
+
   render(AgentList, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig({ listAgents }) } });
   await screen.findByRole('link', { name: 'project-helper' });
   await fireEvent.click(screen.getByRole('checkbox', { name: 'Show global configuration' }));
+
   const alert = await screen.findByRole('alert');
+
   expect(alert.textContent).toContain('Global comparison could not be loaded');
   expect(screen.getByRole('link', { name: 'project-helper' })).toBeTruthy();
   await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
   await screen.findByRole('link', { name: 'global-helper' });
   expect(listAgents).toHaveBeenNthCalledWith(3);
   expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('agent list query trims leading and trailing whitespace', async () => {
+  const config = {
+    preferences: { locale: 'en', theme: 'light' },
+    agents: [
+      { id: 'helper', source: 'inline', description: 'project helper' },
+      { id: 'other', source: 'inline', description: 'unrelated' },
+    ],
+    loading: false,
+    selectedProjectId: null,
+  } as unknown as ConfigStore;
+
+  render(AgentList, {}, { wrapper: Harness, wrapperProps: { config } });
+
+  const searchInput = screen.getByRole('textbox', { name: 'Search agents' });
+
+  await fireEvent.input(searchInput, { target: { value: '   helper   ' } });
+  expect(screen.getByRole('link', { name: 'Edit helper' })).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'Edit other' })).toBeNull();
+});
+test('tablist arrows and Home/End follow the runtime tab order and keep refs on the same tabs', async () => {
+  const config = createConfigStore({} as unknown as CommandAdapter, false, false);
+
+  config.applyPreferences({ locale: 'en', theme: 'light', defaultPlugin: 'native' });
+  render(AgentList, {}, { wrapper: Harness, wrapperProps: { config } });
+
+  const custom = screen.getByRole('tab', { name: /Custom/ });
+  const native = screen.getByRole('tab', { name: /Native/ });
+  const slim = screen.getByRole('tab', { name: /Slim/ });
+  const omo = screen.getByRole('tab', { name: /OMO/ });
+
+  custom.focus();
+
+  // Initial order has Custom first, followed by defaultPlugin ('native') order: [custom, native, slim, omo].
+  expect(screen.getAllByRole('tab')).toEqual([custom, native, slim, omo]);
+  expect(custom.getAttribute('tabindex')).toBe('0');
+  expect(native.getAttribute('tabindex')).toBe('-1');
+  expect(custom.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').id).toBe('agents-tabpanel-custom');
+
+  // ArrowRight moves from custom to native.
+  await fireEvent.keyDown(custom, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(native);
+  expect(native.getAttribute('aria-selected')).toBe('true');
+  expect(native.getAttribute('tabindex')).toBe('0');
+  expect(custom.getAttribute('aria-selected')).toBe('false');
+  expect(custom.getAttribute('tabindex')).toBe('-1');
+  expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe('agents-tab-native');
+
+  // End moves to omo (last).
+  await fireEvent.keyDown(native, { key: 'End' });
+  expect(document.activeElement).toBe(omo);
+  expect(omo.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe('agents-tab-omo');
+
+  // Home moves back to custom (first).
+  await fireEvent.keyDown(omo, { key: 'Home' });
+  expect(document.activeElement).toBe(custom);
+  expect(custom.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').id).toBe('agents-tabpanel-custom');
+
+  // ArrowLeft from the first entry (custom) wraps to the last one (omo).
+  await fireEvent.keyDown(custom, { key: 'ArrowLeft' });
+  expect(document.activeElement).toBe(omo);
+  expect(omo.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe('agents-tab-omo');
+
+  // ArrowRight from the last entry (omo) wraps back to the first one (custom).
+  await fireEvent.keyDown(omo, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(custom);
+  expect(custom.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').id).toBe('agents-tabpanel-custom');
+
+  // Changing runtime preference reorders builtin tabs while custom stays first: [custom, omo, native, slim].
+  config.applyPreferences({ ...config.preferences, defaultPlugin: 'omo' });
+  await tick();
+  expect(screen.getAllByRole('tab')).toEqual([custom, omo, native, slim]);
+  expect(screen.getByRole('tab', { name: /Custom/ })).toBe(custom);
+  expect(screen.getByRole('tab', { name: /Native/ })).toBe(native);
+  expect(screen.getByRole('tab', { name: /Slim/ })).toBe(slim);
+  expect(screen.getByRole('tab', { name: /OMO/ })).toBe(omo);
+
+  // Keyboard navigation on reordered tabs: ArrowRight from custom walks into omo.
+  await fireEvent.keyDown(custom, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(omo);
+  expect(omo.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe('agents-tab-omo');
+
+  await fireEvent.keyDown(omo, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(native);
+  expect(native.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe('agents-tab-native');
+
+  // End moves to slim (last).
+  await fireEvent.keyDown(native, { key: 'End' });
+  expect(document.activeElement).toBe(slim);
+  expect(slim.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe('agents-tab-slim');
+
+  // ArrowRight wraps from slim to custom.
+  await fireEvent.keyDown(slim, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(custom);
+  expect(custom.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').id).toBe('agents-tabpanel-custom');
+
+  // ArrowLeft wraps from custom to slim.
+  await fireEvent.keyDown(custom, { key: 'ArrowLeft' });
+  expect(document.activeElement).toBe(slim);
+  expect(slim.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe('agents-tab-slim');
 });

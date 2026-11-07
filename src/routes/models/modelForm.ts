@@ -34,7 +34,9 @@ export const initMods = (values?: ModelModality[]) => {
     video: false,
     pdf: false,
   };
+
   for (const value of values ?? []) selected[value] = true;
+
   return selected;
 };
 
@@ -45,6 +47,7 @@ const num = (value: string) => (value.trim() === '' ? undefined : Number(value))
 
 export function modelToFormValues(initial: ModelDef, providerId: string, defaults: ModelFormValues): ModelFormValues {
   const rows = initial.variants ?? [];
+
   return {
     ...defaults,
     providerId,
@@ -66,6 +69,7 @@ export function modelToFormValues(initial: ModelDef, providerId: string, default
     variants: rows.length
       ? rows.map((entry) => {
           const { id: variantId, ...rest } = entry ?? {};
+
           return { key: variantId ?? '', json: prettyJson(rest) };
         })
       : [emptyVariant()],
@@ -107,6 +111,7 @@ export function formValuesToModel(
   const outputModalities = MODALITIES.filter((modality) => modalityOutput[modality]);
   const cacheUsed = anyFilled(costCacheRead, costCacheWrite);
   const capabilitiesNeeded = capabilitiesPresent || tools || inputModalities.length > 0 || outputModalities.length > 0;
+
   return {
     id: id.trim(),
     ...(family.trim() && { family: family.trim() }),

@@ -22,24 +22,31 @@ let content = $state(initial?.content ?? '---\nname: ""\ndescription: ""\n---\n\
 let pending = $state(false);
 let error = $state('');
 let active = true;
+
 onDestroy(() => {
   active = false;
 });
 
 async function save() {
   if (pending || (initial && initial.kind !== 'local')) return;
+
   error = '';
+
   if (!id.trim()) {
     error = i18n.t('skills.idRequired');
     return;
   }
+
   pending = true;
+
   try {
     const draft = { id: initial?.id ?? id.trim(), content };
     const result = initial
       ? await config.updateSkill({ ...draft, expectedContent: initial.content, expectedPath: initial.path })
       : await config.createSkill(draft);
+
     if (!active) return;
+
     if (onSaved) onSaved(result);
     else await goto(`/skills/${encodeURIComponent(result.id)}?saved=1`);
   } catch (cause) {

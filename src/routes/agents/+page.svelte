@@ -23,6 +23,7 @@ import {
 import { BUILTIN_AGENTS, type BuiltinAgent, isBuiltinAgentId } from '$src/utils/index.js';
 
 type AgentTab = 'custom' | 'native' | 'slim' | 'omo';
+
 const config = getConfig();
 const i18n = getI18n();
 const defaultPlugin = $derived(config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE);
@@ -44,9 +45,8 @@ const projectId = $derived(config.selectedProjectId ?? null);
 let storage = $state<AgentStorage>('inline');
 let activeTab = $state<AgentTab>('custom');
 let customTabEl = $state<HTMLButtonElement | null>(null);
-let nativeTabEl = $state<HTMLButtonElement | null>(null);
-let slimTabEl = $state<HTMLButtonElement | null>(null);
-let omoTabEl = $state<HTMLButtonElement | null>(null);
+const tabLabels = { native: 'agents.tabNative', slim: 'agents.tabSlim', omo: 'agents.tabOmo' } as const;
+let tabElements = $state<Record<GroupType, HTMLButtonElement | null>>({ native: null, slim: null, omo: null });
 const pageSize = 5;
 let page = $state(1);
 // Only truly custom agents (not catalog ids) are editable or deletable.
@@ -58,7 +58,7 @@ const entries = $derived([
 ]);
 const agents = $derived(
   entries.filter(({ entry: agent }) =>
-    `${agent.id} ${agent.description ?? ''}`.toLowerCase().includes(query.toLowerCase()),
+    `${agent.id} ${agent.description ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()),
   ),
 );
 const nativeAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === GROUP_TYPE_NATIVE));
@@ -67,54 +67,69 @@ const omoAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === GRO
 const maxPage = $derived(Math.max(1, Math.ceil(agents.length / pageSize)));
 const currentPage = $derived(Math.min(page, maxPage));
 const pagedAgents = $derived(agents.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+
 $effect(() => {
   // Reset to the first page whenever the filtered row count changes (search or delete).
   void agents.length;
   page = 1;
 });
+
 function selectTab(tab: AgentTab) {
   activeTab = tab;
   query = '';
   page = 1;
 }
+
 function tabElement(tab: AgentTab) {
-  return tab === 'custom' ? customTabEl : tab === 'native' ? nativeTabEl : tab === 'slim' ? slimTabEl : omoTabEl;
+  return tab === 'custom' ? customTabEl : tabElements[tab];
 }
+
 function onTabKeys(event: KeyboardEvent) {
   const index = tabOrder.indexOf(activeTab);
   let next: AgentTab;
+
   if (event.key === 'ArrowRight') next = tabOrder[(index + 1) % tabOrder.length] ?? 'custom';
   else if (event.key === 'ArrowLeft') next = tabOrder[(index - 1 + tabOrder.length) % tabOrder.length] ?? 'custom';
   else if (event.key === 'Home') next = tabOrder[0] ?? 'custom';
   else if (event.key === 'End') next = tabOrder[tabOrder.length - 1] ?? 'custom';
   else return;
+
   event.preventDefault();
   selectTab(next);
   tabElement(next)?.focus();
 }
+
 const canSelect = $derived(!!deleting && config.agents.find((agent) => agent.id === deleting)?.source === 'both');
+
 $effect(() => {
   const scope = projectId;
+
   query = '';
   page = 1;
   deleting = null;
   projectAgents = [];
   projectError = '';
+
   if (scope !== null)
     untrack(() => {
       void loadProject(scope);
     });
   else projectLoading = false;
+
   return () => {
     request += 1;
   };
 });
+
 async function loadProject(scope: string) {
   const id = ++request;
+
   projectLoading = true;
   projectError = '';
+
   try {
     const result = await config.listAgents(scope);
+
     if (id === request) projectAgents = result;
   } catch (cause) {
     if (id === request) {
@@ -125,26 +140,34 @@ async function loadProject(scope: string) {
     if (id === request) projectLoading = false;
   }
 }
+
 $effect(() => {
   const compare = projectId !== null && showGlobal;
+
   comparisonAgents = [];
   comparisonError = '';
+
   if (compare)
     untrack(() => {
       void loadComparison();
     });
   else comparisonLoading = false;
+
   return () => {
     comparisonRequest += 1;
   };
 });
+
 async function loadComparison() {
   const id = ++comparisonRequest;
+
   comparisonLoading = true;
   comparisonAgents = [];
   comparisonError = '';
+
   try {
     const result = await config.listAgents();
+
     if (id === comparisonRequest) comparisonAgents = result.filter((agent) => !isBuiltinAgentId(agent.id));
   } catch (cause) {
     if (id === comparisonRequest) comparisonError = readError(cause);
@@ -152,21 +175,27 @@ async function loadComparison() {
     if (id === comparisonRequest) comparisonLoading = false;
   }
 }
+
 async function refresh() {
   if (config.loading || config.saving || refreshing) return;
+
   if (projectId !== null) {
     await Promise.all([loadProject(projectId), ...(showGlobal ? [loadComparison()] : [])]);
     return;
   }
+
   refreshing = true;
+
   try {
     await config.refresh(true);
   } finally {
     refreshing = false;
   }
 }
+
 async function remove() {
   if (!deleting || projectId !== null || config.saving) return;
+
   try {
     await config.deleteAgent(deleting, canSelect ? storage : undefined);
     deleting = null;
@@ -256,52 +285,20 @@ async function remove() {
   </div>
 {/if}
 {#snippet builtinTabButton(type: GroupType)}
-  {#if type === GROUP_TYPE_NATIVE}
-    <Button
-      bind:ref={nativeTabEl}
-      id="agents-tab-native"
-      role="tab"
-      variant={activeTab === 'native' ? 'default' : 'outline'}
-      size="sm"
-      aria-selected={activeTab === 'native'}
-      aria-controls="agents-tabpanel-native"
-      tabindex={activeTab === 'native' ? 0 : -1}
-      onclick={() => selectTab('native')}
-      onkeydown={onTabKeys}
-    >
-      {i18n.t('agents.tabNative', { count: nativeAgents.length })}
-    </Button>
-  {:else if type === GROUP_TYPE_SLIM}
-    <Button
-      bind:ref={slimTabEl}
-      id="agents-tab-slim"
-      role="tab"
-      variant={activeTab === 'slim' ? 'default' : 'outline'}
-      size="sm"
-      aria-selected={activeTab === 'slim'}
-      aria-controls="agents-tabpanel-slim"
-      tabindex={activeTab === 'slim' ? 0 : -1}
-      onclick={() => selectTab('slim')}
-      onkeydown={onTabKeys}
-    >
-      {i18n.t('agents.tabSlim', { count: slimAgents.length })}
-    </Button>
-  {:else if type === GROUP_TYPE_OMO}
-    <Button
-      bind:ref={omoTabEl}
-      id="agents-tab-omo"
-      role="tab"
-      variant={activeTab === 'omo' ? 'default' : 'outline'}
-      size="sm"
-      aria-selected={activeTab === 'omo'}
-      aria-controls="agents-tabpanel-omo"
-      tabindex={activeTab === 'omo' ? 0 : -1}
-      onclick={() => selectTab('omo')}
-      onkeydown={onTabKeys}
-    >
-      {i18n.t('agents.tabOmo', { count: omoAgents.length })}
-    </Button>
-  {/if}
+  <Button
+    bind:ref={tabElements[type]}
+    id={`agents-tab-${type}`}
+    role="tab"
+    variant={activeTab === type ? 'default' : 'outline'}
+    size="sm"
+    aria-selected={activeTab === type}
+    aria-controls={`agents-tabpanel-${type}`}
+    tabindex={activeTab === type ? 0 : -1}
+    onclick={() => selectTab(type)}
+    onkeydown={onTabKeys}
+  >
+    {i18n.t(tabLabels[type], { count: type === GROUP_TYPE_NATIVE ? nativeAgents.length : type === GROUP_TYPE_SLIM ? slimAgents.length : omoAgents.length })}
+  </Button>
 {/snippet}
 
 <div class="flex flex-wrap gap-2 mb-3" role="tablist" aria-label={i18n.t('agents.sourceTabLabel')}>

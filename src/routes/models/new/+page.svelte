@@ -9,6 +9,7 @@ import ModelForm from '../ModelForm.svelte';
 
 const config = getConfig();
 const i18n = getI18n();
+
 async function create(providerId: string, value: ModelDef) {
   await config.createModel(providerId, value);
   await goto('/models');

@@ -69,26 +69,34 @@ $effect(() => {
 
 function selectTab(tab: McpTab) {
   if (activeTab === tab) return;
+
   activeTab = tab;
+
   const url = new URL(route.url);
+
   if (tab === 'config') {
     url.searchParams.delete('tab');
   } else {
     url.searchParams.set('tab', tab);
   }
+
   void goto(url.toString(), { replaceState: true, keepFocus: true, noScroll: true });
 }
 
 function onTabKeys(event: KeyboardEvent) {
   const current = tabOrder.indexOf(activeTab);
   let next: McpTab | undefined;
+
   if (event.key === 'ArrowRight') next = tabOrder[(current + 1) % tabOrder.length];
   else if (event.key === 'ArrowLeft') next = tabOrder[(current - 1 + tabOrder.length) % tabOrder.length];
   else if (event.key === 'Home') next = tabOrder[0];
   else if (event.key === 'End') next = tabOrder[tabOrder.length - 1];
+
   if (!next) return;
+
   event.preventDefault();
   selectTab(next);
+
   if (next === 'config') configTabEl?.focus();
   else if (next === 'proxy') proxyTabEl?.focus();
 }
@@ -96,15 +104,20 @@ function onTabKeys(event: KeyboardEvent) {
 async function load() {
   const scope = projectId;
   const id = ++request;
+
   loading = true;
   error = '';
+
   try {
     const result = await (scope === null ? config.listMcps() : config.listMcps(scope));
+
     if (id !== request) return;
+
     servers = result.data;
     diagnostics = result.diagnostics;
   } catch (cause) {
     if (id !== request) return;
+
     error = readError(cause);
     servers = [];
     diagnostics = [];
@@ -124,6 +137,7 @@ $effect(() => {
   untrack(() => {
     void load();
   });
+
   return () => {
     request += 1;
   };
@@ -135,11 +149,14 @@ $effect(() => {
     globalDiagnostics = [];
     globalError = '';
     globalLoading = false;
+
     return;
   }
+
   untrack(() => {
     void loadGlobal();
   });
+
   return () => {
     globalRequest += 1;
   };
@@ -147,13 +164,17 @@ $effect(() => {
 
 async function loadGlobal() {
   const id = ++globalRequest;
+
   globalLoading = true;
   globalError = '';
   globalServers = [];
   globalDiagnostics = [];
+
   try {
     const result = await config.listMcps();
+
     if (id !== globalRequest) return;
+
     globalServers = result.data;
     globalDiagnostics = result.diagnostics;
   } catch (cause) {

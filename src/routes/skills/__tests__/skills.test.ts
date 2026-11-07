@@ -24,6 +24,7 @@ vi.mock('$app/state', async () => {
   });
   let params = { id: 'docs/a b' };
   let url = new URL('http://localhost/skills');
+
   return {
     page: {
       get url() {
@@ -45,6 +46,7 @@ vi.mock('$app/state', async () => {
     },
   };
 });
+
 const skill: SkillEntry = {
   id: 'docs/a b',
   kind: 'local',
@@ -57,6 +59,7 @@ const skill: SkillEntry = {
     '# Heading\n\n<script>window.unsafe = true</script>\n<img src=x onerror="alert(1)">\n```sh\necho read-only\n```\n' +
     'Long body. '.repeat(500),
 };
+
 function makeConfig(overrides: Record<string, unknown> = {}) {
   return {
     preferences: { locale: 'en', theme: 'light' },
@@ -66,6 +69,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
     ...overrides,
   } as unknown as ConfigStore;
 }
+
 beforeEach(() => {
   page.params = { id: skill.id };
   page.url = new URL('http://localhost/skills');
@@ -77,11 +81,16 @@ test('list omits the scope hint and shows diagnostics, encoded detail link, sear
     .fn()
     .mockRejectedValueOnce(new Error('read denied'))
     .mockResolvedValueOnce({ data: [skill], diagnostics: ['Skipped unreadable skill'] });
+
   render(SkillList, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ listSkills }) } });
+
   const alert = await screen.findByRole('alert');
+
   expect(alert.textContent).toContain('read denied');
   await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+
   const link = await screen.findByRole('link', { name: skill.name });
+
   expect(link.getAttribute('href')).toBe('/skills/docs%2Fa%20b');
   expect(screen.getByText('Skipped unreadable skill')).toBeTruthy();
   expect(
@@ -98,9 +107,12 @@ test('list omits the scope hint and shows diagnostics, encoded detail link, sear
 
 test('detail displays full Markdown safely as plain text with metadata', async () => {
   const { container } = render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig() } });
+
   await screen.findByRole('heading', { name: skill.name });
   expect(container.querySelector('pre')?.textContent).toBe(skill.content);
+
   const preview = screen.getByRole('region', { name: `${en['skills.content']}: ${skill.name}` });
+
   expect(preview.tabIndex).toBe(0);
   preview.focus();
   expect(document.activeElement).toBe(preview);
@@ -126,10 +138,13 @@ test('detail explains empty content and errors; direct ID change cannot show old
     .mockRejectedValueOnce({ code: 'not_found', message: 'missing entry' })
     .mockRejectedValueOnce(new Error('read failed'))
     .mockResolvedValueOnce({ ...skill, id: 'new', name: 'New skill', content: '' });
+
   render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ getSkill }) } });
   await waitFor(() => expect(getSkill).toHaveBeenCalledOnce());
   page.params = { id: 'new' };
+
   let alert = await screen.findByRole('alert');
+
   expect(alert.textContent).toContain('not found in user-global directories');
   resolve(skill);
   await Promise.resolve();
@@ -157,11 +172,13 @@ test('list explains empty user-global skills', async () => {
 
 test('list uses backend kind badges and only Local rows offer Edit', async () => {
   const remote = { ...skill, id: 'remote', name: 'Remote skill', kind: 'remote', path: '/cached/SKILL.md' };
+
   render(
     SkillList,
     {},
     {
       wrapper: Harness,
+
       wrapperProps: {
         config: makeConfig({ listSkills: vi.fn().mockResolvedValue({ data: [skill, remote], diagnostics: [] }) }),
       },
@@ -180,12 +197,17 @@ test('creates Local skill with exact full Markdown document and ID payload; erro
     .mockRejectedValueOnce({ code: 'validation_failed', message: 'Frontmatter is invalid' })
     .mockResolvedValueOnce({ ...skill, id: 'new-skill' });
   const config = makeConfig({ createSkill });
+
   render(SkillNew, {}, { wrapper: Harness, wrapperProps: { config } });
+
   const input = screen.getByLabelText('Full Markdown document') as HTMLTextAreaElement;
+
   expect(input.value).toBe('---\nname: ""\ndescription: ""\n---\n\n');
   expect(input.value).not.toMatch(/metadata|autoinvoke|disable-model-invocation/);
+
   const content =
     '---\nname: Custom display name\ndescription: Full description\nmetadata:\n  opencode/autoinvoke: true\nextra: retained\n---\n\n# Full body\n';
+
   await fireEvent.input(screen.getByLabelText('ID'), { target: { value: 'new-skill' } });
   await fireEvent.input(input, { target: { value: content } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -200,13 +222,18 @@ test('creates Local skill with exact full Markdown document and ID payload; erro
 
 test('Local edit keeps expected snapshot and draft after conflict; cancel restores saved document', async () => {
   const updateSkill = vi.fn().mockRejectedValue({ code: 'configuration_failed', message: 'File changed externally' });
+
   render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ updateSkill }) } });
   await screen.findByRole('heading', { name: skill.name });
   await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
   const input = screen.getByLabelText('Full Markdown document') as HTMLTextAreaElement;
+
   expect(input.value).toBe(skill.content);
   expect((screen.getByLabelText('ID') as HTMLInputElement).disabled).toBe(true);
+
   const content = '# Edited\n\n<script>not executed</script>\n';
+
   await fireEvent.input(input, { target: { value: content } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await screen.findByText(/File changed externally/);
@@ -232,6 +259,7 @@ test('Local save disables pending controls and returns successful full document 
       }),
   );
   const config = makeConfig({ updateSkill });
+
   page.url = new URL('http://localhost/skills/docs?edit=1');
   render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByLabelText('Full Markdown document');
@@ -250,8 +278,11 @@ test('Remote detail rejects edit query and forged form entry without update IPC'
   const remote: SkillEntry = { ...skill, kind: 'remote', path: '/cached/SKILL.md' };
   const updateSkill = vi.fn();
   const config = makeConfig({ getSkill: vi.fn().mockResolvedValue(remote), updateSkill });
+
   page.url = new URL('http://localhost/skills/docs?edit=1');
+
   const mounted = render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await screen.findByText(en['skills.remoteHint']);
   expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
   expect(screen.queryByRole('textbox')).toBeNull();
@@ -273,6 +304,7 @@ test('Skill route changes cannot apply stale pending save to a different detail'
     .fn()
     .mockResolvedValueOnce(skill)
     .mockResolvedValueOnce({ ...skill, id: 'other', name: 'Other skill' });
+
   render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ updateSkill, getSkill }) } });
   await screen.findByRole('heading', { name: skill.name });
   await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
@@ -286,10 +318,12 @@ test('Skill route changes cannot apply stale pending save to a different detail'
 
 test('Skill Edit query on same ID opens Local editor; unmount ignores late creation navigation', async () => {
   const mounted = render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig() } });
+
   await screen.findByRole('heading', { name: skill.name });
   page.url = new URL('http://localhost/skills/docs?edit=1');
   await screen.findByLabelText('Full Markdown document');
   mounted.unmount();
+
   let resolve: (result: SkillEntry) => void = () => {};
   const createSkill = vi.fn().mockImplementation(
     () =>
@@ -298,6 +332,7 @@ test('Skill Edit query on same ID opens Local editor; unmount ignores late creat
       }),
   );
   const creating = render(SkillNew, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ createSkill }) } });
+
   await fireEvent.input(screen.getByLabelText('ID'), { target: { value: 'docs' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   creating.unmount();
@@ -311,8 +346,11 @@ test('editing saved explicit autoinvoke false preserves the full document and or
     '---\nname: Manual only\ndescription: Use only when requested\nmetadata:\n  opencode/autoinvoke: false\n---\n\n# Saved body\n';
   const manual: SkillEntry = { ...skill, autoinvoke: false, content };
   const updateSkill = vi.fn().mockResolvedValue(manual);
+
   render(SkillForm, { source: manual }, { wrapper: Harness, wrapperProps: { config: makeConfig({ updateSkill }) } });
+
   const input = screen.getByLabelText('Full Markdown document') as HTMLTextAreaElement;
+
   expect(input.value).toBe(content);
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await waitFor(() =>
@@ -339,6 +377,7 @@ test('Skill Refresh only rereads its own list and replaces diagnostics without r
     createSkill: otherRead,
     updateSkill: otherRead,
   });
+
   render(SkillList, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('link', { name: skill.name });
   await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
@@ -355,8 +394,11 @@ test('project skills retain same-name Global comparison as a second readonly ent
     data: [{ ...skill, path: id ? '/work/alpha/.opencode/skills/docs/SKILL.md' : skill.path }],
     diagnostics: [],
   }));
+
   render(SkillList, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig({ listSkills }) } });
+
   const link = await screen.findByRole('link', { name: skill.name });
+
   expect(listSkills).toHaveBeenCalledExactlyOnceWith('project-a');
   expect(link.getAttribute('href')).toBe('/skills/docs%2Fa%20b?project=project-a');
   expect(screen.queryByRole('link', { name: 'New skill' })).toBeNull();
@@ -382,6 +424,7 @@ test('late scoped skills cannot overwrite returned Global; scope switch resets s
         }),
     )
     .mockResolvedValueOnce({ data: [globalSkill], diagnostics: [] });
+
   render(SkillList, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig({ listSkills }) } });
   await waitFor(() => expect(listSkills).toHaveBeenCalledWith('project-a'));
   await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'old query' } });
@@ -396,8 +439,10 @@ test('late scoped skills cannot overwrite returned Global; scope switch resets s
 
 test('project skill detail ignores direct edit intent and keeps exact project on refresh', async () => {
   page.url = new URL('http://localhost/skills/docs?project=project-a&edit=1&saved=1');
+
   const getSkill = vi.fn().mockResolvedValue(skill);
   const config = makeScopedConfig({ getSkill, updateSkill: vi.fn() });
+
   render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('heading', { name: skill.name });
   expect(getSkill).toHaveBeenCalledExactlyOnceWith(skill.id, 'project-a');
@@ -417,10 +462,13 @@ test('Skill Global comparison failure is isolated and keeps project rows without
     .mockRejectedValueOnce(new Error('global read denied'))
     .mockResolvedValueOnce({ data: [], diagnostics: [] });
   const config = makeScopedConfig({ listSkills });
+
   render(SkillList, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('link', { name: skill.name });
   await fireEvent.click(screen.getByRole('checkbox', { name: 'Show global configuration' }));
+
   const alert = await screen.findByRole('alert');
+
   expect(alert.textContent).toContain('Global comparison could not be loaded');
   expect(screen.getAllByRole('link', { name: skill.name })).toHaveLength(1);
   expect(config.selectedProjectId).toBe('project-a');
@@ -433,8 +481,10 @@ test('Skill Global comparison failure is isolated and keeps project rows without
 
 test('Skill Global comparison detail ignores edit query and says switch Global to edit', async () => {
   page.url = new URL('http://localhost/skills/docs?readonly=1&edit=1');
+
   const getSkill = vi.fn().mockResolvedValue(skill);
   const config = makeScopedConfig({ getSkill });
+
   render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('heading', { name: skill.name });
   expect(getSkill).toHaveBeenCalledExactlyOnceWith(skill.id);
@@ -446,6 +496,7 @@ test('Skill Global comparison detail ignores edit query and says switch Global t
 
 test('same skill ID across project queries never retains content from a late different scope', async () => {
   page.url = new URL('http://localhost/skills/docs?project=project-a&edit=1');
+
   let resolve: (value: SkillEntry) => void = () => {};
   const getSkill = vi
     .fn()
@@ -461,6 +512,7 @@ test('same skill ID across project queries never retains content from a late dif
       content: 'Project B body',
     });
   const config = makeScopedConfig({ getSkill });
+
   render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config } });
   await waitFor(() => expect(getSkill).toHaveBeenCalledWith(skill.id, 'project-a'));
   page.url = new URL('http://localhost/skills/docs?project=project-b&edit=1');

@@ -15,6 +15,7 @@ import McpNew from '../new/+page.svelte';
 const page: { params: { id?: string }; url: URL } = routePage;
 
 const scrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
 });
@@ -32,6 +33,7 @@ vi.mock('$app/state', async () => {
   });
   let params = { id: 'docs/a b' };
   let url = new URL('http://localhost/mcp');
+
   return {
     page: {
       get url() {
@@ -53,6 +55,7 @@ vi.mock('$app/state', async () => {
     },
   };
 });
+
 const server = {
   name: 'docs/a b',
   type: 'remote',
@@ -60,6 +63,7 @@ const server = {
   target: 'https://example.com/mcp',
   sourcePath: '/global/opencode.json',
   sourcePaths: ['/global/opencode.json', '/global/opencode.jsonc'],
+
   config: {
     type: 'remote',
     url: 'https://example.com/mcp',
@@ -105,6 +109,7 @@ const credentialValues = [
   'env-command-token',
   'env-command-key',
 ];
+
 function makeConfig(overrides: Record<string, unknown> = {}) {
   return {
     preferences: { locale: 'en', theme: 'dark' },
@@ -115,6 +120,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
     ...overrides,
   } as unknown as ConfigStore;
 }
+
 beforeEach(() => {
   page.params = { id: server.name };
   page.url = new URL('http://localhost/mcp');
@@ -128,8 +134,11 @@ test('list encodes detail links, keeps config status without the hint, and suppo
     .mockResolvedValueOnce({ data: [server], diagnostics: ['Unreadable source'] })
     .mockResolvedValueOnce({ data: [], diagnostics: [] });
   const config = makeConfig({ deleteMcp, listMcps });
+
   render(McpList, {}, { wrapper: Harness, wrapperProps: { config } });
+
   const link = await screen.findByRole('link', { name: server.name });
+
   expect(link.getAttribute('href')).toBe('/mcp/docs%2Fa%20b');
   expect(screen.getByRole('link', { name: 'New MCP' }).getAttribute('href')).toBe('/mcp/new');
   expect(screen.getByRole('link', { name: `View ${server.name}` }).getAttribute('href')).toBe('/mcp/docs%2Fa%20b');
@@ -143,7 +152,9 @@ test('list encodes detail links, keeps config status without the hint, and suppo
   expect(screen.getByText('No matches')).toBeTruthy();
   await fireEvent.input(screen.getByRole('textbox'), { target: { value: '' } });
   await fireEvent.click(screen.getByRole('button', { name: `Delete ${server.name}` }));
+
   let dialog = await screen.findByRole('dialog', { name: 'Delete MCP server' });
+
   expect(within(dialog).getByText('/global/opencode.jsonc')).toBeTruthy();
   await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -166,8 +177,11 @@ test('list read failure has retry and loading/empty states', async () => {
     .fn()
     .mockRejectedValueOnce(new Error('desktop unavailable'))
     .mockResolvedValueOnce({ data: [], diagnostics: [] });
+
   render(McpList, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ listMcps }) } });
+
   const alert = await screen.findByRole('alert');
+
   expect(alert.textContent).toContain('desktop unavailable');
   await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
   await screen.findByText('No MCP servers in global configuration.');
@@ -185,6 +199,7 @@ test('detail masks secrets, confirms sources, blocks dismissal while deleting, a
         }),
     );
   const config = makeConfig({ deleteMcp });
+
   render(McpDetail, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('heading', { name: server.name });
   expect(screen.getByText('Enabled')).toBeTruthy();
@@ -193,14 +208,19 @@ test('detail masks secrets, confirms sources, blocks dismissal while deleting, a
   expect(document.body.textContent).not.toContain('secret-env');
   expect(document.body.textContent).not.toContain('secret-oauth');
   expect(document.body.textContent).toContain('public-id');
+
   for (const key of Object.keys(server.config)) {
     const preview = screen.getByRole('region', { name: `${en['mcp.nativeConfig']}: ${key}` });
+
     expect(preview.tabIndex).toBe(0);
     preview.focus();
     expect(document.activeElement).toBe(preview);
   }
+
   await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
   let dialog = await screen.findByRole('dialog');
+
   await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(deleteMcp).not.toHaveBeenCalled();
@@ -231,10 +251,13 @@ test('detail rejects stale route responses and distinguishes not-found with retr
     )
     .mockRejectedValueOnce({ code: 'not_found', message: 'missing entry' })
     .mockResolvedValueOnce({ ...server, name: 'new' });
+
   render(McpDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ getMcp }) } });
   await waitFor(() => expect(getMcp).toHaveBeenCalledOnce());
   page.params = { id: 'new' };
+
   const alert = await screen.findByRole('alert');
+
   expect(alert.textContent).toContain('not found in global configuration');
   resolve(server);
   await Promise.resolve();
@@ -247,6 +270,7 @@ test('detail rejects stale route responses and distinguishes not-found with retr
 test('masking covers nested config and does not change the native input', () => {
   const original = { ...server.config, options: [{ apiKey: 'secret' }] };
   const rendered = JSON.stringify(maskConfig(original));
+
   expect(rendered).not.toContain(':"secret"');
   expect(rendered).not.toContain('secret-header');
   expect(rendered).not.toContain('secret-env');
@@ -257,6 +281,7 @@ test('masking covers nested config and does not change the native input', () => 
 
 test('list hides URL and explicit command credentials, including from search', async () => {
   const config = makeConfig({ listMcps: vi.fn().mockResolvedValue({ data: [remote, local], diagnostics: [] }) });
+
   render(McpList, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('link', { name: local.name });
   for (const secret of credentialValues) expect(document.body.innerHTML).not.toContain(secret);
@@ -277,9 +302,11 @@ test.each([remote, local])('detail hides credentials in target and native config
     { wrapper: Harness, wrapperProps: { config: makeConfig({ getMcp: vi.fn().mockResolvedValue(entry) }) } },
   );
   await screen.findByRole('heading', { name: entry.name });
+
   for (const secret of [...credentialValues, 'secret-header', 'secret-env', 'secret-oauth']) {
     expect(document.body.innerHTML).not.toContain(secret);
   }
+
   expect(document.body.textContent).toContain('••••••');
 });
 
@@ -287,6 +314,7 @@ test('display masking preserves ordinary text and source values, with a safe raw
   const source = {
     url: remoteUrl,
     command,
+
     options: {
       note: 'ordinary text',
       args: ['--key', 'array-key', '--password="quoted password"', 'PUBLIC=value', '--tokenizer', 'ordinary-tokenizer'],
@@ -294,6 +322,7 @@ test('display masking preserves ordinary text and source values, with a safe raw
   };
   const before = structuredClone(source);
   const rendered = JSON.stringify(maskConfig(source));
+
   for (const secret of [...credentialValues, 'array-key', 'quoted password']) expect(rendered).not.toContain(secret);
   expect(rendered).toContain('ordinary text');
   expect(rendered).toContain('PUBLIC=value');
@@ -316,14 +345,19 @@ test.each(['local', 'remote'])(
       .fn()
       .mockImplementation(async (draft) => ({ ...server, name: draft.name, type, config: draft.config }));
     const config = makeConfig({ createMcp });
+
     render(McpNew, {}, { wrapper: Harness, wrapperProps: { config } });
+
     const input = screen.getByLabelText('Native configuration (JSON)') as HTMLTextAreaElement;
+
     expect(JSON.parse(input.value)).toEqual({ type: 'local', command: [''], environment: {}, disabled: false });
+
     if (type === 'remote') {
       await fireEvent.click(screen.getByRole('button', { name: 'Type' }));
       await fireEvent.click(screen.getByRole('option', { name: 'Remote' }));
       expect(JSON.parse(input.value)).toMatchObject({ type: 'remote', url: '', headers: {} });
     }
+
     const native =
       type === 'local'
         ? {
@@ -338,6 +372,7 @@ test.each(['local', 'remote'])(
             type,
             url: 'https://example.com/mcp',
             headers: { Authorization: 'raw-secret' },
+
             oauth: {
               client_id: 'public-id',
               client_secret: 'raw-oauth',
@@ -346,10 +381,12 @@ test.each(['local', 'remote'])(
               redirect_uri: 'http://localhost:8080/callback',
               auth_server_metadata_url: 'https://example.com/.well-known/oauth-authorization-server',
             },
+
             timeout: { startup: 5000, catalog: 10000, execution: 30000 },
             disabled: false,
             extra: { retained: true },
           };
+
     await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'new server' } });
     await fireEvent.input(input, { target: { value: JSON.stringify(native) } });
     await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -361,9 +398,13 @@ test.each(['local', 'remote'])(
 
 test('MCP new syntax, non-object and target validation do not call IPC; duplicate errors keep draft', async () => {
   const createMcp = vi.fn().mockRejectedValue({ code: 'conflict', message: 'Name already exists' });
+
   render(McpNew, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ createMcp }) } });
+
   const input = screen.getByLabelText('Native configuration (JSON)') as HTMLTextAreaElement;
+
   await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'duplicate' } });
+
   for (const text of ['{invalid}', '[]', '{"type":"local","command":[]}']) {
     await fireEvent.input(input, { target: { value: text } });
     await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -371,7 +412,9 @@ test('MCP new syntax, non-object and target validation do not call IPC; duplicat
     expect(input.value).toBe(text);
     expect(createMcp).not.toHaveBeenCalled();
   }
+
   const text = JSON.stringify(server.config);
+
   await fireEvent.input(input, { target: { value: text } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await screen.findByText(/Name already exists/);
@@ -381,19 +424,24 @@ test('MCP new syntax, non-object and target validation do not call IPC; duplicat
 
 test('MCP explicit edit uses raw config and immutable expected snapshot; conflict preserves draft, cancel restores saved view', async () => {
   const updateMcp = vi.fn().mockRejectedValue({ code: 'configuration_failed', message: 'Source changed externally' });
+
   render(McpDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ updateMcp }) } });
   await screen.findByRole('heading', { name: server.name });
   expect(document.body.innerHTML).not.toContain('secret-header');
   await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   expect(screen.getByText(/including credentials/)).toBeTruthy();
+
   const input = screen.getByLabelText('Native configuration (JSON)') as HTMLTextAreaElement;
+
   expect(JSON.parse(input.value)).toEqual(server.config);
   expect((screen.getByLabelText('Name') as HTMLInputElement).disabled).toBe(true);
+
   const native = {
     ...server.config,
     timeout: { startup: 9000, catalog: 10000, execution: 30000 },
     unknown: { retained: true },
   };
+
   await fireEvent.input(input, { target: { value: JSON.stringify(native) } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await screen.findByText(/Source changed externally/);
@@ -422,6 +470,7 @@ test('MCP save pending disables controls and successful result returns to masked
       }),
   );
   const config = makeConfig({ updateMcp });
+
   render(McpDetail, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('heading', { name: server.name });
   await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
@@ -438,7 +487,9 @@ test('MCP save pending disables controls and successful result returns to masked
 
 test('MCP route changes ignore an old pending save and edit intent opens only after loading', async () => {
   let resolve: (result: McpServer) => void = () => {};
+
   page.url = new URL('http://localhost/mcp/test?edit=1');
+
   const updateMcp = vi.fn().mockImplementation(
     () =>
       new Promise<McpServer>((done) => {
@@ -449,6 +500,7 @@ test('MCP route changes ignore an old pending save and edit intent opens only af
     .fn()
     .mockResolvedValueOnce(server)
     .mockResolvedValueOnce({ ...server, name: 'other' });
+
   render(McpDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ updateMcp, getMcp }) } });
   await screen.findByLabelText('Native configuration (JSON)');
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -462,10 +514,12 @@ test('MCP route changes ignore an old pending save and edit intent opens only af
 
 test('MCP Edit query on the same ID opens editor; unmount ignores late creation navigation', async () => {
   const mounted = render(McpDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig() } });
+
   await screen.findByRole('heading', { name: server.name });
   page.url = new URL('http://localhost/mcp/docs?edit=1');
   await screen.findByLabelText('Native configuration (JSON)');
   mounted.unmount();
+
   let resolve: (result: McpServer) => void = () => {};
   const createMcp = vi.fn().mockImplementation(
     () =>
@@ -474,6 +528,7 @@ test('MCP Edit query on the same ID opens editor; unmount ignores late creation 
       }),
   );
   const creating = render(McpNew, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ createMcp }) } });
+
   await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'docs' } });
   await fireEvent.input(screen.getByLabelText('Native configuration (JSON)'), {
     target: { value: JSON.stringify(server.config) },
@@ -498,6 +553,7 @@ test('MCP Refresh only rereads its own list and replaces diagnostics without run
     createMcp: otherRead,
     updateMcp: otherRead,
   });
+
   render(McpList, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('link', { name: server.name });
   await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
@@ -514,8 +570,11 @@ test('project list passes exact ID, preserves duplicate Global comparison and ex
   const projectServer = { ...server, sourcePath: '/work/alpha/opencode.jsonc' };
   const listMcps = vi.fn(async (id?: string) => ({ data: [id ? projectServer : server], diagnostics: [] }));
   const config = makeScopedConfig({ listMcps });
+
   render(McpList, {}, { wrapper: Harness, wrapperProps: { config } });
+
   const link = await screen.findByRole('link', { name: server.name });
+
   expect(listMcps).toHaveBeenCalledExactlyOnceWith('project-a');
   expect(link.getAttribute('href')).toBe('/mcp/docs%2Fa%20b?project=project-a');
   expect(screen.queryByRole('link', { name: 'New MCP' })).toBeNull();
@@ -541,6 +600,7 @@ test('late project list cannot replace Global after quick return', async () => {
         }),
     )
     .mockResolvedValueOnce({ data: [local], diagnostics: [] });
+
   render(McpList, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig({ listMcps }) } });
   await waitFor(() => expect(listMcps).toHaveBeenCalledWith('project-a'));
   await fireEvent.click(screen.getByRole('button', { name: 'Return to Global' }));
@@ -553,10 +613,14 @@ test('late project list cannot replace Global after quick return', async () => {
 
 test('project detail ignores edit and saved query, preserves scope on retry and never mutates list selection', async () => {
   page.url = new URL('http://localhost/mcp/docs?project=project-b&edit=1&saved=1');
+
   const getMcp = vi.fn().mockRejectedValueOnce(new Error('missing root')).mockResolvedValue(server);
   const config = makeScopedConfig({ getMcp, updateMcp: vi.fn(), deleteMcp: vi.fn() });
+
   render(McpDetail, {}, { wrapper: Harness, wrapperProps: { config } });
+
   const alert = await screen.findByRole('alert');
+
   await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
   await screen.findByRole('heading', { name: server.name });
   expect(getMcp).toHaveBeenNthCalledWith(2, server.name, 'project-b');
@@ -573,8 +637,11 @@ test('project detail ignores edit and saved query, preserves scope on retry and 
 test('missing project root stays selected with retry/Global exit and cannot show Global fallback', async () => {
   const listMcps = vi.fn().mockRejectedValue(new Error('Project folder does not exist'));
   const config = makeScopedConfig({ listMcps });
+
   render(McpList, {}, { wrapper: Harness, wrapperProps: { config } });
+
   const alert = await screen.findByRole('alert');
+
   expect(alert.textContent).toContain('Project folder does not exist');
   expect(config.selectedProjectId).toBe('project-a');
   expect(screen.getByText('/work/alpha')).toBeTruthy();
@@ -587,8 +654,10 @@ test('missing project root stays selected with retry/Global exit and cannot show
 
 test('MCP Global comparison detail rejects forged edit intent without selecting Global', async () => {
   page.url = new URL('http://localhost/mcp/docs?readonly=1&edit=1');
+
   const getMcp = vi.fn().mockResolvedValue(server);
   const config = makeScopedConfig({ getMcp });
+
   render(McpDetail, {}, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByRole('heading', { name: server.name });
   expect(getMcp).toHaveBeenCalledExactlyOnceWith(server.name);
@@ -601,6 +670,7 @@ test('MCP Global comparison detail rejects forged edit intent without selecting 
 
 test('same MCP ID in different project queries has isolated identity and ignores late source responses', async () => {
   page.url = new URL('http://localhost/mcp/docs?project=project-a&edit=1');
+
   let resolve: (value: McpServer) => void = () => {};
   const next = { ...server, sourcePath: '/other/alpha/opencode.jsonc', sourcePaths: ['/other/alpha/opencode.jsonc'] };
   const getMcp = vi
@@ -613,6 +683,7 @@ test('same MCP ID in different project queries has isolated identity and ignores
     )
     .mockResolvedValueOnce(next);
   const config = makeScopedConfig({ getMcp });
+
   render(McpDetail, {}, { wrapper: Harness, wrapperProps: { config } });
   await waitFor(() => expect(getMcp).toHaveBeenCalledWith(server.name, 'project-a'));
   page.url = new URL('http://localhost/mcp/docs?project=project-b&edit=1');

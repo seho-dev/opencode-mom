@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Stable X.Y.Z (empty = next patch); run on the default branch'
+        description: 'X.Y.Z or X.Y.Z-beta.N (empty = next patch/beta); default branch only; stable promotion must be explicit'
         required: false
         type: string
       dry_run:
@@ -37,6 +37,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       sha: ${{ steps.version.outputs.sha }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -114,10 +115,13 @@ jobs:
       - name: Build platform bundles (macOS ad-hoc signed, no notarization)
         run: npm run tauri -- build --ci --target "$TARGET" --bundles "$BUNDLES" -- --locked
       - name: Ensure the build did not change app versions or locks
-        run: git diff --exit-code -- package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/native/macos-helper/Cargo.toml src-tauri/native/macos-helper/Cargo.lock
+        run: git diff --exit-code -- package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/Info.plist src-tauri/native/macos-helper/Cargo.toml src-tauri/native/macos-helper/Cargo.lock
       - name: Collect macOS app and DMG
         run: |
           test -d "src-tauri/target/$TARGET/release/bundle/macos/opencode-mom.app"
+          plist="src-tauri/target/$TARGET/release/bundle/macos/opencode-mom.app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" = "${RELEASE_VERSION%%-*}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")" = "${RELEASE_VERSION/-beta./b}"
           test -f "src-tauri/target/$TARGET/release/bundle/dmg/opencode-mom_${RELEASE_VERSION}_${ARCH}.dmg"
           mkdir -p release-assets
           cp "src-tauri/target/$TARGET/release/bundle/dmg/opencode-mom_${RELEASE_VERSION}_${ARCH}.dmg" release-assets/
@@ -172,8 +176,15 @@ jobs:
           path: release-assets
       - name: Publish only after every platform succeeded
         shell: bash
+        env:
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           set -euo pipefail
+          case "$PRERELEASE" in
+            true) release_flags=(--prerelease=true --latest=false) ;;
+            false) release_flags=(--prerelease=false) ;;
+            *) echo 'Missing or invalid release channel' >&2; exit 1 ;;
+          esac
           test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "$RELEASE_SHA"
           test "$(find release-assets -type f | wc -l)" -eq 5
           test -f "release-assets/opencode-mom_${RELEASE_VERSION}_aarch64.dmg"
@@ -186,7 +197,7 @@ jobs:
           node scripts/release-version.mjs notes "$RELEASE_TAG" > "$notes_file"
           printf '\n%s\n' 'macOS: Apple Silicon and Intel builds are ad-hoc signed, not Developer ID signed or notarized. Windows: the x64 NSIS installer is unsigned and may show SmartScreen warnings. Download only from this official Releases page; see the README for scoped first-launch trust steps. Updates are installed manually; review Settings after upgrading.' >> "$notes_file"
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --notes-file "$notes_file"
+            gh release create "$RELEASE_TAG" --verify-tag --draft "${release_flags[@]}" --title "$RELEASE_TAG" --notes-file "$notes_file"
           fi
           gh release upload "$RELEASE_TAG" release-assets/* --clobber
-          gh release edit "$RELEASE_TAG" --draft=false --notes-file "$notes_file"
+          gh release edit "$RELEASE_TAG" --draft=false "${release_flags[@]}" --notes-file "$notes_file"

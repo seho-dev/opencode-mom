@@ -252,7 +252,7 @@ jobs:
         run: npm run tauri -- build --ci --target x86_64-pc-windows-msvc --bundles nsis --config '{"build":{"beforeBuildCommand":null}}' -- --locked
 
       - name: Ensure the build did not change app versions or locks
-        run: git diff --exit-code -- package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/native/macos-helper/Cargo.toml src-tauri/native/macos-helper/Cargo.lock
+        run: git diff --exit-code -- package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/Info.plist src-tauri/native/macos-helper/Cargo.toml src-tauri/native/macos-helper/Cargo.lock
 
       - name: Assert exact Windows NSIS artifact
         shell: pwsh
@@ -262,6 +262,9 @@ jobs:
           $artifact = "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/opencode-mom_$($env:APP_VERSION)_x64-setup.exe"
           if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
             throw "Expected exact NSIS artifact: $artifact"
+          }
+          if ((Get-Item -LiteralPath $artifact).VersionInfo.FileVersion -ne $env:APP_VERSION) {
+            throw 'NSIS FileVersion must preserve the full app version, including beta'
           }
 
       - name: Upload Windows Tauri evidence
@@ -331,13 +334,16 @@ jobs:
         run: npm run tauri -- build --ci --target aarch64-apple-darwin --bundles app,dmg --config '{"build":{"beforeBuildCommand":null}}' -- --locked
 
       - name: Ensure the build did not change app versions or locks
-        run: git diff --exit-code -- package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/native/macos-helper/Cargo.toml src-tauri/native/macos-helper/Cargo.lock
+        run: git diff --exit-code -- package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/Info.plist src-tauri/native/macos-helper/Cargo.toml src-tauri/native/macos-helper/Cargo.lock
 
       - name: Assert exact macOS app and DMG artifacts
         shell: bash
         run: |
           set -euo pipefail
           test -d 'src-tauri/target/aarch64-apple-darwin/release/bundle/macos/opencode-mom.app'
+          plist='src-tauri/target/aarch64-apple-darwin/release/bundle/macos/opencode-mom.app/Contents/Info.plist'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" = "${APP_VERSION%%-*}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")" = "${APP_VERSION/-beta./b}"
           test -f "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/opencode-mom_${APP_VERSION}_aarch64.dmg"
           mkdir -p release-assets
           cp "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/opencode-mom_${APP_VERSION}_aarch64.dmg" release-assets/

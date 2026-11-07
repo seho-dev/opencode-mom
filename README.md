@@ -114,11 +114,13 @@ cargo test --manifest-path src-tauri/Cargo.toml    # Rust backend tests
 
 The project uses the GitHub Actions **Release** workflow on the default branch:
 
-- **Automated**: Commit to the default branch with `release` or `release: description` (bumps the next patch version, e.g. `2.0.1`), or `release: X.Y.Z` (bumps to an explicit newer stable version).
-- **Manual**: Dispatch the `Release` workflow on the default branch with optional `version` (`X.Y.Z`, leave empty for next patch).
+- **Automated**: Commit to the default branch with `release` or `release: description` (bumps the next patch version, e.g. `2.0.1`, or next beta e.g. `2.0.1-beta.2` if currently on beta), or `release: X.Y.Z` / `release: X.Y.Z-beta.N` for an explicit version.
+- **Manual**: Dispatch the `Release` workflow on the default branch with optional `version` (`X.Y.Z` or `X.Y.Z-beta.N`; leave empty for the next patch or next beta).
+- **Beta Releases & Stable Promotion**: Initiating a beta uses `X.Y.Z-beta.N`. While on a beta, automatic bumps increment the beta counter (`-beta.N+1`). Transitioning from beta to stable must be explicit by supplying `X.Y.Z`. Beta releases are published as GitHub pre-releases and not marked as latest.
+- **Update Checks**: In-app update checks only track the latest stable release. Beta builds are notified only when the matching or newer stable release is published; they are never prompted for subsequent beta releases.
 - **Dry Run**: Pass `dry_run: true` on manual dispatch (defaults to `false`) to preview the resolved version and notes without committing, tagging, pushing, building, or publishing.
-- **Notes & Safety Notice**: GitHub Release notes use the exact tagged section from `CHANGELOG.md` (falling back to commit history if absent) with platform security notices appended. Pushing a version-matching `vX.Y.Z` tag directly verifies manifests and publishes without changelog writeback.
-- **Pipeline & Permissions**: The workflow uses the built-in `GITHUB_TOKEN` with `contents: write`; branch and tag rules must permit the release bot's generated commit and tag. Token write permission alone does not bypass branch protection. Release preparation prepends `CHANGELOG.md`, synchronizes 5 manifests (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`) while leaving `macos-helper` untouched, and pushes the branch and tag atomically. Publication waits for all platform builds. If build or publish fails, rerun the original failed workflow without another version bump.
+- **Notes & Safety Notice**: GitHub Release notes use the exact tagged section from `CHANGELOG.md` (falling back to commit history if absent) with platform security notices appended. Pushing a version-matching `vX.Y.Z` or `vX.Y.Z-beta.N` tag directly verifies manifests and publishes without changelog writeback.
+- **Pipeline & Permissions**: The workflow uses the built-in `GITHUB_TOKEN` with `contents: write`; branch and tag rules must permit the release bot's generated commit and tag. Token write permission alone does not bypass branch protection. Release preparation prepends `CHANGELOG.md`, synchronizes 6 manifests (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/Info.plist`) while leaving `macos-helper` untouched, and pushes the branch and tag atomically. Publication waits for all platform builds. If build or publish fails, rerun the original failed workflow without another version bump.
 
 ## 📄 License
 

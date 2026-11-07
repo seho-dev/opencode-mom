@@ -181,6 +181,7 @@ fn scan_inline(
                 });
         }
     }
+
     Ok(sources)
 }
 
@@ -210,6 +211,7 @@ fn scan_inline_for_id(
             });
         }
     }
+
     Ok(sources)
 }
 
@@ -222,12 +224,14 @@ fn scan_markdown_for_id(
         if !root.exists() {
             continue;
         }
+
         let path = root.join(id).with_extension("md");
         match fs::symlink_metadata(&path) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(AppError::io("read", &path, error)),
             Ok(_) => {}
         }
+
         let snapshot = Snapshot::read(&path)?.ok_or_else(agent_changed)?;
         let raw = snapshot.content;
         let document = MarkdownAgentDocument::parse(&raw)?;
@@ -240,6 +244,7 @@ fn scan_markdown_for_id(
             prompt: document.prompt,
         });
     }
+
     Ok(sources)
 }
 
@@ -289,6 +294,7 @@ pub fn model_references(
             }
         }
     }
+
     for (id, sources) in markdown {
         for source in sources {
             if let Some(model) = source
@@ -306,6 +312,7 @@ pub fn model_references(
         }
     }
     references.sort();
+
     Ok(references)
 }
 
@@ -339,6 +346,7 @@ fn create_inner(
                     path.display()
                 )));
             }
+
             let mut document = MarkdownAgentDocument::empty();
             document.apply_fields(&fields, prompt)?;
             let filename = path
@@ -425,6 +433,7 @@ fn update_inner(
                 if markdown_path(paths, storage, id, false)? != path {
                     return Err(agent_changed());
                 }
+
                 Ok(())
             })?;
         }
@@ -445,6 +454,7 @@ fn validate_expected(
     if snapshot.path != expected_path || content != expected_content {
         return Err(agent_changed());
     }
+
     Ok(())
 }
 
@@ -464,6 +474,7 @@ pub fn delete(
             "built-in agents are protected",
         ));
     }
+
     if let Some(agent_references) = references.get(id) {
         if !agent_references.is_empty() {
             let locations = agent_references
@@ -471,6 +482,7 @@ pub fn delete(
                 .map(|reference| format!("{:?} at {}", reference.kind, reference.owner))
                 .collect::<Vec<_>>()
                 .join(", ");
+
             return Err(AppError::references(
                 format!("agent '{id}' is still referenced"),
                 locations,
@@ -523,6 +535,7 @@ fn create_inline(
     if agents.contains_key(id) {
         return Err(invalid(format!("inline agent '{id}' already exists")));
     }
+
     let mut value = fields;
     if let Some(prompt) = prompt {
         value.insert("system".to_owned(), Value::String(prompt));
@@ -543,14 +556,17 @@ fn update_inline(
     if !existing.is_object() {
         return Err(invalid(format!("inline agent '{id}' must be an object")));
     }
+
     let mut values = fields;
     let prompt_is_set = prompt.is_some();
     if let Some(prompt) = prompt {
         values.insert("system".to_owned(), Value::String(prompt));
     }
+
     for (key, value) in values {
         document.patch(&["agents", id, &key], Some(value))?;
     }
+
     for key in clear_fields {
         // The V2 inline prompt field is `system`; `prompt` is the DTO-level name.
         let key = if key == "prompt" {
@@ -563,6 +579,7 @@ fn update_inline(
         }
         document.patch(&["agents", id, key], None)?;
     }
+
     Ok(())
 }
 
@@ -582,6 +599,7 @@ fn read_inline(path: &Path) -> Result<(Option<Snapshot>, JsoncDoc), AppError> {
         Some(snapshot) => JsoncDoc::parse(&snapshot.content)?,
         None => JsoncDoc::bootstrap(OPENCODE_SCHEMA),
     };
+
     Ok((snapshot, document))
 }
 
@@ -594,6 +612,7 @@ fn persist_inline(
     if let Some(snapshot) = snapshot {
         resource_file::replace(&[(snapshot, document.content().to_owned())], |resolved| {
             before_publish(resolved);
+
             Ok(())
         })
     } else {
@@ -632,6 +651,7 @@ fn scan_markdown(
     for root in paths.agent_dirs() {
         scan_markdown_root(AgentStorage::GlobalMarkdown, root, &mut results)?;
     }
+
     Ok(results)
 }
 
@@ -643,10 +663,12 @@ fn scan_markdown_root(
     if !root.exists() {
         return Ok(());
     }
+
     let mut files = Vec::new();
     let mut visited = BTreeSet::new();
     collect_markdown_files(root, &mut files, &mut visited, 0)?;
     files.sort();
+
     for path in files {
         let relative = path.strip_prefix(root).map_err(|error| {
             AppError::configuration(format!("resolve {}: {error}", path.display()))
@@ -664,6 +686,7 @@ fn scan_markdown_root(
             prompt: document.prompt,
         });
     }
+
     Ok(())
 }
 
@@ -688,16 +711,19 @@ fn markdown_path(
             Err(error) => return Err(AppError::io("read", &path, error)),
             Ok(_) => {}
         }
+
         let canonical =
             fs::canonicalize(&path).map_err(|error| AppError::io("resolve", &path, error))?;
         logical_paths.insert(path.clone());
         targets.insert(canonical, path);
     }
+
     if targets.len() > 1 || (for_deletion && logical_paths.len() > 1) {
         return Err(invalid(format!(
             "agent '{id}' has multiple Markdown paths; resolve ambiguous aliases before editing"
         )));
     }
+
     Ok(targets
         .into_values()
         .next()
@@ -711,10 +737,12 @@ pub fn collect_markdown_files_in_roots(
     let mut files = Vec::new();
     let mut visited = BTreeSet::new();
     paths.validate_resource_root()?;
+
     for root in paths.agent_dirs() {
         collect_markdown_files(root, &mut files, &mut visited, 0)?;
     }
     files.sort();
+
     Ok(files)
 }
 
@@ -729,6 +757,7 @@ fn definition_from_sources(
         if !source.raw.is_object() {
             return Err(invalid(format!("inline agent '{id}' must be an object")));
         }
+
         let aggregate = inline.get_or_insert_with(|| InlineAgentSource {
             path: source.path.clone(),
             resolved_path: source.resolved_path.clone(),
@@ -738,6 +767,7 @@ fn definition_from_sources(
         aggregate.path = source.path.clone();
         aggregate.resolved_path = source.resolved_path.clone();
     }
+
     let markdown = markdown.cloned().unwrap_or_default();
     let source = match (inline.is_some(), markdown.is_empty()) {
         (true, true) => AgentSource::Inline,
@@ -752,6 +782,7 @@ fn definition_from_sources(
     if !effective.is_object() {
         return Err(invalid(format!("inline agent '{id}' must be an object")));
     }
+
     let mut overrides = Vec::new();
     for markdown_source in &markdown {
         let fields = markdown_effective_fields(markdown_source);
@@ -760,6 +791,7 @@ fn definition_from_sources(
                 .raw
                 .as_object()
                 .ok_or_else(|| invalid(format!("inline agent '{id}' must be an object")))?;
+
             for (field, markdown_value) in markdown {
                 if let Some(inline_value) = inline.get(field) {
                     overrides.push(AgentFieldOverride {
@@ -816,12 +848,14 @@ fn collect_markdown_files(
     if depth >= 128 || !root.exists() {
         return Ok(());
     }
+
     let Ok(canonical) = fs::canonicalize(root) else {
         return Ok(());
     };
     if !visited.insert(canonical) {
         return Ok(());
     }
+
     for entry in fs::read_dir(root).map_err(|error| AppError::io("read", root, error))? {
         let entry = entry.map_err(|error| AppError::io("read", root, error))?;
         let path = entry.path();
@@ -831,6 +865,7 @@ fn collect_markdown_files(
             files.push(path);
         }
     }
+
     Ok(())
 }
 
@@ -845,6 +880,7 @@ fn markdown_id(relative: &Path) -> Result<String, AppError> {
             relative.display()
         )));
     }
+
     let without_extension = relative.with_extension("");
     let components = without_extension
         .components()
@@ -859,6 +895,7 @@ fn markdown_id(relative: &Path) -> Result<String, AppError> {
             relative.display()
         )));
     }
+
     Ok(components.join("/"))
 }
 
@@ -877,6 +914,7 @@ fn validate_agent_id(id: &str) -> Result<(), AppError> {
     {
         return Err(invalid(format!("invalid agent id '{id}'")));
     }
+
     Ok(())
 }
 
@@ -932,6 +970,7 @@ fn normalize_mutation(
             "agent field to clear must not be empty: '{field}'"
         )));
     }
+
     if let Some(field) = clear_fields
         .iter()
         .find(|field| fields.contains_key(*field))
@@ -940,6 +979,7 @@ fn normalize_mutation(
             "agent field '{field}' cannot be set and cleared together"
         )));
     }
+
     Ok((fields, prompt, clear_fields))
 }
 
@@ -1006,6 +1046,7 @@ mod tests {
             "openai/gpt-4o",
             "openai/gpt-4o#fast",
         ];
+
         for model in cases {
             let mut fields = Map::new();
             fields.insert("model".to_owned(), Value::String(model.to_owned()));
@@ -1026,6 +1067,7 @@ mod tests {
             "provider/model with space",
             "",
         ];
+
         for model in cases {
             let mut fields = Map::new();
             fields.insert("model".to_owned(), Value::String(model.to_owned()));

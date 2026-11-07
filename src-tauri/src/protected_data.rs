@@ -67,6 +67,7 @@ fn dpapi(bytes: &[u8], protecting: bool) -> Result<Vec<u8>, AppError> {
         blob: CRYPT_INTEGER_BLOB,
         wipe: bool,
     }
+
     impl Drop for LocalBlob {
         fn drop(&mut self) {
             if !self.blob.pbData.is_null() {
@@ -93,6 +94,7 @@ fn dpapi(bytes: &[u8], protecting: bool) -> Result<Vec<u8>, AppError> {
             "Windows data protection input size is invalid",
         ));
     }
+
     let mut input = SecretBytes(bytes.to_vec());
     let blob = CRYPT_INTEGER_BLOB {
         cbData: input.0.len() as u32,

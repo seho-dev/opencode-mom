@@ -90,6 +90,7 @@ fn parent_relative_overrides_normalize_existing_and_missing_config_and_command_p
                 fs::create_dir_all(directory.join("nested")).unwrap();
                 fs::write(&explicit, "{}").unwrap();
             }
+
             let config = PathBuf::from("../override/nested/../custom.jsonc");
             let override_dir = PathBuf::from("../override/./nested/..");
             let paths = ConfigPaths::with_resource_parts(
@@ -300,6 +301,7 @@ fn command_plugin_and_instruction_paths_are_scoped_without_redirecting_existing_
     assert!(scoped
         .validate_managed_write(&root.join(".opencode/plugins/new.ts"))
         .is_err());
+
     for directory in ["agents", "mcp", "skills"] {
         assert!(scoped
             .validate_managed_write(&root.join(".opencode").join(directory).join("new.md"))
@@ -418,6 +420,7 @@ fn normalized_overrides_preserve_logical_symlinks_and_reject_retargeted_sources(
         .is_err());
     fs::remove_file(&alias).unwrap();
     symlink(&second, &alias).unwrap();
+
     for target in [
         paths.commands_write_dir().join("new.md"),
         paths.global_instructions_file(),
@@ -488,6 +491,7 @@ fn override_parent_segments_do_not_collapse_files_or_unresolved_symlinks() {
     let home = tempfile::tempdir().unwrap();
     fs::write(home.path().join("file"), "not a directory").unwrap();
     symlink(home.path().join("missing"), home.path().join("dangling")).unwrap();
+
     for component in ["file", "dangling"] {
         let paths = ConfigPaths::with_resource_parts(
             home.path().into(),
@@ -522,6 +526,7 @@ fn project_commands_reject_readonly_resource_aliases_into_command_paths() {
     let command = scoped.commands_write_dir().join("review.md");
     fs::create_dir_all(command.parent().unwrap()).unwrap();
     fs::write(&command, "body").unwrap();
+
     for resource in ["agent", "agents", "skill", "skills", "plugins"] {
         let alias = root.join(".opencode").join(resource);
         symlink(scoped.commands_write_dir(), &alias).unwrap();
@@ -531,6 +536,7 @@ fn project_commands_reject_readonly_resource_aliases_into_command_paths() {
         );
         fs::remove_file(&alias).unwrap();
     }
+
     for resource in [
         "opencode.json",
         "opencode.jsonc",

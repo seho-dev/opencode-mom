@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -25,10 +23,10 @@ use crate::mcp_proxy::process::{
 };
 
 #[derive(Debug, Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub enum Observation {
     Started(u32),
     Cancelled(RequestId),
-    BackendAcknowledged(SubscriptionFilter),
     Closed(u32),
 }
 
@@ -74,6 +72,7 @@ impl LegacySession {
                         session.owner.budget().record_cleanup_failure();
                         eprintln!("warning: MCP legacy session cleanup failed: {error}");
                     }
+
                     let _ = tx.send(Some(result));
                 });
                 rx
@@ -83,8 +82,10 @@ impl LegacySession {
             if let Some(result) = &*rx.borrow() {
                 return result.clone();
             }
+
             if rx.changed().await.is_err() {
                 self.owner.budget().record_cleanup_failure();
+
                 return Err(AppError::configuration(
                     "MCP session close coordinator terminated unexpectedly",
                 ));
@@ -107,6 +108,7 @@ impl LegacySession {
                     }
                 }
             }
+
             Ok(())
         };
         let (bridge, sdk, owner) = tokio::join!(
@@ -183,10 +185,6 @@ impl LegacySessionManager {
         }
     }
 
-    pub fn inner_manager(&self) -> Arc<LocalSessionManager> {
-        self.manager.clone()
-    }
-
     pub async fn create_session(
         &self,
         service: &ProxyServiceConfig,
@@ -203,11 +201,13 @@ impl LegacySessionManager {
             if http_token.is_cancelled() || proxy_token.is_cancelled() {
                 return Err(AppError::configuration("MOM HTTP request was revoked"));
             }
+
             let session = manager
                 .create_session_owned(&service, permit, idle_timeout_secs)
                 .await?;
             if http_token.is_cancelled() || proxy_token.is_cancelled() {
                 manager.close_session(&session.id).await?;
+
                 return Err(AppError::configuration("MOM HTTP request was revoked"));
             }
             Ok::<_, AppError>(manager.pending_session(session))
@@ -259,14 +259,17 @@ impl LegacySessionManager {
             Err(e) => {
                 let error =
                     AppError::configuration(format!("failed to spawn service process: {e}"));
+
                 if let Err(cleanup) = self.manager.close_session(&id).await {
                     eprintln!(
                         "warning: failed to close MCP SDK session after spawn failure: {cleanup}"
                     );
+
                     return Err(AppError::configuration(format!(
                         "{error}; close MCP SDK session: {cleanup}"
                     )));
                 }
+
                 return Err(error);
             }
         };
@@ -289,6 +292,7 @@ impl LegacySessionManager {
                     self.manager.close_session(&id),
                     owner.close(CloseReason::Normal)
                 );
+
                 return Err(finish_cleanup([
                     Err(error.clone()),
                     sdk.map_err(|error| {
@@ -340,6 +344,7 @@ impl LegacySessionManager {
                     },
                 }
             }
+
             let (transport, owner, http) = tokio::join!(
                 process_transport.close(),
                 owner_clone.close(CloseReason::Normal),
@@ -356,6 +361,7 @@ impl LegacySessionManager {
                     AppError::configuration(format!("close MCP HTTP transport: {error}"))
                 }),
             ]);
+
             if let Err(error) = &result {
                 owner_clone.budget().record_cleanup_failure();
                 eprintln!("warning: MCP legacy bridge cleanup failed: {error}");
@@ -402,6 +408,7 @@ impl LegacySessionManager {
                 manager.sessions.write().await.remove(&session_id);
                 result?;
             }
+
             Ok(session)
         })
         .await
@@ -420,6 +427,7 @@ impl LegacySessionManager {
                 }
             }
         }
+
         for id in expired {
             if let Err(error) = self.close_session(&id).await {
                 eprintln!("warning: MCP idle session cleanup failed: {error}");
@@ -451,9 +459,11 @@ impl LegacySessionManager {
                         futures::future::join_all(sessions.iter().map(|session| session.close()))
                             .await,
                     );
+
                     if let Err(error) = &result {
                         eprintln!("warning: MCP session bulk cleanup failed: {error}");
                     }
+
                     let _ = tx.send(Some(result));
                 });
                 rx
@@ -463,6 +473,7 @@ impl LegacySessionManager {
             if let Some(result) = &*rx.borrow() {
                 return result.clone();
             }
+
             if rx.changed().await.is_err() {
                 return Err(AppError::configuration(
                     "MCP session bulk cleanup coordinator terminated unexpectedly",
@@ -567,6 +578,7 @@ impl ModernBridge {
         {
             return Err(ErrorData::internal_error("request cancelled", None));
         }
+
         let permit = self
             .budget
             .try_acquire()
@@ -610,11 +622,13 @@ impl ModernBridge {
             Err(error) => {
                 if let Err(cleanup) = owner.close(CloseReason::Normal).await {
                     eprintln!("warning: MCP process setup cleanup failed: {cleanup}");
+
                     return Err(ErrorData::internal_error(
                         format!("{error}; {cleanup}"),
                         None,
                     ));
                 }
+
                 return Err(error);
             }
         };
@@ -701,11 +715,6 @@ impl ModernBridge {
                             break Err(reply.error);
                         }
                         Some(JsonRpcMessage::Notification(reply)) => {
-                            if let ServerNotification::SubscriptionsAcknowledgedNotification(ref ack) = reply.notification {
-                                if let Some(ref tx) = self.events {
-                                    let _ = tx.send(Observation::BackendAcknowledged(ack.params.notifications.clone()));
-                                }
-                            }
                             let _ = context.peer.send_notification(reply.notification).await;
                         }
                         Some(JsonRpcMessage::Request(_)) => {
@@ -729,14 +738,17 @@ impl ModernBridge {
                 AppError::configuration(format!("close MCP process owner: {error}"))
             }),
         ]);
+
         if let Err(error) = cleanup {
             owner.budget().record_cleanup_failure();
             eprintln!("warning: MCP modern bridge cleanup failed: {error}");
+
             return Err(ErrorData::internal_error(
                 format!("MCP process cleanup failed; outcome uncertain: {error}"),
                 None,
             ));
         }
+
         if let Some(ref tx) = self.events {
             let _ = tx.send(Observation::Closed(pid));
         }
@@ -793,6 +805,7 @@ impl ServerHandler for ModernBridge {
             context,
         )
         .await?;
+
         Ok(())
     }
 }
@@ -819,6 +832,7 @@ impl Service<RoleServer> for LowLevelBridge {
                 .supported_versions
                 .retain(|version| version == &ProtocolVersion::V_2026_07_28);
         }
+
         Ok(result)
     }
 

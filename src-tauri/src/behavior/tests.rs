@@ -104,6 +104,7 @@ fn checked_creation_preserves_competing_file() {
     let missing = get(&paths).unwrap();
     assert!(save_inner(&paths, update(&missing, "ours"), || {
         fs::write(&missing.path, "theirs").unwrap();
+
         Ok(())
     })
     .is_err());

@@ -46,9 +46,11 @@ fn add_project_ipc_rejects_global_overlaps_before_persistence_without_opening_pi
     for root in [&global, &override_root, &pinned_root, &valid, &other] {
         fs::create_dir_all(root).unwrap();
     }
+
     for root in [&global, &override_root, &pinned_root] {
         fs::write(root.join("opencode.jsonc"), "{}").unwrap();
     }
+
     let paths = ConfigPaths::with_resource_parts(
         home.0.clone(),
         Some(pinned_root.join("opencode.jsonc")),
@@ -88,11 +90,13 @@ fn add_project_ipc_rejects_global_overlaps_before_persistence_without_opening_pi
         invalid.push(alias);
         invalid
     };
+
     for root in &invalid {
         let error = invoke(root).unwrap_err();
         assert_eq!(error["code"], "validation_failed", "{}", root.display());
         assert!(!paths.app_config_dir().exists());
     }
+
     let project = invoke(&valid)
         .unwrap()
         .deserialize::<models::ProjectFolder>()
@@ -113,6 +117,7 @@ fn add_project_ipc_rejects_global_overlaps_before_persistence_without_opening_pi
         assert_eq!(fs::read(paths.config_file()).unwrap(), before);
         assert_eq!(models::load_config(&paths.config_file()).unwrap(), config);
     }
+
     let duplicate = invoke(&valid.join("."))
         .unwrap()
         .deserialize::<models::ProjectFolder>()
@@ -128,6 +133,7 @@ fn add_project_ipc_rejects_global_overlaps_before_persistence_without_opening_pi
     assert_eq!(after.state.selected_project_id, Some(added.id));
     assert!(after.state.island_enabled);
     assert_eq!(after.state.preferences, config.state.preferences);
+
     for root in invalid.iter().take(3) {
         assert_eq!(
             fs::read_to_string(root.join("opencode.jsonc")).unwrap(),

@@ -6,6 +6,7 @@ mod windows;
 
 #[cfg(target_os = "macos")]
 use macos::NativeController;
+
 #[cfg(target_os = "windows")]
 use windows::NativeController;
 
@@ -228,6 +229,7 @@ impl PowerService {
         if shared.desired.shutdown {
             return Err(AppError::configuration("Power monitor is shutting down"));
         }
+
         let saved = settings::save(&self.directory, enabled);
         if enabled {
             saved.as_ref().map_err(Clone::clone)?;
@@ -244,6 +246,7 @@ impl PowerService {
             .send(())
             .map_err(|_| AppError::configuration("Power monitor stopped"))?;
         saved?;
+
         Ok(state)
     }
 
@@ -257,6 +260,7 @@ impl PowerService {
             shared.desired.enabled = false;
             shared.desired.shutdown = true;
         }
+
         let _ = self.wake.send(());
         // Authorization cannot be interrupted safely; late results stop before publication.
         if self
@@ -342,6 +346,7 @@ impl<C: PowerController> Engine<C> {
         if self.stopped {
             return Ok(());
         }
+
         let result = self.controller.stop();
         self.stopped = result.is_ok();
         result
@@ -417,6 +422,7 @@ impl<C: PowerController> Engine<C> {
         self.prepared = false;
         self.protection = false;
         self.last_busy = None;
+
         if let Err(error) = self.stop() {
             self.cleanup_failed = true;
             eprintln!("Restore after canceled lid operation: {error}");
@@ -432,6 +438,7 @@ impl<C: PowerController> Engine<C> {
         if self.tick_locked(now) {
             return true;
         }
+
         let preparation = {
             let mut shared = self.shared.lock().expect("power monitor lock poisoned");
             if shared.desired.generation == self.generation
@@ -446,6 +453,7 @@ impl<C: PowerController> Engine<C> {
             {
                 shared.preparing = true;
                 self.preparation_attempted = true;
+
                 Some(Preparation(Arc::clone(&self.shared)))
             } else {
                 None
@@ -465,6 +473,7 @@ impl<C: PowerController> Engine<C> {
                 self.preparation_error = result.as_ref().err().map(ToString::to_string);
                 shared.preparing = false;
                 drop(shared);
+
                 if let Err(error) = result {
                     self.error(error);
                 }
@@ -510,20 +519,24 @@ impl<C: PowerController> Engine<C> {
                 return false;
             }
             self.cleanup_failed = restored.is_err();
+
             match restored {
                 Err(error) => self.error(error),
                 Ok(()) => self.publish_ready(enabled, preference_error.clone()),
             }
             self.renew_at = now + POLL;
         }
+
         if shutdown {
             if self.cleanup_failed {
                 if let Err(error) = self.stop() {
                     eprintln!("Restore lid protection on exit: {error}");
                 }
             }
+
             return true;
         }
+
         if self.cleanup_failed {
             if now >= self.renew_at {
                 let result = self.controller().idle();
@@ -531,6 +544,7 @@ impl<C: PowerController> Engine<C> {
                     return false;
                 }
                 self.cleanup_failed = result.is_err();
+
                 if let Err(error) = result {
                     self.error(error);
                 } else {
@@ -538,18 +552,23 @@ impl<C: PowerController> Engine<C> {
                 }
                 self.renew_at = now + POLL;
             }
+
             return false;
         }
+
         if !enabled {
             return false;
         }
+
         if !authorize {
             self.preparation_attempted = true;
             self.preparation_error =
                 Some("Enable lid protection again to authorize this app run".into());
             self.publish_ready(enabled, preference_error);
+
             return false;
         }
+
         if self.protection
             && (now >= self.renew_at || self.last_busy.is_some_and(|busy| now >= busy + GRACE))
         {
@@ -561,12 +580,14 @@ impl<C: PowerController> Engine<C> {
                 if self.stale_stop() {
                     return false;
                 }
+
                 if let Err(error) = result {
                     let restored = self.controller().idle();
                     if self.stale_stop() {
                         return false;
                     }
                     self.protection = false;
+
                     match restored {
                         Ok(()) => self.preparation_failed(error),
                         Err(restore) => self.restore_failed(AppError::configuration(format!(
@@ -579,6 +600,7 @@ impl<C: PowerController> Engine<C> {
                 if self.stale_stop() {
                     return false;
                 }
+
                 match result {
                     Ok(()) => {
                         self.protection = false;
@@ -588,6 +610,7 @@ impl<C: PowerController> Engine<C> {
                             Some("Session status unavailable; protection lease expired".into()),
                         );
                     }
+
                     Err(error) => self.restore_failed(error),
                 }
             }
@@ -612,6 +635,7 @@ impl<C: PowerController> Engine<C> {
         {
             self.inflight = Some(self.generation);
             self.query_at = now + POLL;
+
             Some(self.generation)
         } else {
             None
@@ -637,9 +661,11 @@ impl<C: PowerController> Engine<C> {
         if generation != self.generation || !self.current() || self.cleanup_failed || !self.prepared
         {
             self.query_at = now;
+
             return;
         }
         self.query_at = now + POLL;
+
         match result {
             Err(error) => self.publish(LidPhase::Unknown, None, Some(error.to_string())),
             Ok(0) => {
@@ -648,11 +674,13 @@ impl<C: PowerController> Engine<C> {
                 if self.stale_stop() {
                     return;
                 }
+
                 match result {
                     Ok(()) => {
                         self.protection = false;
                         self.publish(LidPhase::Idle, Some(0), None);
                     }
+
                     Err(error) => self.restore_failed(error),
                 }
                 self.renew_at = now + POLL;
@@ -662,6 +690,7 @@ impl<C: PowerController> Engine<C> {
                 if self.stale_stop() {
                     return;
                 }
+
                 match result {
                     Ok(()) => {
                         self.last_busy = Some(now);
@@ -678,6 +707,7 @@ impl<C: PowerController> Engine<C> {
                         self.protection = false;
                         self.last_busy = None;
                         self.renew_at = now + POLL;
+
                         match restored {
                             Ok(()) => self.preparation_failed(error),
                             Err(restore) => self.restore_failed(AppError::configuration(format!(
@@ -703,6 +733,7 @@ fn finish_worker<C: PowerController>(engine: &mut Engine<C>, finished: mpsc::Sen
             eprintln!("Lid controller final cleanup lock failed; native recovery remains required");
         }
     }
+
     let _ = finished.send(());
 }
 
@@ -719,6 +750,7 @@ fn run_worker<C: PowerController>(engine: &mut Engine<C>, wake: mpsc::Receiver<(
                 }
             }
         });
+
     if let Err(error) = query_worker {
         let effects = Arc::clone(&engine.effects);
         let _guard = effects.lock().expect("power effects lock poisoned");
@@ -731,15 +763,18 @@ fn run_worker<C: PowerController>(engine: &mut Engine<C>, wake: mpsc::Receiver<(
         engine.error(AppError::configuration(format!(
             "Start session query worker: {error}"
         )));
+
         return;
     }
     loop {
         if engine.tick(Instant::now()) {
             break;
         }
+
         while let Ok((generation, result)) = observations.try_recv() {
             engine.observation(generation, result, Instant::now());
         }
+
         if let Some(generation) = engine.start_query(Instant::now()) {
             if requests.send(generation).is_err() {
                 engine.observation(
@@ -749,6 +784,7 @@ fn run_worker<C: PowerController>(engine: &mut Engine<C>, wake: mpsc::Receiver<(
                 );
             }
         }
+
         if matches!(
             wake.recv_timeout(Duration::from_millis(100)),
             Err(mpsc::RecvTimeoutError::Disconnected)
@@ -782,12 +818,15 @@ impl PowerController for NativeController {
             "Lid protection is unsupported on this platform",
         ))
     }
+
     fn busy(&mut self, _: Duration) -> Result<(), AppError> {
         self.prepare()
     }
+
     fn idle(&mut self) -> Result<(), AppError> {
         Ok(())
     }
+
     fn stop(&mut self) -> Result<(), AppError> {
         Ok(())
     }

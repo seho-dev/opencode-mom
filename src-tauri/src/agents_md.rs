@@ -75,15 +75,18 @@ impl MarkdownAgentDocument {
             if key == "prompt" {
                 continue;
             }
+
             if !self.frontmatter.contains_key(key) {
                 self.key_order.push(key.clone());
             }
             self.frontmatter.insert(key.clone(), value.clone());
             self.changed_fields.insert(key.clone());
         }
+
         if let Some(prompt) = prompt {
             self.prompt = prompt;
         }
+
         Ok(())
     }
 
@@ -151,6 +154,7 @@ fn parse_frontmatter_object(source: &str) -> Result<Map<String, Value>, crate::e
             "Markdown frontmatter must be an object",
         ));
     };
+
     Ok(fields)
 }
 
@@ -176,6 +180,7 @@ fn yaml_to_json(value: serde_yaml::Value) -> Result<Value, crate::error::AppErro
                 };
                 object.insert(key, yaml_to_json(value)?);
             }
+
             Ok(Value::Object(object))
         }
         serde_yaml::Value::Tagged(value) => yaml_to_json(value.value),
@@ -193,6 +198,7 @@ fn frontmatter_key_order<'a>(source: &str, keys: impl Iterator<Item = &'a String
             ordered.push(key);
         }
     }
+
     for key in available {
         if !ordered.contains(&key) {
             ordered.push(key);
@@ -226,6 +232,7 @@ fn render_frontmatter_preserving(
             output.push_str(&section.source);
             continue;
         }
+
         let Some(value) = fields.get(&section.key) else {
             continue;
         };
@@ -236,6 +243,7 @@ fn render_frontmatter_preserving(
             output.push_str(&section.source);
         }
     }
+
     for key in order.iter().chain(fields.keys()) {
         if emitted.insert(key.clone()) {
             if let Some(value) = fields.get(key) {
@@ -253,6 +261,7 @@ fn render_all_frontmatter(fields: &Map<String, Value>, order: &[String]) -> Stri
         if !emitted.insert(key.clone()) {
             continue;
         }
+
         if let Some(value) = fields.get(key) {
             render_key_value(&mut output, key, value, 0);
         }
@@ -283,6 +292,7 @@ fn frontmatter_sections(source: &str) -> Vec<FrontmatterSection> {
             current_source.push_str(line);
         }
     }
+
     if !current_source.is_empty() {
         sections.push(FrontmatterSection {
             key: current_key,
@@ -296,6 +306,7 @@ fn top_level_key(line: &str) -> Option<String> {
     if line.starts_with([' ', '\t', '#', '-']) {
         return None;
     }
+
     let (key, _) = line.split_once(':')?;
     let mut key = key.trim();
     if (key.starts_with('"') && key.ends_with('"'))
@@ -377,6 +388,7 @@ mod tests {
             );
             assert_eq!(document.serialize(), input);
         }
+
         for line in [
             "': value",
             "\": value",

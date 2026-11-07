@@ -72,6 +72,7 @@ impl<B: Backend> Policy<B> {
             ));
         }
         self.loaded = true;
+
         Ok(())
     }
 
@@ -90,12 +91,15 @@ impl<B: Backend> Policy<B> {
                         }
                     }
                 }
+
                 Err(error) => errors.push(error.to_string()),
             }
         }
+
         if let Err(error) = self.backend.refresh(original.scheme) {
             errors.push(error.to_string());
         }
+
         for (battery, value) in expected {
             match self.backend.read(original.scheme, battery) {
                 Ok(actual) if actual == value => {}
@@ -105,6 +109,7 @@ impl<B: Backend> Policy<B> {
                 Err(error) => errors.push(error.to_string()),
             }
         }
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -122,6 +127,7 @@ impl<B: Backend> Policy<B> {
                 unresolved.push(original);
             }
         }
+
         if unresolved.len() != self.journal.originals.len() {
             // Keep the old journal in memory if persisting progress fails; replay is conditional.
             durable_write(
@@ -162,6 +168,7 @@ impl<B: Backend> Policy<B> {
                     "Active power scheme changed during renewal",
                 ));
             }
+
             return Ok(());
         }
         self.restore()?;
@@ -170,6 +177,7 @@ impl<B: Backend> Policy<B> {
                 "Active power scheme changed while preparing lid protection",
             ));
         }
+
         let original = Original {
             scheme,
             ac: self.backend.read(scheme, false)?,
@@ -193,11 +201,14 @@ impl<B: Backend> Policy<B> {
                 ));
             }
             self.backend.execution(true)?;
+
             Ok(())
         })();
+
         match result {
             Ok(()) => {
                 self.applied = Some(scheme);
+
                 Ok(())
             }
             Err(error) => match self.idle() {
@@ -241,6 +252,7 @@ impl super::PowerController for NativeController {
     fn prepare(&mut self) -> Result<(), AppError> {
         self.policy.prepare()
     }
+
     fn busy(&mut self, ttl: std::time::Duration) -> Result<(), AppError> {
         if ttl.is_zero() || ttl > super::LEASE {
             return Err(AppError::validation("Invalid lid protection lease"));
@@ -248,9 +260,11 @@ impl super::PowerController for NativeController {
         // Windows has no policy TTL; the serialized app timer restores on deadline/exit.
         self.policy.apply()
     }
+
     fn idle(&mut self) -> Result<(), AppError> {
         self.policy.idle()
     }
+
     fn stop(&mut self) -> Result<(), AppError> {
         self.policy.idle()
     }
@@ -296,6 +310,7 @@ impl Backend for NativeBackend {
             }
             win_result(code, "Get active power scheme")?;
         }
+
         if pointer.is_null() {
             return Err(AppError::configuration(
                 "Windows returned no active power scheme",
@@ -310,6 +325,7 @@ impl Backend for NativeBackend {
             use std::io::Write;
             let _ = writeln!(std::io::stderr(), "Windows power-scheme cleanup failed");
         }
+
         Ok(Uuid::from_fields(
             guid.data1,
             guid.data2,
@@ -317,6 +333,7 @@ impl Backend for NativeBackend {
             &guid.data4,
         ))
     }
+
     fn read(&mut self, scheme: Uuid, battery: bool) -> Result<u32, AppError> {
         use windows_sys::Win32::System::Power::{PowerReadACValueIndex, PowerReadDCValueIndex};
         let guid = windows_sys::core::GUID::from_u128(scheme.as_u128());
@@ -347,8 +364,10 @@ impl Backend for NativeBackend {
             }
         };
         win_result(code, "Read lid action")?;
+
         Ok(value)
     }
+
     fn write(&mut self, scheme: Uuid, battery: bool, value: u32) -> Result<(), AppError> {
         use windows_sys::Win32::System::Power::{PowerWriteACValueIndex, PowerWriteDCValueIndex};
         let guid = windows_sys::core::GUID::from_u128(scheme.as_u128());
@@ -367,6 +386,7 @@ impl Backend for NativeBackend {
         };
         win_result(code, "Write lid action")
     }
+
     fn refresh(&mut self, scheme: Uuid) -> Result<(), AppError> {
         use windows_sys::Win32::System::Power::PowerSetActiveScheme;
         // Never activate an old scheme while restoring it.
@@ -379,8 +399,10 @@ impl Backend for NativeBackend {
                 "Refresh active power scheme",
             )?;
         }
+
         Ok(())
     }
+
     fn execution(&mut self, busy: bool) -> Result<(), AppError> {
         use windows_sys::Win32::System::Power::{
             SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED,

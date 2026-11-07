@@ -48,6 +48,7 @@ fn save_inner(
 ) -> Result<BehaviorDocument, AppError> {
     let path = paths.global_instructions_file();
     paths.validate_managed_write(&path)?;
+
     match Snapshot::read(&path)? {
         Some(snapshot) => {
             let (Some(expected_path), Some(expected_content)) =
@@ -69,6 +70,7 @@ fn save_inner(
             if draft.expected_path.is_some() || draft.expected_content.is_some() {
                 return Err(changed());
             }
+
             let parent = Directory::ensure(path.parent().ok_or_else(changed)?)?;
             paths.validate_managed_write(&path)?;
             parent.create_file_checked("AGENTS.md", &draft.content, || {

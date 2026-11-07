@@ -18,6 +18,7 @@ pub async fn get_mom_http_settings(
     http: State<'_, crate::http_server::HttpServerState>,
 ) -> CommandResult<crate::http_server::MomHttpSettings> {
     let http = http.inner().as_ref().map_err(Clone::clone)?;
+
     Ok(http.settings().await)
 }
 
@@ -167,6 +168,7 @@ pub async fn save_preferences(
         if let Some(service) = handle.try_state::<crate::island::IslandService>() {
             service.update_preferences(preferences);
         }
+
         Ok(())
     })
     .await?;
@@ -177,6 +179,7 @@ pub async fn save_preferences(
             "preferences_committed_tray_notify_failed",
         );
     }
+
     if app
         .emit_to("island", "app:preferences-changed", ())
         .is_err()
@@ -187,6 +190,7 @@ pub async fn save_preferences(
             "preferences_committed_island_notify_failed",
         );
     }
+
     Ok(())
 }
 

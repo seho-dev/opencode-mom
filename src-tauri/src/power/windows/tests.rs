@@ -17,12 +17,15 @@ impl Backend for Mock {
     fn active_scheme(&mut self) -> Result<Uuid, AppError> {
         Ok(self.active)
     }
+
     fn read(&mut self, scheme: Uuid, battery: bool) -> Result<u32, AppError> {
         if self.fail_read {
             return Err(AppError::configuration("read failed"));
         }
+
         Ok(self.values[&scheme][usize::from(battery)])
     }
+
     fn write(&mut self, scheme: Uuid, battery: bool, value: u32) -> Result<(), AppError> {
         let bytes = fs::read(&self.journal_path).expect("durable journal before first write");
         let journal: Journal = serde_json::from_slice(&bytes).unwrap();
@@ -32,14 +35,17 @@ impl Backend for Mock {
             .any(|original| original.scheme == scheme));
         if self.fail_write == Some((battery, value)) {
             self.fail_write = None;
+
             return Err(AppError::configuration("write failed"));
         }
         self.values.get_mut(&scheme).unwrap()[usize::from(battery)] = value;
         if self.corrupt_apply && battery && value == 0 {
             self.values.get_mut(&scheme).unwrap()[1] = 4;
         }
+
         Ok(())
     }
+
     fn refresh(&mut self, _: Uuid) -> Result<(), AppError> {
         if self.fail_refresh {
             Err(AppError::configuration("refresh failed"))
@@ -47,8 +53,10 @@ impl Backend for Mock {
             Ok(())
         }
     }
+
     fn execution(&mut self, busy: bool) -> Result<(), AppError> {
         self.execution = busy;
+
         Ok(())
     }
 }

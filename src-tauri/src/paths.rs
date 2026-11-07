@@ -41,6 +41,7 @@ impl ConfigPaths {
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
             .unwrap_or_else(|| home.join(".config"));
+
         Ok(Self::with_resource_parts(
             home,
             config,
@@ -77,6 +78,7 @@ impl ConfigPaths {
             if !normalize {
                 return path;
             }
+
             let normalized = normalize_override_path(&path);
             if path.components().any(|part| part == Component::ParentDir) {
                 override_path_sources.push((path, normalized.clone()));
@@ -114,6 +116,7 @@ impl ConfigPaths {
             command_dirs.push(directory.join("commands"));
             plugin_dirs.push(directory.join("plugins"));
         }
+
         if let Some(config) = &config {
             global_config_files.push(config.clone());
         }
@@ -220,6 +223,7 @@ impl ConfigPaths {
         if self.is_project() || !path.is_absolute() {
             return Err(invalid());
         }
+
         let (logical, captured) = self
             .global_write_files
             .iter()
@@ -233,6 +237,7 @@ impl ConfigPaths {
                 "Global plugin configuration source changed; reload",
             ));
         }
+
         Ok(())
     }
 
@@ -246,6 +251,7 @@ impl ConfigPaths {
                 "Global configuration path changed; reload",
             ));
         }
+
         Ok(())
     }
 
@@ -280,6 +286,7 @@ impl ConfigPaths {
         }) {
             return Err(invalid());
         }
+
         if let Some(root) = &self.project_root {
             let command_path =
                 |target: &Path| self.command_dirs.iter().any(|dir| target.starts_with(dir));
@@ -291,6 +298,7 @@ impl ConfigPaths {
             {
                 return Err(invalid());
             }
+
             if self
                 .agent_dirs
                 .iter()
@@ -303,6 +311,7 @@ impl ConfigPaths {
             {
                 return Err(invalid());
             }
+
             if self
                 .global_resource_dirs
                 .iter()
@@ -326,13 +335,16 @@ impl ConfigPaths {
                 if logical != &self.global_instructions {
                     return Err(invalid());
                 }
+
                 if checked_resource_path(logical)? == *captured {
                     return Ok(());
                 }
+
                 return Err(AppError::configuration(
                     "Global configuration source changed; reload",
                 ));
             }
+
             let allowed = self
                 .global_write_roots
                 .iter()
@@ -340,6 +352,7 @@ impl ConfigPaths {
             if !allowed {
                 return Err(invalid());
             }
+
             for (logical, captured) in &self.global_write_roots {
                 if checked_resource_path(logical)? != *captured {
                     return Err(AppError::configuration(
@@ -347,6 +360,7 @@ impl ConfigPaths {
                     ));
                 }
             }
+
             if !self
                 .global_write_roots
                 .iter()
@@ -354,6 +368,7 @@ impl ConfigPaths {
             {
                 return Err(invalid());
             }
+
             if !self
                 .global_write_roots
                 .iter()
@@ -364,6 +379,7 @@ impl ConfigPaths {
                 return Err(invalid());
             }
         }
+
         Ok(())
     }
 
@@ -389,12 +405,14 @@ impl ConfigPaths {
             }
             self.ensure_project_boundary(root)?;
         }
+
         Ok(())
     }
 
     pub fn validate_project_directory(&self, path: &Path) -> Result<PathBuf, AppError> {
         let root = canonical_project_directory(path)?;
         self.ensure_project_boundary(&root)?;
+
         Ok(root)
     }
 
@@ -429,6 +447,7 @@ impl ConfigPaths {
                 return Err(overlap());
             }
         }
+
         for file in self
             .managed_config_files
             .iter()
@@ -439,6 +458,7 @@ impl ConfigPaths {
                 return Err(overlap());
             }
         }
+
         Ok(())
     }
 
@@ -446,6 +466,7 @@ impl ConfigPaths {
         if self.is_project() {
             return Err(AppError::validation("Project resources are read-only"));
         }
+
         Ok(())
     }
 
@@ -477,6 +498,7 @@ impl ConfigPaths {
         paths.resource_write_dir = root.join(".opencode");
         paths.project_root = Some(root);
         paths.validate_resource_root()?;
+
         Ok(paths)
     }
 
@@ -499,9 +521,11 @@ impl ConfigPaths {
         {
             return Some(self.home.join(relative));
         }
+
         if source == "~" {
             return Some(self.home.clone());
         }
+
         let path = PathBuf::from(source);
         path.is_absolute().then_some(path)
     }
@@ -511,6 +535,7 @@ pub fn reject_project_write(project_id: Option<Uuid>) -> Result<(), AppError> {
     if project_id.is_some() {
         return Err(AppError::validation("Project resources are read-only"));
     }
+
     Ok(())
 }
 
@@ -518,6 +543,7 @@ pub fn canonical_project_directory(path: &Path) -> Result<PathBuf, AppError> {
     if !path.is_absolute() {
         return Err(AppError::validation("project path must be absolute"));
     }
+
     let root = fs::canonicalize(path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             AppError::not_found(format!("project root not found: {}", path.display()))
@@ -530,17 +556,21 @@ pub fn canonical_project_directory(path: &Path) -> Result<PathBuf, AppError> {
             "project path must not be a filesystem root",
         ));
     }
+
     if !root.is_dir() {
         return Err(AppError::validation("project path must be a directory"));
     }
+
     if root.to_str().is_none() {
         return Err(AppError::validation("project path must be valid UTF-8"));
     }
+
     let mut entries =
         fs::read_dir(&root).map_err(|error| AppError::io("read project", &root, error))?;
     if let Some(entry) = entries.next() {
         entry.map_err(|error| AppError::io("read project", &root, error))?;
     }
+
     Ok(root)
 }
 
@@ -561,6 +591,7 @@ fn normalize_override_path(path: &Path) -> PathBuf {
                         }
                         normalized = target;
                     }
+
                     Ok(metadata) if !metadata.is_dir() => return path.to_owned(),
                     Ok(_) => {}
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -599,14 +630,17 @@ fn checked_resource_path(path: &Path) -> Result<PathBuf, AppError> {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => return Err(AppError::io("inspect", path, error)),
             }
+
             let parent = path
                 .parent()
                 .ok_or_else(|| AppError::configuration("Unresolved resource path"))?;
             let name = path
                 .file_name()
                 .ok_or_else(|| AppError::configuration("Invalid resource filename"))?;
+
             Ok(checked_resource_path(parent)?.join(name))
         }
+
         Err(error) => Err(AppError::io("resolve", path, error)),
     }
 }
@@ -629,6 +663,7 @@ fn resolve_opencode_file(
     if let Some(config) = config {
         return config;
     }
+
     let dir = directory.unwrap_or_else(|| user_config_dir.join("opencode"));
     let jsonc = dir.join("opencode.jsonc");
     if jsonc.exists() {

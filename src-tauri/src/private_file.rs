@@ -50,11 +50,13 @@ pub(crate) fn read(path: &Path, max_bytes: u64) -> Result<Option<Vec<u8>>, ReadE
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
     }
+
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
         options.custom_flags(0x00200000);
     }
+
     let file = match options.open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -64,9 +66,11 @@ pub(crate) fn read(path: &Path, max_bytes: u64) -> Result<Option<Vec<u8>>, ReadE
     if !metadata.is_file() {
         return Err(ReadError::NotRegular);
     }
+
     if metadata.len() > max_bytes {
         return Err(ReadError::MetadataTooLarge);
     }
+
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
@@ -74,6 +78,7 @@ pub(crate) fn read(path: &Path, max_bytes: u64) -> Result<Option<Vec<u8>>, ReadE
             return Err(ReadError::ReparsePoint);
         }
     }
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -94,6 +99,7 @@ fn read_bounded(reader: impl Read, max_bytes: u64) -> Result<Vec<u8>, ReadError>
     if bytes.0.len() as u64 > max_bytes {
         return Err(ReadError::TooLarge);
     }
+
     Ok(bytes.into_inner())
 }
 
@@ -141,6 +147,7 @@ fn publish_inner(
     if sync_directory().is_err() {
         return Ok(PublishOutcome::CommittedWithWarning);
     }
+
     Ok(PublishOutcome::Committed)
 }
 
@@ -152,6 +159,7 @@ fn create_private(path: &Path) -> Result<File, PublishError> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
+
     let file = options
         .open(path)
         .map_err(|_| PublishError::TemporaryCreate)?;
@@ -162,23 +170,28 @@ fn create_private(path: &Path) -> Result<File, PublishError> {
             Ok(metadata) => metadata,
             Err(_) => {
                 let _ = fs::remove_file(path);
+
                 return Err(PublishError::TemporaryWrite);
             }
         };
         // SAFETY: geteuid takes no pointers and has no caller preconditions.
         if metadata.uid() != unsafe { libc::geteuid() } {
             let _ = fs::remove_file(path);
+
             return Err(PublishError::TemporaryWrite);
         }
+
         if metadata.mode() & 0o777 != 0o600
             && file
                 .set_permissions(fs::Permissions::from_mode(0o600))
                 .is_err()
         {
             let _ = fs::remove_file(path);
+
             return Err(PublishError::TemporaryWrite);
         }
     }
+
     Ok(file)
 }
 
@@ -244,6 +257,7 @@ mod tests {
             fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
                 if std::mem::replace(&mut self.0, false) {
                     buffer[0] = b's';
+
                     Ok(1)
                 } else {
                     Err(std::io::Error::other("injected read failure"))
@@ -276,6 +290,7 @@ mod tests {
             fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
                 if std::mem::replace(&mut self.0, false) {
                     buffer[0] = b's';
+
                     Ok(1)
                 } else {
                     panic!("injected read unwind");

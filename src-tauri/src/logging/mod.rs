@@ -44,9 +44,7 @@ impl Shared {
         gate.active = false;
         gate.generation = gate.generation.wrapping_add(1);
         self.recording.store(false, Ordering::Release);
-        let mut state = lock(&self.state);
-        state.recording = false;
-        state.error = Some(message.to_owned());
+        lock(&self.state).error = Some(message.to_owned());
     }
 
     fn dropped(&self) {
@@ -124,6 +122,7 @@ impl LoggingService {
             Ok(handle) => drop(handle),
             Err(_) => service.shared.fail("Logging worker unavailable"),
         }
+
         if enabled {
             let generation = service.pause();
             let _ = service.request(
@@ -170,7 +169,6 @@ impl LoggingService {
         gate.active = false;
         gate.generation = gate.generation.wrapping_add(1);
         self.shared.recording.store(false, Ordering::Release);
-        lock(&self.shared.state).recording = false;
         gate.generation
     }
 
@@ -187,14 +185,17 @@ impl LoggingService {
                 }
                 Err(_) => {
                     self.shared.fail("Logging worker unavailable");
+
                     return Err(AppError::configuration("Logging worker unavailable"));
                 }
             }
         }
+
         match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok(result) => result,
             Err(_) => {
                 self.shared.fail("Logging worker timed out");
+
                 Err(AppError::configuration("Logging worker timed out"))
             }
         }
@@ -212,6 +213,7 @@ impl LoggingService {
             if result.is_err() {
                 lock(&self.shared.state).error =
                     Some("Logging preference could not be saved".to_owned());
+
                 return Err(AppError::configuration(
                     "Logging preference could not be saved",
                 ));
@@ -233,6 +235,7 @@ impl LoggingService {
                 lock(&self.shared.state).error = None;
             }
         }
+
         Ok(self.state())
     }
 
@@ -248,6 +251,7 @@ impl LoggingService {
             CONTROL_TIMEOUT,
         )?;
         self.shared.dropped.store(0, Ordering::Relaxed);
+
         Ok(self.state())
     }
 
@@ -283,6 +287,7 @@ impl LoggingService {
                 "Could not open local log directory",
             ));
         }
+
         Ok(())
     }
 
@@ -290,6 +295,7 @@ impl LoggingService {
         // Exit never waits for a blocked filesystem thread or joins it without a deadline.
         let Ok(_control) = self.controls.try_lock() else {
             self.shared.fail("Logging shutdown incomplete");
+
             return;
         };
         self.pause();
@@ -299,17 +305,21 @@ impl LoggingService {
     fn emit(&self, generation: u64, mut record: LogRecord) {
         let Ok(mut gate) = self.shared.gate.try_lock() else {
             self.shared.dropped();
+
             return;
         };
         if !gate.active || gate.generation != generation {
             return;
         }
+
         if !record.is_safe() {
             self.shared.dropped();
+
             return;
         }
         gate.sequence = gate.sequence.saturating_add(1);
         record.sequence = gate.sequence;
+
         match self.sender.try_send(Message::Record {
             generation,
             record: Box::new(record),
@@ -323,7 +333,6 @@ impl LoggingService {
                 self.shared.recording.store(false, Ordering::Release);
                 drop(gate);
                 if let Ok(mut state) = self.shared.state.try_lock() {
-                    state.recording = false;
                     state.error = Some("Logging worker unavailable".to_owned());
                 }
             }
@@ -348,9 +357,7 @@ fn activate(shared: &Shared, generation: u64, enabled: bool) -> bool {
     }
     gate.active = enabled;
     shared.recording.store(enabled, Ordering::Release);
-    let mut state = lock(&shared.state);
-    state.recording = enabled;
-    state.error = None;
+    lock(&shared.state).error = None;
     true
 }
 
@@ -366,6 +373,7 @@ fn writer(shared: Arc<Shared>, receiver: mpsc::Receiver<Message>, mut storage: S
                     shared.dropped.fetch_add(1, Ordering::Relaxed);
                     continue;
                 }
+
                 if storage.write(&record).is_err() {
                     shared.dropped.fetch_add(1, Ordering::Relaxed);
                     shared.fail("Local log write failed");
@@ -421,6 +429,7 @@ fn writer(shared: Arc<Shared>, receiver: mpsc::Receiver<Message>, mut storage: S
                     shared.fail("Local log storage unavailable");
                     let _ = storage.stop();
                 }
+
                 let _ = reply.send(result);
                 if shutdown {
                     return;
@@ -428,6 +437,7 @@ fn writer(shared: Arc<Shared>, receiver: mpsc::Receiver<Message>, mut storage: S
             }
         }
     }
+
     if storage.stop().is_err() {
         shared.fail("Local log flush failed");
     }
@@ -481,6 +491,7 @@ impl Operation {
         if self.finished.swap(true, Ordering::Relaxed) {
             return;
         }
+
         if let Some(inner) = &self.inner {
             match result {
                 Ok(_) => self.emit(
@@ -546,6 +557,7 @@ pub(crate) fn operation(kind: LogType, event: &'static str) -> Operation {
         .try_lock()
         .ok()
         .and_then(|logger| logger.upgrade());
+
     match logger {
         Some(logger) => logger.operation(kind, event),
         None => Operation {

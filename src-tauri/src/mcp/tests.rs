@@ -25,6 +25,7 @@ fn saved_server_rejects_malformed_ipc_targets_without_panicking() {
         .unwrap_err();
         assert_eq!(error.code, ErrorCode::ValidationFailed);
     }
+
     for (config, target) in [
         (
             serde_json::json!({"type": "local", "command": ["run", "--test"]}),
@@ -140,6 +141,7 @@ impl Fixture {
         for target in &targets {
             fs::write(target, ORIGINAL).unwrap();
         }
+
         let aliases = vec![global.join("opencode.json"), global.join("opencode.jsonc")];
         for alias in &aliases {
             symlink(&targets[0], alias).unwrap();
@@ -214,6 +216,7 @@ fn duplicate_alias_retarget_after_snapshot_is_rejected_before_rename() {
                 })
                 .collect::<Vec<_>>();
             assert_eq!(staged.len(), 2);
+
             for path in staged {
                 assert_eq!(
                     fs::metadata(path).unwrap().permissions().mode() & 0o777,

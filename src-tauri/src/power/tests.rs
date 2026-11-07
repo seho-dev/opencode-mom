@@ -41,36 +41,42 @@ impl PowerController for Mock {
         if let Some(gate) = self.prepare_gate.take() {
             gate.wait();
         }
+
         if let Some(shared) = self.cancel_prepare.take() {
             let mut shared = shared.lock().unwrap();
             shared.desired.generation += 1;
             shared.desired.control_generation += 1;
             shared.desired.enabled = false;
         }
+
         if self.fail_prepare {
             Err(AppError::configuration("authorization failed"))
         } else {
             Ok(())
         }
     }
+
     fn busy(&mut self, ttl: Duration) -> Result<(), AppError> {
         self.calls.push("busy".into());
         self.leases.push(ttl);
         if let Some(gate) = self.busy_gate.take() {
             gate.wait();
         }
+
         if let Some(shared) = self.cancel_busy.take() {
             let mut shared = shared.lock().unwrap();
             shared.desired.generation += 1;
             shared.desired.control_generation += 1;
             shared.desired.enabled = false;
         }
+
         if self.fail_busy {
             Err(AppError::configuration("apply failed"))
         } else {
             Ok(())
         }
     }
+
     fn idle(&mut self) -> Result<(), AppError> {
         self.calls.push("idle".into());
         if self.fail_idle {
@@ -79,11 +85,13 @@ impl PowerController for Mock {
             Ok(())
         }
     }
+
     fn stop(&mut self) -> Result<(), AppError> {
         self.calls.push("stop".into());
         if let Some(gate) = self.stop_gate.take() {
             gate.wait();
         }
+
         if self.fail_stop {
             Err(AppError::configuration("stop restore failed"))
         } else {
@@ -177,6 +185,7 @@ fn poisoned_worker_locks_unwind_to_cleanup_without_recovering_policy_state() {
         }
         fn stop(&mut self) -> Result<(), AppError> {
             self.0.fetch_add(1, Ordering::SeqCst);
+
             Ok(())
         }
     }
@@ -238,6 +247,7 @@ fn worker_unwind_attempts_cleanup_without_panicking_or_recovering_poison() {
                 ),
                 Ordering::SeqCst,
             );
+
             match self.stop_failure {
                 0 => Ok(()),
                 1 => Err(AppError::configuration("injected cleanup failure")),
@@ -654,6 +664,7 @@ fn target_refresh_preserves_disabled_authorization_and_preference_errors() {
     assert_eq!(state(&disabled).phase, LidPhase::Disabled);
     assert_eq!(disabled.controller.calls, ["idle"]);
     assert!(disabled.start_query(now + POLL).is_none());
+
     for enabled in [false, true] {
         let now = Instant::now();
         let mut engine = engine(enabled);

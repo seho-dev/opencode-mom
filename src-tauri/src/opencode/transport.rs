@@ -1,5 +1,6 @@
 use std::fs::OpenOptions;
 use std::io::{self, Read};
+
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
@@ -125,14 +126,17 @@ impl ManagedConnection {
             Ok(response) => response,
             Err(error) if error.is_connect() || error.is_timeout() => {
                 remaining(deadline)?;
+
                 return Ok(false);
             }
+
             Err(error) => return Err(request_failure(error)),
         };
         let info: super::active::JsonObject<Info> =
             response_json(response, deadline, INFO_MAX_BYTES, "health", "32 KiB")?;
         let info = info.0;
         validate_info(&info)?;
+
         Ok(info.pid == self.registration.pid && info.version == self.registration.version)
     }
 
@@ -184,6 +188,7 @@ impl ManagedConnection {
     ) -> Result<SideEffectReservation, AppError> {
         let reservation = self.snapshot.reserve_side_effect(deadline)?;
         self.verify_identity(deadline)?;
+
         Ok(reservation)
     }
 
@@ -200,12 +205,14 @@ impl ManagedConnection {
         if !query.is_empty() {
             url.query_pairs_mut().extend_pairs(query.iter().copied());
         }
+
         let response = self
             .request(url, deadline, HEALTH_TIMEOUT)?
             .send()
             .map_err(request_failure)?;
         let value = response_json(response, deadline, max_bytes, operation, limit)?;
         self.ensure_current()?;
+
         Ok(value)
     }
 
@@ -216,11 +223,13 @@ impl ManagedConnection {
                 "service identity changed; reconnect before writing",
             ));
         }
+
         let mut url = api_url(&self.url, &["location", "reload"])?;
         if let Some(directory) = self.directory().and_then(|path| path.to_str()) {
             url.query_pairs_mut()
                 .append_pair("location[directory]", directory);
         }
+
         let request = self
             .client
             .post(url)
@@ -252,12 +261,14 @@ impl ManagedConnection {
         if !matches!(operation, "check" | "update") {
             return Err(AppError::validation("Invalid plugin operation"));
         }
+
         let reservation = self.snapshot.reserve_side_effect(deadline)?;
         if !self.healthy(deadline)? {
             return Err(AppError::configuration(
                 "Plugin service identity changed; refresh before writing",
             ));
         }
+
         let mut url = api_url(&self.url, &["plugin", operation])?;
         if let Some(directory) = directory {
             let directory = directory
@@ -266,6 +277,7 @@ impl ManagedConnection {
             url.query_pairs_mut()
                 .append_pair("location[directory]", directory);
         }
+
         let request = self
             .client
             .post(url)
@@ -291,6 +303,7 @@ impl ManagedConnection {
         if response.status() != expected {
             return Err(unknown());
         }
+
         if operation == "update" {
             Ok((None, reservation))
         } else {
@@ -312,6 +325,7 @@ impl ManagedConnection {
                 path.push(id).push("message");
             }
         }
+
         let mut query = url.query_pairs_mut();
         query.append_pair("limit", if session_id.is_some() { "100" } else { "1000" });
         if let Some(cursor) = cursor {
@@ -323,6 +337,7 @@ impl ManagedConnection {
             query.append_pair("order", "asc");
         }
         drop(query);
+
         Ok(url)
     }
 
@@ -341,6 +356,7 @@ impl ManagedConnection {
         if session_id.is_some() && page.data.len() > 100 {
             return Err(failure("message page item limit exceeded"));
         }
+
         Ok(page)
     }
 }
@@ -387,12 +403,14 @@ impl ManagedAsyncConnection {
         if response.status() != StatusCode::OK {
             return Err(failure(&format!("API HTTP {}", response.status().as_u16())));
         }
+
         if response
             .content_length()
             .is_some_and(|length| length > INFO_MAX_BYTES)
         {
             return Err(failure("health response exceeds the 32 KiB limit"));
         }
+
         let mut bytes = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(request_failure)? {
             if bytes.len() + chunk.len() > INFO_MAX_BYTES as usize {
@@ -400,6 +418,7 @@ impl ManagedAsyncConnection {
             }
             bytes.extend_from_slice(&chunk);
         }
+
         let info: super::active::JsonObject<Info> = decode_json(&bytes, "health")?;
         validate_info(&info.0)?;
         if info.0.pid != self.pid || info.0.version != self.version {
@@ -409,6 +428,7 @@ impl ManagedAsyncConnection {
         }
         remaining(deadline)?;
         self.ensure_current()?;
+
         Ok(reservation)
     }
 
@@ -427,6 +447,7 @@ fn api_url(base: &Url, segments: &[&str]) -> Result<Url, AppError> {
         .path_segments_mut()
         .map_err(|_| failure("invalid managed API base URL"))?;
     path.clear().push("api");
+
     for segment in segments {
         if !valid_text(segment, 4096) || matches!(*segment, "." | "..") {
             return Err(failure("invalid managed API path segment"));
@@ -434,6 +455,7 @@ fn api_url(base: &Url, segments: &[&str]) -> Result<Url, AppError> {
         path.push(segment);
     }
     drop(path);
+
     Ok(url)
 }
 
@@ -441,6 +463,7 @@ fn validate_info(info: &Info) -> Result<(), AppError> {
     if info.pid == 0 || !valid_v2_version(&info.version) {
         return Err(failure("invalid V2 service identity"));
     }
+
     Ok(())
 }
 
@@ -448,6 +471,7 @@ fn valid_v2_version(version: &str) -> bool {
     if version.len() > 128 {
         return false;
     }
+
     let identifiers = |value: &str, prerelease: bool| {
         value.split('.').all(|part| {
             !part.is_empty()
@@ -466,6 +490,7 @@ fn valid_v2_version(version: &str) -> bool {
     if build.is_some_and(|build| !identifiers(build, false)) {
         return false;
     }
+
     let (version, prerelease) = version
         .split_once('-')
         .map_or((version, None), |(version, prerelease)| {
@@ -474,6 +499,7 @@ fn valid_v2_version(version: &str) -> bool {
     if prerelease.is_some_and(|prerelease| !identifiers(prerelease, true)) {
         return false;
     }
+
     let parts: Vec<_> = version.split('.').collect();
     parts.len() == 3
         && parts[0] == "2"
@@ -521,6 +547,7 @@ pub(in crate::opencode) fn response_json<T: for<'de> Deserialize<'de>>(
     if response.status() != StatusCode::OK {
         return Err(failure(&format!("API HTTP {}", response.status().as_u16())));
     }
+
     let oversized = || failure(&format!("{operation} response exceeds the {limit} limit"));
     if response
         .content_length()
@@ -528,6 +555,7 @@ pub(in crate::opencode) fn response_json<T: for<'de> Deserialize<'de>>(
     {
         return Err(oversized());
     }
+
     let mut bytes = Vec::new();
     let mut buffer = [0; 8192];
     loop {
@@ -539,6 +567,7 @@ pub(in crate::opencode) fn response_json<T: for<'de> Deserialize<'de>>(
         if count == 0 {
             break;
         }
+
         if bytes.len() as u64 + count as u64 > max_bytes {
             return Err(oversized());
         }
@@ -575,6 +604,7 @@ fn read_registration(path: &Path, deadline: Instant) -> Result<Option<Registrati
     {
         return Err(failure("invalid managed service registration file type"));
     }
+
     let mut bytes = Vec::new();
     file.take(REGISTRATION_MAX_BYTES + 1)
         .read_to_end(&mut bytes)
@@ -583,6 +613,7 @@ fn read_registration(path: &Path, deadline: Instant) -> Result<Option<Registrati
     if bytes.len() as u64 > REGISTRATION_MAX_BYTES {
         return Err(failure("registration exceeds the 8 KiB limit"));
     }
+
     let result = decode_json(&bytes, "managed service registration");
     drop(bytes);
     result.map(Some)
@@ -611,6 +642,7 @@ fn connect_at(
             "managed API unavailable or registration identity mismatch",
         ));
     }
+
     Ok(connection)
 }
 
@@ -641,6 +673,7 @@ fn bootstrap_cli(candidates: &[PathBuf], deadline: Instant) -> Result<(), AppErr
         if !binary.exists() && index + 1 < candidates.len() {
             continue;
         }
+
         let child = match bootstrap_command(binary).spawn() {
             Ok(child) => child,
             Err(error) => {
@@ -663,11 +696,14 @@ fn bootstrap_cli(candidates: &[PathBuf], deadline: Instant) -> Result<(), AppErr
                 "CLI bootstrap failed; managed OpenCode V2 service is required",
             ));
         }
+
         let info: super::active::JsonObject<Info> =
             decode_json(&output.stdout, "CLI bootstrap health")?;
         validate_info(&info.0)?;
+
         return Ok(());
     }
+
     Err(failure(&format!(
         "CLI bootstrap spawn failed ({last_error:?})"
     )))
@@ -703,6 +739,7 @@ pub(in crate::opencode) fn connect_target(
     };
     snapshot.ensure_current()?;
     connection.snapshot = snapshot;
+
     Ok(connection)
 }
 

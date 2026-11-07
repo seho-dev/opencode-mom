@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -9,6 +7,7 @@ use crate::error::AppError;
 use crate::protected_data::SecretBytes;
 
 pub const MAX_CONFIG_PAYLOAD_BYTES: u64 = 1024 * 1024; // 1 MiB
+#[cfg(windows)]
 pub const MAX_ENVELOPE_BYTES: u64 = 8 * 1024 * 1024; // 8 MiB
 pub const MAX_SERVICES: usize = 64;
 
@@ -136,14 +135,17 @@ pub fn validate_config(config: &ProxyConfig) -> Result<(), AppError> {
             config.schema_version
         )));
     }
+
     if config.gateway.idle_timeout_secs == 0 || config.gateway.idle_timeout_secs > 86400 {
         return Err(AppError::validation(
             "idle timeout must be between 1 and 86400 seconds",
         ));
     }
+
     if config.gateway.max_units == 0 || config.gateway.max_units > 128 {
         return Err(AppError::validation("max units must be between 1 and 128"));
     }
+
     if config.services.len() > MAX_SERVICES {
         return Err(AppError::validation(format!(
             "services count exceeds maximum limit of {}",
@@ -158,6 +160,7 @@ pub fn validate_config(config: &ProxyConfig) -> Result<(), AppError> {
                 "service id must be between 1 and 64 characters",
             ));
         }
+
         if !service
             .id
             .chars()
@@ -168,41 +171,48 @@ pub fn validate_config(config: &ProxyConfig) -> Result<(), AppError> {
                 service.id
             )));
         }
+
         if !seen_ids.insert(&service.id) {
             return Err(AppError::validation(format!(
                 "duplicate service id: '{}'",
                 service.id
             )));
         }
+
         if service.name.is_empty() || service.name.len() > 128 {
             return Err(AppError::validation(
                 "service name must be between 1 and 128 characters",
             ));
         }
+
         if service.command.is_empty() || service.command[0].is_empty() {
             return Err(AppError::validation(format!(
                 "service '{}' command argv cannot be empty",
                 service.id
             )));
         }
+
         if service.cwd.is_empty() || !Path::new(&service.cwd).is_absolute() {
             return Err(AppError::validation(format!(
                 "service '{}' cwd must be a valid absolute path",
                 service.id
             )));
         }
+
         if service.timeouts.startup_secs == 0 || service.timeouts.startup_secs > 3600 {
             return Err(AppError::validation(format!(
                 "service '{}' startup timeout must be between 1 and 3600 seconds",
                 service.id
             )));
         }
+
         if service.timeouts.execution_secs == 0 || service.timeouts.execution_secs > 86400 {
             return Err(AppError::validation(format!(
                 "service '{}' execution timeout must be between 1 and 86400 seconds",
                 service.id
             )));
         }
+
         for k in service.environment.keys() {
             if k.is_empty() || k.contains('=') || k.contains('\0') {
                 return Err(AppError::validation(format!(
@@ -212,6 +222,7 @@ pub fn validate_config(config: &ProxyConfig) -> Result<(), AppError> {
             }
         }
     }
+
     Ok(())
 }
 
@@ -222,6 +233,7 @@ pub fn load_config(path: &Path) -> Result<ProxyConfig, AppError> {
     let config: ProxyConfig = serde_json::from_slice(&bytes.0)
         .map_err(|_| AppError::configuration("invalid proxy configuration"))?;
     validate_config(&config)?;
+
     Ok(config)
 }
 
@@ -236,11 +248,13 @@ pub(crate) fn legacy_http_verifier(path: &Path) -> Result<Option<String>, AppErr
         #[serde(default)]
         gateway: LegacyGateway,
     }
+
     #[derive(Default, Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct LegacyGateway {
         token_verifier: Option<String>,
     }
+
     let value: serde_json::Value = serde_json::from_slice(&bytes.0)
         .map_err(|_| AppError::configuration("invalid legacy proxy configuration"))?;
     if !value.is_object()
@@ -252,8 +266,10 @@ pub(crate) fn legacy_http_verifier(path: &Path) -> Result<Option<String>, AppErr
             "invalid legacy proxy configuration",
         ));
     }
+
     let value: LegacyConfig = serde_json::from_value(value)
         .map_err(|_| AppError::configuration("invalid legacy proxy configuration"))?;
+
     match value.gateway.token_verifier {
         None => Ok(None),
         Some(verifier) if crate::http_server::auth::valid_verifier(&verifier) => Ok(Some(verifier)),
@@ -272,6 +288,7 @@ fn read_config(path: &Path) -> Result<Option<SecretBytes>, AppError> {
         let Some(bytes) = bytes else {
             return Ok(None);
         };
+
         Ok(Some(SecretBytes(bytes)))
     }
 
@@ -289,11 +306,13 @@ fn read_config(path: &Path) -> Result<Option<SecretBytes>, AppError> {
             version: u32,
             encrypted_payload: Vec<u8>,
         }
+
         let envelope: WindowsEnvelope = serde_json::from_slice(&bytes)
             .map_err(|_| AppError::configuration("invalid proxy configuration envelope"))?;
         if envelope.version != 1 {
             return Err(AppError::configuration("unsupported envelope version"));
         }
+
         let decrypted = SecretBytes(crate::protected_data::unprotect(
             &envelope.encrypted_payload,
         )?);
@@ -302,6 +321,7 @@ fn read_config(path: &Path) -> Result<Option<SecretBytes>, AppError> {
                 "decrypted proxy configuration exceeds maximum payload limit",
             ));
         }
+
         Ok(Some(decrypted))
     }
 }
@@ -323,6 +343,7 @@ pub fn save_config(path: &Path, config: &ProxyConfig) -> Result<(), AppError> {
         crate::private_file::publish(path, &serialized.0).map_err(|e| {
             AppError::configuration(format!("failed to save proxy configuration: {:?}", e))
         })?;
+
         Ok(())
     }
 
@@ -334,6 +355,7 @@ pub fn save_config(path: &Path, config: &ProxyConfig) -> Result<(), AppError> {
             version: u32,
             encrypted_payload: Vec<u8>,
         }
+
         let protected = crate::protected_data::protect(&serialized.0)?;
         let envelope = WindowsEnvelope {
             version: 1,
@@ -349,6 +371,7 @@ pub fn save_config(path: &Path, config: &ProxyConfig) -> Result<(), AppError> {
         crate::private_file::publish(path, &envelope_bytes).map_err(|e| {
             AppError::configuration(format!("failed to save proxy configuration: {:?}", e))
         })?;
+
         Ok(())
     }
 }

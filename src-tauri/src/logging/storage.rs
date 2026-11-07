@@ -40,6 +40,7 @@ fn safe_metadata(metadata: &Metadata, directory: bool) -> bool {
     {
         return false;
     }
+
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
@@ -47,6 +48,7 @@ fn safe_metadata(metadata: &Metadata, directory: bool) -> bool {
             return false;
         }
     }
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -66,6 +68,7 @@ fn same_file(left: &Metadata, right: &Metadata) -> bool {
         use std::os::unix::fs::MetadataExt;
         left.dev() == right.dev() && left.ino() == right.ino()
     }
+
     #[cfg(not(unix))]
     {
         left.created().ok() == right.created().ok()
@@ -88,11 +91,13 @@ pub(super) fn ensure_directory(path: &Path) -> Result<(), AppError> {
                 use std::os::unix::fs::DirBuilderExt;
                 builder.mode(0o700);
             }
+
             match builder.create(path) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(_) => return Err(unavailable()),
             }
+
             if !safe_metadata(
                 &fs::symlink_metadata(path).map_err(|_| unavailable())?,
                 true,
@@ -100,8 +105,10 @@ pub(super) fn ensure_directory(path: &Path) -> Result<(), AppError> {
                 return Err(unavailable());
             }
         }
+
         Err(_) => return Err(unavailable()),
     }
+
     Ok(())
 }
 
@@ -154,6 +161,7 @@ impl Storage {
     pub fn directory(&mut self) -> Result<PathBuf, AppError> {
         ensure_directory(&self.directory)?;
         self.entries()?;
+
         Ok(self.directory.clone())
     }
 
@@ -164,8 +172,10 @@ impl Storage {
                 if self.directory_metadata.is_some() {
                     return Err(unavailable());
                 }
+
                 return Ok(Vec::new());
             }
+
             Err(_) => return Err(unavailable()),
         };
         if !safe_metadata(&metadata, true)
@@ -185,6 +195,7 @@ impl Storage {
             if index >= 512 {
                 return Err(unavailable());
             }
+
             let entry = entry.map_err(|_| unavailable())?;
             let name = entry.file_name();
             let Some(name) = name.to_str() else {
@@ -193,9 +204,11 @@ impl Storage {
             if !name.starts_with("mom-") || !name.ends_with(".jsonl") {
                 continue;
             }
+
             if stamp(name).is_none() {
                 return Err(unavailable());
             }
+
             let metadata = fs::symlink_metadata(entry.path()).map_err(|_| unavailable())?;
             if !safe_metadata(&metadata, false) {
                 return Err(unavailable());
@@ -206,6 +219,7 @@ impl Storage {
             });
         }
         entries.sort_unstable_by(|left, right| right.name.cmp(&left.name));
+
         Ok(entries)
     }
 
@@ -220,9 +234,11 @@ impl Storage {
         let entries = self.entries()?;
         self.epoch = Uuid::new_v4();
         self.cursors.clear();
+
         for entry in entries.iter().skip(MAX_FILES - 1) {
             fs::remove_file(self.directory.join(&entry.name)).map_err(|_| unavailable())?;
         }
+
         let timestamp = OffsetDateTime::now_utc().unix_timestamp_nanos().max(
             entries
                 .first()
@@ -237,6 +253,7 @@ impl Storage {
             return Err(unavailable());
         }
         self.active = Some((Entry { name, metadata }, file, 0));
+
         Ok(())
     }
 
@@ -244,11 +261,13 @@ impl Storage {
         if !record.is_safe() {
             return Err(AppError::validation("Invalid diagnostic record"));
         }
+
         let mut bytes = serde_json::to_vec(record).map_err(|_| unavailable())?;
         bytes.push(b'\n');
         if bytes.len() > MAX_LINE_BYTES || bytes.len() as u64 > self.max_bytes {
             return Err(AppError::validation("Diagnostic record too large"));
         }
+
         let Some((_, _, size)) = &self.active else {
             return Err(unavailable());
         };
@@ -267,6 +286,7 @@ impl Storage {
         }
         file.write_all(&bytes).map_err(|_| unavailable())?;
         *size += bytes.len() as u64;
+
         Ok(())
     }
 
@@ -276,6 +296,7 @@ impl Storage {
                 .and_then(|()| file.sync_all())
                 .map_err(|_| unavailable())?;
         }
+
         Ok(())
     }
 
@@ -284,12 +305,15 @@ impl Storage {
         let entries = self.entries()?;
         self.epoch = Uuid::new_v4();
         self.cursors.clear();
+
         for entry in entries {
             fs::remove_file(self.directory.join(entry.name)).map_err(|_| unavailable())?;
         }
+
         if resume {
             self.start()?;
         }
+
         Ok(())
     }
 
@@ -298,15 +322,18 @@ impl Storage {
         if limit == 0 || limit > 200 {
             return Err(AppError::validation("Log limit must be between 1 and 200"));
         }
+
         let filter = Filter::new(&query)?;
         let entries = self.entries()?;
         if entries.len() > MAX_FILES {
             return Err(unavailable());
         }
+
         let mut snapshot = if let Some(cursor) = query.cursor {
             if cursor.len() > 36 {
                 return Err(stale_cursor());
             }
+
             let id = Uuid::parse_str(&cursor).map_err(|_| stale_cursor())?;
             let snapshot = self
                 .cursors
@@ -353,12 +380,14 @@ impl Storage {
             if !safe_metadata(&metadata, false) || !same_file(&entry.metadata, &metadata) {
                 return Err(stale_cursor());
             }
+
             let bytes = crate::private_file::read(&path, MAX_FILE_BYTES)
                 .map_err(|_| unavailable())?
                 .ok_or_else(unavailable)?;
             if bytes.len() < entry.metadata.len() as usize {
                 return Err(stale_cursor());
             }
+
             while snapshot.offset > 0 && records.len() < limit {
                 let end = snapshot.offset;
                 let terminated = bytes[end - 1] == b'\n';
@@ -373,6 +402,7 @@ impl Storage {
                     invalid_lines += 1;
                     continue;
                 }
+
                 match serde_json::from_slice::<LogRecord>(line) {
                     Ok(record) if record.is_safe() => {
                         if snapshot.filter.matches(&record) {
@@ -382,6 +412,7 @@ impl Storage {
                     _ => invalid_lines += 1,
                 }
             }
+
             if snapshot.offset == 0 {
                 snapshot.file += 1;
                 snapshot.offset = snapshot
@@ -390,12 +421,14 @@ impl Storage {
                     .map_or(0, |entry| entry.metadata.len() as usize);
             }
         }
+
         let next_cursor = if snapshot.file < snapshot.files.len() {
             let id = Uuid::new_v4();
             if self.cursors.len() >= MAX_CURSORS {
                 self.cursors.pop_front();
             }
             self.cursors.push_back((id, snapshot));
+
             Some(id.to_string())
         } else {
             None

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{
     io,
     panic::AssertUnwindSafe,
@@ -12,7 +10,7 @@ use std::{
 use futures::FutureExt;
 use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
 use tokio::{
-    process::{ChildStderr, ChildStdin, ChildStdout, Command},
+    process::{ChildStdin, ChildStdout, Command},
     sync::{watch, Mutex as TokioMutex, OwnedSemaphorePermit, Semaphore},
     task::JoinHandle,
 };
@@ -29,22 +27,20 @@ pub enum ProcessState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CloseReason {
     Normal,
-    Eof,
+    #[cfg(test)]
     Timeout,
-    Cancelled,
+    #[cfg(test)]
     Quit,
-    Error(String),
 }
 
 impl std::fmt::Display for CloseReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Normal => write!(f, "normal"),
-            Self::Eof => write!(f, "eof"),
+            #[cfg(test)]
             Self::Timeout => write!(f, "timeout"),
-            Self::Cancelled => write!(f, "cancelled"),
+            #[cfg(test)]
             Self::Quit => write!(f, "quit"),
-            Self::Error(e) => write!(f, "error: {e}"),
         }
     }
 }
@@ -70,11 +66,8 @@ pub struct CloseOutcome {
     pub exit_status: Option<ExitStatus>,
 }
 
+#[cfg(test)]
 impl CloseOutcome {
-    pub fn status(&self) -> Option<ExitStatus> {
-        self.exit_status
-    }
-
     pub fn success(&self) -> bool {
         self.exit_status.is_some_and(|s| s.success())
     }
@@ -82,26 +75,22 @@ impl CloseOutcome {
 
 #[derive(Debug, Clone)]
 pub enum ProcessError {
-    BudgetExhausted,
     SpawnFailed(String),
     CleanupFailed(String),
     InvalidStateTransition {
         from: ProcessState,
         to: &'static str,
     },
-    Io(String),
 }
 
 impl std::fmt::Display for ProcessError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::BudgetExhausted => write!(f, "process owner budget exhausted"),
             Self::SpawnFailed(e) => write!(f, "process spawn failed: {e}"),
             Self::CleanupFailed(e) => write!(f, "process cleanup failed: {e}"),
             Self::InvalidStateTransition { from, to } => {
                 write!(f, "invalid process state transition from {from:?} to {to}")
             }
-            Self::Io(e) => write!(f, "process io error: {e}"),
         }
     }
 }
@@ -141,16 +130,7 @@ impl OwnerBudget {
             .clone()
             .try_acquire_owned()
             .map_err(|_| BudgetExhausted)?;
-        Ok(OwnerPermit::new(permit, self.clone()))
-    }
 
-    pub async fn acquire(&self) -> Result<OwnerPermit, BudgetExhausted> {
-        let permit = self
-            .semaphore
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| BudgetExhausted)?;
         Ok(OwnerPermit::new(permit, self.clone()))
     }
 
@@ -247,10 +227,6 @@ impl OwnerPermit {
             permit.forget();
         }
     }
-
-    pub fn is_held(&self) -> bool {
-        self.inner.is_some()
-    }
 }
 
 impl Drop for OwnerPermit {
@@ -268,7 +244,6 @@ struct ProcessOwnerInner {
     pid: Option<u32>,
     stdin: StdMutex<Option<ChildStdin>>,
     stdout: StdMutex<Option<ChildStdout>>,
-    stderr: StdMutex<Option<ChildStderr>>,
     child: TokioMutex<Option<Box<dyn ChildWrapper>>>,
     permit: StdMutex<Option<OwnerPermit>>,
     tasks: StdMutex<Vec<JoinHandle<()>>>,
@@ -303,7 +278,6 @@ impl ProcessOwner {
         let pid = child.id();
         let stdin = child.stdin().take();
         let stdout = child.stdout().take();
-        let stderr = child.stderr().take();
 
         let inner = Arc::new(ProcessOwnerInner {
             budget: permit.budget().clone(),
@@ -312,7 +286,6 @@ impl ProcessOwner {
             pid,
             stdin: StdMutex::new(stdin),
             stdout: StdMutex::new(stdout),
-            stderr: StdMutex::new(stderr),
             child: TokioMutex::new(Some(child)),
             permit: StdMutex::new(Some(permit)),
             tasks: StdMutex::new(Vec::new()),
@@ -329,9 +302,11 @@ impl ProcessOwner {
             .state
             .lock()
             .unwrap_or_else(|error| error.into_inner());
+
         match *state {
             ProcessState::Starting => {
                 *state = ProcessState::Active;
+
                 Ok(())
             }
             ref current => Err(ProcessError::InvalidStateTransition {
@@ -341,6 +316,7 @@ impl ProcessOwner {
         }
     }
 
+    #[cfg(test)]
     pub fn state(&self) -> ProcessState {
         self.inner
             .state
@@ -349,20 +325,13 @@ impl ProcessOwner {
             .clone()
     }
 
-    pub fn is_active(&self) -> bool {
-        matches!(self.state(), ProcessState::Active)
-    }
-
+    #[cfg(test)]
     pub fn is_closed(&self) -> bool {
         matches!(self.state(), ProcessState::Closed)
     }
 
     pub fn pid(&self) -> Option<u32> {
         self.inner.pid
-    }
-
-    pub fn config(&self) -> &ProcessConfig {
-        &self.inner.config
     }
 
     pub(crate) fn budget(&self) -> &OwnerBudget {
@@ -385,23 +354,7 @@ impl ProcessOwner {
             .take()
     }
 
-    pub fn take_stderr(&self) -> Option<ChildStderr> {
-        self.inner
-            .stderr
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .take()
-    }
-
-    pub fn drop_stdin(&self) {
-        let mut guard = self
-            .inner
-            .stdin
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let _ = guard.take();
-    }
-
+    #[cfg(test)]
     pub fn attach_task(&self, handle: JoinHandle<()>) {
         let state = self
             .inner
@@ -419,23 +372,6 @@ impl ProcessOwner {
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
                 .push(handle);
-        }
-    }
-
-    pub async fn try_wait(&self) -> Result<Option<ExitStatus>, ProcessError> {
-        let mut guard = self.inner.child.lock().await;
-        if let Some(child) = guard.as_mut() {
-            child
-                .try_wait()
-                .map_err(|e| ProcessError::Io(e.to_string()))
-        } else {
-            Ok(self
-                .inner
-                .cached_outcome
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .as_ref()
-                .and_then(|o| o.exit_status))
         }
     }
 
@@ -474,13 +410,16 @@ impl ProcessOwner {
                             {
                                 permit.retain_exhausted();
                             }
+
                             Err(ProcessError::CleanupFailed(message))
                         }
                     };
+
                     if let Err(error) = &outcome {
                         inner.budget.record_cleanup_failure();
                         eprintln!("warning: MCP process cleanup failed: {error}");
                     }
+
                     let _ = tx.send(Some(outcome));
                 });
                 rx
@@ -491,8 +430,10 @@ impl ProcessOwner {
             if let Some(ref res) = *rx.borrow() {
                 return res.clone();
             }
+
             if rx.changed().await.is_err() {
                 self.inner.budget.record_cleanup_failure();
+
                 return Err(ProcessError::CleanupFailed(
                     "close coordinator task terminated unexpectedly".into(),
                 ));
@@ -510,6 +451,7 @@ impl ProcessOwner {
                 .state
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
+
             match *state {
                 ProcessState::Closed => {
                     let cached = inner
@@ -655,8 +597,10 @@ impl ProcessOwner {
                 .unwrap_or_else(|error| error.into_inner());
             guard.drain(..).collect()
         };
+
         for handle in tasks {
             handle.abort();
+
             if let Err(error) = handle.await {
                 if !error.is_cancelled() {
                     failures.push(format!("owned process task failed: {error}"));
@@ -683,6 +627,7 @@ impl ProcessOwner {
                     permit.retain_exhausted();
                 }
             }
+
             return Err(ProcessError::CleanupFailed(message));
         }
 

@@ -99,6 +99,7 @@ fn invalid_registration_never_connects_or_bootstraps_and_errors_are_redacted() {
             matches!(listener.accept(), Err(error) if error.kind() == io::ErrorKind::WouldBlock)
         );
     }
+
     for bytes in [b"PRIVATE_INVALID_JSON".to_vec(), vec![b'x'; 8193]] {
         fs::write(fixture.registration(), bytes).unwrap();
         let error = connect_at(&fixture.registration(), deadline(), |_| {
@@ -108,6 +109,7 @@ fn invalid_registration_never_connects_or_bootstraps_and_errors_are_redacted() {
         .unwrap();
         assert!(!error.message.contains("PRIVATE"));
     }
+
     let ipv6 = serde_json::from_value(registration("http://[::1]:80/")).unwrap();
     assert!(ManagedConnection::new(client().unwrap(), ipv6).is_ok());
     let explicit_http_port = serde_json::from_value(registration("http://127.0.0.1:80")).unwrap();
@@ -140,6 +142,7 @@ fn fifo_and_symlink_fifo_registrations_fail_without_waiting_or_bootstrap() {
             );
             assert!(error.detail.is_none());
         }
+
         return;
     }
 
@@ -170,6 +173,7 @@ fn fifo_and_symlink_fifo_registrations_fail_without_waiting_or_bootstrap() {
         }
         thread::sleep(Duration::from_millis(10));
     }
+
     let output = child.wait_with_output().unwrap();
     assert!(
         output.status.success(),
@@ -199,6 +203,7 @@ fn bootstrap_occurs_once_for_missing_unreachable_or_mismatched_registration() {
         assert!(target == "/api/info");
         healthy_response(stream);
     });
+
     for cause in ["missing", "unreachable", "pid", "version"] {
         let fixture = Fixture::new();
         match cause {
@@ -221,10 +226,12 @@ fn bootstrap_occurs_once_for_missing_unreachable_or_mismatched_registration() {
             }
             _ => {}
         }
+
         let calls = AtomicUsize::new(0);
         let connection = connect_at(&fixture.registration(), deadline(), |_| {
             calls.fetch_add(1, Ordering::Relaxed);
             fixture.write(&registration(&api.url()));
+
             Ok(())
         })
         .unwrap();
@@ -246,6 +253,7 @@ fn identity_mismatch_after_bootstrap_never_fetches_any_sessions() {
             if target != "/api/info" {
                 requested.fetch_add(1, Ordering::Relaxed);
             }
+
             let mut info = json!({ "pid": 42, "version": "2.0.22" });
             info[mismatch] = if mismatch == "pid" {
                 json!(43)
@@ -259,6 +267,7 @@ fn identity_mismatch_after_bootstrap_never_fetches_any_sessions() {
         let calls = AtomicUsize::new(0);
         let error = connect_at(&fixture.registration(), deadline(), |_| {
             calls.fetch_add(1, Ordering::Relaxed);
+
             Ok(())
         })
         .err()
@@ -333,6 +342,7 @@ fn fixed_target_selects_b_for_active_catalog_reload_usage_and_async_island_never
     let calls = b_calls.clone();
     let b = FakeApi::new(move |path, stream| {
         calls.fetch_add(1, Ordering::Relaxed);
+
         match path {
             "/api/info" => healthy_response(stream),
             "/api/session/active" => respond(stream, 200, "", br#"{"data":{"ses_b":{"type":"running"}}}"#),
@@ -393,6 +403,7 @@ fn explicit_unreachable_unauthorized_redirect_and_invalid_info_never_bootstrap_o
         healthy_response(stream);
     });
     fixture.write(&registration(&a.url()));
+
     for (status, body) in [
         (401, "PRIVATE_AUTH"),
         (403, "PRIVATE_AUTH"),
@@ -429,6 +440,7 @@ fn explicit_unreachable_unauthorized_redirect_and_invalid_info_never_bootstrap_o
         assert!(status.url.is_none() && status.pid.is_none() && status.version.is_none());
         assert!(!serde_json::to_string(&status).unwrap().contains("private"));
     }
+
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
@@ -450,6 +462,7 @@ fn v2_identity_requires_bounded_semantic_version_not_only_major_prefix() {
     for version in ["2.0.0", "2.12.34-beta.1", "2.0.22+build.01"] {
         assert!(valid_v2_version(version), "{version}");
     }
+
     for version in [
         "2.garbage",
         "2.0",
@@ -496,6 +509,7 @@ fn explicit_without_password_sends_no_authorization_for_health_reads_reload_and_
                 bytes.push(byte[0]);
                 assert!(bytes.len() <= 8192);
             }
+
             let headers = String::from_utf8(bytes).unwrap();
             assert!(!headers.to_ascii_lowercase().contains("authorization:"));
             let length = headers
@@ -508,6 +522,7 @@ fn explicit_without_password_sends_no_authorization_for_health_reads_reload_and_
                 .unwrap_or(0);
             let mut body = vec![0; length];
             stream.read_exact(&mut body).unwrap();
+
             match headers.split_whitespace().nth(1).unwrap() {
                 "/api/info" => healthy_response(&mut stream),
                 "/api/location/reload" => respond(&mut stream, 204, "", b""),
@@ -587,6 +602,7 @@ fn restarted_service_rejects_reload_before_post_without_rebootstrap() {
 #[test]
 fn public_info_does_not_claim_protected_read_ready_or_retry_with_invented_auth() {
     use std::io::Read;
+
     for status in [401, 403] {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -602,6 +618,7 @@ fn public_info_does_not_claim_protected_read_ready_or_retry_with_invented_auth()
                     stream.read_exact(&mut byte).unwrap();
                     bytes.push(byte[0]);
                 }
+
                 let headers = String::from_utf8(bytes).unwrap();
                 assert!(!headers.to_ascii_lowercase().contains("authorization:"));
                 if headers.split_whitespace().nth(1) == Some("/api/info") {
@@ -657,6 +674,7 @@ fn managed_api_does_not_send_requests_to_environment_proxies() {
             "opencode::transport::tests::managed_api_does_not_send_requests_to_environment_proxies",
             "--test-threads=1",
         ]).env(PROBE_ENV, "1").env("NO_PROXY", "").env("no_proxy", "");
+
         for name in [
             "HTTP_PROXY",
             "http_proxy",
@@ -667,11 +685,14 @@ fn managed_api_does_not_send_requests_to_environment_proxies() {
         ] {
             command.env(name, &url);
         }
+
         let output = command.output().unwrap();
         assert!(output.status.success(), "isolated no-proxy check failed");
         assert!(matches!(proxy.accept(), Err(error) if error.kind() == io::ErrorKind::WouldBlock));
+
         return;
     }
+
     let api = FakeApi::new(|target, stream| {
         if target == "/api/info" {
             healthy_response(stream);
@@ -697,8 +718,10 @@ fn fixed_length_and_chunked_pages_enforce_exact_32_mib_bound() {
         let api = FakeApi::new(move |path, stream| {
             if path == "/api/info" {
                 healthy_response(stream);
+
                 return;
             }
+
             let body = serde_json::to_vec(&page(vec![], None)).unwrap();
             let size = PAGE_MAX_BYTES as usize + usize::from(extra);
             if chunked {
@@ -709,9 +732,11 @@ fn fixed_length_and_chunked_pages_enforce_exact_32_mib_bound() {
                     "HTTP/1.1 200 OK\r\nContent-Length: {size}\r\nConnection: close\r\n\r\n"
                 );
             }
+
             if stream.write_all(&body).is_err() {
                 return;
             }
+
             let mut left = size - body.len();
             let padding = [b' '; 8192];
             while left > 0 {
@@ -721,6 +746,7 @@ fn fixed_length_and_chunked_pages_enforce_exact_32_mib_bound() {
                 }
                 left -= count;
             }
+
             if chunked {
                 let _ = stream.write_all(b"\r\n0\r\n\r\n");
             }
@@ -739,8 +765,10 @@ fn trickling_body_cannot_reset_the_scan_wide_timeout() {
     let api = FakeApi::new(|target, stream| {
         if target == "/api/info" {
             healthy_response(stream);
+
             return;
         }
+
         let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n{");
         for _ in 0..10 {
             thread::sleep(Duration::from_millis(30));
@@ -793,6 +821,7 @@ mod bootstrap {
         })
         .unwrap();
         assert_eq!(calls.load(Ordering::Relaxed), 1);
+
         for script in [
             "printf PRIVATE_STDOUT; printf PRIVATE_STDERR >&2; exit 7",
             "printf PRIVATE_INVALID_JSON",
@@ -803,6 +832,7 @@ mod bootstrap {
             assert!(!error.message.contains("PRIVATE"));
             assert!(error.detail.is_none());
         }
+
         let args = bootstrap_command(Path::new("opencode"))
             .get_args()
             .map(|arg| arg.to_owned())
@@ -844,6 +874,7 @@ mod bootstrap {
             );
             thread::sleep(Duration::from_millis(10));
         }
+
         let started = Instant::now();
         let deadline = started + Duration::from_millis(100);
         let error = collect_output(

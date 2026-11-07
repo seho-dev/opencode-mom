@@ -79,6 +79,7 @@ pub fn run() {
                 logging::LogStatus::Success,
                 "app.started",
             );
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -105,10 +106,8 @@ pub fn run() {
             commands::get_app_info,
             commands::check_for_updates,
             commands::open_project_page,
-            commands::list_providers,
             commands::opencode_list_models,
             commands::opencode_generate_prompt,
-            commands::opencode_resolve_binary,
             commands::opencode_get_installation,
             commands::opencode_get_service_status,
             commands::opencode_set_service_target,
@@ -125,7 +124,6 @@ pub fn run() {
             commands::create_provider,
             commands::update_provider,
             commands::delete_provider,
-            commands::list_models,
             commands::create_model,
             commands::update_model,
             commands::delete_model,
@@ -157,7 +155,6 @@ pub fn run() {
             commands::get_autostart,
             commands::set_autostart,
             commands::save_group,
-            commands::copy_group,
             commands::delete_group,
             commands::switch_group,
             commands::save_preferences,
@@ -181,6 +178,7 @@ pub fn run() {
                 if exit_flag.load(std::sync::atomic::Ordering::SeqCst) != 2 {
                     api.prevent_exit();
                 }
+
                 if exit_flag
                     .compare_exchange(
                         0,
@@ -215,6 +213,7 @@ pub fn run() {
                         shutdown_http(app, &proxy, std::time::Duration::from_secs(1)).await;
                     });
                 }
+
                 if let Some(service) = app.try_state::<island::IslandService>() {
                     service.shutdown();
                 }
@@ -247,6 +246,7 @@ fn setup_http<R: tauri::Runtime>(
         http_server::HttpServer::new(paths, axum::Router::new().merge(proxy.router()))
             .map(std::sync::Arc::new);
     app.manage(http.clone());
+
     match http {
         Ok(http) => {
             tauri::async_runtime::spawn(async move {
@@ -282,6 +282,7 @@ async fn shutdown_http<R: tauri::Runtime>(
         },
         proxy.shutdown(deadline),
     );
+
     for error in [http_result, proxy_result]
         .into_iter()
         .filter_map(Result::err)

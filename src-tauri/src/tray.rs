@@ -27,6 +27,7 @@ pub(crate) fn open_main(app: &AppHandle, section: Option<&str>) -> Result<(), Ap
         app.emit_to("main", "tray:navigate", route)
             .map_err(native_error)?;
     }
+
     Ok(())
 }
 
@@ -40,12 +41,14 @@ pub fn hide_tray_window(app: AppHandle) -> Result<(), AppError> {
     if let Some(window) = app.get_webview_window("tray") {
         window.hide().map_err(native_error)?;
     }
+
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     if let Some(state) = app.try_state::<native::TrayState>() {
         if let Ok(mut toggle) = state.0.lock() {
             *toggle = geometry::Toggle::default();
         }
     }
+
     Ok(())
 }
 
@@ -136,8 +139,10 @@ mod native {
                     let now = Instant::now();
                     if button_state == MouseButtonState::Down {
                         toggle.press(visible, now);
+
                         return;
                     }
+
                     let hide = toggle.release(visible, now);
                     drop(toggle);
                     let result = if hide {
@@ -145,12 +150,14 @@ mod native {
                     } else {
                         show_popup(app, &window, position, rect)
                     };
+
                     if let Err(error) = result {
                         eprintln!("failed to toggle tray popup: {error}");
                     }
                 }
             })
             .build(app)?;
+
         Ok(())
     }
 
@@ -205,6 +212,7 @@ mod native {
                 if matches!(window.label(), "main" | "tray") =>
             {
                 api.prevent_close();
+
                 if let Err(error) = window.hide() {
                     eprintln!("failed to hide window: {error}");
                 }
@@ -216,6 +224,7 @@ mod native {
                             toggle.blur(Instant::now());
                         }
                     }
+
                     if let Err(error) = window.hide() {
                         eprintln!("failed to hide tray popup on blur: {error}");
                     }
@@ -284,6 +293,7 @@ mod geometry {
             origin = click;
             icon = PhysicalSize::new(0.0, 0.0);
         }
+
         let size = LogicalSize::new(POPUP_WIDTH, POPUP_HEIGHT).to_physical::<u32>(scale);
         let width = f64::from(size.width);
         let height = f64::from(size.height);
@@ -377,6 +387,7 @@ mod tests {
             position: PhysicalPosition::new(0, 0),
             size: PhysicalSize::new(1200, 900),
         };
+
         for (icon, expected) in [
             (rect(590.0, -30.0, 20.0, 20.0), (430, 0)),
             (rect(590.0, 910.0, 20.0, 20.0), (430, 530)),

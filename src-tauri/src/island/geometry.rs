@@ -78,6 +78,7 @@ pub(super) fn placement(screen: Screen, mode: IslandView) -> Placement {
                 .max(0.0),
         );
     }
+
     let height = match mode {
         IslandView::Compact => top_inset.max(28.0),
         IslandView::Peek => top_inset + 132.0,
@@ -128,6 +129,7 @@ mod tests {
                 },
                 peek
             ));
+
             for (mode, x, y, width, height) in [
                 (IslandView::Compact, 695.0, 1074.0, 321.0, 38.0),
                 (IslandView::Peek, 655.5, 942.0, 400.0, 170.0),
@@ -151,6 +153,7 @@ mod tests {
                 assert!(frame.x >= screen.frame.x);
                 assert!(frame.x + frame.width <= screen.frame.x + screen.frame.width);
                 assert!(frame.y >= screen.frame.y);
+
                 for delta in [0.0, -0.5, 0.5] {
                     assert!(frame_matches(
                         Rect {
@@ -160,6 +163,7 @@ mod tests {
                         frame
                     ));
                 }
+
                 for delta in [-1.0, -0.5001, 0.5001, 1.0] {
                     assert!(!frame_matches(
                         Rect {
@@ -169,6 +173,7 @@ mod tests {
                         frame
                     ));
                 }
+
                 for delta in [-1.0, -0.01, 0.01, 1.0] {
                     assert!(!frame_matches(
                         Rect {
@@ -178,6 +183,7 @@ mod tests {
                         frame
                     ));
                 }
+
                 for actual in [
                     Rect {
                         width: frame.width + 0.5,
@@ -202,6 +208,7 @@ mod tests {
             width: 400.0,
             height: 170.0,
         };
+
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             for invalid in [
                 Rect { x: value, ..frame },
@@ -269,11 +276,13 @@ mod tests {
         // AppKit frames are logical points even when a secondary display has a different DPI.
         assert_eq!(screen.notch_left - small.frame.x, 56.0);
         assert_eq!(small.frame.x + small.frame.width - screen.notch_right, 56.0);
+
         for target in [small, peek, large] {
             assert_eq!(target.frame.x + target.frame.width / 2.0, -756.0);
             assert_eq!(target.frame.y + target.frame.height, 1282.0);
             assert_eq!(target.notch_width, 180.0);
             assert_eq!(target.top_inset, 32.0);
+
             for scale in [1.0, 1.25, 2.0] {
                 let logical = tauri::LogicalSize::new(target.frame.width, target.frame.height);
                 let physical = logical.to_physical::<f64>(scale);
@@ -301,6 +310,7 @@ mod tests {
             notch_left: 0.0,
             notch_right: 0.0,
         };
+
         for (mode, width, height) in [
             (IslandView::Compact, 200.0, 28.0),
             (IslandView::Peek, 400.0, 132.0),
@@ -318,6 +328,7 @@ mod tests {
             );
             assert_eq!(target.notch_width, 0.0);
             assert_eq!(target.top_inset, 0.0);
+
             for scale in [1.0, 1.25, 2.0] {
                 let logical = tauri::LogicalSize::new(width, height);
                 assert_eq!(
@@ -391,6 +402,7 @@ mod tests {
                 notch_left,
                 notch_right,
             };
+
             for mode in [IslandView::Compact, IslandView::Peek, IslandView::Expanded] {
                 let target = placement(screen, mode).frame;
                 assert!(target.x >= screen.frame.x);

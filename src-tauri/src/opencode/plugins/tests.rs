@@ -75,6 +75,7 @@ impl FakeHttp {
                     bytes.push(byte[0]);
                     assert!(bytes.len() <= 8192);
                 }
+
                 let headers = String::from_utf8(bytes).unwrap();
                 let mut words = headers.split_whitespace();
                 let method = words.next().unwrap().to_owned();
@@ -264,6 +265,7 @@ fn declaration_removal_rejects_changed_hash_forged_sources_and_stale_service() {
         assert!(removal::remove_with(&paths, forged, &connection, deadline()).is_err());
         assert_eq!(fs::read_to_string(paths.opencode_file()).unwrap(), original);
     }
+
     let external = format!("{original}\n// external change\n");
     fs::write(paths.opencode_file(), &external).unwrap();
     assert!(removal::remove_with(&paths, plan, &connection, deadline()).is_err());
@@ -326,6 +328,7 @@ fn nested_local_removal_never_claims_ancestor_declarations_or_discovered_files()
     for path in [&parent_entry, &entry, &discovered] {
         fs::write(path, "keep").unwrap();
     }
+
     let response_entry = entry.clone();
     let response_discovered = discovered.clone();
     let api = FakeHttp::global(
@@ -357,6 +360,7 @@ fn nested_local_removal_never_claims_ancestor_declarations_or_discovered_files()
     let runtime = list_with(&paths, &connection, deadline()).unwrap();
     assert_eq!(runtime.data.len(), 2);
     assert!(runtime.data.iter().all(|item| !item.can_remove));
+
     for path in [&entry, &discovered] {
         assert!(removal::prepare_with(
             &paths,
@@ -369,6 +373,7 @@ fn nested_local_removal_never_claims_ancestor_declarations_or_discovered_files()
         .is_err());
         assert_eq!(fs::read_to_string(paths.opencode_file()).unwrap(), original);
     }
+
     let exact = json!({"plugins":["./bundle", "./bundle/nested", entry]});
     fs::write(paths.opencode_file(), serde_json::to_vec(&exact).unwrap()).unwrap();
     let runtime = list_with(&paths, &connection, deadline()).unwrap();
@@ -389,6 +394,7 @@ fn nested_local_removal_never_claims_ancestor_declarations_or_discovered_files()
         crate::document::JsoncDoc::parse(&text).unwrap().raw()["plugins"],
         json!(["./bundle", "./bundle/nested"])
     );
+
     for path in [&parent_entry, &entry, &discovered] {
         assert_eq!(fs::read_to_string(path).unwrap(), "keep");
     }
@@ -440,6 +446,7 @@ fn declaration_removal_clears_all_global_documents_and_rejects_omitted_sources()
     omitted.sources.pop();
     assert!(removal::remove_with(&paths, omitted, &connection, deadline()).is_err());
     removal::remove_with(&paths, plan, &connection, deadline()).unwrap();
+
     for (path, keep) in [(first, 1), (second, 2)] {
         let text = fs::read_to_string(path).unwrap();
         let document = crate::document::JsoncDoc::parse(&text).unwrap();
@@ -464,8 +471,10 @@ fn plugin_native_api_uses_selected_target_auth_location_exact_bodies_and_204_wit
         if request.path == "/api/info" {
             assert_eq!(request.method, "GET");
             info(stream);
+
             return;
         }
+
         let url = reqwest::Url::parse(&format!("http://localhost{}", request.path)).unwrap();
         if request.method == "GET" {
             assert!(url.query().is_none());
@@ -475,6 +484,7 @@ fn plugin_native_api_uses_selected_target_auth_location_exact_bodies_and_204_wit
                 [("location[directory]".into(), expected.clone().into())]
             );
         }
+
         match (request.method.as_str(), url.path()) {
             ("GET", "/api/plugin") => respond(stream, 200, &envelope(&expected, "pkg@latest")),
             ("POST", "/api/plugin/check") => {
@@ -516,6 +526,7 @@ fn plugin_entrypoints_reject_project_scope_before_connecting_or_requesting() {
         assert_eq!(error.code, crate::error::ErrorCode::ValidationFailed);
         assert!(error.message.contains("Global"));
     }
+
     let requests = Arc::new(AtomicUsize::new(0));
     let count = requests.clone();
     let api = FakeHttp::new(move |request, stream| {
@@ -539,6 +550,7 @@ fn passwordless_global_runtime_retains_returned_location_and_checks_only_global_
     let paths = ConfigPaths::for_home(temp.path());
     let api = FakeHttp::global(&paths, json!(["pkg"]), |request, stream| {
         assert!(!request.authenticated);
+
         match request.path.as_str() {
             "/api/info" => info(stream),
             "/api/plugin" => respond(stream, 200, &envelope("/returned/location", "pkg")),
@@ -574,6 +586,7 @@ fn plugin_update_rejects_pins_local_directives_unknown_and_ambiguous_runtime_bef
         assert!(allowed_target(target, &runtime, false).is_ok());
         assert!(!runtime.data[0].can_update);
     }
+
     for data in [
         json!([]),
         json!([{"id":"pkg","source":{"type":"local","path":"/local"},"features":{},"state":{"status":"active"}}]),
@@ -585,6 +598,7 @@ fn plugin_update_rejects_pins_local_directives_unknown_and_ambiguous_runtime_bef
         let runtime = project_runtime(serde_json::from_value(value).unwrap()).unwrap();
         assert!(allowed_target("pkg", &runtime, true).is_err());
     }
+
     let mut value = envelope("/runtime", "pkg");
     let duplicate = value["data"][0].clone();
     value["data"].as_array_mut().unwrap().push(duplicate);
@@ -594,6 +608,7 @@ fn plugin_update_rejects_pins_local_directives_unknown_and_ambiguous_runtime_bef
         project_runtime(serde_json::from_value(envelope("/runtime", "pkg")).unwrap()).unwrap();
     assert!(allowed_target("unknown", &runtime, true).is_err());
     assert!(allowed_target("pkg", &runtime, true).is_ok());
+
     for target in [
         "npm:@scope/pkg@latest",
         "pkg@^1.2.3",
@@ -623,6 +638,7 @@ fn plugin_update_http_failure_disconnect_redirect_and_timeout_are_unknown_withou
             "/api/plugin" => respond(stream, 200, &envelope("/runtime", "pkg")),
             "/api/plugin/update?location%5Bdirectory%5D=%2Fruntime" => {
                 count.fetch_add(1, Ordering::SeqCst);
+
                 match failure {
                     "http" => respond(stream, 503, &json!({"PRIVATE":"secret"})),
                     "redirect" => {
@@ -720,6 +736,7 @@ fn plugin_runtime_rejects_bad_shapes_and_redacts_native_failure_messages() {
     ] {
         assert!(project_runtime(serde_json::from_value(value).unwrap()).is_err());
     }
+
     let mut value = envelope("/runtime", "pkg");
     value["data"][0]["state"] = json!({"status":"failed","error":"PRIVATE token","ref":"err_1"});
     let runtime = project_runtime(serde_json::from_value(value).unwrap()).unwrap();
@@ -857,6 +874,7 @@ fn runtime_permissions_ignore_external_can_update_and_reject_ineligible_targets_
         .remove("outdated");
     let mut updating = envelope("/runtime", "pkg");
     updating["data"][0]["source"]["updating"] = json!(true);
+
     for (target, mut value) in [
         ("pkg@1.2.3", envelope("/runtime", "pkg@1.2.3")),
         (
@@ -896,6 +914,7 @@ fn runtime_permissions_ignore_external_can_update_and_reject_ineligible_targets_
         for item in value["data"].as_array_mut().unwrap() {
             item["canUpdate"] = json!(true);
         }
+
         let posts = Arc::new(AtomicUsize::new(0));
         let count = posts.clone();
         let api = FakeHttp::new(move |request, stream| {
@@ -918,6 +937,7 @@ fn runtime_permissions_ignore_external_can_update_and_reject_ineligible_targets_
             assert!(runtime.data.iter().all(|item| !item.can_update));
         }
     }
+
     let mut value = envelope("/runtime", "pkg@latest");
     value["data"][0]["canUpdate"] = json!(false);
     let runtime = project_runtime(serde_json::from_value(value).unwrap()).unwrap();
@@ -973,6 +993,7 @@ fn global_config_pins_runtime_directory_and_projects_only_plugin_sources() {
     let api = FakeHttp::new(move |request, stream| {
         assert!(request.authenticated);
         assert_eq!(request.method, "GET");
+
         match request.path.as_str() {
             "/api/info" => info(stream),
             "/api/plugin" => respond(stream, 200, &envelope("/runtime with space", "pkg")),
@@ -1125,6 +1146,7 @@ fn malformed_runtime_responses_are_redacted_and_never_allow_post() {
     bad_source["data"][0]["source"]["type"] = json!("PRIVATE");
     let mut bad_state = envelope("/runtime", "pkg");
     bad_state["data"][0]["state"] = json!({"status":"failed","error":{"PRIVATE":"secret"}});
+
     for value in [json!([]), bad_target, bad_features, bad_source, bad_state] {
         let posts = Arc::new(AtomicUsize::new(0));
         let count = posts.clone();
@@ -1155,11 +1177,13 @@ fn global_list_shows_pinned_slim_and_local_after_filtering_eighty_eight_builtins
     let slim = value["data"][0].clone();
     let data = value["data"].as_array_mut().unwrap();
     data.clear();
+
     for index in 0..71 {
         data.push(json!({"id":format!("builtin.{index}"),"source":{"type":"builtin"},"features":{},"state":{"status":"active"}}));
     }
     data.push(slim);
     data.push(json!({"source":{"type":"local","path":local_entry},"features":{},"state":{"status":"active"}}));
+
     for index in 71..88 {
         data.push(json!({"id":format!("builtin.{index}"),"source":{"type":"builtin"},"features":{},"state":{"status":"active"}}));
     }
@@ -1242,6 +1266,7 @@ fn global_whitelist_rejects_project_packages_and_pins_and_preserves_hidden_ambig
     let result = list_with(&paths, &connection, deadline()).unwrap();
     assert_eq!(result.data.len(), 2);
     assert!(result.data.iter().all(|item| !item.can_update));
+
     for target in ["project-only", "pin@1.2.3", "global"] {
         assert!(update_with(&paths, target, &connection, deadline()).is_err());
     }
@@ -1460,6 +1485,7 @@ fn public_list_checks_each_global_target_once_and_stops_on_failure() {
     let temp = tempfile::tempdir().unwrap();
     let paths = ConfigPaths::for_home(temp.path());
     crate::opencode::target::initialize(&paths).unwrap();
+
     for fail_on in [None, Some(0), Some(1)] {
         let checks = Arc::new(std::sync::Mutex::new(Vec::new()));
         let recorded = checks.clone();
@@ -1469,8 +1495,10 @@ fn public_list_checks_each_global_target_once_and_stops_on_failure() {
             move |request, stream| {
                 if request.path == "/api/info" {
                     info(stream);
+
                     return;
                 }
+
                 let directory = std::env::current_dir()
                     .unwrap()
                     .to_string_lossy()
@@ -1480,9 +1508,11 @@ fn public_list_checks_each_global_target_once_and_stops_on_failure() {
                     envelope("/runtime", "global-b")["data"][0].clone(),
                     envelope("/runtime", "project-only")["data"][0].clone(),
                 ]);
+
                 for item in value["data"].as_array_mut().unwrap() {
                     item["source"].as_object_mut().unwrap().remove("outdated");
                 }
+
                 let url =
                     reqwest::Url::parse(&format!("http://localhost{}", request.path)).unwrap();
                 let mut calls = recorded.lock().unwrap();
@@ -1503,11 +1533,13 @@ fn public_list_checks_each_global_target_once_and_stops_on_failure() {
                     calls.push(target.to_owned());
                     if failure {
                         respond(stream, 503, &json!({"PRIVATE":"secret"}));
+
                         return;
                     }
                 } else {
                     assert_eq!(url.path(), "/api/plugin");
                 }
+
                 for (index, target) in ["global-a", "global-b"].into_iter().enumerate() {
                     if calls.iter().any(|checked| checked == target) {
                         value["data"][index]["source"]["outdated"] = json!(true);

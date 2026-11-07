@@ -258,6 +258,7 @@ fn deserialize_error_code<'de, D: Deserializer<'de>>(
         ConfigurationFailed,
         Busy,
     }
+
     Ok(
         Option::<Code>::deserialize(deserializer)?.map(|code| match code {
             Code::NotFound => ErrorCode::NotFound,
@@ -315,6 +316,7 @@ impl Filter {
                 })
                 .transpose()
         }
+
         let filter = Self {
             kind: query.kind,
             status: query.status,
@@ -329,6 +331,7 @@ impl Filter {
         {
             return Err(AppError::validation("Invalid log time range"));
         }
+
         Ok(filter)
     }
 

@@ -67,11 +67,13 @@ pub(super) fn durable_write(path: &Path, value: &impl Serialize) -> Result<(), A
             ));
         }
     }
+
     #[cfg(not(target_os = "windows"))]
     {
         fs::rename(&temporary, path)?;
         fs::File::open(directory)?.sync_all()?;
     }
+
     Ok(())
 }
 

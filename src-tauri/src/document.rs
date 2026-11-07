@@ -92,6 +92,7 @@ pub fn write_file(path: &Path, bytes: &[u8]) -> Result<(), AppError> {
         file.set_permissions(perms)
             .map_err(|error| AppError::io("set permissions", &temporary, error))?;
     }
+
     #[cfg(not(unix))]
     {
         if let Some(perms) = original_permissions {
@@ -160,6 +161,7 @@ impl JsoncDoc {
             .map_err(|error| AppError::validation(format!("malformed JSONC document: {error}")))?;
         self.content = content;
         self.raw = raw;
+
         Ok(())
     }
 

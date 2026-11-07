@@ -12,6 +12,7 @@ pub enum JsoncError {
         column: usize,
     },
 }
+
 impl std::fmt::Display for JsoncError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -22,6 +23,7 @@ impl std::fmt::Display for JsoncError {
         }
     }
 }
+
 impl std::error::Error for JsoncError {}
 
 impl From<ParseError> for JsoncError {
@@ -85,6 +87,7 @@ pub fn patch_with_effective(
     if path.is_empty() || path.iter().any(|segment| segment.is_empty()) {
         return Err(JsoncError::MalformedJson);
     }
+
     let root = CstRootNode::parse(input, &options()).map_err(JsoncError::from)?;
     let object = root.object_value().ok_or(JsoncError::MalformedJson)?;
     patch_object(&object, path, value.clone())?;
@@ -112,6 +115,7 @@ fn get_path<'a>(mut current: &'a Map<String, Value>, path: &[&str]) -> Option<&'
         if i == path.len() - 1 {
             return current.get(*segment);
         }
+
         match current.get(*segment) {
             Some(Value::Object(map)) => current = map,
             _ => return None,
@@ -131,8 +135,10 @@ fn patch_object(object: &CstObject, path: &[&str], value: Option<Value>) -> Resu
             }
             (None, None) => {}
         }
+
         return Ok(());
     }
+
     match value {
         Some(value) => {
             let next = object.object_value_or_set(key);
@@ -144,6 +150,7 @@ fn patch_object(object: &CstObject, path: &[&str], value: Option<Value>) -> Resu
             }
         }
     }
+
     Ok(())
 }
 
@@ -188,6 +195,7 @@ mod tests {
                 Err(JsoncError::MalformedJson)
             );
         }
+
         let path = ["配置", "🦀"];
         let (output, effective) = patch_with_effective("{}", &path, Some(json!("值"))).unwrap();
         assert_eq!(get_path(&effective, &path), Some(&json!("值")));

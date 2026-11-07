@@ -128,6 +128,7 @@ fn migration_marks_absence_and_rejects_invalid_relevant_auth_without_rewriting()
         assert!(!error.to_string().contains("private-invalid"));
         assert_eq!(std::fs::read(&path).unwrap(), before);
     }
+
     for auth in [
         json!(null),
         json!(false),
@@ -282,6 +283,7 @@ async fn cancelled_rotation_commits_before_revocation_and_serializes_settings_an
                 ));
                 clean_tx.send(()).unwrap();
                 resume_rx.await.unwrap();
+
                 Ok(())
             })
             .await
@@ -391,6 +393,7 @@ async fn shutdown_during_rotation_cleanup_cannot_reopen_admission_without_listen
             .rotate_key(async move {
                 entered_tx.send(()).unwrap();
                 release_rx.await.unwrap();
+
                 Ok(())
             })
             .await

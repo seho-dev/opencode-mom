@@ -46,6 +46,7 @@ impl ProxyService {
 
     pub fn new_with_path(config_path: PathBuf) -> Result<Self, AppError> {
         let config = config::load_config(&config_path)?;
+
         Ok(Self::from_config(config_path, config))
     }
 
@@ -121,6 +122,7 @@ impl ProxyService {
                 ));
             }
             self.budget.wait_idle().await;
+
             Ok(())
         })
         .await
@@ -278,6 +280,7 @@ impl ProxyService {
         }
         result?;
         self.generation.fetch_add(1, Ordering::SeqCst);
+
         Ok(())
     }
 }

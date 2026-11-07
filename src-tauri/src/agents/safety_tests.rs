@@ -73,6 +73,7 @@ impl Fixture {
         assert!(!recovery
             .iter()
             .any(|path| path.extension().is_some_and(|ext| ext == "tmp")));
+
         for backup in recovery
             .iter()
             .filter(|path| path.extension().is_some_and(|ext| ext == "bak"))

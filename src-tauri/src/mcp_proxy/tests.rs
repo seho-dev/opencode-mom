@@ -22,6 +22,7 @@ fn test_peer_binary() -> String {
     if let Ok(bin) = std::env::var("CARGO_BIN_EXE_mcp-test-peer") {
         return bin;
     }
+
     let mut path = std::env::current_exe().expect("current test exe");
     path.pop();
     if path.ends_with("deps") {
@@ -30,6 +31,7 @@ fn test_peer_binary() -> String {
     path.push(format!("mcp-test-peer{}", std::env::consts::EXE_SUFFIX));
     path.to_string_lossy().to_string()
 }
+
 const DEADLINE: Duration = Duration::from_secs(8);
 const MODERN: &str = "2026-07-28";
 const LEGACY: &str = "2025-11-25";
@@ -563,6 +565,7 @@ async fn next_sse(response: &mut SseReader) -> Value {
         if let Some(data) = event.data.filter(|data| !data.is_empty()) {
             let message: ServerJsonRpcMessage =
                 serde_json::from_str(&data).expect("official rmcp server model");
+
             return serde_json::to_value(message).unwrap();
         }
     }
@@ -1487,6 +1490,7 @@ async fn cancelled_legacy_close_waiter_still_reaps_after_bridge_join() {
     let blocking = tokio::task::spawn_blocking(move || {
         let _ = entered_tx.send(());
         release_rx.recv().unwrap();
+
         Ok(())
     });
     entered_rx.await.unwrap();
@@ -1541,6 +1545,7 @@ async fn cancelled_bulk_cleanup_still_finishes_every_session() {
     for _ in 0..2 {
         sessions.push(server.legacy_session().await);
     }
+
     let mut closing = Box::pin(server.legacy_sessions.close_all());
     assert!(futures::poll!(&mut closing).is_pending());
     drop(closing);
@@ -1569,6 +1574,7 @@ async fn concurrent_bulk_cleanup_waits_for_the_same_drained_sessions() {
     let blocking = tokio::task::spawn_blocking(move || {
         let _ = entered_tx.send(());
         release_rx.recv().unwrap();
+
         Ok(())
     });
     entered_rx.await.unwrap();
@@ -1580,6 +1586,7 @@ async fn concurrent_bulk_cleanup_waits_for_the_same_drained_sessions() {
     while server.legacy_sessions.active_count().await != 0 {
         tokio::task::yield_now().await;
     }
+
     let mut second = Box::pin(server.legacy_sessions.close_all());
     assert!(futures::poll!(&mut second).is_pending());
     tokio::task::yield_now().await;
@@ -1877,6 +1884,7 @@ async fn shutdown_closes_live_streams_and_sessions_before_waiting_for_listener()
         assert_eq!(stream.status(), reqwest::StatusCode::OK);
         streams.push(stream);
     }
+
     let mut config = service.config().await;
     let mut modern = config.services[0].clone();
     modern.id = "modern".into();

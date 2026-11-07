@@ -49,6 +49,7 @@ fn active_sessions_rejects_unverified_shapes_ids_duplicates_and_states_without_l
         assert!(!error.message.contains("SECRET"));
         assert!(error.detail.is_none());
     }
+
     for payload in [
         "SECRET_NOT_JSON",
         "{\"data\":{",
@@ -62,6 +63,7 @@ fn active_sessions_rejects_unverified_shapes_ids_duplicates_and_states_without_l
             .message
             .contains("SECRET"));
     }
+
     for id in [
         "SECRET_prefix",
         "ses_",
@@ -94,6 +96,7 @@ fn readonly_http_errors_are_not_idle_and_responses_are_bounded() {
         assert!(error.message.contains(&status.to_string()));
         assert!(!error.message.contains("SECRET"));
     }
+
     let api = FakeApi::new(|target, stream| {
         if target == "/api/info" {
             healthy_response(stream);

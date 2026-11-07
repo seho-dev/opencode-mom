@@ -28,6 +28,7 @@ impl Frame {
         if self.size == 0 {
             self.data.clear();
         }
+
         if self.skip_lf {
             self.skip_lf = false;
             if byte == b'\n' {
@@ -38,8 +39,10 @@ impl Frame {
         if self.size > MAX_FRAME {
             return Err(failure("event frame byte limit exceeded"));
         }
+
         if !matches!(byte, b'\r' | b'\n') {
             self.line.push(byte);
+
             return Ok(None);
         }
         self.skip_lf = byte == b'\r';
@@ -48,14 +51,17 @@ impl Frame {
             if self.data.last() == Some(&b'\n') {
                 self.data.pop();
             }
+
             return Ok(Some(&self.data));
         }
+
         if let Some(data) = self.line.strip_prefix(b"data:") {
             self.data
                 .extend_from_slice(data.strip_prefix(b" ").unwrap_or(data));
             self.data.push(b'\n');
         }
         self.line.clear();
+
         Ok(None)
     }
 }
@@ -76,6 +82,7 @@ impl IslandApi {
         if response.status() != reqwest::StatusCode::OK {
             return Err(failure(&format!("API HTTP {}", response.status().as_u16())));
         }
+
         if response
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
@@ -162,6 +169,7 @@ pub(super) fn classify(bytes: &[u8]) -> Result<Option<IslandChange>, AppError> {
     if !snapshot && !messages {
         return Ok(None);
     }
+
     let data = event
         .get("data")
         .filter(|value| value.is_object())
@@ -170,6 +178,7 @@ pub(super) fn classify(bytes: &[u8]) -> Result<Option<IslandChange>, AppError> {
     if snapshot && !kind.starts_with("form.") {
         return Ok(Some(IslandChange::Snapshot));
     }
+
     let data = if kind == "form.created" {
         data.get("form").ok_or_else(|| invalid("form event"))?
     } else {

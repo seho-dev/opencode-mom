@@ -10,6 +10,7 @@ fn new_skill_ids_reject_reserved_names_without_ascii_indexing() {
             crate::error::ErrorCode::ValidationFailed,
         );
     }
+
     for id in ["COM", "COM0", "COM10", "LPT", "LPT0", "LPT10", "normal-id"] {
         assert!(validate_new_id(id).is_ok(), "{id}");
     }
@@ -146,6 +147,7 @@ fn failed_create_does_not_delete_nonempty_or_replaced_directory() {
                 } else {
                     fs::write(directory.resolved.join("keep.txt"), "unrelated").unwrap();
                 }
+
                 Err(failure.clone())
             },
         )

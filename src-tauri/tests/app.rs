@@ -522,6 +522,7 @@ fn readonly_smoke_against_real_v2_config() {
     if !opencode.exists() {
         return;
     }
+
     let providers = providers::list_providers(&opencode).expect("real V2 providers parse");
     assert!(!providers.is_empty());
     let agents = opencode_mom_tauri::agents::list(&paths).expect("real V2 agents parse");
@@ -606,9 +607,11 @@ fn project_folder_lifecycle_preserves_files_and_normalizes_stale_selection() {
         home.paths.for_project(Some(unknown)).unwrap_err().code,
         ErrorCode::NotFound
     );
+
     for invalid in [PathBuf::from("relative"), home.root.join("missing"), file] {
         assert!(models::add_project(&config_file, invalid.to_str().unwrap()).is_err());
     }
+
     let mut config = load_config(&home);
     config.state.selected_project_id = Some(unknown);
     models::save_config(&config_file, &config).unwrap();
@@ -649,6 +652,7 @@ fn project_folder_symlink_dedup_unreadable_and_non_utf8_validation() {
         assert!(unreadable_add.is_err());
         assert!(unreadable_read.is_err());
     }
+
     let invalid = home.root.join(OsString::from_vec(vec![0xff]));
     if fs::create_dir(&invalid).is_ok() {
         let invalid_alias = home.root.join("invalid-alias");
@@ -831,6 +835,7 @@ fn project_scope_rejects_saved_root_retarget_but_ignores_added_alias_retarget() 
         )
         .unwrap();
     }
+
     let alias = home.root.join("alias");
     symlink(&root, &alias).unwrap();
     let project = models::add_project(&home.paths.config_file(), alias.to_str().unwrap()).unwrap();
@@ -842,6 +847,7 @@ fn project_scope_rejects_saved_root_retarget_but_ignores_added_alias_retarget() 
     let config_before = fs::read(home.paths.config_file()).unwrap();
     fs::remove_file(&alias).unwrap();
     symlink(&target, &alias).unwrap();
+
     for paths in [&scoped, &home.paths.for_project(Some(project.id)).unwrap()] {
         assert_eq!(agents::list(paths).unwrap().len(), 1);
         assert_eq!(
@@ -859,6 +865,7 @@ fn project_scope_rejects_saved_root_retarget_but_ignores_added_alias_retarget() 
         home.paths.for_project(Some(project.id)).unwrap_err().code,
         ErrorCode::ConfigurationFailed
     );
+
     for error in [
         agents::list(&scoped).unwrap_err(),
         agents::get(&scoped, "helper").unwrap_err(),
@@ -877,6 +884,7 @@ fn project_scope_rejects_saved_root_retarget_but_ignores_added_alias_retarget() 
 fn agent_delete_refuses_same_target_logical_aliases_in_both_directions() {
     use opencode_mom_tauri::agents;
     use std::os::unix::fs::symlink;
+
     for singular_is_link in [false, true] {
         let home = temp_home("agent-delete-aliases");
         let singular = home.root.join(".config/opencode/agent/helper.md");
@@ -923,6 +931,7 @@ fn agent_delete_refuses_same_target_logical_aliases_in_both_directions() {
 fn agent_update_rejects_stale_inline_and_markdown_drafts_without_writes() {
     use opencode_mom_tauri::agents;
     use serde_json::json;
+
     for storage in [AgentStorage::Inline, AgentStorage::GlobalMarkdown] {
         let home = temp_home("agent-stale-draft");
         let (path, original, changed, expected_content) = match storage {
@@ -958,6 +967,7 @@ fn agent_update_rejects_stale_inline_and_markdown_drafts_without_writes() {
 fn agent_update_requires_expected_source_but_creation_stays_compatible() {
     use opencode_mom_tauri::agents;
     use serde_json::json;
+
     for storage in [AgentStorage::Inline, AgentStorage::GlobalMarkdown] {
         let home = temp_home("agent-required-snapshot");
         agents::create(
@@ -999,6 +1009,7 @@ fn agent_update_rejects_identical_content_symlink_retarget_for_both_storages() {
     use opencode_mom_tauri::agents;
     use serde_json::json;
     use std::os::unix::fs::symlink;
+
     for storage in [AgentStorage::Inline, AgentStorage::GlobalMarkdown] {
         let home = temp_home("agent-draft-retarget");
         let (logical, content, expected_content) = match storage {
@@ -1108,6 +1119,7 @@ fn agent_ipc_forwards_expected_source_and_rejects_stale_payloads() {
     use opencode_mom_tauri::commands::{self, AgentDefinitionDto};
     use serde_json::json;
     use tauri::Manager;
+
     for storage in ["inline", "global_markdown"] {
         let home = temp_home("agent-ipc-snapshot");
         let path = if storage == "inline" {
@@ -1321,4 +1333,125 @@ process.stdout.write(JSON.stringify({id:agent.id,source:agent.source,storage:'in
     assert!(content.contains("\"large\":9007199254740993"));
     assert!(content.contains("\"array\":[1.0,9007199254740995]"));
     assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
+}
+
+#[test]
+fn group_model_and_agent_references_table_driven_regression() {
+    use opencode_mom_tauri::models;
+    use opencode_mom_tauri::refs::{collect_agent_references, collect_model_references};
+
+    type ApplyBinding = fn(&mut ModelGroup, AgentModelBinding);
+
+    let error_cases: [(&str, ApplyBinding, &str); 4] = [
+        (
+            "native-agent",
+            |group, binding| {
+                group.open_code_agent_overrides = vec![binding];
+            },
+            "invalid model reference in group 'ref-group', field 'openCodeAgentOverrides', agent 'native-agent': invalid model reference: malformed",
+        ),
+        (
+            "slim-agent",
+            |group, binding| {
+                group.slim_agent_overrides = Some(vec![binding]);
+            },
+            "invalid model reference in group 'ref-group', field 'slimAgentOverrides', agent 'slim-agent': invalid model reference: malformed",
+        ),
+        (
+            "omo-agent",
+            |group, binding| {
+                group.omo_agent_overrides = Some(vec![binding]);
+            },
+            "invalid model reference in group 'ref-group', field 'omoAgentOverrides', agent 'omo-agent': invalid model reference: malformed",
+        ),
+        (
+            "coding",
+            |group, binding| {
+                group.omo_category_mappings = Some(vec![OmoCategoryMapping {
+                    category_name: binding.agent_name,
+                    model_ref: binding.model_ref,
+                    variant: None,
+                }]);
+            },
+            "invalid model reference in group 'ref-group', category 'coding': invalid model reference: malformed",
+        ),
+    ];
+
+    for (target_name, apply, expected_message) in error_cases {
+        let home = temp_home("group-model-ref-errors");
+        let mut test_group = group(GroupType::Omo, "ref-group");
+        apply(&mut test_group, binding(target_name, "malformed"));
+
+        let config = AppConfig {
+            groups: vec![test_group],
+            ..Default::default()
+        };
+        models::save_config(&home.paths.config_file(), &config).unwrap();
+
+        let error = collect_model_references(&home.paths).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ValidationFailed);
+        assert_eq!(error.message, expected_message);
+    }
+
+    let home = temp_home("group-model-and-agent-refs");
+    let mut valid_group = group(GroupType::Omo, "valid-group");
+    valid_group.open_code_agent_overrides = vec![binding("native-worker", "acme/fast")];
+    valid_group.slim_agent_overrides = Some(vec![binding("slim-worker", "acme/fast")]);
+    valid_group.omo_agent_overrides = Some(vec![binding("omo-worker", "acme/fast")]);
+    valid_group.omo_category_mappings = Some(vec![OmoCategoryMapping {
+        category_name: "coding".to_owned(),
+        model_ref: "acme/fast".to_owned(),
+        variant: None,
+    }]);
+
+    let group_id = valid_group.id;
+    let config = AppConfig {
+        groups: vec![valid_group],
+        ..Default::default()
+    };
+    models::save_config(&home.paths.config_file(), &config).unwrap();
+
+    let model_refs = collect_model_references(&home.paths).unwrap();
+    let model = providers::ModelRef::new("acme", "fast").unwrap();
+    let references = model_refs.for_model(&model);
+
+    let expected_locations = [
+        format!("group.{group_id}.openCodeAgentOverrides.native-worker.model"),
+        format!("group.{group_id}.slimAgentOverrides.slim-worker.model"),
+        format!("group.{group_id}.omoAgentOverrides.omo-worker.model"),
+        format!("group.{group_id}.omoCategoryMappings.coding.model"),
+    ];
+    assert_eq!(references.len(), expected_locations.len());
+
+    for expected in &expected_locations {
+        assert!(
+            references.iter().any(|r| &r.location == expected),
+            "missing expected model location: {expected}"
+        );
+    }
+
+    let agent_refs = collect_agent_references(&home.paths).unwrap();
+    assert!(!agent_refs.contains_key("coding"));
+    let expected_agent_owners = [
+        (
+            "native-worker",
+            format!("group.{group_id}.openCodeAgentOverrides.native-worker.agentName"),
+        ),
+        (
+            "slim-worker",
+            format!("group.{group_id}.slimAgentOverrides.slim-worker.agentName"),
+        ),
+        (
+            "omo-worker",
+            format!("group.{group_id}.omoAgentOverrides.omo-worker.agentName"),
+        ),
+    ];
+
+    for (agent_name, expected_owner) in expected_agent_owners {
+        let refs = agent_refs.get(agent_name).expect("agent reference exists");
+        assert!(
+            refs.iter().any(|r| r.owner == expected_owner),
+            "missing expected agent owner: {expected_owner}"
+        );
+    }
 }

@@ -83,10 +83,12 @@ fn discover(paths: &ConfigPaths, only: Option<&str>) -> Result<SlashCommandList,
             paths.project_directory(),
         );
         files.sort();
+
         for path in files {
             if only.is_some_and(|id| source_id(&path) != id) {
                 continue;
             }
+
             match read_entry(paths, &path) {
                 Ok(entry) => result.data.push(entry),
                 Err(error) => result
@@ -95,6 +97,7 @@ fn discover(paths: &ConfigPaths, only: Option<&str>) -> Result<SlashCommandList,
             }
         }
     }
+
     Ok(result)
 }
 
@@ -174,13 +177,16 @@ fn read_entry(paths: &ConfigPaths, path: &Path) -> Result<SlashCommandEntry, App
     } else {
         paths.validate_resource_root()?;
     }
+
     if fs::metadata(path).is_ok_and(|metadata| metadata.len() > MAX_CONTENT_BYTES as u64) {
         return Err(AppError::validation("Slash-command content exceeds 2 MiB"));
     }
+
     let snapshot = Snapshot::read(path)?.ok_or_else(|| not_found(&path.display().to_string()))?;
     if path.to_str().is_none() || snapshot.path.to_str().is_none() {
         return Err(AppError::validation("Command paths must be valid UTF-8"));
     }
+
     if paths.is_project() {
         paths.validate_managed_write(path)?;
         if !paths
@@ -190,6 +196,7 @@ fn read_entry(paths: &ConfigPaths, path: &Path) -> Result<SlashCommandEntry, App
             return Err(changed());
         }
     }
+
     let document = validate_content(&snapshot.content)?;
     Ok(SlashCommandEntry {
         id: source_id(path),
@@ -231,6 +238,7 @@ fn command_name(paths: &ConfigPaths, path: &Path) -> Result<String, AppError> {
         .ok_or_else(|| AppError::validation("Command source must be a UTF-8 .md file"))?
         .replace(std::path::MAIN_SEPARATOR, "/");
     validate_name(&name)?;
+
     Ok(name)
 }
 
@@ -261,6 +269,7 @@ fn validate_name(name: &str) -> Result<(), AppError> {
     {
         return Err(AppError::validation("Invalid slash-command name"));
     }
+
     Ok(())
 }
 
@@ -270,6 +279,7 @@ fn validate_content(content: &str) -> Result<MarkdownAgentDocument, AppError> {
             "Slash-command content must be at most 2 MiB without NUL",
         ));
     }
+
     let input = content.strip_prefix('\u{feff}').unwrap_or(content);
     if let Some(frontmatter) = input
         .strip_prefix("---\n")
@@ -282,12 +292,14 @@ fn validate_content(content: &str) -> Result<MarkdownAgentDocument, AppError> {
             return Err(AppError::validation("Unclosed slash-command frontmatter"));
         }
     }
+
     let document = MarkdownAgentDocument::parse(content)?;
     if document.prompt.trim().is_empty() {
         return Err(AppError::validation(
             "Slash-command template must not be empty",
         ));
     }
+
     for key in ["description", "agent", "model"] {
         if document
             .frontmatter
@@ -299,6 +311,7 @@ fn validate_content(content: &str) -> Result<MarkdownAgentDocument, AppError> {
             )));
         }
     }
+
     if document
         .frontmatter
         .get("subagent")
@@ -308,6 +321,7 @@ fn validate_content(content: &str) -> Result<MarkdownAgentDocument, AppError> {
             "Slash-command subagent must be a boolean",
         ));
     }
+
     Ok(document)
 }
 
@@ -321,6 +335,7 @@ fn validate_expected(snapshot: &Snapshot, path: &Path, content: &str) -> Result<
     if snapshot.path != path || snapshot.content != content {
         return Err(changed());
     }
+
     Ok(())
 }
 
@@ -344,13 +359,16 @@ fn collect(
     // ponytail: depth/entry caps bound local scans; use paged traversal if catalogs exceed these limits.
     if depth >= MAX_SCAN_DEPTH || *remaining == 0 {
         diagnostics.push(format!("{}: command scan limit reached", root.display()));
+
         return;
     }
+
     let canonical = match fs::canonicalize(root) {
         Ok(path) => path,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
         Err(error) => {
             diagnostics.push(format!("{}: {error}", root.display()));
+
             return;
         }
     };
@@ -359,24 +377,30 @@ fn collect(
             "{}: command directory escapes the project",
             root.display()
         ));
+
         return;
     }
+
     if !visited.insert(canonical) {
         return;
     }
+
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(error) => {
             diagnostics.push(format!("{}: {error}", root.display()));
+
             return;
         }
     };
+
     for entry in entries {
         if *remaining == 0 {
             diagnostics.push(format!("{}: command scan limit reached", root.display()));
             break;
         }
         *remaining -= 1;
+
         match entry {
             Ok(entry) => {
                 let path = entry.path();

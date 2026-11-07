@@ -9,15 +9,6 @@ use crate::refs;
 type CommandResult<T> = Result<T, AppError>;
 
 #[tauri::command]
-pub async fn list_providers(state: State<'_, ConfigPaths>) -> CommandResult<Vec<ProviderDef>> {
-    let paths = state.inner().clone();
-    super::spawn_blocking_task("Provider discovery", move || {
-        providers::list_providers(&paths.opencode_file())
-    })
-    .await
-}
-
-#[tauri::command]
 pub async fn create_provider(
     state: State<'_, ConfigPaths>,
     provider: ProviderDef,

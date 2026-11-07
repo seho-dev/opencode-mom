@@ -106,11 +106,13 @@ impl Drop for FakeCli {
             let _ = child.kill();
             let _ = child.wait();
         }
+
         if let Some(pid) = self.descendant_pid {
             // SAFETY: pid is the positive PID reported by this fixture; SIGKILL takes no pointers.
             // Cleanup is best-effort: a numeric PID does not rule out exit and reuse before this call.
             let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
         }
+
         let _ = fs::remove_dir_all(&self.directory);
     }
 }
@@ -216,8 +218,10 @@ fn collector_repeated_inherited_stdout_closes_all_reader_fds() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+
         return;
     }
+
     let baseline = open_fd_count();
     for _ in 0..3 {
         for (ending, max_bytes) in [

@@ -9,6 +9,7 @@ fn default_and_malformed_preferences_never_enable() {
     assert!(load(&directory).unwrap().enabled);
     save(&directory, false).unwrap();
     assert!(!load(&directory).unwrap().enabled);
+
     for contents in [
         "",
         "{",

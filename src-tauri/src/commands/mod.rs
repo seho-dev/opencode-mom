@@ -142,6 +142,7 @@ mod tests {
         assert!(critical_operation("Switch group").is_none());
         assert!(critical_operation("Load app state").is_none());
         assert!(read_failure_operation("Load app state").is_some());
+
         for label in [
             "OpenCode service status",
             "OpenCode active sessions",
@@ -155,6 +156,7 @@ mod tests {
             assert!(critical_operation(label).is_none());
             assert!(read_failure_operation(label).is_none());
         }
+
         for label in [
             "Logging preference",
             "Query logs",
@@ -206,6 +208,7 @@ mod tests {
                 entered.send(()).unwrap();
                 proceed.recv().unwrap();
                 completed.send(()).unwrap();
+
                 Ok(())
             }));
             started

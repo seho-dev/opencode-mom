@@ -56,6 +56,7 @@ fn version(text: &str) -> Option<Version> {
     if text.is_empty() || text.len() > 96 || !text.is_ascii() {
         return None;
     }
+
     let (core, suffix) = text
         .split_once('-')
         .map_or((text, None), |(core, suffix)| (core, Some(suffix)));
@@ -71,9 +72,11 @@ fn version(text: &str) -> Option<Version> {
         }
         *number = part.parse().ok()?;
     }
+
     if parts.next().is_some() {
         return None;
     }
+
     if let Some(suffix) = suffix {
         if suffix.split('.').any(|part| {
             part.is_empty()
@@ -179,6 +182,7 @@ fn selected_binary_with(
 
 fn sanitized(command: &mut Command) {
     command.env_clear();
+
     for key in [
         "PATH",
         "HOME",
@@ -216,6 +220,7 @@ fn executable_command(path: &Path) -> Command {
     if tests::is_fake_executable(path) {
         let mut command = Command::new("/bin/sh");
         command.arg(path);
+
         return command;
     }
     Command::new(path)
@@ -243,6 +248,7 @@ fn read_output(
             output.status.code()
         )));
     }
+
     Ok(output.stdout)
 }
 
@@ -253,6 +259,7 @@ fn read_version(path: &Path, deadline: Instant) -> Result<Option<Version>, AppEr
         1024,
         "OpenCode version query",
     )?;
+
     Ok(std::str::from_utf8(&bytes).ok().and_then(version))
 }
 
@@ -268,6 +275,7 @@ fn query_path(manager: &Path, args: &[&str], deadline: Instant) -> Option<PathBu
     if text.is_empty() || text.contains(['\n', '\r', '\0']) {
         return None;
     }
+
     let path = PathBuf::from(text);
     path.is_absolute().then_some(path)
 }
@@ -276,6 +284,7 @@ fn bounded_file(path: &Path, max_bytes: u64) -> Option<Vec<u8>> {
     if !fs::symlink_metadata(path).ok()?.file_type().is_file() {
         return None;
     }
+
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -283,11 +292,13 @@ fn bounded_file(path: &Path, max_bytes: u64) -> Option<Vec<u8>> {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
     }
+
     let file = options.open(path).ok()?;
     let metadata = file.metadata().ok()?;
     if !metadata.is_file() || metadata.len() > max_bytes {
         return None;
     }
+
     let mut bytes = Vec::new();
     file.take(max_bytes + 1).read_to_end(&mut bytes).ok()?;
     (bytes.len() as u64 <= max_bytes).then_some(bytes)
@@ -301,6 +312,7 @@ fn package_bin(root: &Path) -> Option<PathBuf> {
     if metadata.get("name").and_then(|value| value.as_str()) != Some(PACKAGE) {
         return None;
     }
+
     let bin = metadata.get("bin");
     let bin = bin.and_then(|value| {
         value
@@ -315,6 +327,7 @@ fn package_bin(root: &Path) -> Option<PathBuf> {
     {
         return None;
     }
+
     let path = package.join(relative).canonicalize().ok()?;
     path.starts_with(root).then_some(path)
 }
@@ -358,6 +371,7 @@ fn bundled(path: &Path) -> bool {
         {
             return true;
         }
+
         if name.eq_ignore_ascii_case("resources")
             && ancestor
                 .parent()
@@ -409,6 +423,7 @@ fn brew_formula(path: &Path, deadline: Instant) -> Option<bool> {
     {
         return Some(false);
     }
+
     let bytes = read_output(
         executable_command(&manager).args(["info", "--json=v2", "--installed", FORMULA]),
         deadline,
@@ -446,6 +461,7 @@ fn identify_source_with(
     if bundled(logical) || bundled(canonical) {
         return ("bundled".to_owned(), None, "bundled");
     }
+
     if let Some(home) = home.filter(|home| official_curl_path(logical, canonical, home)) {
         #[cfg(unix)]
         if let (Some(bash), Some(curl)) = (resolve(Path::new("bash")), resolve(Path::new("curl"))) {
@@ -459,6 +475,7 @@ fn identify_source_with(
                 "",
             );
         }
+
         return (
             "curl".to_owned(),
             None,
@@ -469,6 +486,7 @@ fn identify_source_with(
             },
         );
     }
+
     if let Some(proven) = brew_formula(canonical, deadline) {
         // Homebrew has no verified version-pinned upgrade for this formula.
         return (
@@ -477,6 +495,7 @@ fn identify_source_with(
             if proven { "unsupported" } else { "ambiguous" },
         );
     }
+
     if !(canonical
         .ancestors()
         .any(|path| path.file_name() == Some(std::ffi::OsStr::new("node_modules")))
@@ -484,6 +503,7 @@ fn identify_source_with(
     {
         return ("manual".to_owned(), None, "unsupported");
     }
+
     if let Some(manager) = resolve(Path::new("npm")) {
         if let (Some(root), Some(prefix)) = (
             query_path(&manager, &["root", "-g"], deadline),
@@ -635,6 +655,7 @@ fn fetch_bytes(client: &Client, url: &str, max_bytes: u64) -> Result<Vec<u8>, Ap
             response.status().as_u16()
         )));
     }
+
     if response
         .content_length()
         .is_some_and(|length| length > max_bytes)
@@ -643,6 +664,7 @@ fn fetch_bytes(client: &Client, url: &str, max_bytes: u64) -> Result<Vec<u8>, Ap
             "OpenCode update response exceeds its size limit",
         ));
     }
+
     let mut bytes = Vec::new();
     response
         .take(max_bytes + 1)
@@ -653,6 +675,7 @@ fn fetch_bytes(client: &Client, url: &str, max_bytes: u64) -> Result<Vec<u8>, Ap
             "OpenCode update response exceeds its size limit",
         ));
     }
+
     Ok(bytes)
 }
 
@@ -729,6 +752,7 @@ fn upgrade_command(detected: &Detected, target: &str) -> Result<Command, AppErro
     if let Source::Curl { home, .. } = source {
         command.env("HOME", home);
     }
+
     Ok(command)
 }
 
@@ -774,6 +798,7 @@ fn run_upgrade(command: &mut Command, timeout: Duration) -> Result<(), AppError>
                 if status.success() {
                     return Ok(());
                 }
+
                 return Err(AppError::configuration(format!(
                     "OpenCode upgrade failed (exit {:?}); use the installation's manual command",
                     status.code()
@@ -787,6 +812,7 @@ fn run_upgrade(command: &mut Command, timeout: Duration) -> Result<(), AppError>
             }
             Ok(None) => {}
         }
+
         if Instant::now() >= deadline {
             return Err(AppError::configuration(
                 "OpenCode upgrade timed out; check the selected installation before trying again",
@@ -821,6 +847,7 @@ fn verify_snapshot(
             "OpenCode installation changed; refresh before upgrading",
         ));
     }
+
     if !detected.info.can_upgrade || detected.source.is_none() {
         return Err(AppError::validation(format!(
             "OpenCode automatic upgrade is unavailable ({}); use the installation's manual command",
@@ -831,6 +858,7 @@ fn verify_snapshot(
                 .unwrap_or("unsupported")
         )));
     }
+
     Ok(())
 }
 
@@ -849,11 +877,13 @@ fn guarded_upgrade(
             "This OpenCode V2 version requires a manual upgrade",
         ));
     }
+
     if target.numbers <= current.numbers {
         return Err(AppError::validation(
             "OpenCode upgrades cannot downgrade or reinstall the current version",
         ));
     }
+
     let before = inspect(None)?;
     verify_snapshot(&before, expected_path, expected_version)?;
     if stable_v2(&latest()?.text)?.text != target.text {
@@ -861,6 +891,7 @@ fn guarded_upgrade(
             "OpenCode target is no longer the latest stable V2 release; check again",
         ));
     }
+
     let refreshed = inspect(None)?;
     verify_snapshot(&refreshed, expected_path, expected_version)?;
     if before.logical != refreshed.logical
@@ -876,6 +907,7 @@ fn guarded_upgrade(
     if after.logical != before.logical || after.info.version.as_deref() != Some(&target.text) {
         return Err(AppError::configuration("OpenCode upgrade finished, but the selected binary does not report the target version; no fallback installation was used"));
     }
+
     Ok(after.info)
 }
 

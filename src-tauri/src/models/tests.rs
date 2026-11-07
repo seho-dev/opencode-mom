@@ -234,6 +234,7 @@ fn save_config_staging_failure_keeps_the_previous_bytes() {
     if unsafe { libc::geteuid() } == 0 {
         return;
     }
+
     let directory = ConfigDirectory::new();
     let path = directory.path().join("config.json");
     let original = serde_json::to_vec_pretty(&AppConfig::default()).unwrap();
@@ -315,6 +316,7 @@ fn save_config_partial_write_failure_preserves_original_bytes() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+
         return;
     };
     let directory = std::path::PathBuf::from(directory);

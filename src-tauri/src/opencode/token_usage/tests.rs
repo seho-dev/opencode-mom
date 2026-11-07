@@ -61,6 +61,7 @@ fn fixture_pages<T: for<'de> Deserialize<'de>>(
         deadline(),
     )?;
     assert!(pages.next().is_none());
+
     Ok((result, calls))
 }
 
@@ -173,6 +174,7 @@ fn missing_recorded_usage_is_excluded_and_cancelled_usage_is_retained() {
             .len(),
         1
     );
+
     for (kind, field, value) in [
         ("assistant", "finish", json!("stop")),
         ("assistant", "error", json!({ "message": "PRIVATE" })),
@@ -187,6 +189,7 @@ fn missing_recorded_usage_is_excluded_and_cancelled_usage_is_retained() {
             .unwrap()
             .is_empty());
     }
+
     let mut completed = nonusage("missing", "assistant", 1);
     completed["time"]["completed"] = json!(2);
     assert!(
@@ -235,12 +238,14 @@ fn pending_retries_exclude_stale_tokens_until_terminal_metadata_is_present() {
     running_assistant["status"] = json!("running");
     let mut running_compaction = running_assistant.clone();
     running_compaction["type"] = json!("compaction");
+
     for pending in [pending, running_assistant, running_compaction] {
         assert!(
             fixture_records(vec![session("root")], vec![vec![pending.clone()]])
                 .unwrap()
                 .is_empty()
         );
+
         for (field, value) in [
             ("finish", json!("stop")),
             ("finish", json!("abort")),
@@ -309,6 +314,7 @@ fn absent_usage_remains_in_fork_prefix_validation() {
         if kind == "compaction" {
             absent["status"] = json!("completed");
         }
+
         let original = usage("a", "assistant", 1, 10, 2);
         let sessions = vec![session("root"), fork("child", "root", "missing", "through")];
         let origin = vec![original.clone(), absent.clone()];
@@ -353,6 +359,7 @@ fn forks_filter_native_copy_eligibility_before_boundaries_and_nested_offsets() {
         aborted,
         completed.clone(),
     ];
+
     for boundary in ["pending", "shell", "compaction", "abort", "a"] {
         for kind in ["before", "through"] {
             let mut child = vec![copied(user.clone(), "child-u")];
@@ -380,6 +387,7 @@ fn forks_filter_native_copy_eligibility_before_boundaries_and_nested_offsets() {
             assert_eq!(result.iter().map(|record| record.output).sum::<u64>(), 10);
         }
     }
+
     let error = fixture_records(
         vec![session("root"), fork("child", "root", "a", "through")],
         vec![
@@ -473,6 +481,7 @@ fn fork_missing_boundary_prefix_mismatch_and_cycle_fail_closed() {
         assert!(error.message.contains("fork provenance unavailable"));
         assert!(!error.message.contains("missing\""));
     }
+
     for field in ["type", "time", "tokens", "finish", "status", "error"] {
         let mut copy = copied(a.clone(), "copy");
         copy[field] = match field {
@@ -507,6 +516,7 @@ fn malformed_counts_timestamps_identifiers_and_safe_integer_sums_are_rejected() 
         )
         .is_err());
     }
+
     for value in [
         json!(-1),
         json!(1.5),
@@ -520,6 +530,7 @@ fn malformed_counts_timestamps_identifiers_and_safe_integer_sums_are_rejected() 
             let mut compaction = pending.clone();
             compaction["type"] = json!("compaction");
             compaction["status"] = json!("running");
+
             for mut message in [usage("a", "assistant", 1, 0, 0), pending, compaction] {
                 message["tokens"][field] = value.clone();
                 let parsed = serde_json::from_value::<Message>(message);
@@ -527,6 +538,7 @@ fn malformed_counts_timestamps_identifiers_and_safe_integer_sums_are_rejected() 
             }
         }
     }
+
     for value in [json!(-1), json!(1.5), json!(JS_MAX_DATE + 1)] {
         for field in ["created", "completed", "streamed"] {
             let mut message = usage("a", "assistant", 1, 0, 0);
@@ -535,9 +547,11 @@ fn malformed_counts_timestamps_identifiers_and_safe_integer_sums_are_rejected() 
             assert!(parsed.is_err() || inspect_message(&parsed.unwrap()).is_err());
         }
     }
+
     let mut zero = usage("a", "assistant", 0, 0, 0);
     zero["time"]["created"] = json!(JS_MAX_DATE);
     assert!(fixture_records(vec![session("root")], vec![vec![zero]]).is_ok());
+
     for (input, output) in [(JS_MAX_INTEGER, 1), (u64::MAX, 1)] {
         assert!(fixture_records(
             vec![session("root")],
@@ -545,6 +559,7 @@ fn malformed_counts_timestamps_identifiers_and_safe_integer_sums_are_rejected() 
         )
         .is_err());
     }
+
     for second in [
         usage("b", "assistant", 2, 1, 0),
         usage("b", "assistant", 2, 0, 1),
@@ -555,6 +570,7 @@ fn malformed_counts_timestamps_identifiers_and_safe_integer_sums_are_rejected() 
         )
         .is_err());
     }
+
     for (field, value) in [("id", ""), ("type", ""), ("id", "bad\nidentifier")] {
         let mut message = usage("a", "assistant", 1, 1, 1);
         message[field] = json!(value);
@@ -577,6 +593,7 @@ fn cursor_loops_duplicate_ids_failed_pages_and_metadata_limits_never_return_part
     ] {
         assert!(fixture_pages(pages, inspect_session).is_err());
     }
+
     let mut calls = 0;
     let result = read_pages(
         |_| {
@@ -593,6 +610,7 @@ fn cursor_loops_duplicate_ids_failed_pages_and_metadata_limits_never_return_part
     );
     assert!(result.is_err());
     assert_eq!(calls, 2);
+
     for budget in [
         Budget {
             items: AtomicUsize::new(MAX_METADATA_ITEMS),
@@ -611,6 +629,7 @@ fn cursor_loops_duplicate_ids_failed_pages_and_metadata_limits_never_return_part
         )
         .is_err());
     }
+
     let mut fetched = false;
     assert!(read_pages(
         |_| {
@@ -674,6 +693,7 @@ impl FakeApi {
                 if stop.load(Ordering::Relaxed) {
                     break;
                 }
+
                 let handler = handler.clone();
                 requests.push(thread::spawn(move || {
                     stream
@@ -691,6 +711,7 @@ impl FakeApi {
                         bytes.push(byte[0]);
                         assert!(bytes.len() <= 8192);
                     }
+
                     let request = String::from_utf8(bytes).unwrap();
                     assert!(
                         request.lines().filter_map(|line| line.split_once(':')).any(
@@ -705,6 +726,7 @@ impl FakeApi {
                     handler(target, &mut stream);
                 }));
             }
+
             for request in requests {
                 request.join().unwrap();
             }
@@ -759,8 +781,10 @@ fn official_http_paging_workers_large_message_and_fork_aggregation() {
         count.fetch_add(1, Ordering::Relaxed);
         if target == "/api/info" {
             healthy_response(stream);
+
             return;
         }
+
         let user = nonusage("u", "user", 1);
         let mut a = usage("a", "assistant", 2, 10, 1);
         a["content"] = json!("x".repeat(2 * 65536));
@@ -831,6 +855,7 @@ fn http_path_and_cursor_are_encoded_as_one_segment_and_query_value() {
     let api = FakeApi::new(|target, stream| {
         if target == "/api/info" {
             healthy_response(stream);
+
             return;
         }
         assert!(
@@ -880,8 +905,10 @@ fn http_header_and_body_stalls_share_deadline_and_bound_all_worker_joins() {
         let api = FakeApi::new(move |target, stream| {
             if target == "/api/info" {
                 healthy_response(stream);
+
                 return;
             }
+
             if body_stall {
                 let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{");
             }
@@ -910,8 +937,10 @@ fn worker_failure_does_not_return_partial_records_or_mask_the_original_error() {
     let api = FakeApi::new(|target, stream| {
         if target == "/api/info" {
             healthy_response(stream);
+
             return;
         }
+
         if target.contains("/bad/") {
             respond(stream, 403, "", b"PRIVATE_ERROR");
         } else {

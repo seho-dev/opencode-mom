@@ -64,6 +64,7 @@ fn stable_version(tag: &str) -> Result<[u32; 3], AppError> {
     if tag.len() > 33 {
         return Err(invalid());
     }
+
     let mut parts = tag.strip_prefix('v').unwrap_or(tag).split('.');
     let mut version = [0; 3];
     for component in &mut version {
@@ -76,9 +77,11 @@ fn stable_version(tag: &str) -> Result<[u32; 3], AppError> {
         }
         *component = part.parse().map_err(|_| invalid())?;
     }
+
     if parts.next().is_some() {
         return Err(invalid());
     }
+
     Ok(version)
 }
 
@@ -114,6 +117,7 @@ fn fetch_update(
         latest_version: None,
         update_available: false,
     };
+
     match response.status() {
         StatusCode::NOT_FOUND => return Ok(result),
         StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS => {
@@ -128,6 +132,7 @@ fn fetch_update(
         }
         _ => {}
     }
+
     if response
         .content_length()
         .is_some_and(|length| length > MAX_RESPONSE_BYTES)
@@ -136,6 +141,7 @@ fn fetch_update(
             "GitHub release response is too large",
         ));
     }
+
     let mut body = Vec::new();
     response
         .take(MAX_RESPONSE_BYTES + 1)
@@ -146,6 +152,7 @@ fn fetch_update(
             "GitHub release response is too large",
         ));
     }
+
     let release: Release = serde_json::from_slice(&body)
         .map_err(|_| AppError::configuration("GitHub returned an invalid release response"))?;
     if release.draft || release.prerelease {
@@ -153,10 +160,12 @@ fn fetch_update(
             "GitHub did not return a published stable release",
         ));
     }
+
     let latest = stable_version(&release.tag_name)?;
     let [major, minor, patch] = latest;
     result.latest_version = Some(format!("{major}.{minor}.{patch}"));
     result.update_available = latest > current;
+
     Ok(result)
 }
 
@@ -183,13 +192,16 @@ fn project_command(page: &str) -> Result<Command, AppError> {
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = url;
+
         return Err(AppError::configuration(
             "Opening project pages is not supported on this platform",
         ));
     }
+
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     {
         command.arg(url);
+
         Ok(command)
     }
 }
@@ -206,6 +218,7 @@ pub fn open_project_page(page: &str) -> Result<(), AppError> {
             "Open project page failed: {status}"
         )));
     }
+
     Ok(())
 }
 

@@ -85,6 +85,7 @@ where
                 }
                 map.next_value::<JsonObject<ActiveSession>>()?;
             }
+
             Ok(ids)
         }
     }
@@ -111,6 +112,7 @@ pub(super) fn active_sessions(
         "opencode session.active",
         "1 MiB",
     )?;
+
     Ok(envelope.0.data)
 }
 

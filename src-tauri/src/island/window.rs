@@ -84,6 +84,7 @@ pub(super) fn invalidate(retire: bool) {
     if MainThreadMarker::new().is_none() {
         return;
     }
+
     let (active, pending, sender) = TRANSITIONS.with(|slot| {
         let mut slot = slot.borrow_mut();
         let entries = slot.transitions.invalidate(retire);
@@ -97,6 +98,7 @@ pub(super) fn invalidate(retire: bool) {
         }
         (entries.0, entries.1, sender)
     });
+
     for sender in active
         .into_iter()
         .chain(pending)
@@ -155,6 +157,7 @@ pub(super) fn request(
         }
     }
     result?;
+
     Ok(receiver)
 }
 
@@ -163,6 +166,7 @@ fn enqueue(app: &AppHandle, generation: u64, request: Request) -> Result<(), App
     if !lock(&service.cache).current(generation) {
         return Err(disabled());
     }
+
     let native = native_window(app)?;
     let window = identity(&native);
     let compact = request.explicit && request.view == IslandView::Compact;
@@ -171,11 +175,13 @@ fn enqueue(app: &AppHandle, generation: u64, request: Request) -> Result<(), App
         if slot.window != Some(window) {
             return Err(disabled());
         }
+
         Ok(slot.transitions.enqueue(generation, window, request))
     })?;
     if let Some(sender) = displaced.and_then(|entry| entry.value.sender) {
         let _ = sender.send(Err(superseded()));
     }
+
     if compact {
         {
             let mut cache = lock(&service.cache);
@@ -183,19 +189,24 @@ fn enqueue(app: &AppHandle, generation: u64, request: Request) -> Result<(), App
                 cache.collapse();
             }
         }
+
         let _ = app.emit_to("island", "island:collapsed", ());
     }
+
     if start {
         start_transition(app, token);
     }
+
     Ok(())
 }
 
 fn start_transition(app: &AppHandle, token: Token) {
     if !current(app, token) {
         complete(Some(app), token, Err(superseded()));
+
         return;
     }
+
     let Some((view, instant)) = TRANSITIONS.with(|slot| {
         slot.borrow()
             .transitions
@@ -214,9 +225,11 @@ fn start_transition(app: &AppHandle, token: Token) {
         if !current(app, token) {
             return Err(superseded());
         }
+
         let before = rect(native.frame());
         let reduced_motion =
             NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion();
+
         Ok((
             selected,
             target,
@@ -232,6 +245,7 @@ fn start_transition(app: &AppHandle, token: Token) {
         Ok(prepared) => prepared,
         Err(error) => {
             complete(Some(app), token, Err(error));
+
             return;
         }
     };
@@ -295,6 +309,7 @@ fn animation_completed(
                 "after-animation",
                 Some((app, token)),
             )?;
+
             Ok(target)
         }),
         _ => Err(superseded()),
@@ -320,9 +335,11 @@ fn complete(app: Option<&AppHandle>, token: Token, mut result: Result<Placement,
         if result.is_ok() && dirty {
             result = resize_owned(app, view, Some(token));
         }
+
         if !current(app, token) {
             result = Err(superseded());
         }
+
         if let Ok(target) = result {
             let service = app.state::<IslandService>();
             let previous = {
@@ -352,18 +369,21 @@ fn complete(app: Option<&AppHandle>, token: Token, mut result: Result<Placement,
                 }
             }
         }
+
         if result.is_err() && current(app, token) {
             let mode = lock(&app.state::<IslandService>().cache).view;
             if resize_owned(app, mode, Some(token)).is_err() {
                 eprintln!("failed to restore Mini Island native frame");
             }
         }
+
         if !current(app, token) {
             result = Err(superseded());
         }
     } else {
         result = Err(superseded());
     }
+
     let Some(entry) = TRANSITIONS.with(|slot| slot.borrow_mut().transitions.release(token)) else {
         return;
     };
@@ -371,6 +391,7 @@ fn complete(app: Option<&AppHandle>, token: Token, mut result: Result<Placement,
     if let Some(sender) = entry.value.sender {
         let _ = sender.send(result.map(|_| ()));
     }
+
     if success {
         if let Some(app) = app {
             let latest = TRANSITIONS.with(|slot| {
@@ -383,6 +404,7 @@ fn complete(app: Option<&AppHandle>, token: Token, mut result: Result<Placement,
             }
         }
     }
+
     if let Some(app) = app {
         drain(app);
     } else {
@@ -426,6 +448,7 @@ pub(super) fn reconcile(app: &AppHandle, display_changed: bool) {
     if !idle {
         return;
     }
+
     let service = app.state::<IslandService>();
     let (generation, view) = {
         let cache = lock(&service.cache);
@@ -461,6 +484,7 @@ pub(super) fn event_is_current(window: &tauri::Window) -> bool {
     if MainThreadMarker::new().is_none() {
         return false;
     }
+
     let Ok(pointer) = window.ns_window() else {
         return false;
     };
@@ -606,6 +630,7 @@ pub(super) fn open(app: &AppHandle, mode: IslandView) -> Result<Placement, AppEr
                 }
             }
         });
+
         Ok(target)
     })
 }
@@ -633,6 +658,7 @@ fn resize_owned(
         mode,
         token.map(|token| (app, token)),
     )?;
+
     Ok(target)
 }
 
@@ -641,6 +667,7 @@ fn policy(native: &NSWindow) {
     if native.level() != level {
         native.setLevel(level);
     }
+
     let collection = NSWindowCollectionBehavior::CanJoinAllSpaces
         | NSWindowCollectionBehavior::FullScreenAuxiliary
         | NSWindowCollectionBehavior::Stationary
@@ -686,6 +713,7 @@ fn place_instant(
             owner,
         )?;
     }
+
     Ok(())
 }
 
@@ -755,6 +783,7 @@ mod tests {
         let generation = cache.generation;
         assert!(open_new_window(registered, || {
             native_setup_calls += 1;
+
             Ok(target)
         })
         .is_err());
@@ -773,6 +802,7 @@ mod tests {
         assert_eq!(
             open_new_window(registered, || {
                 native_setup_calls += 1;
+
                 Ok(target)
             })
             .unwrap(),

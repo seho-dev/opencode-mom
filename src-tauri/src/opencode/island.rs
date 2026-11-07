@@ -199,6 +199,7 @@ async fn body(mut response: Response) -> Result<Vec<u8>, AppError> {
     {
         return Err(failure("response byte limit exceeded"));
     }
+
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(request_error)? {
         if bytes.len() + chunk.len() > MAX_BYTES {
@@ -206,6 +207,7 @@ async fn body(mut response: Response) -> Result<Vec<u8>, AppError> {
         }
         bytes.extend_from_slice(&chunk);
     }
+
     Ok(bytes)
 }
 
@@ -231,12 +233,14 @@ impl IslandApi {
         if response.status() != reqwest::StatusCode::OK {
             return Err(failure(&format!("API HTTP {}", response.status().as_u16())));
         }
+
         let value = transport::decode_json::<super::active::JsonObject<T>>(
             &body(response).await?,
             "island response",
         )
         .map(|value| value.0)?;
         self.connection.ensure_current()?;
+
         Ok(value)
     }
 
@@ -260,6 +264,7 @@ impl IslandApi {
                     status.as_u16()
                 )));
             }
+
             return Err(failure(&format!(
                 "API HTTP {}; write may have been accepted; do not retry",
                 status.as_u16()
@@ -269,6 +274,7 @@ impl IslandApi {
             .await
             .map_err(|_| failure("write outcome unknown; may have been accepted; do not retry"))?;
         self.connection.ensure_current()?;
+
         Ok(())
     }
 
@@ -302,6 +308,7 @@ impl IslandApi {
         if !matches!(decision, "once" | "always" | "reject") {
             return Err(invalid("permission decision"));
         }
+
         if decision == "always"
             && !self
                 .permissions(session_id)

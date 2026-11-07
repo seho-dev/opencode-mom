@@ -32,6 +32,9 @@ function mount(list: (typeof lists)[number], flags: { loading?: boolean; saving?
     get catalog() {
       return [{ ref: 'example/custom', providerId: 'example', name: 'Custom model', isCustom: true }];
     },
+    models() {
+      return [{ ref: 'example/custom', providerId: 'example', name: 'Custom model', isCustom: true }];
+    },
     get agents() {
       return [{ id: 'helper', source: 'inline', description: 'Custom helper' }];
     },

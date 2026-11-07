@@ -13,6 +13,7 @@ pub(crate) mod logging;
 pub mod mcp;
 pub(crate) mod mcp_proxy;
 pub mod models;
+mod notifications;
 pub mod opencode;
 pub mod paths;
 pub mod power;
@@ -31,6 +32,8 @@ use tauri::Manager;
 pub fn run() {
     let island_notifications = std::sync::Arc::new(std::sync::Mutex::new(None));
     let setup_notifications = island_notifications.clone();
+    let notification_owner = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let setup_notification_owner = notification_owner.clone();
     // 0: running, 1: shutting down, 2: ready to exit.
     let exit_flag = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0));
     let builder = tauri::Builder::default();
@@ -41,6 +44,8 @@ pub fn run() {
     });
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_autostart::Builder::new().build());
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let builder = builder.plugin(tauri_plugin_notification::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -64,6 +69,14 @@ pub fn run() {
             app.manage(power::PowerService::new(paths.app_config_dir())?);
             app.manage(paths.clone());
             setup_http(app, &paths, &proxy);
+            *setup_notification_owner
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = Some(app.handle().clone());
+            notifications::setup(
+                app.handle(),
+                &paths,
+                std::sync::Arc::downgrade(&setup_notification_owner),
+            );
             *setup_notifications
                 .lock()
                 .unwrap_or_else(|error| error.into_inner()) = Some(app.handle().clone());
@@ -84,6 +97,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::load_app_state,
             commands::get_logging_state,
+            commands::get_notification_settings,
+            commands::get_notification_permission,
+            commands::request_notification_permission,
+            commands::open_notification_settings,
+            commands::set_notification_settings,
             commands::set_logging_enabled,
             commands::query_logs,
             commands::open_logs_directory,
@@ -191,6 +209,9 @@ pub fn run() {
                     .is_ok()
                 {
                     let app_handle = app.clone();
+                    if let Some(service) = app.try_state::<notifications::NotificationService>() {
+                        service.shutdown();
+                    }
                     let exit_code = code.unwrap_or(0);
                     if let Some(proxy) = app.try_state::<std::sync::Arc<mcp_proxy::ProxyService>>()
                     {
@@ -209,6 +230,13 @@ pub fn run() {
                 }
             }
             tauri::RunEvent::Exit => {
+                if let Some(service) = app.try_state::<notifications::NotificationService>() {
+                    service.shutdown();
+                }
+                notification_owner
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .take();
                 if let Some(proxy) = app.try_state::<std::sync::Arc<mcp_proxy::ProxyService>>() {
                     let proxy = proxy.inner().clone();
                     tauri::async_runtime::block_on(async move {

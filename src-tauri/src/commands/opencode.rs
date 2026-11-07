@@ -47,6 +47,7 @@ pub async fn opencode_set_service_target(
     spawn_blocking_task("OpenCode service target", move || {
         let power = app.state::<crate::power::PowerService>();
         let island = app.state::<crate::island::IslandService>();
+        let notifications = app.state::<crate::notifications::NotificationService>();
         opencode::target::set_target(
             url,
             password,
@@ -54,13 +55,16 @@ pub async fn opencode_set_service_target(
                 Ok((
                     power.prepare_target_refresh()?,
                     island.prepare_target_refresh(),
+                    notifications.prepare_target_refresh(),
                 ))
             },
-            |(power, island)| {
+            |(power, island, notifications)| {
                 power.invalidate();
+                notifications.invalidate();
                 island.invalidate()
             },
             |generation| {
+                notifications.finish_target_refresh();
                 power.finish_target_refresh();
                 if island.finish_target_refresh(&app, generation).is_err() {
                     record(

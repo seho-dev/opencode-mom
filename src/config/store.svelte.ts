@@ -40,6 +40,7 @@ import type {
   MomHttpSettings,
 } from '$src/types/mcp-proxy.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
+import type { NotificationPermission, NotificationSettings } from '$src/types/notifications.js';
 import type { PluginRemovalPlan, PluginRemovalTarget, PluginRuntime } from '$src/types/plugins.js';
 import type { LidState } from '$src/types/power.js';
 import type { PromptGenerationRequest } from '$src/types/prompt-generation.js';
@@ -602,6 +603,21 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     },
     setLidProtection(enabled: boolean): Promise<LidState> {
       return adapter.setLidProtection(enabled);
+    },
+    getNotificationSettings(): Promise<NotificationSettings> {
+      return adapter.getNotificationSettings();
+    },
+    getNotificationPermission(): Promise<NotificationPermission> {
+      return adapter.getNotificationPermission();
+    },
+    requestNotificationPermission(): Promise<NotificationPermission> {
+      return adapter.requestNotificationPermission();
+    },
+    openNotificationSettings(): Promise<void> {
+      return adapter.openNotificationSettings();
+    },
+    setNotificationSettings(settings: NotificationSettings): Promise<NotificationSettings> {
+      return adapter.setNotificationSettings(settings);
     },
     getLoggingState(): Promise<LoggingState> {
       return adapter.getLoggingState();

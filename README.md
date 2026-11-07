@@ -40,11 +40,12 @@ Projection is **non-destructive**: keys outside the active group definition are 
 
 ## ✨ Features
 
-- **🧩 One-Click Model Group Switching**: Switch between preset configurations instantly from the **Dashboard**, **Groups** view, or the **System Tray**.
+- **🧩 One-Click Model Group Switching**: Switch between preset configurations instantly from the **Dashboard**, **Groups** view, or the **System Tray**. Duplicate an existing group into a prefilled draft to modify and save as a new group.
 - **🧠 Providers, Models & Agents**: Register custom API endpoints (OpenAI-compatible, Anthropic, or custom), configure models and pricing, and manage agent permissions and system prompts (inline JSON or Markdown).
 - **🔌 MCP & Skills Management**: Manage MCP servers with masked credentials and automatic recovery snapshots. Includes a built-in **MCP HTTP Proxy** bridging local stdio MCP servers over HTTP/SSE for external clients.
-- **🏝️ MOM Mini Island (macOS)**: Notch-integrated status capsule providing glanceable session health, live status waveforms, and fast interactions (approve permissions, answer prompts, or interrupt sessions).
+- **🏝️ MOM Mini Island (macOS)**: Notch-integrated status capsule that also sits flush against the top screen edge on Macs without a notch, showing cached project/session context plus session and pending-request counts, glanceable session health, live status waveforms, main-session completion perimeter lighting, persistent approval attention, and fast interactions (approve permissions, answer prompts, or interrupt sessions).
 - **💤 Lid Protection (macOS / Windows)**: Prevents your laptop from sleeping **only while OpenCode sessions are actively working**, automatically restoring your normal power policy when tasks finish.
+- **🔔 Native OS Notifications (macOS / Windows)**: Enable **System notifications** in **Settings → General** (off by default), then choose main agent completions, approval requests, and agent errors independently. macOS requests system authorization on first enable; Windows checks the installed app's notification setting and opens system settings when needed. After changing system permissions, use **Refresh notification settings** in MOM. The saved preference is independent of OS authorization. Notifications work while MOM is running, including in the tray, without Mini Island; Focus / Do Not Disturb can suppress presentation. Use the packaged macOS app or the installed Windows app.
 - **📊 Dashboard & System Tray**: Real-time service health, active session counts, token consumption analytics, activity heatmaps, and a lightweight tray menu for background operation.
 
 ### 🪵 Local Diagnostic Logs
@@ -75,13 +76,14 @@ Builds are ad-hoc signed. If macOS blocks opening the application:
    ```
 
 ### Requirements
-- **[OpenCode v2](https://opencode.ai/v2/docs/)** installed for live service status, session monitoring, and Mini Island. (Editing configuration files works standalone).
+- **[OpenCode v2](https://opencode.ai/v2/docs/)** installed for live service status, session monitoring, Mini Island, and native notifications. (Editing configuration files works standalone).
 
 ## 🔧 How MOM Writes Config
 
 MOM persists its own state in `~/.config/opencode-mom/config.json` and patches target configuration files without overwriting unmanaged fields:
 
 The logging switch is stored as `state.loggingEnabled` (default `false`), independent of theme, locale, model groups, and project selection. Log records are saved separately in JSONL files under `logs/` and never written to `config.json`.
+Notification settings are stored as `state.notifications` (default disabled), independent of theme, locale, model groups, and logging. When enabled on macOS or Windows, native notifications alert on root agent completions, approval requests, and agent errors.
 
 | Group Type | Target File | Patched Keys |
 | :--- | :--- | :--- |

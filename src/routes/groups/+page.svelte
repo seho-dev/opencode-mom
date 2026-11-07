@@ -34,16 +34,18 @@ $effect(() => {
     activeTab = config.preferences.defaultPlugin;
   }
 });
-let nativeTabEl = $state<HTMLButtonElement | null>(null);
-let slimTabEl = $state<HTMLButtonElement | null>(null);
-let omoTabEl = $state<HTMLButtonElement | null>(null);
+
+const tabLabels = { native: 'groups.tabNative', slim: 'groups.tabSlim', omo: 'groups.tabOmo' } as const;
+let tabElements = $state<Record<GroupType, HTMLButtonElement | null>>({ native: null, slim: null, omo: null });
 const pageSize = 5;
 let page = $state(1);
 const nativeCount = $derived(config.groups.filter((group) => group.type === GROUP_TYPE_NATIVE).length);
 const slimCount = $derived(config.groups.filter((group) => group.type === GROUP_TYPE_SLIM).length);
 const omoCount = $derived(config.groups.filter((group) => group.type === GROUP_TYPE_OMO).length);
 const groups = $derived(
-  config.groups.filter((group) => group.type === activeTab && group.name.toLowerCase().includes(query.toLowerCase())),
+  config.groups.filter(
+    (group) => group.type === activeTab && group.name.toLowerCase().includes(query.trim().toLowerCase()),
+  ),
 );
 const maxPage = $derived(Math.max(1, Math.ceil(groups.length / pageSize)));
 const currentPage = $derived(Math.min(page, maxPage));
@@ -51,46 +53,57 @@ const pagedGroups = $derived(groups.slice((currentPage - 1) * pageSize, currentP
 const busy = $derived(
   refreshing || changingGroup !== null || config.loading || config.saving || config.switching || config.reloading,
 );
+
 $effect(() => {
   // Reset to the first page whenever the filtered row count changes (search or delete).
   void groups.length;
   page = 1;
 });
+
 function selectTab(tab: GroupType) {
   userSelectedTab = true;
   activeTab = tab;
   page = 1;
 }
-function tabElement(tab: GroupType) {
-  return tab === GROUP_TYPE_NATIVE ? nativeTabEl : tab === GROUP_TYPE_SLIM ? slimTabEl : omoTabEl;
-}
+
 function onTabKeys(event: KeyboardEvent) {
   const index = tabOrder.indexOf(activeTab);
   let next: GroupType | undefined;
+
   if (event.key === 'ArrowRight') next = tabOrder[(index + 1) % tabOrder.length];
   else if (event.key === 'ArrowLeft') next = tabOrder[(index - 1 + tabOrder.length) % tabOrder.length];
   else if (event.key === 'Home') next = tabOrder[0];
   else if (event.key === 'End') next = tabOrder[tabOrder.length - 1];
   else return;
+
   if (!next) return;
+
   event.preventDefault();
   selectTab(next);
-  tabElement(next)?.focus();
+  tabElements[next]?.focus();
 }
+
 async function refresh() {
   if (busy) return;
+
   refreshing = true;
+
   try {
     await config.refresh(true);
   } finally {
     refreshing = false;
   }
 }
+
 async function toggleEnabled(id: string) {
   if (busy) return;
+
   const group = config.groups.find((group) => group.id === id);
+
   if (!group || group.id === config.selectedGroupId) return;
+
   changingGroup = id;
+
   try {
     await config.saveGroup({ ...$state.snapshot(group), isEnabled: !group.isEnabled });
   } catch {
@@ -99,9 +112,12 @@ async function toggleEnabled(id: string) {
     changingGroup = null;
   }
 }
+
 async function remove() {
   if (!deleting || busy) return;
+
   changingGroup = deleting;
+
   try {
     await config.deleteGroup(deleting);
     deleting = null;
@@ -111,9 +127,12 @@ async function remove() {
     changingGroup = null;
   }
 }
+
 async function activate(id: string, name: string, type: GroupType) {
   if (busy || !config.groups.find((group) => group.id === id)?.isEnabled) return;
+
   changingGroup = id;
+
   try {
     await config.switchGroup(id);
     if (type === GROUP_TYPE_SLIM || type === GROUP_TYPE_OMO) switchedGroup = name;
@@ -123,8 +142,10 @@ async function activate(id: string, name: string, type: GroupType) {
     changingGroup = null;
   }
 }
+
 async function reloadNow() {
   if (busy) return;
+
   try {
     await config.reloadOpencode();
     switchedGroup = null;
@@ -150,52 +171,20 @@ async function reloadNow() {
   <input aria-label={i18n.t('groups.searchLabel')} bind:value={query} placeholder={i18n.t('groups.searchPlaceholder')}>
 </div>
 {#snippet tabButton(type: GroupType)}
-  {#if type === GROUP_TYPE_NATIVE}
-    <Button
-      bind:ref={nativeTabEl}
-      id="groups-tab-native"
-      role="tab"
-      variant={activeTab === GROUP_TYPE_NATIVE ? 'default' : 'outline'}
-      size="sm"
-      aria-selected={activeTab === GROUP_TYPE_NATIVE}
-      aria-controls="groups-tabpanel-native"
-      tabindex={activeTab === GROUP_TYPE_NATIVE ? 0 : -1}
-      onclick={() => selectTab(GROUP_TYPE_NATIVE)}
-      onkeydown={onTabKeys}
-    >
-      {i18n.t('groups.tabNative', { count: nativeCount })}
-    </Button>
-  {:else if type === GROUP_TYPE_SLIM}
-    <Button
-      bind:ref={slimTabEl}
-      id="groups-tab-slim"
-      role="tab"
-      variant={activeTab === GROUP_TYPE_SLIM ? 'default' : 'outline'}
-      size="sm"
-      aria-selected={activeTab === GROUP_TYPE_SLIM}
-      aria-controls="groups-tabpanel-slim"
-      tabindex={activeTab === GROUP_TYPE_SLIM ? 0 : -1}
-      onclick={() => selectTab(GROUP_TYPE_SLIM)}
-      onkeydown={onTabKeys}
-    >
-      {i18n.t('groups.tabSlim', { count: slimCount })}
-    </Button>
-  {:else if type === GROUP_TYPE_OMO}
-    <Button
-      bind:ref={omoTabEl}
-      id="groups-tab-omo"
-      role="tab"
-      variant={activeTab === GROUP_TYPE_OMO ? 'default' : 'outline'}
-      size="sm"
-      aria-selected={activeTab === GROUP_TYPE_OMO}
-      aria-controls="groups-tabpanel-omo"
-      tabindex={activeTab === GROUP_TYPE_OMO ? 0 : -1}
-      onclick={() => selectTab(GROUP_TYPE_OMO)}
-      onkeydown={onTabKeys}
-    >
-      {i18n.t('groups.tabOmo', { count: omoCount })}
-    </Button>
-  {/if}
+  <Button
+    bind:ref={tabElements[type]}
+    id={`groups-tab-${type}`}
+    role="tab"
+    variant={activeTab === type ? 'default' : 'outline'}
+    size="sm"
+    aria-selected={activeTab === type}
+    aria-controls={`groups-tabpanel-${type}`}
+    tabindex={activeTab === type ? 0 : -1}
+    onclick={() => selectTab(type)}
+    onkeydown={onTabKeys}
+  >
+    {i18n.t(tabLabels[type], { count: type === GROUP_TYPE_NATIVE ? nativeCount : type === GROUP_TYPE_SLIM ? slimCount : omoCount })}
+  </Button>
 {/snippet}
 
 <div class="flex gap-2 mb-3" role="tablist" aria-label={i18n.t('groups.title')}>

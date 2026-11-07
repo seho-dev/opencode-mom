@@ -2,6 +2,7 @@
 import { Activity, Bot, Boxes, Cloud, Layers3, RefreshCw, Server } from '@lucide/svelte';
 import { onMount } from 'svelte';
 import { Button } from '$src/components/button/index.js';
+import { readError } from '$src/components/configuration/read-error.js';
 import ActivityHeatmap from '$src/components/dashboard/ActivityHeatmap.svelte';
 import RuntimeCard from '$src/components/dashboard/RuntimeCard.svelte';
 import SwitchGroupDialog from '$src/components/dashboard/SwitchGroupDialog.svelte';
@@ -94,41 +95,50 @@ function changeUsagePeriod(value: string) {
     usagePeriod = value as ActivityPeriod;
   }
 }
+
 function changeUsageYear(value: string) {
   const next = Number(value);
+
   if (usageYear !== next) {
     usageSelectedYear = next;
   }
 }
+
 function changeHeatmapPeriod(value: string) {
   if (heatmapPeriod !== value) {
     heatmapPeriod = value as ActivityPeriod;
   }
 }
+
 function changeHeatmapYear(value: string) {
   const next = Number(value);
+
   if (heatmapYear !== next) {
     heatmapSelectedYear = next;
   }
 }
+
 async function refreshActivity() {
   if (request || !mounted) return;
+
   request = true;
   loading = true;
   error = null;
   today = calendarDate(new Date(), timezone);
+
   try {
     const records = await config.loadTokenUsageRecords();
+
     if (!mounted) return;
+
     dailyUsage = dailyTokenUsage(records, timezone);
   } catch (cause) {
     if (!mounted) return;
+
     error =
-      cause && typeof cause === 'object' && 'message' in cause
-        ? String(cause.message)
-        : typeof cause === 'string'
-          ? cause
-          : i18n.t('dashboard.activityFailed');
+      typeof cause === 'string' || (cause && typeof cause === 'object' && 'message' in cause)
+        ? readError(cause)
+        : i18n.t('dashboard.activityFailed');
   } finally {
     if (mounted) loading = false;
     request = false;
@@ -140,13 +150,18 @@ async function loadProxyStatus() {
     if (mounted) proxyLoading = false;
     return;
   }
+
   proxyLoading = true;
+
   try {
     const state = await config.getMcpProxyState();
+
     if (!mounted) return;
+
     proxyState = state;
   } catch {
     if (!mounted) return;
+
     proxyState = null;
   } finally {
     if (mounted) proxyLoading = false;
@@ -158,10 +173,12 @@ onMount(() => {
   timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   void refreshActivity();
   void loadProxyStatus();
+
   return () => {
     mounted = false;
   };
 });
+
 function openSwitch(type: GroupType, trigger: HTMLButtonElement) {
   switchTrigger = trigger;
   runtime = type;

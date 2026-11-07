@@ -40,19 +40,24 @@ const defaultValues = $derived({
 });
 const form = createForm(() => ({
   defaultValues,
+
   validators: {
     onChange: z.object({ name: z.string().trim().min(1, i18n.t('groupForm.nameRequired')) }),
   },
+
   onSubmit: async ({ value }) => {
     let id = group?.id;
     const updatedAt = group?.updatedAt ?? new Date().toISOString();
+
     if (!id) {
       if (!globalThis.crypto?.randomUUID) {
         toast({ variant: 'error', description: i18n.t('groupForm.noRandomUuid') });
         return;
       }
+
       id = globalThis.crypto.randomUUID();
     }
+
     try {
       await config.saveGroup({
         id,
@@ -100,12 +105,14 @@ const mappingPlaceholder = $derived(
 const modelOptions = $derived.by(() => {
   const options: { value: string; label?: string }[] = config.catalogModels().map((entry) => ({ value: entry.ref }));
   const known = new Set(options.map((option) => option.value));
+
   for (const entry of [...native, ...slim, ...omo, ...categories]) {
     if (entry.modelRef && !known.has(entry.modelRef)) {
       known.add(entry.modelRef);
       options.push({ value: entry.modelRef, label: i18n.t('agents.optionUnavailable', { name: entry.modelRef }) });
     }
   }
+
   return options;
 });
 
@@ -116,26 +123,34 @@ function variantOptions(ref: string, current?: string): { value: string; label: 
     { value: '', label: i18n.t('agents.optionNone') },
     ...names.map((name) => ({ value: name, label: name })),
   ];
+
   if (current && !names.includes(current)) {
     options.push({ value: current, label: i18n.t('agents.optionUnavailable', { name: current }), disabled: true });
   }
+
   return options;
 }
 
 function defaultTab(value: GroupType): MappingKind {
   if (value === GROUP_TYPE_SLIM) return GROUP_TYPE_SLIM;
+
   if (value === GROUP_TYPE_OMO) return GROUP_TYPE_OMO;
+
   return GROUP_TYPE_NATIVE;
 }
+
 function loadGroup() {
   if (!group) return;
+
   initialized = group.id;
   form.reset(defaultValues);
   tab = defaultTab(group.type);
   pending = null;
 }
+
 $effect(() => {
   if (!group) return;
+
   if (initialized !== group.id) {
     seenReset = config.formResetVersion;
     loadGroup();
@@ -144,27 +159,34 @@ $effect(() => {
     loadGroup();
   }
 });
+
 function changeType(next: GroupType) {
   const has =
     (type === GROUP_TYPE_NATIVE && native.length > 0) ||
     (type === GROUP_TYPE_SLIM && slim.length > 0) ||
     (type === GROUP_TYPE_OMO && omo.length + categories.length > 0);
+
   if (next !== type && has) {
     pending = next;
     return;
   }
+
   form.setFieldValue('type', next);
   tab = defaultTab(next);
 }
+
 function resolve(choice: 'confirm' | 'cancel') {
   if (choice === 'confirm' && pending) {
     form.setFieldValue('type', pending);
     tab = defaultTab(pending);
   }
+
   pending = null;
 }
+
 function add(kind: MappingKind) {
   const model = config.catalogModels()[0]?.ref;
+
   if (!model) {
     toast({
       variant: 'error',
@@ -172,16 +194,19 @@ function add(kind: MappingKind) {
     });
     return;
   }
+
   if (kind === GROUP_TYPE_NATIVE) form.setFieldValue('native', [...native, { agentName: '', modelRef: model }]);
   if (kind === GROUP_TYPE_SLIM) form.setFieldValue('slim', [...slim, { agentName: '', modelRef: model }]);
   if (kind === GROUP_TYPE_OMO) form.setFieldValue('omo', [...omo, { agentName: '', modelRef: model }]);
   if (kind === 'category') form.setFieldValue('categories', [...categories, { categoryName: '', modelRef: model }]);
 }
+
 function update(kind: MappingKind, index: number, field: string, value: string) {
   const list =
     kind === GROUP_TYPE_NATIVE ? native : kind === GROUP_TYPE_SLIM ? slim : kind === GROUP_TYPE_OMO ? omo : categories;
   const next = list.map((entry, i) => {
     if (i !== index) return entry;
+
     if (
       field === 'modelRef' &&
       entry.variant &&
@@ -189,29 +214,35 @@ function update(kind: MappingKind, index: number, field: string, value: string) 
     ) {
       return { ...entry, modelRef: value, variant: '' };
     }
+
     return { ...entry, [field]: value };
   });
+
   if (kind === GROUP_TYPE_NATIVE) form.setFieldValue('native', next as AgentModelBinding[]);
   if (kind === GROUP_TYPE_SLIM) form.setFieldValue('slim', next as AgentModelBinding[]);
   if (kind === GROUP_TYPE_OMO) form.setFieldValue('omo', next as AgentModelBinding[]);
   if (kind === 'category') form.setFieldValue('categories', next as CategoryMapping[]);
 }
+
 function remove(kind: MappingKind, index: number) {
   if (kind === GROUP_TYPE_NATIVE)
     form.setFieldValue(
       'native',
       native.filter((_, i) => i !== index),
     );
+
   if (kind === GROUP_TYPE_SLIM)
     form.setFieldValue(
       'slim',
       slim.filter((_, i) => i !== index),
     );
+
   if (kind === GROUP_TYPE_OMO)
     form.setFieldValue(
       'omo',
       omo.filter((_, i) => i !== index),
     );
+
   if (kind === 'category')
     form.setFieldValue(
       'categories',

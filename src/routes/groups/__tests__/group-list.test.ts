@@ -23,16 +23,6 @@ function group(type: Group['type'], isEnabled = false): Group {
   };
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (cause: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-
 async function mount(
   options: {
     groups?: Group[];
@@ -46,6 +36,7 @@ async function mount(
     agents: [],
     groups: options.groups ?? [group('native'), group('slim'), group('omo')],
     selectedGroupId: options.selectedGroupId ?? null,
+
     preferences: {
       theme: 'dark',
       locale: options.locale ?? 'en',
@@ -56,7 +47,9 @@ async function mount(
     loadAppState: vi.fn(async () => structuredClone(state)),
     saveGroup: vi.fn(async (value: Group) => {
       const saved = { ...value, updatedAt: '2026-10-22T00:00:00Z' };
+
       state.groups = state.groups.map((entry) => (entry.id === saved.id ? saved : entry));
+
       return saved;
     }),
     switchGroup: vi.fn(async (id: string) => {
@@ -68,8 +61,11 @@ async function mount(
     opencodeReload: vi.fn().mockResolvedValue(undefined),
   };
   const config = createConfigStore(adapter as unknown as CommandAdapter, false, false);
+
   await config.refresh(true);
+
   const view = render(GroupList, {}, { wrapper: Harness, wrapperProps: { config } });
+
   return { ...view, adapter, config, state };
 }
 
@@ -79,9 +75,12 @@ test.each(['native', 'slim', 'omo'] as const)(
     const selected = { ...group('native', true), id: 'selected', name: 'Selected lane' };
     const initial = group(type);
     const view = await mount({ groups: [selected, initial], selectedGroupId: selected.id });
+
     if (type !== 'native')
       await fireEvent.click(screen.getByRole('tab', { name: `${type === 'slim' ? 'Slim' : 'OMO'} (1)` }));
+
     const control = screen.getByRole('checkbox', { name: `Enable ${initial.name}` }) as HTMLInputElement;
+
     expect(control.type).toBe('checkbox');
     expect(control.checked).toBe(false);
     expect(control.disabled).toBe(false);
@@ -115,10 +114,12 @@ test('pending toggle retains confirmed status and blocks duplicate saves and con
   const view = await mount({
     groups: [group('native'), { ...group('native', true), id: 'other', name: 'Other lane' }],
   });
-  const save = deferred<Group>();
-  const readback = deferred<AppState>();
+  const save = Promise.withResolvers<Group>();
+  const readback = Promise.withResolvers<AppState>();
+
   view.adapter.saveGroup.mockReturnValueOnce(save.promise);
   view.adapter.loadAppState.mockReturnValueOnce(readback.promise);
+
   const control = screen.getByRole('checkbox', { name: 'Enable native lane' }) as HTMLInputElement;
 
   await fireEvent.click(control);
@@ -156,11 +157,14 @@ test.each([false, true])(
   async (isEnabled) => {
     const initial = group('native', isEnabled);
     const view = await mount({ groups: [initial] });
-    const save = deferred<Group>();
+    const save = Promise.withResolvers<Group>();
+
     view.adapter.saveGroup.mockReturnValueOnce(save.promise);
+
     const control = screen.getByRole('checkbox', {
       name: `${isEnabled ? 'Disable' : 'Enable'} native lane`,
     }) as HTMLInputElement;
+
     await fireEvent.click(control);
     save.reject({ code: 'validation_failed', message: 'Save rejected' });
     await waitFor(() => expect(control.disabled).toBe(false));
@@ -183,21 +187,26 @@ test.each([true, false])(
   'native click cancellation preserves confirmed checked state after save succeeds=%s',
   async (succeeds) => {
     const view = await mount({ groups: [group('native')] });
-    const save = deferred<Group>();
+    const save = Promise.withResolvers<Group>();
+
     view.adapter.saveGroup.mockReturnValueOnce(save.promise);
+
     const control = screen.getByRole('checkbox', { name: 'Enable native lane' }) as HTMLInputElement;
 
     control.click();
     await tick();
     expect(control.checked).toBe(false);
     expect(control.disabled).toBe(true);
+
     if (succeeds) {
       const saved = { ...group('native'), isEnabled: true };
+
       view.state.groups = [saved];
       save.resolve(saved);
     } else {
       save.reject({ code: 'validation_failed', message: 'Save rejected' });
     }
+
     await waitFor(() => expect(control.disabled).toBe(false));
     await tick();
     expect(control.checked).toBe(succeeds);
@@ -214,6 +223,7 @@ test('selected group cannot be disabled while another enabled group remains inde
   const other = { ...selected, id: 'other', name: 'Other lane' };
   const view = await mount({ groups: [selected, other], selectedGroupId: selected.id });
   const selectedControl = screen.getByRole('checkbox', { name: 'Disable native lane' }) as HTMLInputElement;
+
   expect(selectedControl.checked).toBe(true);
   expect(selectedControl.disabled).toBe(true);
   expect(selectedControl.title).toBe('Selected');
@@ -227,14 +237,19 @@ test('selected group cannot be disabled while another enabled group remains inde
 
 test('manual refresh blocks toggle until latest group fields arrive', async () => {
   const view = await mount();
-  const pending = deferred<AppState>();
+  const pending = Promise.withResolvers<AppState>();
+
   view.adapter.loadAppState.mockReturnValueOnce(pending.promise);
   await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
   const control = screen.getByRole('checkbox', { name: 'Enable native lane' }) as HTMLInputElement;
+
   expect(control.disabled).toBe(true);
   await fireEvent.click(control);
   expect(view.adapter.saveGroup).not.toHaveBeenCalled();
+
   const latest = { ...group('native'), description: 'Latest external edit', updatedAt: '2026-10-21T00:00:00Z' };
+
   pending.resolve({ ...view.state, groups: [latest] });
   await waitFor(() => expect(control.disabled).toBe(false));
   await fireEvent.click(control);
@@ -255,8 +270,11 @@ test.each(['loading', 'saving', 'switching', 'reloading'])('%s blocks toggle and
     refresh: vi.fn(),
     [flag]: true,
   };
+
   render(GroupList, {}, { wrapper: Harness, wrapperProps: { config: config as unknown as ConfigStore } });
+
   const control = screen.getByRole('checkbox', { name: 'Enable native lane' }) as HTMLInputElement;
+
   expect(control.disabled).toBe(true);
   await fireEvent.click(control);
   await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
@@ -267,11 +285,97 @@ test.each(['loading', 'saving', 'switching', 'reloading'])('%s blocks toggle and
 
 test('Chinese accessible names identify the group and follow confirmed enabled state', async () => {
   await mount({ groups: [group('native')], locale: 'zh' });
+
   const control = (await screen.findByRole('checkbox', { name: '启用 native lane' })) as HTMLInputElement;
+
   await fireEvent.click(control);
   await waitFor(() => expect(control.disabled).toBe(false));
   expect(screen.getByRole('checkbox', { name: '停用 native lane' })).toBe(control);
   expect(control.checked).toBe(true);
+});
+
+test('tablist arrows and Home/End follow the runtime tab order and keep refs on the same tabs', async () => {
+  const view = await mount({ defaultPlugin: 'slim' });
+  const slim = await screen.findByRole('tab', { name: /Slim/ });
+  const native = screen.getByRole('tab', { name: /Native/ });
+  const omo = screen.getByRole('tab', { name: /OMO/ });
+
+  await waitFor(() => expect(slim.getAttribute('aria-selected')).toBe('true'));
+  slim.focus();
+
+  // Initial order is [slim, native, omo] derived from runtime defaultPlugin.
+  expect(screen.getAllByRole('tab')).toEqual([slim, native, omo]);
+  expect(slim.getAttribute('tabindex')).toBe('0');
+  expect(native.getAttribute('tabindex')).toBe('-1');
+  expect(omo.getAttribute('tabindex')).toBe('-1');
+
+  // ArrowRight moves from slim to native.
+  await fireEvent.keyDown(slim, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(native);
+  expect(native.getAttribute('aria-selected')).toBe('true');
+  expect(native.getAttribute('tabindex')).toBe('0');
+  expect(slim.getAttribute('aria-selected')).toBe('false');
+  expect(slim.getAttribute('tabindex')).toBe('-1');
+  expect(screen.getByRole('tabpanel').id).toBe('groups-tabpanel-native');
+  expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe('groups-tab-native');
+
+  // End moves to omo (last).
+  await fireEvent.keyDown(native, { key: 'End' });
+  expect(document.activeElement).toBe(omo);
+  expect(omo.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').id).toBe('groups-tabpanel-omo');
+
+  // Home moves to slim (first).
+  await fireEvent.keyDown(omo, { key: 'Home' });
+  expect(document.activeElement).toBe(slim);
+  expect(slim.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').id).toBe('groups-tabpanel-slim');
+
+  // ArrowLeft from the first entry wraps to the last one (omo).
+  await fireEvent.keyDown(slim, { key: 'ArrowLeft' });
+  expect(document.activeElement).toBe(omo);
+  expect(omo.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').id).toBe('groups-tabpanel-omo');
+
+  // ArrowRight from the last entry wraps back to the first one (slim).
+  await fireEvent.keyDown(omo, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(slim);
+  expect(slim.getAttribute('aria-selected')).toBe('true');
+
+  // Changing runtime preference reorders tabOrder to [omo, native, slim] and preserves DOM node identity.
+  view.config.applyPreferences({ ...view.config.preferences, defaultPlugin: 'omo' });
+  await tick();
+  expect(screen.getAllByRole('tab')).toEqual([omo, native, slim]);
+  expect(screen.getByRole('tab', { name: /Slim/ })).toBe(slim);
+  expect(screen.getByRole('tab', { name: /Native/ })).toBe(native);
+  expect(screen.getByRole('tab', { name: /OMO/ })).toBe(omo);
+
+  // Keyboard navigation on reordered tabs: Home moves to omo, ArrowRight walks to native, End moves to slim.
+  slim.focus();
+  await fireEvent.keyDown(slim, { key: 'Home' });
+  expect(document.activeElement).toBe(omo);
+  expect(omo.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').id).toBe('groups-tabpanel-omo');
+
+  await fireEvent.keyDown(omo, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(native);
+  expect(native.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').id).toBe('groups-tabpanel-native');
+
+  await fireEvent.keyDown(native, { key: 'End' });
+  expect(document.activeElement).toBe(slim);
+  expect(slim.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('tabpanel').id).toBe('groups-tabpanel-slim');
+
+  // ArrowRight wraps from slim back to omo.
+  await fireEvent.keyDown(slim, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(omo);
+  expect(omo.getAttribute('aria-selected')).toBe('true');
+
+  // ArrowLeft wraps from omo back to slim.
+  await fireEvent.keyDown(omo, { key: 'ArrowLeft' });
+  expect(document.activeElement).toBe(slim);
+  expect(slim.getAttribute('aria-selected')).toBe('true');
 });
 
 test('prioritizes tab selection matching default plugin preference', async () => {
@@ -280,4 +384,21 @@ test('prioritizes tab selection matching default plugin preference', async () =>
     expect(screen.getByRole('tab', { name: /Slim/ }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('tab', { name: /Native/ }).getAttribute('aria-selected')).toBe('false');
   });
+});
+
+test('group list query trims leading and trailing whitespace', async () => {
+  const { config } = await mount({
+    groups: [
+      { ...group('native'), id: 'native-alpha', name: 'Alpha Lane' },
+      { ...group('native'), id: 'native-beta', name: 'Beta Lane' },
+    ],
+  });
+
+  expect(config.groups).toHaveLength(2);
+
+  const searchInput = await screen.findByRole('textbox', { name: 'Search groups' });
+
+  await fireEvent.input(searchInput, { target: { value: '   alpha   ' } });
+  expect(screen.getByText('Alpha Lane')).toBeTruthy();
+  expect(screen.queryByText('Beta Lane')).toBeNull();
 });

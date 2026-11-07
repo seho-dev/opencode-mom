@@ -19,7 +19,9 @@ let reloadQueued = false;
 
 $effect(() => {
   const version = config.serviceTargetVersion;
+
   if (version === targetVersion) return;
+
   targetVersion = version;
   untrack(() => {
     known = false;
@@ -31,14 +33,19 @@ $effect(() => {
 
 async function load() {
   if (!mounted || !active || loading || saving) return;
+
   const seq = ++request;
   const version = config.serviceTargetVersion;
+
   reloadQueued = false;
   loading = true;
   error = '';
+
   try {
     const result = await config.getLidProtection();
+
     if (!mounted || seq !== request || version !== config.serviceTargetVersion) return;
+
     enabled = result.enabled;
     known = true;
   } catch {
@@ -53,15 +60,20 @@ async function load() {
 
 async function setEnabled(next: boolean) {
   if (!mounted || !active || !known || loading || saving) return;
+
   const control = document.getElementById('lid-closed');
   const restoreFocus = document.activeElement === control;
   const seq = ++request;
   const version = config.serviceTargetVersion;
+
   saving = true;
   error = '';
+
   try {
     const result = await config.setLidProtection(next);
+
     if (!mounted || seq !== request || version !== config.serviceTargetVersion) return;
+
     enabled = result.enabled;
     known = true;
     if (result.enabled !== next || result.phase === 'error' || result.error) error = 'save';
@@ -89,6 +101,7 @@ onMount(() => {
 
 $effect(() => {
   if (!mounted || !active) return;
+
   untrack(() => {
     known = false;
     error = '';

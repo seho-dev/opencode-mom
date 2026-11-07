@@ -59,7 +59,9 @@ let destroyed = false;
 
 async function handleDefaultPluginChange(type: GroupType) {
   if (savingPlugin || selectedPlugin === type) return;
+
   savingPlugin = true;
+
   try {
     await config.setDefaultPlugin(type);
     toast({ variant: 'success', description: i18n.t('settings.defaultPluginSaved') });
@@ -72,31 +74,42 @@ async function handleDefaultPluginChange(type: GroupType) {
 
 function selectTab(tab: SettingsTab): boolean {
   if (activeTab === tab) return true;
+
   activeTab = tab;
+
   const url = new URL(route.url);
+
   if (tab !== 'general' && url.hash === '#settings-logging') url.hash = '';
+
   if (tab === 'general') {
     url.searchParams.delete('tab');
   } else {
     url.searchParams.set('tab', tab);
   }
+
   void goto(url.toString(), { replaceState: true, keepFocus: true, noScroll: true });
+
   if (tab === 'general') {
     void load();
   }
+
   return true;
 }
 
 function onTabKeys(event: KeyboardEvent) {
   const current = tabOrder.indexOf(activeTab);
   let next: SettingsTab | undefined;
+
   if (event.key === 'ArrowRight') next = tabOrder[(current + 1) % tabOrder.length];
   else if (event.key === 'ArrowLeft') next = tabOrder[(current - 1 + tabOrder.length) % tabOrder.length];
   else if (event.key === 'Home') next = tabOrder[0];
   else if (event.key === 'End') next = tabOrder[tabOrder.length - 1];
+
   if (!next) return;
+
   event.preventDefault();
   if (!selectTab(next)) return;
+
   if (next === 'general') generalTabEl?.focus();
   else if (next === 'mcp-proxy') proxyTabEl?.focus();
   else if (next === 'behavior') behaviorTabEl?.focus();
@@ -104,26 +117,35 @@ function onTabKeys(event: KeyboardEvent) {
 
 async function navigateToSetting(entry: SettingsSearchTarget) {
   const seq = ++navigationRequest;
+
   if (!selectTab(entry.tab)) return;
+
   await tick();
   if (destroyed || seq !== navigationRequest || activeTab !== entry.tab) return;
+
   const target =
     document.getElementById(entry.target) ??
     (entry.fallback ? document.getElementById(entry.fallback) : null) ??
     document.getElementById(`settings-tabpanel-${entry.tab}`);
+
   target?.scrollIntoView({ block: entry.target === 'settings-logging' ? 'start' : 'center' });
   target?.focus({ preventScroll: true });
 }
 
 async function load() {
   if (activeTab !== 'general' || saving) return;
+
   const seq = ++request;
+
   loading = true;
   error = '';
   failedSave = false;
+
   try {
     const status = await config.getAutostart();
+
     if (seq !== request) return;
+
     enabled = status;
     known = true;
   } catch (cause) {
@@ -138,14 +160,19 @@ async function load() {
 
 async function toggle() {
   if (activeTab !== 'general' || !known || loading || saving) return;
+
   const next = !enabled;
   const seq = ++request;
+
   saving = true;
   error = '';
   failedSave = false;
+
   try {
     const status = await config.setAutostart(next);
+
     if (seq !== request) return;
+
     enabled = status;
     toast({ variant: 'success', description: i18n.t('settings.autostartSaved') });
   } catch (cause) {

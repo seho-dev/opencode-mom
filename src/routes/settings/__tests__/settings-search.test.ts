@@ -12,6 +12,7 @@ import Settings from '../+page.svelte';
 import SettingsSearch from '../SettingsSearch.svelte';
 
 const native = vi.hoisted(() => ({ isTauri: vi.fn(() => true) }));
+
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: native.isTauri }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn().mockResolvedValue(undefined), beforeNavigate: vi.fn() }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/settings'), params: {} } }));
@@ -86,18 +87,12 @@ function makeAdapter() {
 
 function mountPage(tab: 'general' | 'mcp-proxy' = 'general', overrides: Partial<ReturnType<typeof makeAdapter>> = {}) {
   page.url = new URL(`http://localhost/settings${tab === 'mcp-proxy' ? '?tab=mcp-proxy' : ''}`);
+
   const adapter = { ...makeAdapter(), ...overrides };
   const config = createConfigStore(adapter as unknown as CommandAdapter, false, false);
   const view = render(Settings, {}, { wrapper: Harness, wrapperProps: { config } });
-  return { ...view, config, adapter };
-}
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
+  return { ...view, config, adapter };
 }
 
 async function settle() {
@@ -150,8 +145,11 @@ test('matches bilingual labels, descriptions and technical names locally, and fo
   const adapter = makeAdapter();
   const config = createConfigStore(adapter as unknown as CommandAdapter, false, false);
   const onselect = vi.fn();
+
   render(SettingsSearch, { onselect }, { wrapper: Harness, wrapperProps: { config } });
+
   const search = screen.getByRole('searchbox', { name: 'Search settings' }) as HTMLInputElement;
+
   expect(search.name).toBe('settings-search');
   expect(search.autocomplete).toBe('off');
 
@@ -174,6 +172,7 @@ test('matches bilingual labels, descriptions and technical names locally, and fo
     await fireEvent.input(search, { target: { value: query } });
     expect(within(results()).getByText(label)).toBeTruthy();
   }
+
   await fireEvent.input(search, { target: { value: 'password' } });
   await config.setLocale('zh');
   await tick();
@@ -181,7 +180,9 @@ test('matches bilingual labels, descriptions and technical names locally, and fo
   expect(search.value).toBe('password');
   expect(screen.getByText(zh['settings.servicePassword'])).toBeTruthy();
   await fireEvent.input(search, { target: { value: 'MCP maxUnits' } });
+
   const chineseResults = screen.getByRole('list', { name: '匹配的设置' });
+
   await fireEvent.click(within(chineseResults).getByRole('button', { name: /最大并发/ }));
   expect(onselect).toHaveBeenCalledWith(
     expect.objectContaining({ tab: 'mcp-proxy', target: 'settings-proxy-capacity' }),
@@ -195,6 +196,7 @@ test('empty, whitespace, no-match and Escape clear return to the unchanged setti
   const { adapter } = mountPage();
   const port = await activePanel().findByRole('spinbutton', { name: 'Port' });
   const search = screen.getByRole('searchbox', { name: 'Search settings' }) as HTMLInputElement;
+
   expect(screen.queryByRole('list', { name: 'Matching settings' })).toBeNull();
   await fireEvent.input(search, { target: { value: 'not-a-real-setting-xyz' } });
   expect(screen.getByText(en['settings.searchEmpty'])).toBeTruthy();
@@ -216,8 +218,11 @@ test('empty, whitespace, no-match and Escape clear return to the unchanged setti
 
 test('search and same-tab navigation retain URL, password, clear-password and HTTP drafts without remounting native panels', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const { adapter, config, unmount } = mountPage();
+
   await settle();
+
   const url = activePanel().getByRole('textbox', { name: 'OpenCode backend URL' }) as HTMLInputElement;
   const password = activePanel().getByLabelText('Service password (optional)') as HTMLInputElement;
   const clear = activePanel().getByRole('checkbox', {
@@ -226,10 +231,12 @@ test('search and same-tab navigation retain URL, password, clear-password and HT
   const port = activePanel().getByRole('spinbutton', { name: 'Port' }) as HTMLInputElement;
   const lid = screen.getByRole('checkbox', { name: 'Stay awake with lid closed' });
   const island = screen.getByRole('checkbox', { name: 'OpenCode mini island' });
+
   await fireEvent.input(url, { target: { value: 'http://127.0.0.1:54321/draft-only-url' } });
   await fireEvent.input(password, { target: { value: 'draft-only-private-password' } });
   await fireEvent.click(clear);
   await fireEvent.input(port, { target: { value: '23456' } });
+
   const search = screen.getByRole('searchbox', { name: 'Search settings' });
   const counts = [
     adapter.getAppInfo,
@@ -237,10 +244,12 @@ test('search and same-tab navigation retain URL, password, clear-password and HT
     adapter.getOpenCodeServiceStatus,
     adapter.getIslandState,
   ].map((call) => call.mock.calls.length);
+
   for (const query of ['password', 'draft-only-private-password', 'draft-only-url', '23456']) {
     await fireEvent.input(search, { target: { value: query } });
     if (query !== 'password') expect(screen.queryByRole('list', { name: 'Matching settings' })).toBeNull();
   }
+
   await fireEvent.input(search, { target: { value: 'password' } });
   await fireEvent.click(within(results()).getByRole('button', { name: /Service password/ }));
   expect(document.activeElement?.id).toBe('opencode-service-title');
@@ -282,20 +291,27 @@ test('search and same-tab navigation retain URL, password, clear-password and HT
 
 test('proxy drafts and revisions survive search, empty results, locale changes and explicit refresh', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const { adapter, config, unmount } = mountPage('mcp-proxy');
+
   await settle();
   expect(adapter.getMcpProxySettings).toHaveBeenCalledOnce();
   expect(adapter.getMcpProxyState).toHaveBeenCalledOnce();
+
   const timeout = activePanel().getByRole('spinbutton', { name: 'Session Idle Timeout (seconds)' }) as HTMLInputElement;
   const units = activePanel().getByRole('spinbutton', { name: 'Maximum Concurrent Units' }) as HTMLInputElement;
+
   await fireEvent.input(timeout, { target: { value: '7654' } });
   await fireEvent.input(units, { target: { value: '77' } });
   adapter.getMcpProxySettings.mockResolvedValue({ enabled: false, idleTimeout: 500, maxUnits: 32, revision: 2 });
+
   const search = screen.getByRole('searchbox', { name: 'Search settings' });
+
   for (const query of ['token', '7654', 'maxUnits', '']) {
     await fireEvent.input(search, { target: { value: query } });
     if (query === '7654') expect(screen.queryByRole('list', { name: 'Matching settings' })).toBeNull();
   }
+
   await config.setLocale('zh');
   await tick();
   expect(timeout.value).toBe('7654');
@@ -333,7 +349,9 @@ test('proxy drafts and revisions survive search, empty results, locale changes a
   expect(adapter.getMcpProxySettings).toHaveBeenCalledTimes(3);
   expect(adapter.getMcpProxyState).toHaveBeenCalledTimes(3);
   unmount();
+
   const reads = adapter.getMcpProxySettings.mock.calls.length;
+
   await vi.advanceTimersByTimeAsync(4000);
   expect(adapter.getMcpProxySettings).toHaveBeenCalledTimes(reads);
   expect(adapter.getMcpProxyState).toHaveBeenCalledTimes(3);
@@ -341,9 +359,13 @@ test('proxy drafts and revisions survive search, empty results, locale changes a
 
 test('cross-tab results navigate and focus without activating controls; only explicit navigation changes lifecycles', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const { adapter, unmount } = mountPage();
+
   await settle();
+
   const search = screen.getByRole('searchbox', { name: 'Search settings' }) as HTMLInputElement;
+
   await fireEvent.input(search, { target: { value: 'idleTimeout' } });
   expect(adapter.getMcpProxySettings).not.toHaveBeenCalled();
   await fireEvent.click(within(results()).getByRole('button', { name: /Session Idle Timeout/ }));
@@ -352,8 +374,10 @@ test('cross-tab results navigate and focus without activating controls; only exp
   expect(document.activeElement?.id).toBe('settings-proxy-timeout');
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(adapter.getMcpProxySettings).toHaveBeenCalledOnce();
+
   const lidReads = adapter.getLidProtection.mock.calls.length;
   const httpReads = adapter.getMomHttpSettings.mock.calls.length;
+
   await vi.advanceTimersByTimeAsync(2000);
   expect(adapter.getLidProtection).toHaveBeenCalledTimes(lidReads);
   expect(adapter.getMomHttpSettings).toHaveBeenCalledTimes(httpReads);
@@ -374,20 +398,26 @@ test('cross-tab results navigate and focus without activating controls; only exp
 
 test('cross-tab search retains both panels and all drafts without periodic reads', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const confirm = vi.spyOn(window, 'confirm');
   const { adapter } = mountPage();
+
   await settle();
+
   const url = activePanel().getByRole('textbox', { name: 'OpenCode backend URL' }) as HTMLInputElement;
   const password = activePanel().getByLabelText('Service password (optional)') as HTMLInputElement;
   const clear = activePanel().getByRole('checkbox', {
     name: 'Clear the saved password when saving',
   });
   const port = activePanel().getByRole('spinbutton', { name: 'Port' }) as HTMLInputElement;
+
   await fireEvent.input(url, { target: { value: 'http://127.0.0.1:54321/keep-me' } });
   await fireEvent.input(password, { target: { value: 'keep-private-password' } });
   await fireEvent.click(clear);
   await fireEvent.input(port, { target: { value: '23456' } });
+
   const search = screen.getByRole('searchbox', { name: 'Search settings' });
+
   await fireEvent.input(search, { target: { value: 'idleTimeout' } });
   await fireEvent.click(within(results()).getByRole('button', { name: /Session Idle Timeout/ }));
   await settle();
@@ -397,10 +427,13 @@ test('cross-tab search retains both panels and all drafts without periodic reads
   expect(password.value).toBe('keep-private-password');
   expect(clear.getAttribute('aria-checked')).toBe('true');
   expect(adapter.getMcpProxySettings).toHaveBeenCalledOnce();
+
   const timeout = activePanel().getByRole('spinbutton', { name: 'Session Idle Timeout (seconds)' }) as HTMLInputElement;
   const units = activePanel().getByRole('spinbutton', { name: 'Maximum Concurrent Units' }) as HTMLInputElement;
+
   await fireEvent.input(timeout, { target: { value: '7654' } });
   await fireEvent.input(units, { target: { value: '77' } });
+
   const generalReads = [
     adapter.getAutostart,
     adapter.getLidProtection,
@@ -411,6 +444,7 @@ test('cross-tab search retains both panels and all drafts without periodic reads
     adapter.getOpenCodeServiceStatus,
   ];
   const generalCounts = generalReads.map((call) => call.mock.calls.length);
+
   await vi.advanceTimersByTimeAsync(4000);
   expect(generalReads.map((call) => call.mock.calls.length)).toEqual(generalCounts);
 
@@ -429,7 +463,9 @@ test('cross-tab search retains both panels and all drafts without periodic reads
   expect(adapter.getIslandState).toHaveBeenCalledTimes(2);
   expect(adapter.getOpenCodeServiceStatus).toHaveBeenCalledTimes(2);
   expect(adapter.getOpenCodeInstallation).toHaveBeenCalledOnce();
+
   const proxyReads = adapter.getMcpProxySettings.mock.calls.length;
+
   await vi.advanceTimersByTimeAsync(4000);
   expect(adapter.getMcpProxySettings).toHaveBeenCalledTimes(proxyReads);
 
@@ -448,8 +484,10 @@ test('cross-tab search retains both panels and all drafts without periodic reads
 
 test('inactive native info completion cannot start CLI installation or Island reads until re-entry', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  const info = deferred<{ version: string; platform: string }>();
+
+  const info = Promise.withResolvers<{ version: string; platform: string }>();
   const { adapter } = mountPage('general', { getAppInfo: vi.fn().mockReturnValue(info.promise) });
+
   await settle();
   expect(adapter.getAppInfo).toHaveBeenCalledTimes(3);
   await fireEvent.click(screen.getByRole('tab', { name: 'MCP Proxy' }));
@@ -470,16 +508,20 @@ test('inactive native info completion cannot start CLI installation or Island re
 
 test('HTTP in-flight guards survive fast tab round trips and inactive completion starts no readback', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  const read = deferred<{ port: number; allowLan: boolean }>();
-  const save = deferred<void>();
+
+  const read = Promise.withResolvers<{ port: number; allowLan: boolean }>();
+  const save = Promise.withResolvers<void>();
   const { adapter } = mountPage('general', {
     getMomHttpSettings: vi.fn().mockReturnValueOnce(read.promise).mockResolvedValue({ port: 23456, allowLan: false }),
     setMomHttpSettings: vi.fn().mockReturnValue(save.promise),
   });
+
   await settle();
+
   const port = activePanel().getByRole('spinbutton', { name: 'Port' }) as HTMLInputElement;
   const general = screen.getByRole('tab', { name: 'General' });
   const proxy = screen.getByRole('tab', { name: 'MCP Proxy' });
+
   await fireEvent.click(proxy);
   await fireEvent.click(general);
   await settle();
@@ -489,7 +531,9 @@ test('HTTP in-flight guards survive fast tab round trips and inactive completion
   await settle();
   await vi.advanceTimersByTimeAsync(6000);
   expect(adapter.getMomHttpSettings).toHaveBeenCalledOnce();
+
   const inactiveGeneral = within(document.getElementById('settings-tabpanel-general') as HTMLElement);
+
   await fireEvent.click(inactiveGeneral.getByRole('button', { name: 'Save HTTP Settings', hidden: true }));
   await fireEvent.click(inactiveGeneral.getByRole('checkbox', { name: 'Stay awake with lid closed', hidden: true }));
   await fireEvent.click(inactiveGeneral.getByRole('checkbox', { name: 'OpenCode mini island', hidden: true }));
@@ -519,17 +563,23 @@ test('HTTP in-flight guards survive fast tab round trips and inactive completion
 
 test('checked CLI updates survive tab re-entry and a pending upgrade is not cleared or read back while inactive', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  const upgrade = deferred<void>();
+
+  const upgrade = Promise.withResolvers<void>();
   const { adapter } = mountPage('general', { upgradeOpenCode: vi.fn().mockReturnValue(upgrade.promise) });
+
   await settle();
   await fireEvent.click(screen.getByRole('button', { name: 'Check CLI updates' }));
   await settle();
+
   const general = screen.getByRole('tab', { name: 'General' });
   const proxy = screen.getByRole('tab', { name: 'MCP Proxy' });
+
   await fireEvent.click(proxy);
   await fireEvent.click(general);
   await settle();
+
   const upgradeButton = screen.getByRole('button', { name: 'Upgrade CLI…' });
+
   expect(adapter.getOpenCodeInstallation).toHaveBeenCalledOnce();
   expect(adapter.checkOpenCodeUpdate).toHaveBeenCalledOnce();
   await fireEvent.click(upgradeButton);
@@ -544,7 +594,9 @@ test('checked CLI updates survive tab re-entry and a pending upgrade is not clea
   upgrade.resolve();
   await settle();
   expect(adapter.getOpenCodeInstallation).toHaveBeenCalledOnce();
+
   const serviceReads = adapter.getOpenCodeServiceStatus.mock.calls.length;
+
   await vi.advanceTimersByTimeAsync(4000);
   expect(adapter.getOpenCodeServiceStatus).toHaveBeenCalledTimes(serviceReads);
   await fireEvent.click(general);
@@ -559,7 +611,8 @@ test.each(['read', 'save'] as const)(
   'service pending %s and local drafts survive tab round trips without overlapping operations',
   async (operation) => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const pending = deferred<typeof service>();
+
+    const pending = Promise.withResolvers<typeof service>();
     const { adapter } = mountPage(
       'general',
       operation === 'read'
@@ -572,9 +625,12 @@ test.each(['read', 'save'] as const)(
           }
         : { setOpenCodeServiceTarget: vi.fn().mockReturnValue(pending.promise) },
     );
+
     await settle();
+
     const url = activePanel().getByRole('textbox', { name: 'OpenCode backend URL' }) as HTMLInputElement;
     const password = activePanel().getByLabelText('Service password (optional)') as HTMLInputElement;
+
     await fireEvent.input(url, { target: { value: 'http://127.0.0.1:54321/retained' } });
     await fireEvent.input(password, { target: { value: 'retained-secret' } });
     await fireEvent.click(
@@ -582,9 +638,11 @@ test.each(['read', 'save'] as const)(
         name: operation === 'read' ? 'Refresh connection' : 'Save connection target',
       }),
     );
+
     const reads = adapter.getOpenCodeServiceStatus.mock.calls.length;
     const general = screen.getByRole('tab', { name: 'General' });
     const proxy = screen.getByRole('tab', { name: 'MCP Proxy' });
+
     await fireEvent.click(proxy);
     await fireEvent.click(general);
     await settle();
@@ -612,10 +670,13 @@ test.each(['read', 'save'] as const)(
 test('search never opens a checked CLI upgrade or restarts its installation inspection', async () => {
   const { adapter } = mountPage();
   const check = await screen.findByRole('button', { name: 'Check CLI updates' });
+
   await waitFor(() => expect((check as HTMLButtonElement).disabled).toBe(false));
   await fireEvent.click(check);
   await screen.findByRole('button', { name: 'Upgrade CLI…' });
+
   const search = screen.getByRole('searchbox', { name: 'Search settings' });
+
   await fireEvent.input(search, { target: { value: 'upgrade' } });
   await fireEvent.click(within(results()).getByRole('button', { name: /CLI updates/ }));
   expect(document.activeElement?.id).toBe('opencode-settings-title');
@@ -627,8 +688,10 @@ test('search never opens a checked CLI upgrade or restarts its installation insp
 
 test('browser search still locates desktop-only settings without fetching native data', async () => {
   native.isTauri.mockReturnValue(false);
+
   const { adapter } = mountPage('mcp-proxy');
   const search = screen.getByRole('searchbox', { name: 'Search settings' });
+
   await fireEvent.input(search, { target: { value: 'password' } });
   await fireEvent.click(within(results()).getByRole('button', { name: /Service password/ }));
   expect(document.activeElement?.id).toBe('opencode-settings-title');
@@ -641,24 +704,34 @@ test('browser search still locates desktop-only settings without fetching native
 
 test('Behavior search is static, third-tab drafts survive and no hidden Behavior native work starts', async () => {
   const { adapter } = mountPage();
+
   await settle();
+
   const password = activePanel().getByLabelText('Service password (optional)') as HTMLInputElement;
+
   await fireEvent.input(password, { target: { value: 'keep-secret-across-behavior' } });
+
   const search = screen.getByRole('searchbox', { name: 'Search settings' });
+
   expect(adapter.getGlobalBehavior).not.toHaveBeenCalled();
   await fireEvent.input(search, { target: { value: 'AGENTS.md' } });
   expect(adapter.getGlobalBehavior).not.toHaveBeenCalled();
   await fireEvent.click(within(results()).getByRole('button', { name: /Global behavior/ }));
   await settle();
+
   const input = activePanel().getByLabelText(en['settings.behaviorContent']) as HTMLTextAreaElement;
+
   expect(document.activeElement?.id).toBe('settings-behavior-title');
   expect(adapter.getGlobalBehavior).toHaveBeenCalledOnce();
   await fireEvent.input(input, { target: { value: 'behavior-private-draft-marker' } });
+
   for (const value of ['behavior-private-draft-marker', 'Private saved instructions', '/resolved/AGENTS.md']) {
     await fireEvent.input(search, { target: { value } });
     expect(screen.queryByRole('list', { name: 'Matching settings' })).toBeNull();
   }
+
   const general = screen.getByRole('tab', { name: 'General' });
+
   await fireEvent.click(general);
   await settle();
   expect(activePanel().getByLabelText('Service password (optional)')).toBe(password);
@@ -675,7 +748,9 @@ test('Behavior search is static, third-tab drafts survive and no hidden Behavior
 
 test('settings four regions name locale', async () => {
   native.isTauri.mockReturnValue(true);
+
   const { config } = mountPage();
+
   await settle();
 
   const appRegion = screen.getByRole('region', { name: en['settings.appBehavior'] });
@@ -690,19 +765,23 @@ test('settings four regions name locale', async () => {
   const autostart = within(appRegion).getByRole('checkbox', { name: en['settings.autostart'] });
   const island = within(appRegion).getByRole('checkbox', { name: en['settings.island'] });
   const lid = within(appRegion).getByRole('checkbox', { name: en['settings.lid'] });
+
   expect(autostart.compareDocumentPosition(island)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(island.compareDocumentPosition(lid)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 
   const urlField = within(opencodeRegion).getByRole('textbox', { name: en['settings.serviceUrl'] });
   const cliBtn = within(opencodeRegion).getByRole('button', { name: en['settings.opencodeCheck'] });
+
   expect(urlField.compareDocumentPosition(cliBtn)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 
   const port = within(httpRegion).getByRole('spinbutton', { name: en['settings.http.port'] });
   const allowLan = within(httpRegion).getByRole('checkbox', { name: en['settings.http.allowLan'] });
+
   expect(port).toBeTruthy();
   expect(allowLan).toBeTruthy();
 
   const updatesBtn = within(updatesRegion).getByRole('button', { name: en['settings.checkUpdates'] });
+
   expect(updatesBtn).toBeTruthy();
   expect(screen.getByText(en['settings.supportProject'])).toBeTruthy();
 

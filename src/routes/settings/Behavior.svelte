@@ -27,6 +27,7 @@ const busy = $derived(loading || saving);
 
 beforeNavigate(({ to, cancel, willUnload }) => {
   if (!dirty || to?.url.pathname === '/settings') return;
+
   if (willUnload || !window.confirm(i18n.t('settings.behaviorLeaveConfirm'))) cancel();
 });
 onDestroy(() => {
@@ -39,17 +40,23 @@ $effect(() => {
       if (!attempted) void load();
     });
 });
+
 async function load() {
   if (!active || busy) return;
+
   const seq = ++request;
+
   loading = true;
   attempted = true;
   error = '';
   failedSave = false;
   saved = false;
+
   try {
     const result = await config.getGlobalBehavior();
+
     if (!mounted || seq !== request) return;
+
     snapshot = result;
     content = result.content;
   } catch (cause) {
@@ -58,26 +65,35 @@ async function load() {
     if (mounted && seq === request) loading = false;
   }
 }
+
 export async function refresh() {
   if (!active || busy) return;
+
   if (dirty && !window.confirm(i18n.t('settings.behaviorDiscardConfirm'))) return;
+
   await load();
 }
+
 async function save() {
   if (!active || busy || !snapshot) return;
+
   const initial = snapshot;
   const seq = ++request;
+
   saving = true;
   error = '';
   failedSave = true;
   saved = false;
+
   try {
     const result = await config.saveGlobalBehavior({
       content,
       expectedPath: initial.exists ? initial.resolvedPath : null,
       expectedContent: initial.exists ? initial.content : null,
     });
+
     if (!mounted || seq !== request) return;
+
     snapshot = result;
     content = result.content;
     saved = true;

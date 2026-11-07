@@ -11,5 +11,6 @@ const SUMMARY_KEYS = new Map<string, MessageKey>([
 
 export function logSummary(message: string, i18n: I18n): string {
   const key = SUMMARY_KEYS.get(message);
+
   return key ? i18n.t(key) : message;
 }

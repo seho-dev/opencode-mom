@@ -9,6 +9,7 @@ import type { PluginRemovalPlan, PluginRuntime, PluginRuntimeItem } from '$src/t
 import Plugins from '../+page.svelte';
 
 const originalScroll = HTMLElement.prototype.scrollIntoView;
+
 beforeAll(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
 });
@@ -17,15 +18,6 @@ afterAll(() => {
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
 });
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: Error) => void;
-  const promise = new Promise<T>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
 function packageItem(target = 'example-plugin', canUpdate = true): PluginRuntimeItem {
   return {
     source: { type: 'package', target, version: '1.0.0', outdated: true },
@@ -35,9 +27,11 @@ function packageItem(target = 'example-plugin', canUpdate = true): PluginRuntime
     canRemove: true,
   };
 }
+
 function runtime(data: PluginRuntimeItem[] = [packageItem()], directory = '/service/location'): PluginRuntime {
   return { directory, data };
 }
+
 function config(overrides: Record<string, unknown> = {}, selected: string | null = null) {
   const obsolete = {
     listPlugins: vi.fn(),
@@ -59,8 +53,10 @@ function config(overrides: Record<string, unknown> = {}, selected: string | null
     },
     selected,
   );
+
   return { store, obsolete };
 }
+
 function show(store: ReturnType<typeof config>['store']) {
   return render(Plugins, {}, { wrapper: Harness, wrapperProps: { config: store } });
 }
@@ -86,10 +82,13 @@ test('Delete prepares Global paths, Cancel writes nothing, and confirmation echo
     preparePluginRemoval: vi.fn().mockResolvedValueOnce(cancelled).mockResolvedValueOnce(confirmed),
     listPluginRuntime: vi.fn().mockResolvedValueOnce(runtime()).mockResolvedValue(runtime([])),
   });
+
   show(store);
   await screen.findByText('example-plugin');
   await fireEvent.click(screen.getByRole('button', { name: en['common.delete'] }));
+
   let dialog = await screen.findByRole('dialog');
+
   expect(within(dialog).getByText('example-plugin')).toBeTruthy();
   expect(within(dialog).getByText('/global/opencode.jsonc')).toBeTruthy();
   expect(within(dialog).getByText(en['plugins.removalConfirm'])).toBeTruthy();
@@ -140,18 +139,23 @@ test('Delete obeys canRemove for local files and prepares again after prepare or
       .mockRejectedValueOnce(new Error('external snapshot changed'))
       .mockResolvedValue(undefined),
   });
+
   show(store);
   await screen.findByText(target.path);
+
   const disabled = within(screen.getByText('/global/auto-loaded.ts').closest('tr') as HTMLTableRowElement).getByRole(
     'button',
     { name: en['common.delete'] },
   ) as HTMLButtonElement;
+
   expect(disabled.disabled).toBe(true);
   await fireEvent.click(disabled);
   expect(store.preparePluginRemoval).not.toHaveBeenCalled();
+
   const button = within(screen.getByText(target.path).closest('tr') as HTMLTableRowElement).getByRole('button', {
     name: en['common.delete'],
   });
+
   await fireEvent.click(button);
   await screen.findByText(en['plugins.removalPrepareFailed']);
   expect(screen.queryByRole('dialog')).toBeNull();
@@ -159,7 +163,9 @@ test('Delete obeys canRemove for local files and prepares again after prepare or
   expect(store.removePluginDeclaration).not.toHaveBeenCalled();
   expect(screen.queryByText(/private prepare error/)).toBeNull();
   await fireEvent.click(button);
+
   let dialog = await screen.findByRole('dialog');
+
   await fireEvent.click(within(dialog).getByRole('button', { name: en['common.delete'] }));
   await screen.findByText(en['plugins.removalFailed']);
   expect(screen.queryByRole('dialog')).toBeNull();
@@ -185,9 +191,9 @@ test('service drift clears prepared plans and ignores late prepare or submit rep
     notify = update;
   });
   let generation = 0;
-  const preparing = deferred<PluginRemovalPlan>();
-  const submitting = deferred<void>();
-  const unmounted = deferred<PluginRemovalPlan>();
+  const preparing = Promise.withResolvers<PluginRemovalPlan>();
+  const submitting = Promise.withResolvers<void>();
+  const unmounted = Promise.withResolvers<PluginRemovalPlan>();
   const { store } = config({
     preparePluginRemoval: vi
       .fn()
@@ -197,13 +203,16 @@ test('service drift clears prepared plans and ignores late prepare or submit rep
       .mockReturnValueOnce(unmounted.promise),
     removePluginDeclaration: vi.fn().mockReturnValue(submitting.promise),
   });
+
   Object.defineProperty(store, 'serviceTargetVersion', {
     get() {
       track();
       return generation;
     },
   });
+
   const view = show(store);
+
   await screen.findByText('example-plugin');
   await fireEvent.click(screen.getByRole('button', { name: en['common.delete'] }));
   generation += 1;
@@ -244,8 +253,9 @@ test('service drift clears prepared plans and ignores late prepare or submit rep
 });
 
 test('two backend Global matches from a 90-item service runtime show slim on the first page without project controls', async () => {
-  const read = deferred<PluginRuntime>();
+  const read = Promise.withResolvers<PluginRuntime>();
   const { store, obsolete } = config({ listPluginRuntime: vi.fn().mockReturnValue(read.promise) });
+
   show(store);
   await screen.findByText(en['plugins.runtimeLoading']);
   expect(screen.getByRole('heading', { name: en['plugins.title'] })).toBeTruthy();
@@ -270,7 +280,9 @@ test('two backend Global matches from a 90-item service runtime show slim on the
       },
     ]),
   );
+
   const slim = await screen.findByText('oh-my-opencode-slim');
+
   expect(within(slim.closest('tr') as HTMLTableRowElement).getByText(en['plugins.runtimeActive'])).toBeTruthy();
   expect(screen.getByText('/plugins/local.ts')).toBeTruthy();
   expect(screen.getByText('Plugin failed to load')).toBeTruthy();
@@ -298,10 +310,13 @@ test('built-in and SDK plugins display their API IDs and can be searched individ
     canRemove: false,
   }));
   const { store } = config({ listPluginRuntime: vi.fn().mockResolvedValue(runtime(data)) });
+
   show(store);
   await screen.findByText('builtin-alpha');
   for (const item of data) expect(screen.getByText(item.id ?? '')).toBeTruthy();
+
   const search = screen.getByRole('searchbox', { name: en['plugins.search'] });
+
   await fireEvent.input(search, { target: { value: 'sdk-beta' } });
   expect(screen.getByText('sdk-beta')).toBeTruthy();
   expect(screen.queryByText('sdk-alpha')).toBeNull();
@@ -316,6 +331,7 @@ test('built-in and SDK plugins display their API IDs and can be searched individ
 
 test('Plugins stays Global when the shared project selection changes', async () => {
   const { store } = config({}, 'project-a');
+
   show(store);
   await screen.findByText('example-plugin');
   expect(store.listPluginRuntime).toHaveBeenCalledExactlyOnceWith();
@@ -336,6 +352,7 @@ test('runtime search and pagination keep the displayed list bounded', async () =
       .fn()
       .mockResolvedValue(runtime(Array.from({ length: 12 }, (_, i) => packageItem(`pkg-${i}`, false)))),
   });
+
   show(store);
   await screen.findByText('pkg-0');
   expect(screen.getAllByRole('row')).toHaveLength(11);
@@ -358,6 +375,7 @@ test('API failures are not empty runtime results and have no local fallback', as
       .mockRejectedValueOnce(new Error('private connection detail'))
       .mockResolvedValue(runtime([])),
   });
+
   show(store);
   await screen.findByRole('alert');
   expect(screen.getByText(en['plugins.runtimeUnavailable'])).toBeTruthy();
@@ -370,22 +388,27 @@ test('API failures are not empty runtime results and have no local fallback', as
 });
 
 test('eligible package updates require confirmation before a shared-cache mutation', async () => {
-  const update = deferred<void>();
+  const update = Promise.withResolvers<void>();
   const { store } = config({
     listPluginRuntime: vi
       .fn()
       .mockResolvedValue(runtime([packageItem('available-package'), packageItem('not-approved', false)])),
     updatePluginPackage: vi.fn().mockReturnValue(update.promise),
   });
+
   show(store);
+
   const available = await screen.findByText('available-package');
   const buttons = screen.getAllByRole('button', { name: en['plugins.updatePackage'] }) as HTMLButtonElement[];
+
   expect(buttons).toHaveLength(2);
   expect(buttons.filter((button) => button.disabled)).toHaveLength(1);
   await fireEvent.click(
     within(available.closest('tr') as HTMLTableRowElement).getByRole('button', { name: en['plugins.updatePackage'] }),
   );
+
   const dialog = screen.getByRole('dialog');
+
   expect(dialog.textContent).toContain(en['plugins.updateConfirm'].replace('{name}', 'available-package'));
   expect(dialog.textContent).toContain('⚠️');
   expect(store.updatePluginPackage).not.toHaveBeenCalled();
@@ -400,6 +423,7 @@ test('eligible package updates require confirmation before a shared-cache mutati
 
 test('uncertain update never retries or reads automatically; only a successful explicit GET unlocks mutation', async () => {
   const { store } = config({ updatePluginPackage: vi.fn().mockRejectedValue(new Error('sensitive outcome')) });
+
   show(store);
   await screen.findByText('example-plugin');
   await fireEvent.click(screen.getByRole('button', { name: en['plugins.updatePackage'] }));
@@ -456,11 +480,15 @@ test('each row keeps an Update action and refresh consumes fresh eligibility fro
       .mockResolvedValueOnce(runtime(items))
       .mockResolvedValue(runtime([fresh])),
   });
+
   show(store);
   await screen.findByText('current-package');
+
   const buttons = screen.getAllByRole('button', { name: en['plugins.updatePackage'] }) as HTMLButtonElement[];
+
   expect(buttons).toHaveLength(items.length);
   expect(buttons.filter((button) => !button.disabled)).toHaveLength(1);
+
   for (const target of [
     'pinned@1.2.3',
     'current-package',
@@ -471,10 +499,12 @@ test('each row keeps an Update action and refresh consumes fresh eligibility fro
   ]) {
     const row = within(screen.getByText(target).closest('tr') as HTMLTableRowElement);
     const button = row.getByRole('button', { name: en['plugins.updatePackage'] }) as HTMLButtonElement;
+
     expect(button.disabled).toBe(true);
     expect(button.title).toBe(en['plugins.updateUnavailable']);
     await fireEvent.click(button);
   }
+
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(store.updatePluginPackage).not.toHaveBeenCalled();
   expect(
@@ -496,6 +526,7 @@ test('each row keeps an Update action and refresh consumes fresh eligibility fro
 test.each(['en', 'zh'] as const)('runtime has no configuration preview surface in %s', async (locale) => {
   const messages = locale === 'zh' ? zh : en;
   const { store } = config({ preferences: { locale, theme: 'dark' } });
+
   show(store);
   await screen.findByText('example-plugin');
   expect(
@@ -515,8 +546,8 @@ test('service changes reread Global runtime and reject stale reads and errors', 
     notify = update;
   });
   let generation = 0;
-  const oldRuntime = deferred<PluginRuntime>();
-  const oldServiceRuntime = deferred<PluginRuntime>();
+  const oldRuntime = Promise.withResolvers<PluginRuntime>();
+  const oldServiceRuntime = Promise.withResolvers<PluginRuntime>();
   const { store } = config(
     {
       listPluginRuntime: vi
@@ -527,6 +558,7 @@ test('service changes reread Global runtime and reject stale reads and errors', 
     },
     'project-a',
   );
+
   Object.defineProperty(store, 'serviceTargetVersion', {
     get() {
       track();
@@ -558,7 +590,7 @@ test('a service switch closes an upgrade confirmation and ignores its late POST 
     notify = update;
   });
   let generation = 0;
-  const update = deferred<void>();
+  const update = Promise.withResolvers<void>();
   const { store } = config({
     listPluginRuntime: vi
       .fn()
@@ -566,6 +598,7 @@ test('a service switch closes an upgrade confirmation and ignores its late POST 
       .mockResolvedValue(runtime([packageItem('new-service-plugin')])),
     updatePluginPackage: vi.fn().mockReturnValue(update.promise),
   });
+
   Object.defineProperty(store, 'serviceTargetVersion', {
     get() {
       track();

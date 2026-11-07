@@ -25,11 +25,15 @@ let mounted = $state(false);
 
 async function loadInfo() {
   if (!mounted || !active || (infoLoading && infoRequest > 0)) return;
+
   const seq = ++infoRequest;
+
   infoLoading = true;
   infoError = '';
+
   try {
     const info = await config.getAppInfo();
+
     if (seq === infoRequest) appInfo = info;
   } catch (cause) {
     if (seq === infoRequest) infoError = readError(cause);
@@ -40,12 +44,16 @@ async function loadInfo() {
 
 async function check() {
   if (!mounted || !active || checking) return;
+
   const seq = ++checkRequest;
+
   checking = true;
   checkError = '';
   result = null;
+
   try {
     const update = await config.checkForUpdates();
+
     if (seq === checkRequest) result = update;
   } catch (cause) {
     if (seq === checkRequest) checkError = readError(cause);
@@ -56,9 +64,12 @@ async function check() {
 
 async function openProject(page: ProjectPage) {
   if (!mounted || !active || opening) return;
+
   const seq = ++openRequest;
+
   opening = page;
   openError = '';
+
   try {
     await config.openProjectPage(page);
   } catch (cause) {

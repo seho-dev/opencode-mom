@@ -24,7 +24,9 @@ let reloadQueued = false;
 
 $effect(() => {
   const version = config.serviceTargetVersion;
+
   if (version === targetVersion) return;
+
   targetVersion = version;
   untrack(() => {
     reloadQueued = true;
@@ -38,13 +40,17 @@ function reloadLatest() {
 
 async function load() {
   if (!mounted || !active || loading || saving) return;
+
   const seq = ++request;
   const version = config.serviceTargetVersion;
+
   reloadQueued = false;
   loading = true;
   error = '';
+
   try {
     const result = await config.getIslandState();
+
     if (mounted && seq === request && version === config.serviceTargetVersion) state = result;
   } catch (cause) {
     if (mounted && seq === request && version === config.serviceTargetVersion) error = readError(cause);
@@ -55,14 +61,19 @@ async function load() {
     }
   }
 }
+
 async function toggle() {
   if (!mounted || !active || !state?.supported || loading || saving) return;
+
   const seq = ++request;
   const version = config.serviceTargetVersion;
+
   saving = true;
   error = '';
+
   try {
     const result = await config.setIslandEnabled(!state.enabled);
+
     if (mounted && seq === request && version === config.serviceTargetVersion) state = result;
   } catch (cause) {
     if (mounted && seq === request && version === config.serviceTargetVersion) error = readError(cause);
@@ -73,6 +84,7 @@ async function toggle() {
     }
   }
 }
+
 onMount(() => {
   mounted = true;
   return () => {
@@ -82,18 +94,23 @@ onMount(() => {
 });
 $effect(() => {
   if (!mounted || !active) return;
+
   untrack(() => {
     if (macos) {
       reloadQueued = true;
       void load();
+
       return;
     }
+
     if (platformChecked || !isTauri()) return;
+
     platformChecked = true;
     void config
       .getAppInfo()
       .then((info) => {
         if (!mounted) return;
+
         macos = info.platform === 'macos';
         if (macos && active) void load();
       })

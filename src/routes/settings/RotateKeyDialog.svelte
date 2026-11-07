@@ -46,9 +46,12 @@ onDestroy(() => {
 
 function close() {
   if (pending) return;
+
   const hadKey = newKey.length > 0;
+
   clearDisplay();
   open = false;
+
   if (hadKey && onRotated) {
     void onRotated();
   }
@@ -56,13 +59,18 @@ function close() {
 
 async function rotate() {
   if (!mounted || !active || !open || pending) return;
+
   const generation = displayGeneration;
+
   pending = true;
   error = '';
   copied = false;
+
   try {
     const key = await config.rotateMomHttpKey();
+
     if (!mounted || !active || !open || generation !== displayGeneration) return;
+
     newKey = key;
   } catch (cause) {
     if (mounted && active && open && generation === displayGeneration) {
@@ -77,10 +85,13 @@ async function rotate() {
 
 async function copy() {
   if (!mounted || !active || !open || !newKey) return;
+
   const generation = displayGeneration;
+
   try {
     await navigator.clipboard.writeText(newKey);
     if (!mounted || !active || !open || generation !== displayGeneration) return;
+
     clearTimeout(copyTimer);
     copied = true;
     copyTimer = setTimeout(() => {

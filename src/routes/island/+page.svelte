@@ -82,6 +82,7 @@ const pendingIds = $derived(
 const pendingCount = $derived((snapshot?.permissions.length ?? 0) + (snapshot?.questions.length ?? 0));
 const sessions = $derived.by(() => {
   const entries = snapshot?.sessions ?? [];
+
   return entries
     .filter((entry) => !entry.parentId || pendingIds.has(entry.id) || entry.status === 'running')
     .sort((a, b) => priority(a) - priority(b) || b.updatedAt - a.updatedAt);
@@ -190,9 +191,11 @@ const compactError = $derived(
 function samePermission(a: IslandPermission, b: { sessionId: string; id: string } | null) {
   return a.sessionId === b?.sessionId && a.id === b?.id;
 }
+
 function permissionKey(permission: IslandPermission) {
   return `${permission.sessionId}/${permission.id}`;
 }
+
 function syncPermission(result: IslandState, manual: boolean) {
   if (
     !result.enabled ||
@@ -200,15 +203,19 @@ function syncPermission(result: IslandState, manual: boolean) {
     !result.permissions.some((entry) => permissionKey(entry) === permissionMenuKey && entry.save?.length)
   )
     permissionMenuKey = '';
+
   if (!result.enabled || result.connection !== 'connected' || permissionAttempt?.status === 'replying') return;
+
   if (permissionAttempt) {
     if (!result.permissions.some((entry) => samePermission(entry, permissionAttempt))) permissionAttempt = null;
     else if (manual) permissionAttempt = null;
     else if (permissionAttempt.status === 'checking') permissionAttempt.status = 'pending';
   }
+
   if (!result.permissions.some((entry) => permissionKey(entry) === compactPermissionKey))
     compactPermissionKey = result.permissions[0] ? permissionKey(result.permissions[0]) : '';
 }
+
 function canReplyPermission(permission: IslandPermission) {
   return (
     mounted &&
@@ -220,29 +227,40 @@ function canReplyPermission(permission: IslandPermission) {
     snapshot.permissions.some((entry) => samePermission(entry, permission))
   );
 }
+
 function cyclePermission(direction: number) {
   if (busy || permissionAttempt || !compactAttention || compactIndex < 0) return;
+
   const index = (compactIndex + direction + compactPermissions.length) % compactPermissions.length;
+
   compactPermissionKey = permissionKey(compactPermissions[index]);
   permissionMenuKey = '';
 }
+
 async function replyPermission(permission: IslandPermission, decision: IslandPermissionDecision, generation: number) {
   if (!mounted || generation !== connectionGeneration || !canReplyPermission(permission)) return;
+
   const current = snapshot?.permissions.find((entry) => samePermission(entry, permission));
+
   if (decision === 'always' && !current?.save?.length) return;
+
   const { sessionId, id } = permission;
+
   busy = true;
   permissionMenuKey = '';
   operationError = '';
   permissionAttempt = { sessionId, id, status: 'replying', error: '' };
+
   try {
     await config.islandReplyPermission(sessionId, id, decision, generation);
     if (!mounted || generation !== connectionGeneration) return;
+
     permissionAttempt.status = 'checking';
     stateVersion += 1;
     requestRead(false, true);
   } catch (cause) {
     if (!mounted || generation !== connectionGeneration) return;
+
     permissionAttempt.status = 'uncertain';
     permissionAttempt.error = readError(cause);
     requestRead();
@@ -256,11 +274,13 @@ async function replyPermission(permission: IslandPermission, decision: IslandPer
 
 function compactFocus(event: FocusEvent) {
   if (!mounted || expanded || snapshot?.enabled === false) return;
+
   compactFocused =
     event.type === 'focusin' ||
     (event.currentTarget instanceof HTMLElement &&
       event.relatedTarget instanceof Node &&
       event.currentTarget.contains(event.relatedTarget));
+
   if (compactFocused) revealDetails();
   else {
     detailsOpen = false;
@@ -268,10 +288,13 @@ function compactFocus(event: FocusEvent) {
     scheduleCompact();
   }
 }
+
 function revealDetails(immediate = false) {
   if (!mounted || !geometryKnown || expanded || snapshot?.enabled === false) return;
+
   clearTimeout(peekTimer);
   peekTimer = undefined;
+
   if (immediate) {
     detailsOpen = true;
     clearTimeout(entryTimer);
@@ -284,6 +307,7 @@ function revealDetails(immediate = false) {
     }, 100);
   }
 }
+
 function keepPeek() {
   return (
     compactHovered ||
@@ -295,38 +319,51 @@ function keepPeek() {
     permissionAttempt?.status === 'checking'
   );
 }
+
 function scheduleCompact() {
   clearTimeout(peekTimer);
   peekTimer = undefined;
   if (!mounted || (!peeking && resizingTo !== 'peek') || keepPeek()) return;
+
   peekTimer = setTimeout(() => {
     peekTimer = undefined;
     if (!keepPeek() && !expanded && resizingTo !== 'expanded') void setView('compact');
   }, 180);
 }
+
 function enterDetails(source: 'dom' | 'native') {
   if (!mounted || !geometryKnown || expanded || snapshot?.enabled === false) return;
+
   if (source === 'dom') {
     if (domHovered) return;
+
     domHovered = true;
   } else {
     if (nativeHovered) return;
+
     nativeHovered = true;
   }
+
   revealDetails();
 }
+
 function leaveDetails(source: 'dom' | 'native') {
   if (!mounted || expanded || snapshot?.enabled === false) return;
+
   if (source === 'dom') domHovered = false;
   else nativeHovered = false;
+
   if (compactHovered) return;
+
   if (!compactFocused) {
     detailsOpen = false;
     clearTimeout(entryTimer);
     entryTimer = undefined;
   }
+
   scheduleCompact();
 }
+
 function dismissDetails() {
   clearTimeout(entryTimer);
   entryTimer = undefined;
@@ -338,6 +375,7 @@ function dismissDetails() {
   compactFocused = false;
   permissionMenuKey = '';
 }
+
 function outsideDetails(event: PointerEvent) {
   if (!(event.target instanceof Element) || !event.target.closest('.approval-options, .approval-dropdown')) {
     permissionMenuKey = '';
@@ -347,40 +385,55 @@ function outsideDetails(event: PointerEvent) {
     }
   }
 }
+
 async function togglePermissionMenu(permission: IslandPermission, toggle = true) {
   if (!canReplyPermission(permission) || !permission.save?.length) return;
+
   const generation = connectionGeneration;
   const key = permissionKey(permission);
+
   permissionMenuKey = toggle && permissionMenuKey === key ? '' : key;
+
   if (!permissionMenuKey) scheduleCompact();
   else if (expanded) {
     await tick();
+
     if (mounted && generation === connectionGeneration && expanded && permissionMenuKey === key)
       document.getElementById(`approval-options-${key}`)?.scrollIntoView?.({ block: 'nearest' });
   }
 }
+
 async function closePermissionMenu(focus = false) {
   const key = permissionMenuKey;
   const generation = connectionGeneration;
+
   permissionMenuKey = '';
+
   if (focus && key) {
     await tick();
     if (!mounted || generation !== connectionGeneration) return;
+
     document.querySelectorAll<HTMLButtonElement>('.menu-trigger').forEach((button) => {
       if (button.dataset.permission === key) button.focus();
     });
   }
+
   scheduleCompact();
 }
+
 function handleEscape(event: KeyboardEvent) {
   if (event.key !== 'Escape') return;
+
   event.preventDefault();
+
   if (permissionMenuKey) {
     void closePermissionMenu(true);
     return;
   }
+
   dismissDetails();
   if (peeking && (busy || permissionAttempt?.status === 'replying' || permissionAttempt?.status === 'checking')) return;
+
   void setExpanded(false);
 }
 
@@ -391,6 +444,7 @@ $effect(() => {
 function priority(session: IslandSession) {
   return pendingIds.has(session.id) ? 0 : session.status === 'running' ? 1 : 2;
 }
+
 function project(session: IslandSession) {
   return (
     session.directory
@@ -399,16 +453,20 @@ function project(session: IslandSession) {
       .pop() || session.directory
   );
 }
+
 function choose(id: string, reload = true) {
   if (selectedId === id) return;
+
   selectedId = id;
   viewVersion += 1;
   operationError = '';
   if (!drafts[id]) clearDraft(id);
   if (expanded && reload) requestRead();
 }
+
 function requestRead(manual = false, refresh = false) {
   if (!mounted) return;
+
   clearTimeout(timer);
   timer = undefined;
   queued = true;
@@ -416,10 +474,13 @@ function requestRead(manual = false, refresh = false) {
   refreshQueued ||= manual || refresh;
   void read();
 }
+
 function invalidate() {
   if (!mounted || timer !== undefined) return;
+
   timer = setTimeout(() => requestRead(), 200);
 }
+
 function resetConnection(generation: number) {
   connectionGeneration = generation;
   stateVersion += 1;
@@ -446,34 +507,51 @@ function resetConnection(generation: number) {
   manualQueued = false;
   refreshQueued = false;
 }
+
 async function read() {
   if (!mounted || reading) return;
+
   reading = true;
+
   while (mounted && queued) {
     queued = false;
+
     let manual = manualQueued;
+
     manualQueued = false;
+
     const refresh = refreshQueued;
+
     refreshQueued = false;
+
     let stateSeq = stateVersion;
+
     try {
       if (refresh) await config.refreshIsland();
       if (!mounted) break;
+
       const result = await config.getIslandState();
+
       if (!mounted) break;
+
       const generation = result.connectionGeneration;
+
       if (generation < connectionGeneration) continue;
+
       if (generation > connectionGeneration) {
         resetConnection(generation);
         stateSeq = stateVersion;
         manual = false;
       }
+
       if (stateSeq !== stateVersion) continue;
       snapshot = result;
+
       if (!result.enabled) {
         dismissDetails();
         if (resizingTo === 'peek') collapsed();
       }
+
       stateAvailable = true;
       syncPermission(result, manual);
       config.applyPreferences(result.preferences);
@@ -487,14 +565,18 @@ async function read() {
       }
     }
   }
+
   if (mounted) reading = false;
 }
+
 async function readMessages(manual: boolean) {
   if (messagesReading) {
     messagesQueued = true;
     manualMessagesQueued ||= manual;
+
     return;
   }
+
   const request = ++messageRequest;
   const generation = connectionGeneration;
   const id = selectedId;
@@ -509,15 +591,20 @@ async function readMessages(manual: boolean) {
     generation === connectionGeneration &&
     snapshot?.enabled === true &&
     connection === 'connected';
+
   messagesReading = true;
   messagesLoading = true;
+
   try {
     const recent = await config.islandMessages(id, generation);
+
     if (!current()) return;
+
     messages = recent.filter(
       (message) => (message.role === 'user' || message.role === 'assistant') && typeof message.text === 'string',
     );
     messageSession = id;
+
     if (manual && drafts[id]?.uncertain) {
       if (messages.some((message) => message.role === 'user' && message.id === drafts[id].id)) {
         clearDraft(id);
@@ -539,27 +626,38 @@ async function readMessages(manual: boolean) {
     }
   }
 }
+
 function setExpanded(next: boolean) {
   clearTimeout(entryTimer);
   entryTimer = undefined;
   clearTimeout(peekTimer);
   peekTimer = undefined;
+
   return setView(next ? 'expanded' : 'compact');
 }
+
 async function setView(next: IslandView) {
   if (!mounted || !geometryKnown) return;
+
   if (next === 'peek' && snapshot?.enabled === false) return;
+
   if (!resizing && next === view && next === nativeView) return;
+
   if (next === 'peek' && (expanded || resizingTo === 'expanded')) return;
+
   if (resizingTo === next) return;
+
   const request = { view: next, version: ++resizeVersion, collapsed: false };
+
   resizeRequest = request;
   resizingTo = next;
   resizing = true;
   operationError = '';
+
   try {
     await config.setIslandView(next);
     if (!mounted || resizeRequest !== request || request.version !== resizeVersion) return;
+
     nativeView = next;
     view = next;
     if (next !== 'peek') dismissDetails();
@@ -576,8 +674,10 @@ async function setView(next: IslandView) {
     }
   }
 }
+
 function collapsed() {
   if (!mounted) return;
+
   // Compact's first native event acknowledges this request before final readback.
   if (resizeRequest?.view === 'compact' && !resizeRequest.collapsed) resizeRequest.collapsed = true;
   else {
@@ -586,25 +686,32 @@ function collapsed() {
     resizing = false;
     resizingTo = null;
   }
+
   viewVersion += 1;
   nativeView = 'compact';
   view = 'compact';
   dismissDetails();
 }
+
 function windowBlur() {
   compactFocused = false;
   detailsOpen = false;
   permissionMenuKey = '';
   scheduleCompact();
 }
+
 async function act(action: () => Promise<void>, generation: number) {
   if (!mounted || generation !== connectionGeneration || !canWrite) return;
+
   const id = selectedId;
+
   busy = true;
   operationError = '';
+
   try {
     await action();
     if (!mounted || generation !== connectionGeneration) return;
+
     stateVersion += 1;
     requestRead();
   } catch (cause) {
@@ -616,38 +723,50 @@ async function act(action: () => Promise<void>, generation: number) {
     if (mounted && generation === connectionGeneration) busy = false;
   }
 }
+
 function editDraft(text: string) {
   if (!draft || busy || draft.uncertain) return;
+
   draft.text = text;
   draft.id = '';
 }
+
 function clearDraft(id: string) {
   drafts[id] = { text: '', id: '', uncertain: false, conflict: false, refreshed: false };
 }
+
 function discardAttempt() {
   if (!mounted || busy || !draft?.uncertain || !draft.refreshed) return;
+
   clearDraft(selectedId);
   operationError = '';
 }
+
 async function send(event: SubmitEvent) {
   event.preventDefault();
   if (!mounted || !canWrite || !draft?.text.trim() || (draft.uncertain && !draft.refreshed)) return;
+
   const id = selectedId;
   const generation = connectionGeneration;
   const submission = drafts[id];
+
   if (!submission.id) submission.id = `msg_${crypto.randomUUID()}`;
   busy = true;
   operationError = '';
+
   try {
     await config.islandSend(id, submission.text, submission.id, generation);
     if (!mounted || generation !== connectionGeneration) return;
+
     clearDraft(id);
     stateVersion += 1;
     requestRead();
   } catch (cause) {
     if (!mounted || generation !== connectionGeneration) return;
+
     const message = readError(cause);
     const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : undefined;
+
     submission.conflict = code === 'conflict' || /\bHTTP 409\b/.test(message);
     submission.uncertain =
       submission.conflict ||
@@ -662,7 +781,9 @@ async function send(event: SubmitEvent) {
 
 onMount(() => {
   mounted = true;
+
   const unlisteners: UnlistenFn[] = [];
+
   if (isTauri()) {
     const registrations = [
       listen('island:changed', invalidate, { target: 'island' }),
@@ -671,6 +792,7 @@ onMount(() => {
       listen<void>('island:pointer-leave', () => leaveDetails('native'), { target: 'island' }),
       listen('app:preferences-changed', invalidate, { target: 'island' }),
     ];
+
     for (const registration of registrations) {
       void registration
         .then((stop) => {
@@ -681,12 +803,14 @@ onMount(() => {
           if (mounted) listenerError = readError(cause);
         });
     }
+
     void Promise.allSettled(registrations).then(() => {
       if (mounted) requestRead();
     });
   } else {
     queryError = i18n.t('island.desktopOnly');
   }
+
   return () => {
     mounted = false;
     viewVersion += 1;

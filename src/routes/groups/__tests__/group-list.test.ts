@@ -281,3 +281,13 @@ test('prioritizes tab selection matching default plugin preference', async () =>
     expect(screen.getByRole('tab', { name: /Native/ }).getAttribute('aria-selected')).toBe('false');
   });
 });
+
+test('renders copy action link targeting new group route with copyFrom query param', async () => {
+  const target = group('native', false);
+  mount({ groups: [target] });
+
+  const copyLink = await screen.findByRole('link', { name: `Copy ${target.name}` });
+  expect(copyLink).toBeDefined();
+  expect(copyLink.getAttribute('href')).toBe(`/groups/new?copyFrom=${encodeURIComponent(target.id)}`);
+  expect(copyLink.getAttribute('title')).toBe('Copy group');
+});

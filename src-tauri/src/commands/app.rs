@@ -167,6 +167,9 @@ pub async fn save_preferences(
         if let Some(service) = handle.try_state::<crate::island::IslandService>() {
             service.update_preferences(preferences);
         }
+        if let Some(service) = handle.try_state::<crate::notifications::NotificationService>() {
+            service.update_locale(preferences.locale);
+        }
         Ok(())
     })
     .await?;

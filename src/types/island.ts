@@ -7,6 +7,7 @@ export interface IslandState {
   enabled: boolean;
   connection: 'disabled' | 'connecting' | 'connected' | 'error';
   connectionGeneration: number;
+  completionSequence: number;
   error?: string;
   sessions: IslandSession[];
   permissions: IslandPermission[];

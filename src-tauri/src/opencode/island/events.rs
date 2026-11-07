@@ -5,7 +5,21 @@ const MAX_FRAME: usize = 64 * 1024;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum IslandChange {
     Snapshot,
-    Messages { session_id: String },
+    Completed {
+        event_id: String,
+        session_id: String,
+    },
+    ApprovalRequired {
+        event_id: String,
+        session_id: String,
+    },
+    Failed {
+        event_id: String,
+        session_id: String,
+    },
+    Messages {
+        session_id: String,
+    },
 }
 
 pub(crate) struct IslandEvents {
@@ -166,6 +180,68 @@ pub(super) fn classify(bytes: &[u8]) -> Result<Option<IslandChange>, AppError> {
         .get("data")
         .filter(|value| value.is_object())
         .ok_or_else(|| invalid("event data"))?;
+    if matches!(
+        kind,
+        "session.execution.succeeded" | "session.execution.failed" | "permission.asked"
+    ) {
+        let event_id = event
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid("event identifier"))?;
+        let session_id = data
+            .get("sessionID")
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid("event session"))?;
+        identifier(event_id, "evt_")?;
+        identifier(session_id, "ses_")?;
+        let event_id = event_id.to_owned();
+        let session_id = session_id.to_owned();
+        return Ok(Some(match kind {
+            "permission.asked" => {
+                let permission_id = data
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| invalid("permission identifier"))?;
+                identifier(permission_id, "per")?;
+                let action = data
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| invalid("permission action"))?;
+                plain(action, 1024, false)?;
+                if action.is_empty() {
+                    return Err(invalid("permission action"));
+                }
+                projection::bounded_strings(
+                    data.get("resources")
+                        .ok_or_else(|| invalid("permission resources"))?,
+                    MAX_OPTIONS,
+                )?;
+                IslandChange::ApprovalRequired {
+                    event_id,
+                    session_id,
+                }
+            }
+            "session.execution.failed" => {
+                let error = data
+                    .get("error")
+                    .filter(|value| value.is_object())
+                    .ok_or_else(|| invalid("execution error"))?;
+                for field in ["type", "message"] {
+                    if error.get(field).and_then(Value::as_str).is_none() {
+                        return Err(invalid("execution error"));
+                    }
+                }
+                IslandChange::Failed {
+                    event_id,
+                    session_id,
+                }
+            }
+            _ => IslandChange::Completed {
+                event_id,
+                session_id,
+            },
+        }));
+    }
     // Snapshot invalidation needs no routing ID; native lifecycle payloads differ by event.
     if snapshot && !kind.starts_with("form.") {
         return Ok(Some(IslandChange::Snapshot));

@@ -22,6 +22,7 @@ function state(): IslandState {
     enabled: true,
     connection: 'connected',
     connectionGeneration: 0,
+    completionSequence: 0,
     sessions: [
       { id: 'recent', title: 'Recent work', directory: '/code/recent-project', updatedAt: 4, status: 'idle' },
       { id: 'running', title: 'Running work', directory: '/code/active-project', updatedAt: 3, status: 'running' },
@@ -1255,7 +1256,11 @@ test('unavailable Refresh cannot unlock an ambiguous permission retry, even afte
   await screen.findByRole('alert');
   view.setState({ ...state(), connection: 'error', permissions: [] });
   await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Connection unavailable'));
+  await waitFor(() =>
+    expect(
+      screen.getAllByRole('status').some((element) => element.textContent?.includes('Connection unavailable')),
+    ).toBe(true),
+  );
   view.setState(state());
   native.handlers.get('island:changed')?.();
   await peek();
@@ -1689,7 +1694,7 @@ test('late header hover/focus during explicit expanded resize cannot replace the
 });
 
 test.each([
-  [0, 0, 200, 28],
+  [0, 0, 320, 48],
   [180, 32, 292, 32],
   [300, 24, 412, 28],
   [40, 40, 200, 40],
@@ -2315,26 +2320,31 @@ test('pointer registrations finish before the initial snapshot read and pre-read
 });
 
 test.each([
-  ['en', '1 running · Sessions 4', 'Approve 1 · Answer 0', '1 running', '1 pending'],
-  ['zh', '1 运行中 · 4 会话', '1 权限 · 0 问题', '1 个运行中', '1 项待处理'],
+  ['en', 'Running work', 'active-project', '1 running', 'Sessions 4', '1 running', '1 pending'],
+  ['zh', 'Running work', 'active-project', '1 运行中', '4 会话', '1 个运行中', '1 项待处理'],
 ])(
   'no-notch compact fits factual bilingual status without sensitive details (%s)',
-  async (locale, status, pending, fullStatus, fullPending) => {
+  async (locale, expectedTitle, expectedProject, runLabel, sessionTotal, fullStatus, fullPending) => {
     const active = document.activeElement;
     const view = mount({ preferences: { theme: 'dark', locale } }, { ...state(), notchWidth: 0, topInset: 0 });
-    await waitFor(() => expect(view.container.querySelector('.compact-summary')?.textContent).toContain(status));
+    await waitFor(() =>
+      expect(view.container.querySelector('.compact-session-title')?.textContent?.trim()).toBe(expectedTitle),
+    );
     const main = view.container.querySelector('main') as HTMLElement;
     expect(main.dataset.view).toBe('compact');
-    expect(main.style.getPropertyValue('--compact-width')).toBe('200px');
-    expect(main.style.getPropertyValue('--compact-height')).toBe('28px');
-    expect(main.querySelector('.compact-secondary')?.textContent).toBe(pending);
+    expect(main.style.getPropertyValue('--compact-width')).toBe('320px');
+    expect(main.style.getPropertyValue('--compact-height')).toBe('48px');
+    expect(main.querySelector('.compact-project')?.textContent?.trim()).toBe(expectedProject);
+    expect(main.querySelector('.compact-run-label')?.textContent?.trim()).toBe(runLabel);
+    expect(main.querySelector('.compact-session-total')?.textContent?.trim()).toBe(sessionTotal);
+    expect(main.querySelector('.compact-permission-total')?.textContent?.trim()).toBe('1');
     expect(main.querySelector('#compact-status-hint')?.textContent).toBe(fullStatus);
     expect(main.querySelector('#compact-pending-hint')?.textContent).toBe(fullPending);
     expect(main.querySelector('.compact-summary')?.getAttribute('aria-hidden')).toBe('true');
     expect(main.querySelectorAll('.activity')).toHaveLength(1);
     expect(main.querySelectorAll('.activity i')).toHaveLength(4);
-    expect(main.querySelectorAll('svg, .quick-area, .compact-permission, .session-disclosure')).toHaveLength(0);
-    expect(main.textContent).not.toMatch(/MOM|work|\/code|git status|repository/);
+    expect(main.querySelectorAll('.quick-area, .compact-permission, .session-disclosure')).toHaveLength(0);
+    expect(main.textContent).not.toMatch(/MOM|git status|repository/);
     expect(document.activeElement).toBe(active);
     expect(view.config.setIslandView).not.toHaveBeenCalled();
     expect(view.config.islandMessages).not.toHaveBeenCalled();
@@ -2342,11 +2352,11 @@ test.each([
 );
 
 test.each([
-  ['en', '99+ running · Sessions 99+', 'Approve 99+ · Answer 0', '105 running', '105 pending'],
-  ['zh', '99+ 运行中 · 99+ 会话', '99+ 权限 · 0 问题', '105 个运行中', '105 项待处理'],
+  ['en', '99+ running', 'Sessions 99+', '99+', '105 running', '105 pending'],
+  ['zh', '99+ 运行中', '99+ 会话', '99+', '105 个运行中', '105 项待处理'],
 ])(
   'no-notch large counts cap only visible text and retain exact accessible counts (%s)',
-  async (locale, status, pending, fullStatus, fullPending) => {
+  async (locale, runLabel, sessionTotal, permissionTotal, fullStatus, fullPending) => {
     const initial = state();
     initial.notchWidth = 0;
     initial.topInset = 0;
@@ -2356,8 +2366,9 @@ test.each([
       id: `perm_${index}`,
     }));
     const view = mount({ preferences: { theme: 'dark', locale } }, initial);
-    await waitFor(() => expect(view.container.querySelector('.compact-summary')?.textContent).toContain(status));
-    expect(view.container.querySelector('.compact-secondary')?.textContent).toBe(pending);
+    await waitFor(() => expect(view.container.querySelector('.compact-run-label')?.textContent?.trim()).toBe(runLabel));
+    expect(view.container.querySelector('.compact-session-total')?.textContent?.trim()).toBe(sessionTotal);
+    expect(view.container.querySelector('.compact-permission-total')?.textContent?.trim()).toBe(permissionTotal);
     expect(view.container.querySelector('#compact-status-hint')?.textContent).toBe(fullStatus);
     expect(view.container.querySelector('#compact-pending-hint')?.textContent).toBe(fullPending);
     expect(view.container.querySelectorAll('.activity')).toHaveLength(1);
@@ -2375,7 +2386,7 @@ test.each([
     const initial = { ...state(), notchWidth: 0, topInset: 0 };
     const view = mount({ preferences: { theme: 'dark', locale } }, initial);
     await waitFor(() => expect(view.container.querySelector('.activity')?.getAttribute('data-running')).toBe('true'));
-    const summary = () => view.container.querySelector('.compact-summary > span')?.textContent;
+    const runLabel = () => view.container.querySelector('.compact-run-label')?.textContent?.trim();
     for (const [next, label] of [
       [{ ...initial, sessions: initial.sessions.map((session) => ({ ...session, status: 'idle' as const })) }, idle],
       [{ ...initial, connection: 'connecting' as const }, connecting],
@@ -2384,9 +2395,7 @@ test.each([
     ] as const) {
       view.setState(next);
       native.handlers.get('island:changed')?.();
-      await waitFor(() =>
-        expect(summary()).toBe(label === idle ? `${idle} · ${locale === 'en' ? 'Sessions 4' : '4 会话'}` : label),
-      );
+      await waitFor(() => expect(runLabel()).toBe(label));
       expect(view.container.querySelector('.activity')?.getAttribute('data-running')).toBe('false');
       expect(view.container.querySelector('main')?.textContent).not.toContain('Private');
       expect(view.container.querySelector('.compact-status-control')?.getAttribute('title')).not.toContain('/code');
@@ -2398,10 +2407,13 @@ test.each([
     native.handlers.get('island:changed')?.();
     await waitFor(() => expect(view.config.getIslandState).toHaveBeenCalledTimes(7));
     await tick();
-    expect(summary()).toBe(unavailable);
+    expect(runLabel()).toBe(unavailable);
+    expect(view.container.querySelector('.compact-session-title')?.textContent?.trim()).toBe(
+      locale === 'en' ? 'Project / session unavailable' : '项目 / 会话不可用',
+    );
     expect(view.container.querySelector('.activity')?.getAttribute('data-running')).toBe('false');
-    expect(view.container.querySelector('.compact-secondary')?.textContent).toBe(
-      locale === 'en' ? 'Sessions — · Requests —' : '会话 — · 请求 —',
+    expect(view.container.querySelector('.compact-session-total')?.textContent?.trim()).toBe(
+      locale === 'en' ? 'Sessions —' : '— 会话',
     );
     expect(view.config.setIslandView).not.toHaveBeenCalled();
     expect(view.config.islandMessages).not.toHaveBeenCalled();
@@ -2574,7 +2586,7 @@ test.each([
     const gap = main.querySelector('.notch-gap') as HTMLElement;
     expect(gap.children).toHaveLength(0);
     expect(gap.textContent).toBe('');
-    expect(main.querySelectorAll('svg')).toHaveLength(0);
+    expect(main.querySelectorAll('.compact-shell svg')).toHaveLength(0);
     for (const [next, label, count, requests] of [
       [
         {
@@ -2629,13 +2641,15 @@ test.each(['en', 'zh'] as const)(
     view.setState({ ...state(), notchWidth: 0, topInset: 0, questions: initial.questions });
     native.handlers.get('island:changed')?.();
     await waitFor(() =>
-      expect(main.querySelector('.compact-primary')?.textContent).toBe(
-        locale === 'en' ? '1 running · Sessions 4' : '1 运行中 · 4 会话',
+      expect(main.querySelector('.compact-run-label')?.textContent?.trim()).toBe(
+        locale === 'en' ? '1 running' : '1 运行中',
       ),
     );
-    expect(main.querySelector('.compact-secondary')?.textContent).toBe(
-      locale === 'en' ? 'Approve 1 · Answer 1' : '1 权限 · 1 问题',
+    expect(main.querySelector('.compact-session-total')?.textContent?.trim()).toBe(
+      locale === 'en' ? 'Sessions 4' : '4 会话',
     );
+    expect(main.querySelector('.compact-permission-total')?.textContent?.trim()).toBe('1');
+    expect(main.querySelector('.compact-question-total')?.textContent?.trim()).toBe('1');
     expect(main.querySelector('#compact-counts-hint')?.textContent).not.toMatch(/total|history|总计|历史/i);
     expect(main.textContent).not.toContain('Private question');
     expect(view.config.setIslandView).not.toHaveBeenCalled();
@@ -2887,6 +2901,170 @@ test('unmount during explicit expansion ignores the late result and leaves no pr
   expect(native.unlisten).toHaveBeenCalledTimes(5);
 });
 
+test('completionSequence increments show completion cue and polite notification, respect approval precedence, and clean up', async () => {
+  const initial = state();
+  initial.permissions = []; // start with no pending permissions
+  initial.completionSequence = 0;
+  const view = mount({}, initial);
+
+  await screen.findByRole('button', { name: 'Show quick area' });
+  const main = screen.getByRole('main', { name: 'Sessions' });
+  expect(main.getAttribute('data-notification')).toBeNull();
+  expect(view.container.querySelector('.perimeter-light')).toBeNull();
+
+  // 1. Initial snapshot establishes baseline; sequence 0 does not cue
+  const politeStatus = view.container.querySelector('span[role="status"][aria-live="polite"]');
+  expect(politeStatus?.textContent?.trim()).toBe('');
+
+  // 2. Increment completionSequence on connected snapshot activates completion cue and polite status
+  view.setState({ ...initial, completionSequence: 1 });
+  native.handlers.get('island:changed')?.();
+  await waitFor(() => {
+    expect(main.getAttribute('data-notification')).toBe('completed');
+    expect(politeStatus?.textContent?.trim()).toBe('Main agent completed successfully.');
+    expect(view.container.querySelector('.perimeter-light')).not.toBeNull();
+  });
+
+  // 3. Incrementing count 2+ works and updates cue
+  view.setState({ ...initial, completionSequence: 3 });
+  native.handlers.get('island:changed')?.();
+  await waitFor(() => {
+    expect(main.getAttribute('data-notification')).toBe('completed');
+  });
+
+  // 4. If permissions arrive while completion is active, approval takes strict precedence
+  // and pauses/queues completion without dropping it
+  view.setState({
+    ...initial,
+    completionSequence: 3,
+    permissions: [{ id: 'perm_urgent', sessionId: 'pending', action: 'write', resources: ['/file'], save: ['/file'] }],
+  });
+  native.handlers.get('island:changed')?.();
+  await waitFor(() => {
+    expect(main.getAttribute('data-notification')).toBe('approval');
+    expect(politeStatus?.textContent?.trim()).toContain('Approval needed. Pending permission requests: 1.');
+    expect(view.container.querySelector('.perimeter-light.attention')).not.toBeNull();
+  });
+
+  // 5. When permissions clear, the queued completion resumes automatically;
+  // delta was 2 (from 1 to 3), so completionCount reflects multi-count
+  view.setState({
+    ...initial,
+    completionSequence: 3,
+    permissions: [],
+  });
+  native.handlers.get('island:changed')?.();
+  await waitFor(() => {
+    expect(main.getAttribute('data-notification')).toBe('completed');
+    expect(politeStatus?.textContent?.trim()).toContain('Main agent completed successfully.');
+    expect(politeStatus?.textContent?.trim()).toContain('completion notices remaining.');
+    expect(view.container.querySelector('.perimeter-light:not(.attention)')).not.toBeNull();
+  });
+
+  // 6. Large sequence delta is bounded by 256 cap
+  view.setState({
+    ...initial,
+    completionSequence: 500,
+    permissions: [],
+  });
+  native.handlers.get('island:changed')?.();
+  await waitFor(() => {
+    expect(main.getAttribute('data-completion-count')).toBe('256');
+  });
+
+  // 7. Connection generation change resets seen sequence and clears active/queued completion
+  view.setState({
+    ...initial,
+    connectionGeneration: 2,
+    completionSequence: 0,
+    permissions: [],
+  });
+  native.handlers.get('island:changed')?.();
+  await waitFor(() => {
+    expect(main.getAttribute('data-notification')).toBeNull();
+    expect(politeStatus?.textContent?.trim()).toBe('');
+    expect(view.container.querySelector('.perimeter-light')).toBeNull();
+  });
+
+  // 8. Non-incrementing / stale sequence does not cue after reset
+  view.setState({
+    ...initial,
+    connectionGeneration: 2,
+    completionSequence: 0,
+    permissions: [],
+  });
+  native.handlers.get('island:changed')?.();
+  expect(main.getAttribute('data-notification')).toBeNull();
+});
+
+test('completion cues use fake timers to verify multi-pass progression, approval pause/resume, and teardown cleanup', async () => {
+  vi.useFakeTimers();
+  try {
+    const initial = state();
+    initial.permissions = [];
+    initial.completionSequence = 0;
+    const view = mount({}, initial);
+
+    await vi.advanceTimersByTimeAsync(200);
+    const main = screen.getByRole('main', { name: 'Sessions' });
+    expect(main.getAttribute('data-notification')).toBeNull();
+
+    // 1. Advance sequence by 2: first cue active, total completion count is 2
+    view.setState({ ...initial, completionSequence: 2 });
+    native.handlers.get('island:changed')?.();
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(main.getAttribute('data-notification')).toBe('completed');
+    expect(main.getAttribute('data-completion-count')).toBe('2');
+    expect(main.getAttribute('data-completion-cue')).toBe('1');
+
+    // 2. Advance 3600ms completes first cue and transitions to second cue (count 1, cue 2)
+    await vi.advanceTimersByTimeAsync(3600);
+    expect(main.getAttribute('data-notification')).toBe('completed');
+    expect(main.getAttribute('data-completion-count')).toBe('1');
+    expect(main.getAttribute('data-completion-cue')).toBe('2');
+
+    // 3. Partial pass of 1000ms elapsed (remaining ~2600ms)
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // 4. Approval request arrives: pauses completion cue; visual state shifts to approval
+    view.setState({
+      ...initial,
+      completionSequence: 2,
+      permissions: [{ id: 'perm_pause', sessionId: 'pending', action: 'write', resources: ['/f'], save: ['/f'] }],
+    });
+    native.handlers.get('island:changed')?.();
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(main.getAttribute('data-notification')).toBe('approval');
+    expect(main.getAttribute('data-completion-count')).toBe('1');
+
+    // 5. While approval is active, timer is paused; 10000ms advance does not expire remaining completion
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(main.getAttribute('data-notification')).toBe('approval');
+    expect(main.getAttribute('data-completion-count')).toBe('1');
+
+    // 6. Approval clears: queued completion resumes with remaining duration
+    view.setState({ ...initial, completionSequence: 2, permissions: [] });
+    native.handlers.get('island:changed')?.();
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(main.getAttribute('data-notification')).toBe('completed');
+    expect(main.getAttribute('data-completion-count')).toBe('1');
+
+    // Advancing the remaining ~2600ms expires the final cue
+    await vi.advanceTimersByTimeAsync(2600);
+    expect(main.getAttribute('data-notification')).toBeNull();
+    expect(main.getAttribute('data-completion-count')).toBeNull();
+
+    // 7. Unmount cleans all timers cleanly
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test('CSS reduced-motion overrides every rendered motion target while the native-sized backdrop never fades or moves', async () => {
   const style = document.createElement('style');
   style.textContent = islandSource.split('<style>')[1].split('</style>')[0];
@@ -2928,4 +3106,211 @@ test('CSS reduced-motion overrides every rendered motion target while the native
     }
   }
   view.unmount();
+});
+test('un-notched compact prioritises running root session first then updatedAt and updates on island:changed', async () => {
+  const base = state();
+  const sessions = [
+    { id: 'recent', title: 'Recent work', directory: '/code/recent-project', updatedAt: 4, status: 'idle' as const },
+    {
+      id: 'running',
+      title: 'Running work',
+      directory: '/code/active-project',
+      updatedAt: 3,
+      status: 'running' as const,
+    },
+    { id: 'pending', title: 'Pending work', directory: '/code/pending-project', updatedAt: 1, status: 'idle' as const },
+  ];
+  let current: IslandState = { ...base, notchWidth: 0, topInset: 0, sessions, permissions: [], questions: [] };
+  const view = mount({ getIslandState: vi.fn().mockImplementation(async () => current) });
+  await waitFor(() =>
+    expect(view.container.querySelector('.compact-session-title')?.textContent?.trim()).toBe('Running work'),
+  );
+  expect(view.container.querySelector('.compact-project')?.textContent?.trim()).toBe('active-project');
+  expect(view.container.querySelector('.compact-session-total')?.textContent?.trim()).toBe('Sessions 3');
+  expect(view.container.querySelector('.compact-summary')?.getAttribute('aria-hidden')).toBe('true');
+
+  current = {
+    ...current,
+    sessions: sessions.map((s) => (s.id === 'running' ? { ...s, status: 'idle' as const } : s)),
+  };
+  native.handlers.get('island:changed')?.();
+  await waitFor(() =>
+    expect(view.container.querySelector('.compact-session-title')?.textContent?.trim()).toBe('Recent work'),
+  );
+  expect(view.container.querySelector('.compact-project')?.textContent?.trim()).toBe('recent-project');
+  expect(view.config.setIslandView).not.toHaveBeenCalled();
+  expect(view.config.islandMessages).not.toHaveBeenCalled();
+});
+
+test.each([
+  ['en', 'No main sessions', 'Connected', 'Sessions 1'],
+  ['zh', '暂无主会话', '已连接', '1 会话'],
+] as const)(
+  'un-notched compact continuous area shows %s empty-context copy when only sub-sessions exist',
+  async (locale, expectedTitle, expectedProject, expectedSessions) => {
+    const initial = {
+      ...state(),
+      notchWidth: 0,
+      topInset: 0,
+      sessions: [{ ...state().sessions[0], parentId: 'parent', status: 'idle' as const }],
+      permissions: [],
+      questions: [],
+    };
+    const view = mount({ preferences: { locale, theme: 'dark' } }, initial);
+    await screen.findByRole('main', { name: locale === 'en' ? 'Sessions' : '会话' });
+    await waitFor(() =>
+      expect(view.container.querySelector('.compact-session-title')?.textContent?.trim()).toBe(expectedTitle),
+    );
+    expect(view.container.querySelector('.compact-project')?.textContent?.trim()).toBe(expectedProject);
+    expect(view.container.querySelector('.compact-session-total')?.textContent?.trim()).toBe(expectedSessions);
+  },
+);
+
+test('un-notched compact keeps long project and session titles whole in the DOM with CSS ellipsis', async () => {
+  const directory = `/${'projet-非常长的项目名称'.repeat(6)}`;
+  const title = `Investigating ${'很长的会话标题'.repeat(8)} regression`;
+  const view = mount(
+    {},
+    {
+      ...state(),
+      notchWidth: 0,
+      topInset: 0,
+      sessions: [{ id: 'long', title, directory, updatedAt: 2, status: 'running' as const }],
+      permissions: [],
+      questions: [],
+    },
+  );
+  await waitFor(() =>
+    expect(view.container.querySelector('.compact-run-label')?.textContent?.trim()).toBe('1 running'),
+  );
+  expect(view.container.querySelector('.compact-session-total')?.textContent?.trim()).toBe('Sessions 1');
+  const project = view.container.querySelector('.compact-project');
+  const session = view.container.querySelector('.compact-session-title');
+  expect(project?.textContent?.trim()).toBe(directory.split('/').pop());
+  expect(session?.textContent?.trim()).toBe(title);
+  expect(view.container.querySelector('.compact-summary')?.getAttribute('aria-hidden')).toBe('true');
+
+  const style = document.createElement('style');
+  style.textContent = islandSource.split('<style>')[1].split('</style>')[0];
+  document.head.append(style);
+  try {
+    const rules = Array.from(style.sheet?.cssRules ?? []) as CSSStyleRule[];
+    const clipped = (node: Element) =>
+      rules.some(
+        (rule) =>
+          rule.selectorText
+            ?.split(',')
+            .map((selector) => selector.trim())
+            .includes(node.matches('.compact-project') ? '.compact-project' : '.compact-session-title') &&
+          rule.style.getPropertyValue('text-overflow') === 'ellipsis' &&
+          rule.style.getPropertyValue('overflow') === 'hidden',
+      );
+    expect(clipped(project as Element)).toBe(true);
+    expect(clipped(session as Element)).toBe(true);
+  } finally {
+    style.remove();
+  }
+});
+
+test.each([
+  ['connecting', 'Connecting', 'Project / session unavailable'],
+  ['unavailable', 'Unavailable', 'Project / session unavailable'],
+] as const)('un-notched compact %s hides the stale session title and counts', async (kind, label, placeholder) => {
+  const view = mount(
+    {},
+    {
+      ...state(),
+      notchWidth: 0,
+      topInset: 0,
+      sessions: [
+        {
+          id: 'stale',
+          title: 'Stale private work',
+          directory: '/code/stale-project',
+          updatedAt: 3,
+          status: 'running' as const,
+        },
+      ],
+      permissions: [],
+      questions: [],
+    },
+  );
+  await waitFor(() =>
+    expect(view.container.querySelector('.compact-session-title')?.textContent?.trim()).toBe('Stale private work'),
+  );
+  if (kind === 'connecting') {
+    view.setState({
+      ...state(),
+      notchWidth: 0,
+      topInset: 0,
+      connection: 'connecting',
+      sessions: [],
+      permissions: [],
+      questions: [],
+    });
+    native.handlers.get('island:changed')?.();
+  } else {
+    view.config.getIslandState.mockRejectedValueOnce(new Error('Private /code/read failure'));
+    native.handlers.get('island:changed')?.();
+  }
+  await waitFor(() => expect(view.container.querySelector('.compact-run-label')?.textContent?.trim()).toBe(label));
+  const summary = view.container.querySelector('.compact-summary')?.textContent ?? '';
+  expect(summary).not.toMatch(/Stale|stale-project/);
+  expect(view.container.querySelector('.compact-session-title')?.textContent?.trim()).toBe(placeholder);
+  expect(view.container.querySelector('.compact-session-total')?.textContent?.trim()).toBe('Sessions —');
+  await fireEvent.click(screen.getByRole('button', { name: 'Show quick area' }));
+  await waitFor(() => expect(view.container.querySelector('main')?.textContent).not.toContain('Stale'));
+  expect(view.container.querySelector('.compact-session-title')?.textContent ?? '').not.toContain('Private');
+});
+
+test('un-notched compact summary introduces no new controls or mutations while compact left triggers peek', async () => {
+  const view = mount({}, { ...state(), notchWidth: 0, topInset: 0 });
+  await screen.findByText('1 pending');
+  const summary = view.container.querySelector('.compact-summary');
+  expect(summary?.querySelector('button, a, input, select, textarea')).toBeNull();
+  const leftButton = summary?.closest('button');
+  expect(leftButton?.classList.contains('compact-left')).toBe(true);
+
+  // Clicking compact left button triggers peek disclosure
+  await fireEvent.click(leftButton as HTMLButtonElement);
+  expect(view.config.setIslandView).toHaveBeenCalledWith('peek');
+  expect(view.config.islandMessages).not.toHaveBeenCalled();
+});
+
+test('operationError on resize failure displays in compact-status-control tooltip', async () => {
+  const view = mount(
+    {
+      setIslandView: vi.fn().mockRejectedValueOnce(new Error('Resize shrink failed')),
+    },
+    { ...state(), notchWidth: 0, topInset: 0 },
+  );
+  await screen.findByText('1 pending');
+  const control = () => view.container.querySelector('.compact-status-control') as HTMLButtonElement;
+
+  // Reveal details fails IPC -> operationError set
+  await fireEvent.click(control());
+  await waitFor(() => expect(control().getAttribute('title')).toContain('Resize shrink failed'));
+  expect(view.container.querySelector('.compact-summary')?.querySelector('button')).toBeNull();
+});
+
+test('compacted summary keeps read-then-expand behaviour: peek reads nothing, expand reads messages once', async () => {
+  const view = mount({}, { ...state(), notchWidth: 0, topInset: 0 });
+  await screen.findByText('1 pending');
+  const main = screen.getByRole('main', { name: 'Sessions' });
+  expect(main.dataset.view).toBe('compact');
+  expect(view.config.islandMessages).not.toHaveBeenCalled();
+  const reads = view.config.getIslandState.mock.calls.length;
+
+  // compact -> peek does not read messages
+  await fireEvent.click(view.container.querySelector('.compact-left') as HTMLButtonElement);
+  await screen.findByRole('button', { name: 'Expand sessions' });
+  expect(main.dataset.view).toBe('peek');
+  expect(view.config.islandMessages).not.toHaveBeenCalled();
+  expect(view.config.getIslandState).toHaveBeenCalledTimes(reads);
+
+  // peek -> expanded reads messages exactly once for the selected session
+  await fireEvent.click(screen.getByRole('button', { name: 'Expand sessions' }));
+  await waitFor(() => expect(view.config.islandMessages).toHaveBeenCalledTimes(1));
+  expect(view.config.islandReplyPermission).not.toHaveBeenCalled();
+  expect(view.config.islandSend).not.toHaveBeenCalled();
 });

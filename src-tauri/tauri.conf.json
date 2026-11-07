@@ -21,10 +21,24 @@
         "minWidth": 960,
         "minHeight": 640,
         "visible": true,
-        "resizable": true
+        "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
+      "capabilities": [
+        "tray-events",
+        "island-events",
+        {
+          "identifier": "main-macos-drag",
+          "description": "Native titlebar dragging for the main macOS window.",
+          "local": true,
+          "windows": ["main"],
+          "platforms": ["macOS"],
+          "permissions": ["core:window:allow-start-dragging", "core:window:allow-internal-toggle-maximize"]
+        }
+      ],
       "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     }
   },

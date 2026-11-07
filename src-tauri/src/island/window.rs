@@ -508,7 +508,6 @@ fn screen() -> Result<Screen, AppError> {
     };
     Ok(Screen {
         frame: rect(selected.frame()),
-        visible: rect(selected.visibleFrame()),
         top_inset,
         notch_left,
         notch_right,

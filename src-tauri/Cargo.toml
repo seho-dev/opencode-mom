@@ -62,6 +62,7 @@ block2 = "=0.6.1"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "NSAccessibility", "NSAnimation", "NSAnimationContext", "NSEvent", "NSResponder", "NSScreen", "NSTrackingArea", "NSView", "NSWindow", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
+objc2-user-notifications = { version = "0.3.2", default-features = false, features = ["std", "block2", "UNUserNotificationCenter", "UNNotificationSettings", "UNNotificationContent", "UNNotificationRequest", "UNNotificationTrigger", "UNNotification"] }
 
 [dev-dependencies]
 tauri = { version = "2.10.2", default-features = false, features = ["test"] }
@@ -71,6 +72,7 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "str
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 tauri = { version = "2.10.2", default-features = false, features = ["tray-icon"] }
+tauri-plugin-notification = "=2.8.0"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 tauri-plugin-autostart = "=2.5.1"
@@ -79,4 +81,5 @@ tauri-plugin-autostart = "=2.5.1"
 libc = "=0.2.186"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemServices"] }
+windows = { version = "=0.62.2", features = ["std", "Foundation", "UI_Notifications"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemServices"] }

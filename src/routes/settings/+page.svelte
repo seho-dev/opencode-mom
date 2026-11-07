@@ -17,6 +17,7 @@ import LidProtection from './LidProtection.svelte';
 import LoggingSettings from './LoggingSettings.svelte';
 import McpProxySettings from './McpProxySettings.svelte';
 import MiniIsland from './MiniIsland.svelte';
+import NotificationSettings from './NotificationSettings.svelte';
 import OpenCodeSettings from './OpenCodeSettings.svelte';
 import SettingsSearch, { type SettingsSearchTarget } from './SettingsSearch.svelte';
 
@@ -26,6 +27,7 @@ const config = getConfig();
 const i18n = getI18n();
 
 const tabOrder: SettingsTab[] = ['general', 'mcp-proxy', 'behavior'];
+const generalHashes = ['#settings-logging', '#settings-notifications'];
 let generalTabEl = $state<HTMLButtonElement | null>(null);
 let proxyTabEl = $state<HTMLButtonElement | null>(null);
 let behaviorTabEl = $state<HTMLButtonElement | null>(null);
@@ -34,9 +36,10 @@ let proxySettingsRef = $state<{ refresh: () => Promise<void> } | null>(null);
 let httpSettingsRef = $state<{ refresh: () => Promise<void> } | null>(null);
 let behaviorRef = $state<{ refresh: () => Promise<void> } | null>(null);
 let loggingRef = $state<{ refresh: () => Promise<void> } | null>(null);
+let notificationsRef = $state<{ refresh: () => Promise<void> } | null>(null);
 
 let activeTab = $state<SettingsTab>(
-  route.url.hash === '#settings-logging'
+  generalHashes.includes(route.url.hash)
     ? 'general'
     : route.url.searchParams.get('tab') === 'behavior'
       ? 'behavior'
@@ -74,7 +77,7 @@ function selectTab(tab: SettingsTab): boolean {
   if (activeTab === tab) return true;
   activeTab = tab;
   const url = new URL(route.url);
-  if (tab !== 'general' && url.hash === '#settings-logging') url.hash = '';
+  if (tab !== 'general' && generalHashes.includes(url.hash)) url.hash = '';
   if (tab === 'general') {
     url.searchParams.delete('tab');
   } else {
@@ -111,7 +114,7 @@ async function navigateToSetting(entry: SettingsSearchTarget) {
     document.getElementById(entry.target) ??
     (entry.fallback ? document.getElementById(entry.fallback) : null) ??
     document.getElementById(`settings-tabpanel-${entry.tab}`);
-  target?.scrollIntoView({ block: entry.target === 'settings-logging' ? 'start' : 'center' });
+  target?.scrollIntoView({ block: generalHashes.includes(`#${entry.target}`) ? 'start' : 'center' });
   target?.focus({ preventScroll: true });
 }
 
@@ -160,7 +163,7 @@ async function toggle() {
 
 async function handleRefresh() {
   if (activeTab === 'general') {
-    await Promise.all([load(), httpSettingsRef?.refresh(), loggingRef?.refresh()]);
+    await Promise.all([load(), httpSettingsRef?.refresh(), loggingRef?.refresh(), notificationsRef?.refresh()]);
   } else if (activeTab === 'mcp-proxy') {
     await proxySettingsRef?.refresh();
   } else if (activeTab === 'behavior') {
@@ -175,8 +178,9 @@ onMount(() => {
 });
 
 $effect(() => {
-  if (route.url.hash === '#settings-logging') {
-    untrack(() => void navigateToSetting({ tab: 'general', target: 'settings-logging' }));
+  const hash = route.url.hash;
+  if (generalHashes.includes(hash)) {
+    untrack(() => void navigateToSetting({ tab: 'general', target: hash.slice(1) }));
   }
 });
 
@@ -347,6 +351,7 @@ onDestroy(() => {
           {/each}
         </div>
       </div>
+      <NotificationSettings active={activeTab === 'general'} bind:this={notificationsRef} />
       <MiniIsland active={activeTab === 'general'} />
       <LidProtection active={activeTab === 'general'} />
       <LoggingSettings active={activeTab === 'general'} bind:this={loggingRef} />

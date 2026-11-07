@@ -187,3 +187,47 @@ test('OMO agent and category mappings support add, remove, model and variant sel
     }),
   );
 });
+
+test('copies all group settings with a safe fresh name and requires explicit Save', async () => {
+  const saveGroup = vi.fn().mockResolvedValue(undefined);
+  const initialGroup = {
+    name: 'Production Lane (copy)',
+    description: 'Copied lane description',
+    type: 'omo' as const,
+    openCodeAgentOverrides: [{ agentName: 'build', modelRef: 'example/existing', variant: 'fast' }],
+    slimAgentOverrides: [{ agentName: 'oracle', modelRef: 'example/other', variant: 'slow' }],
+    omoAgentOverrides: [{ agentName: 'sisyphus', modelRef: 'example/existing', variant: 'fast' }],
+    omoCategoryMappings: [{ categoryName: 'quick', modelRef: 'example/other', variant: 'slow' }],
+    isEnabled: true,
+  };
+
+  render(GroupForm, { initialGroup }, { wrapper: Harness, wrapperProps: { config: config({ saveGroup }) } });
+
+  expect((screen.getByRole('textbox', { name: 'Group name' }) as HTMLInputElement).value).toBe(
+    'Production Lane (copy)',
+  );
+  expect((screen.getByRole('textbox', { name: 'Description' }) as HTMLInputElement).value).toBe(
+    'Copied lane description',
+  );
+  expect((screen.getByRole('radio', { name: 'OMO' }) as HTMLInputElement).checked).toBe(true);
+
+  // Group copy must NOT auto-save on mount or populate
+  expect(saveGroup).not.toHaveBeenCalled();
+
+  // Saving creates a new group with fresh ID and timestamp while preserving all copied settings
+  await fireEvent.click(screen.getByRole('button', { name: 'Save group' }));
+
+  await waitFor(() => expect(saveGroup).toHaveBeenCalledOnce());
+  expect(saveGroup).toHaveBeenCalledWith({
+    id: expect.any(String),
+    name: 'Production Lane (copy)',
+    description: 'Copied lane description',
+    type: 'omo',
+    openCodeAgentOverrides: [{ agentName: 'build', modelRef: 'example/existing', variant: 'fast' }],
+    slimAgentOverrides: [{ agentName: 'oracle', modelRef: 'example/other', variant: 'slow' }],
+    omoAgentOverrides: [{ agentName: 'sisyphus', modelRef: 'example/existing', variant: 'fast' }],
+    omoCategoryMappings: [{ categoryName: 'quick', modelRef: 'example/other', variant: 'slow' }],
+    isEnabled: true,
+    updatedAt: expect.any(String),
+  });
+});

@@ -175,6 +175,26 @@ pub struct AppPreferences {
     pub default_plugin: DefaultPlugin,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+pub struct NotificationSettings {
+    pub enabled: bool,
+    pub agent_completed: bool,
+    pub approval_required: bool,
+    pub agent_error: bool,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            agent_completed: true,
+            approval_required: true,
+            agent_error: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSelectionState {
@@ -189,6 +209,8 @@ pub struct AppSelectionState {
     pub island_enabled: bool,
     #[serde(default)]
     pub logging_enabled: bool,
+    #[serde(default)]
+    pub notifications: NotificationSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

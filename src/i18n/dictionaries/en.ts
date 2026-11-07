@@ -1,5 +1,41 @@
 export const en = {
   'nav.logs': 'Logs',
+  'settings.notifications': 'System notifications',
+  'settings.notificationsHint':
+    'Off by default. Works on macOS and Windows while MOM is running, including in the tray, even with Mini Island off.',
+  'settings.notificationsAgentCompleted': 'Main agent completed',
+  'settings.notificationsMainOnly': 'Root sessions only; sub-agent completions are excluded.',
+  'settings.notificationsApprovalRequired': 'Approval required',
+  'settings.notificationsAgentError': 'Agent error',
+  'settings.notificationsAllAgents': 'For all agents, including sub-agents.',
+  'settings.notificationsOsHint':
+    'Allow MOM in OS notification settings; check Focus / Do Not Disturb. On Windows, use the installed MOM app.',
+  'settings.notificationsPrivacy': 'Conversation content and commands are never included in notifications.',
+  'settings.notificationsNativeOnly': 'Available in the MOM desktop app on macOS and Windows.',
+  'settings.notificationsDisabledHint':
+    'Turn on system notifications to use these categories. Your category choices are kept.',
+  'settings.notificationsLoadFailed':
+    'Could not read notification settings. Any switches shown are the last confirmed settings.',
+  'settings.notificationsSaveFailed': 'Could not confirm the change. Review the settings or refresh before retrying.',
+  'settings.notificationsRefresh': 'Refresh notification settings',
+  'settings.notificationsRequestPermission': 'Authorize notifications',
+  'settings.notificationsOpenSettings': 'Open system notification settings',
+  'settings.notificationsWindowsHint':
+    'Windows opens system notification settings instead of an authorization dialog. Allow the installed MOM app, then refresh here. Focus / Do Not Disturb may silence notifications.',
+  'settings.notificationsPermissionPrompt':
+    'System notification permission is awaiting authorization. Authorize notifications to continue.',
+  'settings.notificationsPermissionPromptWindows':
+    'System notification permission needs attention. Open system notification settings to allow MOM, then refresh here.',
+  'settings.notificationsPermissionGranted':
+    'System permission is allowed. Focus, Do Not Disturb and other system settings may still silence notifications.',
+  'settings.notificationsPermissionDenied':
+    'Notifications are enabled in MOM, but system permission is not allowed. Review system notification settings, then refresh here.',
+  'settings.notificationsPermissionUnavailable':
+    'System notifications are unavailable in this build. Install the packaged MOM desktop app and try again.',
+  'settings.notificationsPermissionUnknown':
+    'System permission has not been confirmed. Refresh to check it or use the permission action below.',
+  'settings.notificationsPermissionFailed':
+    'Could not confirm system notification permission or open its settings. Your saved notification preferences are unchanged. Refresh or try again.',
   'settings.logging': 'Local diagnostic logging',
   'settings.loggingHint':
     'Off by default. The switch shows the saved preference; enabled does not guarantee recording. Turning this off keeps existing history.',
@@ -58,6 +94,13 @@ export const en = {
   'logs.recordCount': '{count} records shown',
   'logs.loadMore': 'Older records',
   'logs.details': 'Record details',
+  'logs.copyDetails': 'Copy details',
+  'logs.detailsCopied': 'Log record copied as JSON.',
+  'logs.copyFailed':
+    'Could not copy to the clipboard. Try again, or expand the record details to select and copy text manually.',
+  'logs.copyTrace': 'Copy trace',
+  'logs.copyTraceHint': 'Copy all {count} events currently loaded in this trace as JSON, without loading more history.',
+  'logs.traceCopied': 'All {count} loaded trace events copied as JSON. Earlier or missing events are not included.',
   'logs.traceTitle': 'Operation trace',
   'logs.traceHint':
     'Up to {count} latest retained events, oldest first. Rotation or dropped records may leave gaps. A successful event does not confirm the whole operation.',
@@ -129,7 +172,13 @@ export const en = {
   'plugins.updateUnavailable': 'Updating is not available for this plugin.',
   'plugins.updatingPackage': 'Updating package cache…',
   'plugins.updatePackageFailed': 'Package cache update could not be confirmed. Refresh runtime before retrying.',
+  'plugins.updateDiagnosticTimeout': 'The plugin update operation timed out.',
+  'plugins.updateDiagnosticConnection': 'The plugin update could not connect to the runtime.',
+  'plugins.updateDiagnosticHttp': 'The runtime returned HTTP {status} during the plugin update.',
+  'plugins.updateDiagnosticVerification': 'Runtime verification could not be completed during the plugin update.',
   'plugins.packageUpdated': 'Package cache updated. Runtime status is reported by the service.',
+  'plugins.packageUpdatedRuntimeUnavailable':
+    'Package cache updated, but runtime status is unavailable. Refresh runtime to check it.',
   'plugins.outdated': 'Update available',
   'plugins.updating': 'Updating',
   'plugins.updateConfirmTitle': 'Update plugin package cache?',
@@ -250,10 +299,15 @@ export const en = {
   'island.compact.sessionCount': 'Sessions {count}',
   'island.compact.requestCounts': 'Approve {permissions} · Answer {questions}',
   'island.compact.unknownCounts': 'Sessions — · Requests —',
+  'island.compact.noMainSessions': 'No main sessions',
+  'island.compact.contextUnavailable': 'Project / session unavailable',
   'island.compact.snapshotCounts':
     'Current snapshot: {sessions} sessions; {permissions} permission requests; {questions} questions.',
   'island.compact.countsUnavailable': 'Session and request counts unavailable.',
   'island.pending': 'Waiting for you',
+  'island.notification.approval': 'Approval needed. Pending permission requests: {count}.',
+  'island.notification.completed': 'Main agent completed successfully.',
+  'island.notification.completedCount': 'Main agent completed successfully. {count} completion notices remaining.',
   'island.connection.disabled': 'Disabled',
   'island.connection.connecting': 'Connecting…',
   'island.connection.connected': 'Connected',
@@ -796,6 +850,11 @@ export const en = {
   'groups.reloading': 'Reloading…',
   'groups.editAria': 'Edit {name}',
   'groups.editTitle': 'Edit group',
+  'groups.copyAria': 'Copy {name}',
+  'groups.copyTitle': 'Copy group',
+  'groups.copyMetaTitle': 'Copy group · opencode-mom',
+  'groups.copyName': '{name} (copy)',
+  'groups.copyNotFound': 'The source group is unavailable. Return to Groups and choose another group.',
   'groups.deleteAria': 'Delete {name}',
   'groups.deleteTitle': 'Delete group',
   'groups.deleteConfirm': 'Delete group {name}? This cannot be undone.',

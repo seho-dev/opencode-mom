@@ -641,7 +641,42 @@ fn plugin_update_http_failure_disconnect_redirect_and_timeout_are_unknown_withou
             deadline()
         };
         let error = update_with(&paths, "pkg", &connection, expires).unwrap_err();
+        assert_eq!(error.code, crate::error::ErrorCode::ConfigurationFailed);
         assert!(error.message.contains("outcome unknown"), "{error}");
+        match failure {
+            "http" => {
+                assert!(error.message.contains("HTTP 503"), "{error}");
+                assert_eq!(
+                    error.detail.as_deref(),
+                    Some("plugin_update_runtime_http:503"),
+                    "{error:?}"
+                );
+            }
+            "redirect" => {
+                assert!(error.message.contains("HTTP 302"), "{error}");
+                assert_eq!(
+                    error.detail.as_deref(),
+                    Some("plugin_update_runtime_http:302"),
+                    "{error:?}"
+                );
+            }
+            "timeout" => {
+                assert!(
+                    error.message.contains("timed out")
+                        || error.message.contains("deadline expired"),
+                    "{error}"
+                );
+                assert_eq!(
+                    error.detail.as_deref(),
+                    Some("plugin_update_timeout"),
+                    "{error:?}"
+                );
+            }
+            "disconnect" => {
+                assert_eq!(error.detail, None, "{error:?}");
+            }
+            _ => {}
+        }
         assert!(!error.message.contains("PRIVATE"));
         assert_eq!(posts.load(Ordering::SeqCst), 1);
         assert_eq!(
@@ -1445,13 +1480,16 @@ fn plugin_post_source_retargeting_reports_unknown_outcome_without_retry() {
             }
         });
         let connection = connect(&api, None);
-        let error = if update {
-            update_with(&paths, "global", &connection, deadline()).unwrap_err()
+        if update {
+            // POST 204 update is authoritative success even if source retargets after dispatch
+            update_with(&paths, "global", &connection, deadline()).unwrap();
+            assert_eq!(posts.load(Ordering::SeqCst), 1);
         } else {
-            check_with(&paths, Some("global"), &connection, deadline()).unwrap_err()
-        };
-        assert!(error.message.contains("outcome unknown"), "{error}");
-        assert_eq!(posts.load(Ordering::SeqCst), 1);
+            let error = check_with(&paths, Some("global"), &connection, deadline()).unwrap_err();
+            assert_eq!(error.code, crate::error::ErrorCode::ConfigurationFailed);
+            assert!(error.message.contains("outcome unknown"), "{error}");
+            assert_eq!(posts.load(Ordering::SeqCst), 1);
+        }
     }
 }
 
@@ -1524,6 +1562,7 @@ fn public_list_checks_each_global_target_once_and_stops_on_failure() {
         let calls = checks.lock().unwrap().clone();
         if let Some(index) = fail_on {
             let error = result.unwrap_err();
+            assert_eq!(error.code, crate::error::ErrorCode::ConfigurationFailed);
             assert!(error.message.contains("outcome unknown"));
             assert!(!error.message.contains("PRIVATE"));
             assert_eq!(calls.len(), index + 1);
@@ -1538,4 +1577,111 @@ fn public_list_checks_each_global_target_once_and_stops_on_failure() {
         .unwrap()
         .set(None, None, || Ok(()))
         .unwrap();
+}
+
+#[test]
+fn plugin_update_post_204_is_authoritative_success_without_post_health_get() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = ConfigPaths::for_home(temp.path());
+    let posts = Arc::new(AtomicUsize::new(0));
+    let post_count = posts.clone();
+    let post_health_reads = Arc::new(AtomicUsize::new(0));
+    let post_health_count = post_health_reads.clone();
+    let api = FakeHttp::global(&paths, json!(["pkg"]), move |request, stream| {
+        let url = reqwest::Url::parse(&format!("http://localhost{}", request.path)).unwrap();
+        match (request.method.as_str(), url.path()) {
+            ("GET", "/api/info") => {
+                if post_count.load(Ordering::SeqCst) > 0 {
+                    // Count any /api/info reads made strictly after POST /api/plugin/update
+                    post_health_count.fetch_add(1, Ordering::SeqCst);
+                    respond(stream, 200, &json!({"pid": 999, "version": "2.0.22"}));
+                } else {
+                    info(stream);
+                }
+            }
+            ("GET", "/api/plugin") => respond(stream, 200, &envelope("/runtime", "pkg")),
+            ("POST", "/api/plugin/update") => {
+                post_count.fetch_add(1, Ordering::SeqCst);
+                assert_eq!(request.body, json!({"targets": ["pkg"]}));
+                respond(stream, 204, &Value::Null);
+            }
+            _ => panic!(
+                "unexpected request to {} (path={})",
+                request.path,
+                url.path()
+            ),
+        }
+    });
+    let connection = connect(&api, None);
+
+    // POST 204 update must be authoritative success; no follow-up health GET made after 204
+    update_with(&paths, "pkg", &connection, deadline()).unwrap();
+    assert_eq!(posts.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        post_health_reads.load(Ordering::SeqCst),
+        0,
+        "POST 204 update must not make a follow-up health GET query"
+    );
+
+    // Any subsequent explicit verify_identity/global_state read fails due to the changed service identity
+    assert!(connection.verify_identity(deadline()).is_err());
+    assert!(global_state(&paths, &connection, deadline()).is_err());
+}
+
+#[test]
+fn plugin_update_budget_allows_multi_stage_operations_without_5s_clip() {
+    assert_eq!(UPDATE_TIMEOUT, Duration::from_secs(60));
+    let temp = tempfile::tempdir().unwrap();
+    let paths = ConfigPaths::for_home(temp.path());
+    let paths_for_server = paths.clone();
+    fs::create_dir_all(paths.opencode_file().parent().unwrap()).unwrap();
+    fs::write(
+        paths.opencode_file(),
+        serde_json::to_vec(&json!({"plugins": ["pkg"]})).unwrap(),
+    )
+    .unwrap();
+    let directory = temp.path().join("runtime");
+    fs::create_dir(&directory).unwrap();
+    let dir_str = directory.to_string_lossy().into_owned();
+    let count = Arc::new(AtomicUsize::new(0));
+    let count_for_server = count.clone();
+    let api = FakeHttp::new(move |request, stream| {
+        let url = reqwest::Url::parse(&format!("http://localhost{}", request.path)).unwrap();
+        match (request.method.as_str(), url.path()) {
+            ("GET", "/api/info") => info(stream),
+            ("GET", "/api/plugin") => {
+                thread::sleep(Duration::from_millis(5250));
+                respond(stream, 200, &envelope(&dir_str, "pkg"));
+            }
+            ("GET", "/api/config") => {
+                thread::sleep(Duration::from_millis(5250));
+                respond(
+                    stream,
+                    200,
+                    &json!([{"type": "document", "path": paths_for_server.opencode_file(), "info": {"plugins": ["pkg"]}}]),
+                );
+            }
+            ("POST", "/api/plugin/update") => {
+                thread::sleep(Duration::from_millis(5250));
+                count_for_server.fetch_add(1, Ordering::SeqCst);
+                assert_eq!(request.body, json!({"targets": ["pkg"]}));
+                respond(stream, 204, &Value::Null);
+            }
+            _ => panic!(
+                "unexpected request to {} (path={})",
+                request.path,
+                url.path()
+            ),
+        }
+    });
+    let connection = connect(&api, None);
+    let started = Instant::now();
+    update_with(&paths, "pkg", &connection, Instant::now() + UPDATE_TIMEOUT).unwrap();
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed.as_secs_f32() >= 15.75,
+        "real three-stage delay exercised: elapsed={:?}",
+        elapsed
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 1);
 }

@@ -32,6 +32,23 @@ pub fn save_group(
     paths: &ConfigPaths,
     mut group: ModelGroup,
 ) -> Result<(ModelGroup, AppConfig), AppError> {
+    for binding in group
+        .open_code_agent_overrides
+        .iter_mut()
+        .chain(group.slim_agent_overrides.iter_mut().flatten())
+        .chain(group.omo_agent_overrides.iter_mut().flatten())
+    {
+        binding.variant = binding
+            .variant
+            .take()
+            .filter(|value| !value.trim().is_empty());
+    }
+    for mapping in group.omo_category_mappings.iter_mut().flatten() {
+        mapping.variant = mapping
+            .variant
+            .take()
+            .filter(|value| !value.trim().is_empty());
+    }
     let _write = models::config_write_lock();
     let mut config = load(paths)?;
     if config

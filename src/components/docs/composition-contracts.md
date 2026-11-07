@@ -20,7 +20,7 @@ Reusable controls, overlays, feedback, and app-level table, form, dashboard, and
 
 ## Dashboard hierarchy
 
-- **Dashboard hierarchy**: Keep runtime tiles compact/readable when switching is unavailable; the featured workbench owns current-group identity/bindings. Telemetry panels retain independent controls and panel-boundary alignment; responsive changes preserve Heatmap scrolling and roving keyboard focus.
+- **Dashboard hierarchy**: Keep runtime tiles compact/readable when switching is unavailable; the featured workbench owns current-group identity/bindings. `RuntimeCard` has exactly two variants, `tile` and `featured`. Telemetry panels retain independent controls and panel-boundary alignment; responsive changes preserve Heatmap scrolling and roving keyboard focus.
 
 ## Implementation references
 
@@ -29,5 +29,5 @@ Reusable controls, overlays, feedback, and app-level table, form, dashboard, and
 | Resource browsing | `ResourceScope.svelte`, `ResourceScopeNotice.svelte`, `GlobalDestination.svelte` | Saved root selection shared only by MCP/Agent/Skill lists; read-only details and explicit Global forms. |
 | Table composition | `DataTable.svelte`, `Pagination.svelte`, `EmptyTableRow.svelte` | Table contents come from callers; pagination controls do not slice rows. |
 | Page/form composition | `PageHead.svelte`, `FormPage.svelte`, `FormActions.svelte` | Snippet-based heading, available-height page frame and in-flow footer. |
-| Dashboard | `dashboard/RuntimeCard.svelte`, `dashboard/SwitchGroupDialog.svelte`, `dashboard/ActivityHeatmap.svelte`, `dashboard/TokenUsageChart.svelte` | Runtime switching, activity-calendar display, and token trend visualization. |
+| Dashboard | `dashboard/RuntimeCard.svelte`, `dashboard/SwitchGroupDialog.svelte`, `dashboard/ActivityHeatmap.svelte`, `dashboard/TokenUsageChart.svelte` | Runtime switching with `RuntimeCard` variants `tile` and `featured`, activity-calendar display, and token trend visualization. |
 | Configuration feedback | `configuration/Diagnostics.svelte`, `configuration/read-error.ts` | Diagnostic messages and inspection of unknown errors. |

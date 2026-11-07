@@ -3,7 +3,7 @@
 ## Overview
 
 Defines application-wide design tokens and semantic CSS for shell layout, headings, tables, forms,
-feedback, search, and rosters. `src/app.css` composes these sheets in Tailwind's base layer so utilities
+feedback, and search. `src/app.css` composes these sheets in Tailwind's base layer so utilities
 can override defaults; component-local styles remain outside this directory.
 
 ## Directory Structure
@@ -18,7 +18,7 @@ styles/            # Shared sheets imported by src/app.css
 ├── feedback.css   # Terminal blocks and state banners
 ├── search.css     # Toolbar and flexible inputs
 ├── forms.css      # Fields, grids, pinned actions, variants, permission rows
-├── roster.css     # Architecture cards and roster rows
+├── roster.css     # Architecture cards
 ├── scrollbar.css  # Standard and WebKit scrolling containers
 └── responsive.css # Mobile, drawer, reduced motion
 ```
@@ -39,7 +39,7 @@ styles/            # Shared sheets imported by src/app.css
 - **Theme contract**: Reuse shared semantic tokens instead of equivalent literals; add shared values
   in `tokens.css` and extend both dark and light definitions for color-bearing tokens.
 - **File ownership**: Extend the sheet matching the semantic selector's responsibility; keep page
-  heading, search, feedback, form, table, and roster rules out of shell `layout.css`.
+  heading, search, feedback, form, table, and architecture-card rules out of shell `layout.css`.
 - **Scroll boundaries**: Preserve `min-width: 0` on workspace/content and `min-height: 0` on flexing
   scroll regions; shell/workspace hide overflow while `.content` scrolls vertically.
 - **Form boundaries**: Keep form headings visible, body content scrollable, and actions in flow rather
@@ -47,7 +47,7 @@ styles/            # Shared sheets imported by src/app.css
 - **Safety feedback**: Keep ordinary help short and action-oriented; never mute warning/error banners,
   credential notices, read-only state, or overwrite risks into ordinary field help.
 - **Selector contracts**: Preserve `[aria-current="page"]` navigation, `.error`/`.success` banners, and
-  `.active` architecture cards/roster rows together with their consumers when changing shared styles.
+  `.active` architecture cards together with their consumers when changing shared styles.
 - **Adaptive coverage**: Keep shared mobile overrides together and update standard/WebKit scrollbar
   selectors together; preserve drawer button display overrides against the Button primitive's utilities.
 

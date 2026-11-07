@@ -27,12 +27,6 @@
   color: var(--text-secondary);
   font-size: 11px;
 }
-.field-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
 .field input:not([type="checkbox"]):not([type="radio"]),
 .field textarea {
   width: 100%;
@@ -131,24 +125,6 @@
 .form-body .field > .field-hint {
   margin-top: -4px;
 }
-.group-submit {
-  min-height: 32px;
-  border: 1px solid var(--accent-solid);
-  border-radius: 2px;
-  background: var(--accent-solid);
-  color: var(--text-on-accent);
-  padding: 0 16px;
-  font-family: var(--font-primary);
-  font-size: 11px;
-  font-weight: 600;
-}
-.group-submit:hover {
-  background: var(--accent-primary);
-}
-.group-submit:disabled {
-  cursor: not-allowed;
-  opacity: var(--disabled-opacity);
-}
 .type-note {
   grid-column: 1 / -1;
   border: 1px solid var(--border-default);
@@ -211,13 +187,6 @@
 .sub-field input {
   width: 100%;
   min-width: 0;
-}
-.num-section-label {
-  margin: 12px 0 6px;
-  color: var(--text-secondary);
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 .field-error {
   grid-column: 1 / -1;

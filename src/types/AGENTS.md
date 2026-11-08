@@ -17,6 +17,7 @@ types/
 ├── mcp-proxy.ts          # Proxy and MOM HTTP contracts
 ├── models.ts             # References, variants, catalog
 ├── power.ts              # Lid-protection state and phases
+├── notifications.ts      # Saved notification preferences and independent OS authorization
 ├── providers.ts          # Provider settings and model dictionaries
 ├── skills.ts             # Skill records and guarded writes
 ├── stats.ts              # Token records and daily aggregates

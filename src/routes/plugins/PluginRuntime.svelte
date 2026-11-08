@@ -15,6 +15,7 @@ const i18n = getI18n();
 let runtime = $state<PluginRuntime | null>(null);
 let pending = $state<'' | 'read' | 'update' | 'prepare' | 'remove'>('');
 let error = $state<'read' | 'update' | 'prepare' | 'remove' | ''>('');
+let updateDiagnostic = $state<'timeout' | 'connection' | 'verification' | number | null>(null);
 let success = $state<'' | 'update' | 'remove'>('');
 let uncertain = $state(false);
 let updateTarget = $state<string | null>(null);
@@ -45,6 +46,7 @@ $effect(() => {
   void identity;
   runtime = null;
   error = '';
+  updateDiagnostic = null;
   success = '';
   pending = '';
   uncertain = false;
@@ -78,6 +80,28 @@ function sourceName(item: PluginRuntimeItem) {
   return item.id ?? i18n.t(sourceLabels[item.source.type]);
 }
 
+function setUpdateDiagnostic(cause: unknown) {
+  if (
+    !cause ||
+    typeof cause !== 'object' ||
+    Array.isArray(cause) ||
+    !('code' in cause) ||
+    cause.code !== 'configuration_failed' ||
+    !('detail' in cause) ||
+    typeof cause.detail !== 'string'
+  )
+    return;
+
+  if (cause.detail === 'plugin_update_timeout') updateDiagnostic = 'timeout';
+  else if (cause.detail === 'plugin_update_connection') updateDiagnostic = 'connection';
+  else if (cause.detail === 'plugin_update_verification') updateDiagnostic = 'verification';
+  else {
+    const status = /^plugin_update_runtime_http:([1-5]\d{2})$/.exec(cause.detail);
+
+    if (status && status[0] === cause.detail) updateDiagnostic = Number(status[1]);
+  }
+}
+
 async function refresh(keepSuccess = false) {
   if (pending) return;
 
@@ -86,6 +110,7 @@ async function refresh(keepSuccess = false) {
 
   pending = 'read';
   error = '';
+  updateDiagnostic = null;
   runtime = null;
   removalPlan = null;
   if (!keepSuccess) success = '';
@@ -128,6 +153,7 @@ async function update() {
 
   pending = 'update';
   error = '';
+  updateDiagnostic = null;
   success = '';
 
   try {
@@ -140,9 +166,10 @@ async function update() {
     updateTarget = null;
     pending = '';
     await refresh(true);
-  } catch {
+  } catch (cause) {
     if (mounted && seq === request && key === identity) {
       error = 'update';
+      setUpdateDiagnostic(cause);
       uncertain = true;
       updateTarget = null;
     }
@@ -164,6 +191,7 @@ async function prepareRemoval(item: PluginRuntimeItem) {
 
   pending = 'prepare';
   error = '';
+  updateDiagnostic = null;
   success = '';
   removalPlan = null;
 
@@ -192,6 +220,7 @@ async function removeDeclaration() {
 
   pending = 'remove';
   error = '';
+  updateDiagnostic = null;
   success = '';
 
   try {
@@ -223,12 +252,21 @@ async function removeDeclaration() {
   </div>
 </PageHead>
 <section class="min-w-0" aria-label={i18n.t('plugins.runtimeTitle')} aria-busy={!!pending}>
-  {#if error}
+  {#if error === 'read' && success === 'update'}
+    <div class="state-banner !border-l-[var(--status-warning)] text-[var(--status-warning)]" role="status">
+      {i18n.t('plugins.packageUpdatedRuntimeUnavailable')}
+    </div>
+  {:else if error}
     <div class="state-banner error" role="alert">
       {i18n.t(error === 'read' ? 'plugins.runtimeUnavailable' : error === 'update' ? 'plugins.updatePackageFailed' : error === 'prepare' ? 'plugins.removalPrepareFailed' : 'plugins.removalFailed')}
+      {#if error === 'update' && updateDiagnostic !== null}
+        <p class="m-0 w-full break-words text-xs leading-5 [overflow-wrap:anywhere]">
+          {i18n.t(typeof updateDiagnostic === 'number' ? 'plugins.updateDiagnosticHttp' : updateDiagnostic === 'timeout' ? 'plugins.updateDiagnosticTimeout' : updateDiagnostic === 'connection' ? 'plugins.updateDiagnosticConnection' : 'plugins.updateDiagnosticVerification', { status: typeof updateDiagnostic === 'number' ? updateDiagnostic : '' })}
+        </p>
+      {/if}
     </div>
   {/if}
-  {#if success}
+  {#if success && !(error === 'read' && success === 'update')}
     <div class="state-banner success" role="status">
       {i18n.t(success === 'remove' ? 'plugins.declarationRemoved' : 'plugins.packageUpdated')}
     </div>

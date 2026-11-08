@@ -82,12 +82,45 @@ fn stable_versions_compare_components_and_reject_malformed_tags() {
 }
 
 #[test]
+fn current_beta_versions_require_canonical_native_compatible_numbers() {
+    assert_eq!(current_version("2.0.1-beta.1").unwrap(), ([2, 0, 1], true));
+    assert_eq!(current_version("2.0.1").unwrap(), ([2, 0, 1], false));
+    assert_eq!(
+        current_version("9999.99.99-beta.255").unwrap(),
+        ([9999, 99, 99], true)
+    );
+    for version in [
+        "2.0.1-beta",
+        "2.0.1-beta.0",
+        "2.0.1-beta.01",
+        "2.0.1-beta.256",
+        "2.0.1-beta.1+build",
+        "2.0.1-beta.1.1",
+        "2.0.1-beta.1\n",
+        "2.0.1-rc.1",
+        "0.1.1-beta.1",
+        "10000.0.1-beta.1",
+        "1.100.1-beta.1",
+        "1.0.100-beta.1",
+    ] {
+        assert_eq!(
+            current_version(version).unwrap_err().code,
+            ErrorCode::ConfigurationFailed,
+            "{version}"
+        );
+    }
+}
+
+#[test]
 fn mocked_github_success_preserves_wire_shape_and_never_offers_a_downgrade() {
     for (current, tag, latest, available) in [
         ("0.9.0", "v0.10.0", "0.10.0", true),
         ("0.10.0", "0.9.0", "0.9.0", false),
         ("0.1.0", "v0.1.0", "0.1.0", false),
         ("0.1.0", "1.0.0", "1.0.0", true),
+        ("2.0.1-beta.1", "v2.0.0", "2.0.0", false),
+        ("2.0.1-beta.1", "v2.0.1", "2.0.1", true),
+        ("2.0.1-beta.255", "v2.1.0", "2.1.0", true),
     ] {
         let (result, request) = mock_check(current, 200, &release(tag));
         assert_eq!(
@@ -141,6 +174,17 @@ fn malformed_unstable_and_oversized_release_responses_are_errors() {
         " ".repeat(MAX_RESPONSE_BYTES as usize + 1),
     ] {
         let (result, _) = mock_check("0.1.0", 200, &body);
+        assert_eq!(result.unwrap_err().code, ErrorCode::ConfigurationFailed);
+    }
+}
+
+#[test]
+fn beta_clients_still_reject_beta_releases_even_when_github_marks_them_stable() {
+    for body in [
+        release("v2.0.1-beta.2"),
+        json!({"tag_name":"v2.0.1-beta.2", "draft":false, "prerelease":true}).to_string(),
+    ] {
+        let (result, _) = mock_check("2.0.1-beta.1", 200, &body);
         assert_eq!(result.unwrap_err().code, ErrorCode::ConfigurationFailed);
     }
 }

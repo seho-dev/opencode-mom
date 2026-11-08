@@ -27,7 +27,7 @@ styles/            # Shared sheets imported by src/app.css
 
 | Responsibility | File | Description |
 | :--- | :--- | :--- |
-| Theme and defaults | `tokens.css`, `base.css` | Space Grotesk/JetBrains Mono, semantic tokens, app defaults, inherited form fonts, and visible focus. |
+| Theme and defaults | `tokens.css`, `base.css` | Native proportional UI font with CJK fallbacks, dedicated monospace code font, semantic tokens, app defaults, inherited form fonts, and visible focus. |
 | Scroll ownership | `layout.css`, `forms.css` | Viewport-height shell and pinned form headings with in-flow actions. |
 | Table geometry | `table.css` | Separate borders and sticky actions on opaque panel backgrounds. |
 | Adaptation | `responsive.css` | Shared mobile and reduced-motion overrides. |

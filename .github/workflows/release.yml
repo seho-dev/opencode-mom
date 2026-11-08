@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Stable X.Y.Z (empty = next patch); run on the default branch'
+        description: 'X.Y.Z or X.Y.Z-beta.N (empty = next patch/beta); default branch only; stable promotion must be explicit'
         required: false
         type: string
       dry_run:
@@ -25,16 +25,19 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
     concurrency:
       group: release-prepare-${{ github.repository }}
       cancel-in-progress: false
+      queue: max
     outputs:
       release: ${{ steps.version.outputs.release }}
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       sha: ${{ steps.version.outputs.sha }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,35 +58,29 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: node scripts/release-version.mjs prepare
 
+  validation:
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
   build:
     needs: prepare
     if: needs.prepare.outputs.release == 'true'
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            target: aarch64-apple-darwin
-            bundles: app,dmg
-            arch: aarch64
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            bundles: app,dmg
-            arch: x64
-          - runner: windows-2022
-            target: x86_64-pc-windows-msvc
-            bundles: nsis
-            arch: x64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15-intel
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
     env:
-      TARGET: ${{ matrix.target }}
-      BUNDLES: ${{ matrix.bundles }}
-      ARCH: ${{ matrix.arch }}
+      TARGET: x86_64-apple-darwin
+      BUNDLES: app,dmg
+      ARCH: x64
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
     steps:
@@ -96,52 +93,63 @@ jobs:
         with:
           node-version: '22.23.0'
           cache: npm
+          cache-dependency-path: package-lock.json
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.96.0'
-          targets: ${{ matrix.target }}
+          targets: ${{ env.TARGET }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+            src-tauri/native/macos-helper -> target
+          shared-key: native-package-x86_64-apple-darwin
+          cache-on-failure: true
+          cache-bin: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Verify tagged app versions
         run: node scripts/release-version.mjs verify "$RELEASE_TAG"
       - run: npm ci
       - name: Prefetch standalone macOS helper dependencies
-        if: runner.os == 'macOS'
         run: cargo fetch --manifest-path src-tauri/native/macos-helper/Cargo.toml --locked --target "$TARGET"
       - name: Build platform bundles (macOS ad-hoc signed, no notarization)
         run: npm run tauri -- build --ci --target "$TARGET" --bundles "$BUNDLES" -- --locked
       - name: Ensure the build did not change app versions or locks
-        run: git diff --exit-code -- package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/native/macos-helper/Cargo.toml src-tauri/native/macos-helper/Cargo.lock
+        run: git diff --exit-code -- package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/Info.plist src-tauri/native/macos-helper/Cargo.toml src-tauri/native/macos-helper/Cargo.lock
       - name: Collect macOS app and DMG
-        if: runner.os == 'macOS'
         run: |
+          test -d "src-tauri/target/$TARGET/release/bundle/macos/opencode-mom.app"
+          plist="src-tauri/target/$TARGET/release/bundle/macos/opencode-mom.app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" = "${RELEASE_VERSION%%-*}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")" = "${RELEASE_VERSION/-beta./b}"
+          test -f "src-tauri/target/$TARGET/release/bundle/dmg/opencode-mom_${RELEASE_VERSION}_${ARCH}.dmg"
           mkdir -p release-assets
-          cp "src-tauri/target/$TARGET/release/bundle/dmg/"*.dmg release-assets/
+          cp "src-tauri/target/$TARGET/release/bundle/dmg/opencode-mom_${RELEASE_VERSION}_${ARCH}.dmg" release-assets/
           tar -czf "release-assets/opencode-mom_${RELEASE_VERSION}_${ARCH}.app.tar.gz" \
             -C "src-tauri/target/$TARGET/release/bundle/macos" opencode-mom.app
-      - name: Collect Windows NSIS installer
-        if: runner.os == 'Windows'
-        run: |
-          mkdir -p release-assets
-          cp "src-tauri/target/$TARGET/release/bundle/nsis/"*.exe release-assets/
       - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.target }}
+          name: release-x86_64-apple-darwin
           path: release-assets/*
           if-no-files-found: error
           overwrite: true
           retention-days: 14
 
   publish:
-    needs: [prepare, build]
+    needs: [prepare, validation, build]
     if: needs.prepare.outputs.release == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
     concurrency:
       group: release-publish-${{ needs.prepare.outputs.tag }}
       cancel-in-progress: false
+      queue: max
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
       RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
     steps:
@@ -153,23 +161,43 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.0'
+      # Reuse the validated ARM macOS and Windows packages without rebuilding them.
       - uses: actions/download-artifact@v4
         with:
-          pattern: release-*
+          name: opencode-mom-tauri-windows-${{ needs.prepare.outputs.version }}
           path: release-assets
-          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: opencode-mom-tauri-macos-${{ needs.prepare.outputs.version }}
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-x86_64-apple-darwin
+          path: release-assets
       - name: Publish only after every platform succeeded
         shell: bash
+        env:
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           set -euo pipefail
+          case "$PRERELEASE" in
+            true) release_flags=(--prerelease=true --latest=false) ;;
+            false) release_flags=(--prerelease=false) ;;
+            *) echo 'Missing or invalid release channel' >&2; exit 1 ;;
+          esac
           test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "$RELEASE_SHA"
           test "$(find release-assets -type f | wc -l)" -eq 5
+          test -f "release-assets/opencode-mom_${RELEASE_VERSION}_aarch64.dmg"
+          test -f "release-assets/opencode-mom_${RELEASE_VERSION}_x64.dmg"
+          test -f "release-assets/opencode-mom_${RELEASE_VERSION}_aarch64.app.tar.gz"
+          test -f "release-assets/opencode-mom_${RELEASE_VERSION}_x64.app.tar.gz"
+          test -f "release-assets/opencode-mom_${RELEASE_VERSION}_x64-setup.exe"
           notes_file="$(mktemp "$RUNNER_TEMP/release-notes.XXXXXX")"
           trap 'rm -f "$notes_file"' EXIT
           node scripts/release-version.mjs notes "$RELEASE_TAG" > "$notes_file"
           printf '\n%s\n' 'macOS: Apple Silicon and Intel builds are ad-hoc signed, not Developer ID signed or notarized. Windows: the x64 NSIS installer is unsigned and may show SmartScreen warnings. Download only from this official Releases page; see the README for scoped first-launch trust steps. Updates are installed manually; review Settings after upgrading.' >> "$notes_file"
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --notes-file "$notes_file"
+            gh release create "$RELEASE_TAG" --verify-tag --draft "${release_flags[@]}" --title "$RELEASE_TAG" --notes-file "$notes_file"
           fi
           gh release upload "$RELEASE_TAG" release-assets/* --clobber
-          gh release edit "$RELEASE_TAG" --draft=false --notes-file "$notes_file"
+          gh release edit "$RELEASE_TAG" --draft=false "${release_flags[@]}" --notes-file "$notes_file"

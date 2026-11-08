@@ -1189,11 +1189,8 @@ fn sse_classification_ignores_private_and_unrelated_events_without_token_snapsho
         "session.status",
         "session.idle",
         "session.execution.started",
-        "session.execution.succeeded",
-        "session.execution.failed",
         "session.execution.interrupted",
         "session.deleted",
-        "permission.asked",
         "permission.replied",
         "form.replied",
         "form.cancelled",
@@ -1206,6 +1203,32 @@ fn sse_classification_ignores_private_and_unrelated_events_without_token_snapsho
             Some(IslandChange::Snapshot)
         );
     }
+    assert_eq!(
+        events::classify(
+            &serde_json::to_vec(
+                &json!({"id":"evt_1","type":"session.execution.succeeded","data":{"sessionID":"ses_a"}})
+            )
+            .unwrap()
+        )
+        .unwrap(),
+        Some(IslandChange::Completed {
+            event_id: "evt_1".into(),
+            session_id: "ses_a".into(),
+        })
+    );
+    assert_eq!(
+        events::classify(
+            &serde_json::to_vec(
+                &json!({"id":"evt_2","type":"session.execution.failed","data":{"sessionID":"ses_a","error":{"type":"internal","message":"failed"}}})
+            )
+            .unwrap()
+        )
+        .unwrap(),
+        Some(IslandChange::Failed {
+            event_id: "evt_2".into(),
+            session_id: "ses_a".into(),
+        })
+    );
     assert_eq!(
         events::classify(
             &serde_json::to_vec(&json!({"id":"evt_shutdown","type":"location.shutdown","created":1,"location":{"directory":"/project"},"data":{}})).unwrap()
@@ -1278,6 +1301,69 @@ fn sse_classification_ignores_private_and_unrelated_events_without_token_snapsho
 }
 
 #[test]
+fn notification_events_validate_routing_and_keep_private_payloads_out() {
+    let permission = json!({
+        "id":"evt_permission", "type":"permission.asked",
+        "data":{"id":"per_1", "sessionID":"ses_child", "action":"shell", "resources":["PRIVATE_COMMAND"]}
+    });
+    assert_eq!(
+        events::classify(&serde_json::to_vec(&permission).unwrap()).unwrap(),
+        Some(IslandChange::ApprovalRequired {
+            event_id: "evt_permission".into(),
+            session_id: "ses_child".into()
+        })
+    );
+    for field in ["id", "sessionID", "action", "resources"] {
+        let mut invalid = permission.clone();
+        invalid["data"].as_object_mut().unwrap().remove(field);
+        assert!(
+            events::classify(&serde_json::to_vec(&invalid).unwrap()).is_err(),
+            "{field}"
+        );
+    }
+    for kind in [
+        "permission.asked",
+        "session.execution.succeeded",
+        "session.execution.failed",
+    ] {
+        let mut invalid = permission.clone();
+        invalid["type"] = json!(kind);
+        invalid["id"] = json!("invalid/event");
+        assert!(events::classify(&serde_json::to_vec(&invalid).unwrap()).is_err());
+    }
+}
+
+#[test]
+fn notification_session_lookup_validates_root_and_child_identity() {
+    let server = FakeApi::new(|method, target, _, stream| {
+        assert_eq!(method, "GET");
+        let (id, parent) = match target {
+            "/api/session/ses_root" => ("ses_root", Value::Null),
+            "/api/session/ses_child" => ("ses_child", json!("ses_root")),
+            "/api/session/ses_wrong" => ("ses_other", Value::Null),
+            _ => panic!("unexpected session lookup"),
+        };
+        respond(
+            stream,
+            200,
+            &json!({"data":{
+                "id":id, "parentID":parent, "title":"PRIVATE_TITLE",
+                "location":{"directory":"/private/project"}, "time":{"updated":1}
+            }}),
+        );
+    });
+    let api = server.api();
+    run(async {
+        assert!(api.session("ses_root").await.unwrap().parent_id.is_none());
+        assert_eq!(
+            api.session("ses_child").await.unwrap().parent_id.as_deref(),
+            Some("ses_root")
+        );
+        assert!(api.session("ses_wrong").await.is_err());
+    });
+}
+
+#[test]
 fn session_snapshot_lifecycles_do_not_require_a_shared_session_id_shape() {
     for (kind, data) in [
         (
@@ -1339,7 +1425,7 @@ fn sse_http_fragmentation_and_eof_are_bounded_without_replay() {
         assert_eq!(method, "GET");
         assert_eq!(target, "/api/event");
         let _ = write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n");
-        for piece in b": heartbeat\n\ndata: {\ndata: \"type\":\"session.text.delta\",\"data\":{\"sessionID\":\"ses_a\",\"delta\":\"public\"}}\n\ndata: {\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_a\"}}\n\n".chunks(7) {
+        for piece in b": heartbeat\n\ndata: {\ndata: \"type\":\"session.text.delta\",\"data\":{\"sessionID\":\"ses_a\",\"delta\":\"public\"}}\n\ndata: {\"id\":\"evt_ok\",\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_a\"}}\n\n".chunks(7) {
             let _ = write!(stream,"{:x}\r\n",piece.len());
             let _ = stream.write_all(piece);
             let _ = stream.write_all(b"\r\n");
@@ -1356,7 +1442,13 @@ fn sse_http_fragmentation_and_eof_are_bounded_without_replay() {
                 session_id: "ses_a".into()
             }
         );
-        assert_eq!(events.next().await.unwrap(), IslandChange::Snapshot);
+        assert_eq!(
+            events.next().await.unwrap(),
+            IslandChange::Completed {
+                event_id: "evt_ok".into(),
+                session_id: "ses_a".into()
+            }
+        );
         assert!(events.next().await.is_err());
     });
 }

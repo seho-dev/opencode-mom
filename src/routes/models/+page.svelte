@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
+import { Copy, Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import DataTable from '$src/components/DataTable.svelte';
@@ -38,7 +38,11 @@ const filteredCatalog = $derived(
   ),
 );
 const builtinModels = $derived(filteredCatalog.filter((m) => !m.isCustom));
-const customModels = $derived(filteredCatalog.filter((m) => m.isCustom));
+const customModels = $derived(
+  config
+    .models()
+    .filter((m) => `${m.ref} ${m.name ?? ''} ${m.providerId}`.toLowerCase().includes(query.trim().toLowerCase())),
+);
 const visibleModels = $derived(activeTab === 'custom' ? customModels : builtinModels);
 const maxPage = $derived(Math.max(1, Math.ceil(visibleModels.length / pageSize)));
 const currentPage = $derived(Math.min(page, maxPage));
@@ -172,7 +176,7 @@ async function remove() {
       </tr>
     </thead>
     <tbody>
-      {#if config.catalogLoading}
+      {#if activeTab === 'custom' ? config.loading : config.catalogLoading}
         <EmptyTableRow colspan={4} message={i18n.t('models.loadingConfiguration')} />
       {:else if !visibleModels.length}
         <EmptyTableRow
@@ -183,10 +187,10 @@ async function remove() {
         {#each pagedModels as model}
           <tr>
             <td>{model.providerId}</td>
-            <td>{model.name ?? i18n.t('common.unnamed')}</td>
+            <td>{model.name ?? ('id' in model ? model.id : i18n.t('common.unnamed'))}</td>
             <td>{(model.limit as { context?: number })?.context ?? i18n.t('common.unset')}</td>
             <td class="row-actions">
-              {#if model.isCustom}
+              {#if activeTab === 'custom'}
                 <Button
                   href={`/models/${encodeURIComponent(model.ref)}/edit`}
                   variant="ghost"
@@ -194,6 +198,13 @@ async function remove() {
                   title={i18n.t('models.editTitle')}
                   aria-label={i18n.t('models.editAria', { ref: model.ref })}
                   ><Pencil size={14} /></Button
+                ><Button
+                  href={`/models/new?copyFrom=${encodeURIComponent(model.ref)}`}
+                  variant="ghost"
+                  size="icon-sm"
+                  title={i18n.t('models.copyTitle')}
+                  aria-label={i18n.t('models.copyAria', { ref: model.ref })}
+                  ><Copy size={14} aria-hidden="true" /></Button
                 ><Button
                   variant="ghost"
                   size="icon-sm"

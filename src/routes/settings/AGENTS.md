@@ -12,6 +12,7 @@ settings/
 ├── Behavior.svelte                # Global AGENTS.md draft, shared prompt previews and explicit snapshot-guarded saves
 ├── SettingsSearch.svelte          # Local bilingual static-key index; navigation results without reading drafts
 ├── LidProtection.svelte           # Native lid preference switch, without status polling
+├── NotificationSettings.svelte    # Native OS notifications preference switches and active readback
 ├── LoggingSettings.svelte         # Independent diagnostic switch; history lives on /logs
 ├── AppUpdates.svelte              # Explicit update checks and project pages
 ├── McpProxySettings.svelte        # General HTTP / MCP Proxy sections with explicit readback and revision guards
@@ -34,7 +35,7 @@ settings/
 | --- | --- | --- |
 | Settings shell | `+page.svelte`, `SettingsSearch.svelte` | Retained panels and static bilingual navigation. |
 | Global behavior | `Behavior.svelte` | Shared prompt generation, local drafts and explicit source-checked saves. |
-| Native preferences | `LidProtection.svelte`, `MiniIsland.svelte` | Independent preference readback; lid enablement is not a protection claim. |
+| Native preferences | `LidProtection.svelte`, `MiniIsland.svelte`, `NotificationSettings.svelte` | Independent preference readback; lid enablement is not a protection claim; notification settings persist independently in `state.notifications`. |
 | Diagnostic recording | `LoggingSettings.svelte` | Confirmed logging enablement and writer health, without a log viewer. |
 | Service target | `OpenCodeService.svelte` | Saved target, connection probes, and private drafts. |
 | CLI updates | `OpenCodeSettings.svelte` | Explicit checks, confirmation, and guarded upgrade. |
@@ -85,6 +86,8 @@ settings/
   never write Proxy settings or refresh global state. Display tokens once and clear them on close or leaving
   General; late rotation/clipboard results cannot revive secrets or copied state. Follow [token
   visibility](docs/settings-lifecycle.md#http-proxy-drafts-and-token-visibility).
+
+- **Notification preferences**: General owns the native notification switches (`state.notifications`: `enabled`, `agentCompleted`, `approvalRequired`, `agentError`). Read preferences and OS permission on active entry/manual refresh without polling or authorization side effects. Category switches remain disabled when `enabled` is false. Save master off-to-on changes before explicitly requesting permission, and never request after failed saves, category changes, disabling or stale completion. Permission failure preserves the saved preference; show fixed localized errors and explicit settings/refresh actions. Keep permission outside AppPreferences and follow [notification lifecycle](docs/settings-lifecycle.md#native-notification-preferences-and-permission).
 
 ## Sync
 

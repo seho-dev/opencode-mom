@@ -14,6 +14,7 @@ Paths in this table are relative to `src-tauri/src/commands/`.
 | Group mutations | `group.rs` | Delegates persistence/projection to `groups`; tray switches notify the main window. Copies are drafted in the UI from `/groups/new?copyFrom=` and persisted through `save_group`. |
 | Model mutations | `model.rs` | Parses `ModelRef` and blocks deletion when references remain. |
 | Power boundary | `power.rs` | Delegates reads and toggles to managed `PowerService`. |
+| Native notifications | `notifications.rs` | Separates saved notification preferences from no-argument permission query/request and fixed system-settings opens. |
 | Provider mutations | `provider.rs` | Exposes `create_provider`/`update_provider`/`delete_provider` and checks references before deletion; provider snapshots arrive with `load_app_state`, and model discovery uses the service catalog through `opencode_list_models`. |
 | Resource boundary | `resources.rs` | Delegates MCP operations directly and skill operations through blocking tasks. |
 | Update boundary | `updates.rs` | Reads `AppHandle.package_info()` for the actual version; delegates manual release checks and fixed-destination browser opens. |
@@ -31,5 +32,6 @@ Paths in this table are relative to `src-tauri/src/commands/`.
 - **Deletion guards**: Collect agent references before agent deletion; reject referenced models/providers with `AppError::references` and location details before deleting them.
 - **Wire DTOs**: `AgentDefinitionDto`, `AgentSourcePreviewDto`, and `AppStateResponse` serialize fields as camelCase; `AgentStorageDto` serializes variants as snake_case.
 - **Notifications**: Emit `app:preferences-changed` to `tray` and `island` after saving preferences; tray-origin group switches emit `tray:config-changed` to `main`. Log notification failures without failing a completed mutation.
+- **OS notification permission**: `get_notification_permission` only queries native authorization, while `request_notification_permission` and `open_notification_settings` are explicit actions. Delegate native work to `notifications::permission`, keep it outside config locks, and never infer authorization from a saved enabled preference or the desktop plugin's unconditional permission result. Permission get/request returns the five-state lowercase union; post-save authorization failure does not change a committed preference.
 - **Blocking work**: Async OpenCode catalog/service-status/target-save/installation/update/upgrade/reload/session/usage, skill, update-check, and project-opener handlers use `tauri::async_runtime::spawn_blocking`; map join failures to configuration errors.
 - **Tests**: `app.rs` includes `app/tests.rs` via `#[cfg(test)] mod tests` for serialization/mock project-add guards; `../../tests/app.rs` uses temporary ConfigPaths::for_home for filesystem/agent-snapshot/JavaScript-roundtrip cases, never the native chooser.

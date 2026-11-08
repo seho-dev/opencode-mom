@@ -444,6 +444,41 @@ test('uncertain update never retries or reads automatically; only a successful e
   expect(store.reloadOpencode).not.toHaveBeenCalled();
 });
 
+test('successful update followed by runtime read failure shows warning and recovers upon explicit refresh without re-updating', async () => {
+  const { store } = config({
+    listPluginRuntime: vi
+      .fn()
+      .mockResolvedValueOnce(runtime([packageItem('example-plugin')]))
+      .mockRejectedValueOnce(new Error('transient read rejection'))
+      .mockResolvedValue(runtime([packageItem('example-plugin')])),
+    updatePluginPackage: vi.fn().mockResolvedValue(undefined),
+  });
+  show(store);
+  await screen.findByText('example-plugin');
+  await fireEvent.click(screen.getByRole('button', { name: en['plugins.updatePackage'] }));
+  const dialog = screen.getByRole('dialog');
+  await fireEvent.click(within(dialog).getByRole('button', { name: en['plugins.updatePackage'] }));
+
+  // Follow-up read failed after update resolved: warning shown, error banner not shown, raw message hidden
+  await screen.findByText(en['plugins.packageUpdatedRuntimeUnavailable']);
+  expect(screen.queryByText(en['plugins.updatePackageFailed'])).toBeNull();
+  expect(screen.queryByText(/transient read rejection/)).toBeNull();
+  expect(store.updatePluginPackage).toHaveBeenCalledExactlyOnceWith('example-plugin');
+  expect(store.listPluginRuntime).toHaveBeenCalledTimes(2);
+
+  // Table items unmounted during read failure, so update button is not present/stale
+  expect(screen.queryByRole('button', { name: en['plugins.updatePackage'] })).toBeNull();
+
+  // Manual refresh recovers runtime list and clears warning without triggering another update or reload
+  await fireEvent.click(screen.getByRole('button', { name: en['plugins.runtimeRefresh'] }));
+  await screen.findByText('example-plugin');
+  expect((screen.getByRole('button', { name: en['plugins.updatePackage'] }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByText(en['plugins.packageUpdatedRuntimeUnavailable'])).toBeNull();
+  expect(store.updatePluginPackage).toHaveBeenCalledOnce();
+  expect(store.listPluginRuntime).toHaveBeenCalledTimes(3);
+  expect(store.reloadOpencode).not.toHaveBeenCalled();
+});
+
 test('each row keeps an Update action and refresh consumes fresh eligibility from the list response', async () => {
   const current: PluginRuntimeItem = {
     ...packageItem('current-package'),
@@ -619,3 +654,41 @@ test('a service switch closes an upgrade confirmation and ignores its late POST 
   expect((screen.getByRole('button', { name: en['plugins.updatePackage'] }) as HTMLButtonElement).disabled).toBe(false);
   expect(store.updatePluginPackage).toHaveBeenCalledOnce();
 });
+
+test.each([
+  {
+    error: { code: 'configuration_failed', detail: 'plugin_update_timeout', message: 'sensitive-timeout-raw' },
+    expectedDiagnostic: en['plugins.updateDiagnosticTimeout'],
+  },
+  {
+    error: { code: 'configuration_failed', detail: 'plugin_update_runtime_http:503', message: 'sensitive-http-raw' },
+    expectedDiagnostic: en['plugins.updateDiagnosticHttp'].replace('{status}', '503'),
+  },
+  {
+    error: { code: 'configuration_failed', detail: 'unknown_diagnostic_key', message: 'sensitive-unknown-raw' },
+    expectedDiagnostic: null,
+  },
+])(
+  'PluginRuntime displays structured diagnostics for $error.detail while retaining generic warning and concealing raw error message',
+  async ({ error, expectedDiagnostic }) => {
+    const { store } = config({
+      updatePluginPackage: vi.fn().mockRejectedValue(error),
+    });
+    show(store);
+    await screen.findByText('example-plugin');
+    await fireEvent.click(screen.getByRole('button', { name: en['plugins.updatePackage'] }));
+    await fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: en['plugins.updatePackage'] }),
+    );
+
+    await screen.findByText(en['plugins.updatePackageFailed']);
+    if (expectedDiagnostic) {
+      expect(screen.getByText(expectedDiagnostic)).toBeTruthy();
+    } else {
+      expect(screen.queryByText(en['plugins.updateDiagnosticTimeout'])).toBeNull();
+      expect(screen.queryByText(en['plugins.updateDiagnosticConnection'])).toBeNull();
+      expect(screen.queryByText(en['plugins.updateDiagnosticVerification'])).toBeNull();
+    }
+    expect(document.body.textContent).not.toContain(error.message);
+  },
+);

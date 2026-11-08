@@ -105,6 +105,12 @@ pub(super) fn safe_event(kind: LogType, event: &str) -> bool {
                 | "app_update_check"
                 | "autostart_set"
                 | "project_page_open"
+                | "notifications_connected"
+                | "notifications_connection_failed"
+                | "notifications_session_unavailable"
+                | "notifications_show_failed"
+                | "notifications_dispatch_failed"
+                | "notifications_preferences_unavailable"
         ),
         LogType::Config => matches!(
             event,

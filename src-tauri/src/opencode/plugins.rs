@@ -13,6 +13,7 @@ use super::transport::{self, ManagedConnection};
 
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(20);
+const UPDATE_TIMEOUT: Duration = Duration::from_secs(60);
 
 mod global;
 mod removal;
@@ -183,8 +184,14 @@ pub fn list(paths: &ConfigPaths) -> Result<PluginRuntime, AppError> {
 
 pub fn update(paths: &ConfigPaths, target: &str) -> Result<(), AppError> {
     validate_global_scope(paths)?;
-    let deadline = Instant::now() + TIMEOUT;
-    let connection = transport::connect(deadline)?;
+    let deadline = Instant::now() + UPDATE_TIMEOUT;
+    let connection = transport::connect(deadline).map_err(|mut error| {
+        error.message = format!(
+            "Plugin update connection/health failed before dispatch: {}",
+            error.message
+        );
+        transport::plugin_verification_failure(error, deadline)
+    })?;
     update_with(paths, target, &connection, deadline)
 }
 
@@ -212,7 +219,9 @@ fn read_config_sources(
     directory: &str,
     deadline: Instant,
 ) -> Result<PluginConfigPreview, AppError> {
-    connection.verify_identity(deadline)?;
+    connection
+        .verify_identity(deadline)
+        .map_err(|error| transport::plugin_verification_failure(error, deadline))?;
     let sources: Vec<JsonObject<ConfigSource>> = connection.get_json(
         &["config"],
         &[("location[directory]", directory)],
@@ -222,7 +231,9 @@ fn read_config_sources(
         "2 MiB",
     )?;
     let result = project_config_sources(directory.to_owned(), sources)?;
-    connection.verify_identity(deadline)?;
+    connection
+        .verify_identity(deadline)
+        .map_err(|error| transport::plugin_verification_failure(error, deadline))?;
 
     Ok(result)
 }
@@ -422,15 +433,6 @@ fn update_with(
         &json!({"targets": [target]}),
         deadline,
     )?;
-    (|| {
-        connection.verify_identity(deadline)?;
-        state.scope.ensure_current()
-    })()
-    .map_err(|_: AppError| {
-        AppError::configuration(
-            "Plugin update outcome unknown; refresh with GET before deciding whether to retry",
-        )
-    })?;
 
     Ok(())
 }
@@ -473,7 +475,8 @@ fn runtime(
         "2 MiB",
     )?;
     let result = project_runtime(envelope.0)?;
-    validate_requested_directory(requested_directory, &result)?;
+    validate_requested_directory(requested_directory, &result)
+        .map_err(|error| transport::plugin_verification_failure(error, deadline))?;
 
     Ok(result)
 }

@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
@@ -11,6 +12,8 @@ use crate::logging::{record, LogStatus, LogType};
 use crate::models::{self, AppPreferences};
 use crate::opencode::island::{self as api, IslandApi, IslandChange, IslandSnapshot};
 use crate::paths::ConfigPaths;
+
+const MAX_COMPLETIONS: usize = 256;
 
 #[cfg(any(target_os = "macos", test))]
 mod geometry;
@@ -37,6 +40,7 @@ pub(crate) struct IslandState {
     enabled: bool,
     connection: &'static str,
     connection_generation: u64,
+    completion_sequence: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     sessions: Vec<api::IslandSession>,
@@ -56,6 +60,8 @@ struct Cache {
     connection: Option<&'static str>,
     error: Option<String>,
     snapshot: Arc<IslandSnapshot>,
+    completion_sequence: u64,
+    completed_events: VecDeque<String>,
     api: Option<IslandApi>,
     api_generation: u64,
     cancel: Option<watch::Sender<bool>>,
@@ -127,6 +133,8 @@ impl Cache {
         self.connection = None;
         self.error = None;
         self.snapshot = Arc::default();
+        self.completion_sequence = 0;
+        self.completed_events.clear();
         self.invalidate_api();
         self.notch_width = 0.0;
         self.top_inset = 0.0;
@@ -187,6 +195,8 @@ impl Cache {
         self.generation = self.generation.wrapping_add(1);
         self.invalidate_api();
         self.snapshot = Arc::default();
+        self.completion_sequence = 0;
+        self.completed_events.clear();
         self.connection = Some("connecting");
         self.error = None;
         if let Some(cancel) = self.cancel.take() {
@@ -200,14 +210,47 @@ impl Cache {
 #[derive(Default)]
 struct Coalescer {
     snapshot: bool,
+    completions: Vec<Completion>,
     message_session: Option<String>,
     deadline: Option<tokio::time::Instant>,
+}
+
+struct Completion {
+    event_id: String,
+    session_id: String,
+    root: bool,
 }
 
 impl Coalescer {
     fn record(&mut self, event: IslandChange, cache: &Cache, now: tokio::time::Instant) {
         match event {
-            IslandChange::Snapshot => self.snapshot = true,
+            IslandChange::Snapshot
+            | IslandChange::ApprovalRequired { .. }
+            | IslandChange::Failed { .. } => self.snapshot = true,
+            IslandChange::Completed {
+                event_id,
+                session_id,
+            } => {
+                self.snapshot = true;
+                if self.completions.len() < MAX_COMPLETIONS
+                    && !cache.completed_events.contains(&event_id)
+                    && !self
+                        .completions
+                        .iter()
+                        .any(|item| item.event_id == event_id)
+                {
+                    let root = cache
+                        .snapshot
+                        .sessions
+                        .iter()
+                        .any(|session| session.id == session_id && session.parent_id.is_none());
+                    self.completions.push(Completion {
+                        event_id,
+                        session_id,
+                        root,
+                    });
+                }
+            }
             IslandChange::Messages { session_id } if cache.visible_message(&session_id) => {
                 self.message_session = Some(session_id);
             }
@@ -215,6 +258,46 @@ impl Coalescer {
         }
         self.deadline
             .get_or_insert(now + Duration::from_millis(250));
+    }
+
+    fn publish(
+        &self,
+        cache: &mut Cache,
+        generation: u64,
+        api_generation: u64,
+        revision: u64,
+        snapshot: IslandSnapshot,
+    ) -> bool {
+        if !cache.current(generation)
+            || cache.api_generation != api_generation
+            || cache.api.is_none()
+        {
+            return false;
+        }
+        for completion in &self.completions {
+            if cache.completed_events.contains(&completion.event_id) {
+                continue;
+            }
+            if cache.completed_events.len() == MAX_COMPLETIONS {
+                cache.completed_events.pop_front();
+            }
+            cache
+                .completed_events
+                .push_back(completion.event_id.clone());
+            if completion.root
+                || snapshot
+                    .sessions
+                    .iter()
+                    .chain(&cache.snapshot.sessions)
+                    .any(|session| {
+                        session.id == completion.session_id && session.parent_id.is_none()
+                    })
+            {
+                cache.completion_sequence = cache.completion_sequence.saturating_add(1);
+            }
+        }
+        cache.publish(generation, revision, snapshot);
+        true
     }
 
     fn notify(&self, cache: &Cache) -> bool {
@@ -305,6 +388,7 @@ impl IslandService {
             enabled: cache.enabled,
             connection: cache.connection.unwrap_or("disabled"),
             connection_generation: cache.generation,
+            completion_sequence: cache.completion_sequence,
             error: cache.error.clone(),
             sessions: Vec::new(),
             permissions: Vec::new(),
@@ -889,7 +973,16 @@ async fn connected(
     let mut pending = Coalescer::default();
     loop {
         if let Some(wake) = pending.deadline {
-            if let Err(event) = race(tokio::time::sleep_until(wake), events.next()).await {
+            // Backpressure bounds pending identities without shortening the debounce or dropping successes.
+            let event = if pending.completions.len() == MAX_COMPLETIONS {
+                tokio::time::sleep_until(wake).await;
+                None
+            } else {
+                race(tokio::time::sleep_until(wake), events.next())
+                    .await
+                    .err()
+            };
+            if let Some(event) = event {
                 let state = lock(cache);
                 if !state.current(generation) || state.api_generation != api_generation {
                     return Err(disabled());
@@ -902,13 +995,7 @@ async fn connected(
                 let revision = next_revision(cache, generation)?;
                 let snapshot = api.snapshot().await?;
                 let mut state = lock(cache);
-                if !state.current(generation)
-                    || state.api_generation != api_generation
-                    || state.api.is_none()
-                {
-                    return Err(disabled());
-                }
-                state.publish(generation, revision, snapshot);
+                pending.publish(&mut state, generation, api_generation, revision, snapshot);
             }
 
             let notify_visible = {

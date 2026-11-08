@@ -22,6 +22,8 @@ Paths name source modules; `settings/SettingsSearch.svelte` is relative to `src/
 
 - **Settings search**: `settings.search*` labels the local finder, result count, navigation hint, clear action and empty state; keep both locales concise/action-oriented. `settings/SettingsSearch.svelte` explicitly indexes existing labels/descriptions and technical keys across dictionaries, never user values; preserve key identities. `groups.enableAria`/`groups.disableAria` require matching `{name}` placeholders.
 
+- **Notification permission**: `settings.notifications*` separates saved preferences from OS authorization and delivery. macOS may show the first native authorization dialog; Windows guides the installed app through system notification settings, not an equivalent dialog. Keep pending, denied, unavailable and unknown states explicit in both locales, with settings/manual-refresh guidance and fixed errors that never include backend content. Index permission guidance using static bilingual search keys.
+
 ## Dashboard and Island terminology
 
 - **Dashboard copy**: `dashboard.*` covers runtime selection, Quick Actions, configured-resource counts, lazy MCP Proxy status, and independent usage periods. Translate input/output chart abbreviations; unavailable proxy readback never claims zero services or a running gateway.

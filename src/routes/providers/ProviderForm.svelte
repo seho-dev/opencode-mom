@@ -12,12 +12,30 @@ import { toast } from '$src/shell/toast.svelte.js';
 import type { ProviderDef } from '$src/types/providers.js';
 
 const PACKAGE_OPTIONS = [
-  { value: 'aisdk:@ai-sdk/openai-compatible', label: 'aisdk:@ai-sdk/openai-compatible' },
-  { value: 'aisdk:@ai-sdk/openai', label: 'aisdk:@ai-sdk/openai' },
-  { value: '@opencode/ai/providers/openai-compatible', label: '@opencode/ai/providers/openai-compatible' },
-  { value: '@opencode/ai/providers/openai', label: '@opencode/ai/providers/openai' },
-  { value: '@opencode/ai/providers/anthropic', label: '@opencode/ai/providers/anthropic' },
-];
+  '@opencode/ai/providers/openai',
+  '@opencode/ai/providers/openai/chat',
+  '@opencode/ai/providers/openai/responses',
+  '@opencode/ai/providers/openai-compatible',
+  '@opencode/ai/providers/openai-compatible/responses',
+  '@opencode/ai/providers/anthropic',
+  '@opencode/ai/providers/anthropic-compatible',
+  '@opencode/ai/providers/google',
+  '@opencode/ai/providers/google-vertex',
+  '@opencode/ai/providers/google-vertex/gemini',
+  '@opencode/ai/providers/google-vertex/chat',
+  '@opencode/ai/providers/google-vertex/responses',
+  '@opencode/ai/providers/google-vertex/messages',
+  '@opencode/ai/providers/azure',
+  '@opencode/ai/providers/azure/chat',
+  '@opencode/ai/providers/azure/responses',
+  '@opencode/ai/providers/amazon-bedrock',
+  '@opencode/ai/providers/amazon-bedrock/mantle',
+  '@opencode/ai/providers/amazon-bedrock/mantle/chat',
+  '@opencode/ai/providers/amazon-bedrock/mantle/messages',
+  '@opencode/ai/providers/amazon-bedrock/mantle/responses',
+  '@opencode/ai/providers/openrouter',
+  '@opencode/ai/providers/xai',
+].map((value) => ({ value, label: value }));
 
 let { source }: { source?: ProviderDef } = $props();
 const config = getConfig();
@@ -141,9 +159,9 @@ $effect(() => {
               id="provider-npm"
               bind:value={() => field.state.value, (value) => field.handleChange(value)}
               options={PACKAGE_OPTIONS}
-              placeholder="aisdk:@ai-sdk/openai-compatible"
+              placeholder="@opencode/ai/providers/openai-compatible"
               aria-invalid={field.state.meta.errors.length ? 'true' : undefined}
-              aria-describedby={field.state.meta.errors.length ? 'provider-npm-error' : undefined}
+              aria-describedby={field.state.meta.errors.length ? 'provider-npm-hint provider-npm-error' : 'provider-npm-hint'}
             />
           </div>
           {#if field.state.meta.errors.length}
@@ -153,6 +171,7 @@ $effect(() => {
           {/if}
         {/snippet}
       </form.Field>
+      <small id="provider-npm-hint" class="field-hint">{i18n.t('providers.npmHint')}</small>
     </div>
     <div class="field full">
       <label for="provider-base-url">{i18n.t('providers.baseUrlLabel')}</label>

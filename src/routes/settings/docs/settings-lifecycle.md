@@ -16,6 +16,12 @@ General's `http=true` branch of `McpProxySettings.svelte` owns MOM HTTP port (de
 
 `/logs` is an independent navigation page. Keep the viewer, type/status/time filters, operation details, directory opening and confirmed deletion there rather than embedding them in Settings. Disabled recording does not hide or erase history. History and detail requests are bounded, manually refreshed, and reject late results after filter changes, selection changes, clear or unmount.
 
+## Native notification preferences and permission
+
+`NotificationSettings.svelte` reads preferences and OS permission only on active entry or manual refresh, without polling or authorization side effects. The master and three category switches use confirmed backend preferences; categories are disabled while the master is off. A successful master off-to-on save requests authorization only while still mounted, active and current. Categories, disabling, failed saves and late completions never request permission. A denied or failed request preserves the saved enabled value and reports permission separately, with fixed localized errors rather than raw backend content.
+
+macOS requests native notification authorization on the first explicit enable/request; denied authorization requires System Settings. Windows checks the installed app's notification setting and opens Windows notification settings when user action is needed; it has no equivalent macOS permission dialog. The section provides explicit authorization, settings and refresh actions as appropriate to the returned status. Pending guards, generation checks and focus restoration apply across reads, saves and authorization. Static bilingual search keys include permission guidance without reading runtime state.
+
 ## Retained panels, search and help
 
 - **General sections**: Use four independently labelled sections with headings outside `max-w-3xl` cards and 24px spacing: app behavior (autostart/Mini Island/lid), OpenCode V2 (connection before CLI updates), MOM HTTP, app updates (secondary support). Preserve platform conditions/search anchors/guarded lifecycles/per-section saves; MCP Proxy layout stays independent.

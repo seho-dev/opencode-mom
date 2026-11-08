@@ -596,7 +596,6 @@ fn message_invalidations_do_not_fetch_snapshots_or_change_bounds() {
             width: 1512.0,
             height: 982.0,
         },
-        visible: geometry::Rect::default(),
         top_inset: 32.0,
         notch_left: -846.0,
         notch_right: -666.0,
@@ -626,6 +625,248 @@ fn message_invalidations_do_not_fetch_snapshots_or_change_bounds() {
     );
     assert!(hidden.deadline.is_none());
     assert!(!hidden.snapshot);
+}
+
+#[test]
+fn coalescer_completion_deduplication_and_root_confirmation() {
+    let server = FakeApi::new("test");
+    let mut cache = Cache {
+        generation: 7,
+        enabled: true,
+        api_generation: 1,
+        api: Some(server.api()),
+        ..Cache::default()
+    };
+    let root_a = api::IslandSession {
+        id: "ses_root".into(),
+        title: "Root".into(),
+        directory: "/root".into(),
+        updated_at: 1,
+        parent_id: None,
+        status: "idle".into(),
+    };
+    let child_b = api::IslandSession {
+        id: "ses_child".into(),
+        title: "Child".into(),
+        directory: "/child".into(),
+        updated_at: 1,
+        parent_id: Some("ses_root".into()),
+        status: "idle".into(),
+    };
+    cache.snapshot = Arc::new(IslandSnapshot {
+        sessions: vec![root_a.clone(), child_b],
+        permissions: Vec::new(),
+        questions: Vec::new(),
+    });
+
+    let mut coalescer = Coalescer::default();
+    let now = tokio::time::Instant::now();
+
+    // 1. Root session completion records and confirms root via cached snapshot
+    coalescer.record(
+        IslandChange::Completed {
+            event_id: "evt_1".into(),
+            session_id: "ses_root".into(),
+        },
+        &cache,
+        now,
+    );
+    assert_eq!(coalescer.completions.len(), 1);
+    assert!(coalescer.completions[0].root);
+
+    // 2. Duplicate event_id in same window is ignored
+    coalescer.record(
+        IslandChange::Completed {
+            event_id: "evt_1".into(),
+            session_id: "ses_root".into(),
+        },
+        &cache,
+        now,
+    );
+    assert_eq!(coalescer.completions.len(), 1);
+
+    // 3. Child session completion records root=false
+    coalescer.record(
+        IslandChange::Completed {
+            event_id: "evt_child".into(),
+            session_id: "ses_child".into(),
+        },
+        &cache,
+        now,
+    );
+    assert_eq!(coalescer.completions.len(), 2);
+    assert!(!coalescer.completions[1].root);
+
+    // 4. Unknown session records root=false initially
+    coalescer.record(
+        IslandChange::Completed {
+            event_id: "evt_late_root".into(),
+            session_id: "ses_late".into(),
+        },
+        &cache,
+        now,
+    );
+    assert_eq!(coalescer.completions.len(), 3);
+    assert!(!coalescer.completions[2].root);
+
+    // Publish with new snapshot that confirms ses_late is root, but ses_child remains child
+    let late_root = api::IslandSession {
+        id: "ses_late".into(),
+        title: "Late Root".into(),
+        directory: "/late".into(),
+        updated_at: 2,
+        parent_id: None,
+        status: "idle".into(),
+    };
+    let new_snapshot = IslandSnapshot {
+        sessions: vec![root_a, late_root],
+        permissions: Vec::new(),
+        questions: Vec::new(),
+    };
+
+    assert!(coalescer.publish(&mut cache, 7, 1, 1, new_snapshot));
+    // evt_1 (root) increments +1; evt_child (child) does NOT increment; evt_late_root (confirmed in refreshed snapshot) increments +1 -> total 2
+    assert_eq!(cache.completion_sequence, 2);
+    assert_eq!(cache.completed_events.len(), 3);
+
+    // Repetitive publish of already processed event does not increment
+    let mut second_coalescer = Coalescer::default();
+    second_coalescer.record(
+        IslandChange::Completed {
+            event_id: "evt_1".into(),
+            session_id: "ses_root".into(),
+        },
+        &cache,
+        now,
+    );
+    assert_eq!(second_coalescer.completions.len(), 0);
+
+    // Generation change resets completion sequence and completed events
+    cache.reconnect().unwrap();
+    assert_eq!(cache.completion_sequence, 0);
+    assert!(cache.completed_events.is_empty());
+}
+
+#[test]
+fn coalescer_retains_newer_cached_snapshot_and_increments_completion_on_older_revision() {
+    let server = FakeApi::new("test");
+    let mut cache = Cache {
+        generation: 7,
+        enabled: true,
+        api_generation: 1,
+        api: Some(server.api()),
+        published: 5,
+        ..Cache::default()
+    };
+    let newer_root = api::IslandSession {
+        id: "ses_newer_root".into(),
+        title: "Newer Root".into(),
+        directory: "/newer".into(),
+        updated_at: 10,
+        parent_id: None,
+        status: "idle".into(),
+    };
+    let newer_snapshot = Arc::new(IslandSnapshot {
+        sessions: vec![newer_root],
+        permissions: Vec::new(),
+        questions: Vec::new(),
+    });
+    cache.snapshot = Arc::clone(&newer_snapshot);
+
+    let mut coalescer = Coalescer::default();
+    let now = tokio::time::Instant::now();
+
+    // Event for root session that exists in the newer cached snapshot
+    coalescer.record(
+        IslandChange::Completed {
+            event_id: "evt_same_gen".into(),
+            session_id: "ses_newer_root".into(),
+        },
+        &cache,
+        now,
+    );
+    assert_eq!(coalescer.completions.len(), 1);
+    assert!(coalescer.completions[0].root);
+
+    // Stale generation rejected: no increment, no completed_events
+    let older_snapshot = IslandSnapshot {
+        sessions: Vec::new(),
+        permissions: Vec::new(),
+        questions: Vec::new(),
+    };
+    assert!(!coalescer.publish(&mut cache, 6, 1, 3, older_snapshot.clone()));
+    assert_eq!(cache.completion_sequence, 0);
+    assert!(cache.completed_events.is_empty());
+
+    // Stale api_generation rejected: no increment, no completed_events
+    assert!(!coalescer.publish(&mut cache, 7, 0, 3, older_snapshot.clone()));
+    assert_eq!(cache.completion_sequence, 0);
+    assert!(cache.completed_events.is_empty());
+
+    // Valid current generation & api_generation, but older revision (3 < published 5)
+    // Coalescer must still increment completion sequence, record completed event,
+    // but cache must retain newer snapshot and newer published revision (3 is rejected by cache.publish).
+    assert!(coalescer.publish(&mut cache, 7, 1, 3, older_snapshot));
+    assert_eq!(cache.completion_sequence, 1);
+    assert_eq!(cache.completed_events.len(), 1);
+    assert_eq!(cache.completed_events[0], "evt_same_gen");
+    assert_eq!(cache.published, 5);
+    assert!(Arc::ptr_eq(&cache.snapshot, &newer_snapshot));
+
+    // Follow-up completion where root evidence is only in the incoming snapshot (which is older revision than published)
+    let incoming_root = api::IslandSession {
+        id: "ses_incoming_root".into(),
+        title: "Incoming Root".into(),
+        directory: "/incoming".into(),
+        updated_at: 11,
+        parent_id: None,
+        status: "idle".into(),
+    };
+    let incoming_child = api::IslandSession {
+        id: "ses_incoming_child".into(),
+        title: "Incoming Child".into(),
+        directory: "/child".into(),
+        updated_at: 11,
+        parent_id: Some("ses_incoming_root".into()),
+        status: "idle".into(),
+    };
+    let incoming_snapshot = IslandSnapshot {
+        sessions: vec![incoming_root, incoming_child],
+        permissions: Vec::new(),
+        questions: Vec::new(),
+    };
+    let mut second_coalescer = Coalescer::default();
+    second_coalescer.record(
+        IslandChange::Completed {
+            event_id: "evt_incoming_root".into(),
+            session_id: "ses_incoming_root".into(),
+        },
+        &cache,
+        now,
+    );
+    second_coalescer.record(
+        IslandChange::Completed {
+            event_id: "evt_incoming_child".into(),
+            session_id: "ses_incoming_child".into(),
+        },
+        &cache,
+        now,
+    );
+    second_coalescer.record(
+        IslandChange::Completed {
+            event_id: "evt_unknown".into(),
+            session_id: "ses_never_seen".into(),
+        },
+        &cache,
+        now,
+    );
+    // Publish with revision 4 (< 5); incoming root confirmed from snapshot -> completion_sequence becomes 2;
+    // child and unknown are NOT counted. Cache snapshot still retains newer_snapshot.
+    assert!(second_coalescer.publish(&mut cache, 7, 1, 4, incoming_snapshot));
+    assert_eq!(cache.completion_sequence, 2);
+    assert_eq!(cache.completed_events.len(), 4);
+    assert_eq!(cache.published, 5);
+    assert!(Arc::ptr_eq(&cache.snapshot, &newer_snapshot));
 }
 
 #[test]
@@ -713,6 +954,7 @@ fn public_state_is_camel_case_and_disabled_by_default() {
         enabled: false,
         connection: "disabled",
         connection_generation: 0,
+        completion_sequence: 0,
         error: None,
         sessions: Vec::new(),
         permissions: Vec::new(),
@@ -725,6 +967,7 @@ fn public_state_is_camel_case_and_disabled_by_default() {
     assert_eq!(value["connection"], "disabled");
     assert_eq!(value["enabled"], false);
     assert_eq!(value["connectionGeneration"], 0);
+    assert_eq!(value["completionSequence"], 0);
     assert_eq!(value["notchWidth"], 0.0);
     assert_eq!(value["topInset"], 0.0);
     assert!(value.get("error").is_none());

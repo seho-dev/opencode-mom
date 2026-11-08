@@ -11,7 +11,6 @@ pub(super) struct Rect {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Screen {
     pub frame: Rect,
-    pub visible: Rect,
     pub top_inset: f64,
     pub notch_left: f64,
     pub notch_right: f64,
@@ -55,18 +54,15 @@ pub(super) fn placement(screen: Screen, mode: IslandView) -> Placement {
         (frame.x, frame.x)
     };
     let notch_width = (notch_right - notch_left).max(0.0);
-    let top = if top_inset > 0.0 {
-        frame.y + frame.height
-    } else {
-        (screen.visible.y + screen.visible.height).min(frame.y + frame.height)
-    };
+    let top = frame.y + frame.height;
     let center = if notch_width > 0.0 {
         (notch_left + notch_right) / 2.0
     } else {
         frame.x + frame.width / 2.0
     };
     let mut width = match mode {
-        IslandView::Compact => (notch_width + 112.0).max(200.0),
+        IslandView::Compact if notch_width > 0.0 => (notch_width + 112.0).max(200.0),
+        IslandView::Compact => 320.0,
         IslandView::Peek => 400.0,
         IslandView::Expanded => 560.0,
     }
@@ -80,7 +76,8 @@ pub(super) fn placement(screen: Screen, mode: IslandView) -> Placement {
     }
 
     let height = match mode {
-        IslandView::Compact => top_inset.max(28.0),
+        IslandView::Compact if notch_width > 0.0 => top_inset.max(28.0),
+        IslandView::Compact => 48.0,
         IslandView::Peek => top_inset + 132.0,
         IslandView::Expanded => 520.0,
     }
@@ -110,12 +107,6 @@ mod tests {
                     y: dy,
                     width: 1712.0,
                     height: 1112.0,
-                },
-                visible: Rect {
-                    x: dx,
-                    y: dy,
-                    width: 1712.0,
-                    height: 1074.0,
                 },
                 top_inset: 38.0,
                 notch_left: 751.0 + dx,
@@ -238,7 +229,6 @@ mod tests {
                 width: 1512.0,
                 height: 982.0,
             },
-            visible: Rect::default(),
             top_inset: 32.0,
             notch_left: -846.0,
             notch_right: -666.0,
@@ -292,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn no_notch_modes_share_center_and_menu_bar_top_at_negative_origins() {
+    fn no_notch_modes_share_center_and_screen_top_at_negative_origins() {
         let screen = Screen {
             frame: Rect {
                 x: -1920.0,
@@ -300,19 +290,13 @@ mod tests {
                 width: 1920.0,
                 height: 1080.0,
             },
-            visible: Rect {
-                x: -1920.0,
-                y: -1080.0,
-                width: 1920.0,
-                height: 1056.0,
-            },
             top_inset: 0.0,
             notch_left: 0.0,
             notch_right: 0.0,
         };
 
         for (mode, width, height) in [
-            (IslandView::Compact, 200.0, 28.0),
+            (IslandView::Compact, 320.0, 48.0),
             (IslandView::Peek, 400.0, 132.0),
             (IslandView::Expanded, 560.0, 520.0),
         ] {
@@ -321,7 +305,7 @@ mod tests {
                 target.frame,
                 Rect {
                     x: -960.0 - width / 2.0,
-                    y: -24.0 - height,
+                    y: -height,
                     width,
                     height,
                 }
@@ -340,19 +324,40 @@ mod tests {
     }
 
     #[test]
-    fn fallback_is_below_menu_bar_and_clamps_tiny_screen() {
+    fn no_notch_compact_ignores_safe_inset_height_and_width() {
+        // Zero notch width with a positive safe inset is still non-notched: fixed 320x48,
+        // never the notched max(top_inset, 28) height branch.
+        let frame = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1512.0,
+            height: 982.0,
+        };
+        let screen = Screen {
+            frame,
+            top_inset: 32.0,
+            notch_left: 500.0,
+            notch_right: 500.0,
+        };
+        let compact = placement(screen, IslandView::Compact);
+        assert_eq!(compact.notch_width, 0.0);
+        assert_eq!(compact.frame.width, 320.0);
+        assert_eq!(compact.frame.height, 48.0);
+        assert_eq!(compact.frame.x, 596.0);
+        assert_eq!(
+            compact.frame.y + compact.frame.height,
+            frame.y + frame.height
+        );
+    }
+
+    #[test]
+    fn no_notch_modes_clamp_to_tiny_screen_at_screen_top() {
         let screen = Screen {
             frame: Rect {
                 x: 200.0,
                 y: -800.0,
                 width: 240.0,
                 height: 180.0,
-            },
-            visible: Rect {
-                x: 200.0,
-                y: -800.0,
-                width: 240.0,
-                height: 156.0,
             },
             top_inset: 0.0,
             notch_left: 0.0,
@@ -361,24 +366,29 @@ mod tests {
         assert_eq!(
             placement(screen, IslandView::Compact).frame,
             Rect {
-                x: 220.0,
-                y: -672.0,
-                width: 200.0,
-                height: 28.0
+                x: 200.0,
+                y: -668.0,
+                width: 240.0,
+                height: 48.0,
             }
         );
         assert_eq!(
             placement(screen, IslandView::Peek).frame,
             Rect {
                 x: 200.0,
-                y: -776.0,
+                y: -752.0,
                 width: 240.0,
                 height: 132.0,
             }
         );
         assert_eq!(
             placement(screen, IslandView::Expanded).frame,
-            screen.visible
+            Rect {
+                x: 200.0,
+                y: -800.0,
+                width: 240.0,
+                height: 180.0,
+            }
         );
         assert_eq!(placement(screen, IslandView::Compact).top_inset, 0.0);
     }
@@ -397,7 +407,6 @@ mod tests {
                     width,
                     height,
                 },
-                visible: Rect::default(),
                 top_inset: 32.0,
                 notch_left,
                 notch_right,
@@ -435,7 +444,6 @@ mod tests {
                 width: 600.0,
                 height: 700.0,
             },
-            visible: Rect::default(),
             top_inset: 20.0,
             notch_left: -600.0,
             notch_right: -420.0,

@@ -17,6 +17,7 @@ fn legacy_config_without_preferences_yields_defaults() {
     );
     assert!(!config.state.island_enabled);
     assert!(!config.state.logging_enabled);
+    assert_eq!(config.state.notifications, NotificationSettings::default());
     assert!(config.projects.is_empty());
     assert_eq!(config.state.selected_project_id, None);
 }
@@ -345,4 +346,37 @@ fn save_config_partial_write_failure_preserves_original_bytes() {
     )
     .is_err());
     assert_ne!(fs::read(&path).unwrap(), original);
+}
+
+#[test]
+fn notification_settings_roundtrip_and_missing_fields_use_safe_defaults() {
+    assert_eq!(
+        serde_json::to_value(NotificationSettings::default()).unwrap(),
+        json!({ "enabled": false, "agentCompleted": true, "approvalRequired": true, "agentError": true })
+    );
+    assert_eq!(
+        serde_json::from_str::<NotificationSettings>("{}").unwrap(),
+        NotificationSettings::default()
+    );
+    let mut config = AppConfig::default();
+    config.state.notifications = NotificationSettings {
+        enabled: true,
+        agent_completed: false,
+        approval_required: true,
+        agent_error: false,
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    assert!(json.contains("\"notifications\""));
+    let back: AppConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}
+
+#[test]
+fn notification_settings_rejects_unknown_fields_and_bad_types() {
+    use crate::models::NotificationSettings;
+    assert!(serde_json::from_str::<NotificationSettings>(
+        r#"{"enabled":true,"agentCompleted":true,"unknown":"x"}"#
+    )
+    .is_err());
+    assert!(serde_json::from_str::<NotificationSettings>(r#"{"enabled":"yes"}"#).is_err());
 }

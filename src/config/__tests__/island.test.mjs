@@ -12,6 +12,7 @@ test('island IPC and lazy store preserve exact arguments without config preload 
       enabled: false,
       connection: 'disabled',
       connectionGeneration: 7,
+      completionSequence: 0,
       sessions: [],
       permissions: [{ id: 'perm_3', sessionId: 'ses_child', action: 'edit', resources: ['src/file'], save: ['src/*'] }],
       questions: [],

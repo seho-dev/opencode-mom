@@ -145,12 +145,16 @@ impl ManagedConnection {
     }
 
     pub(in crate::opencode) fn verify_identity(&self, deadline: Instant) -> Result<(), AppError> {
-        if !self.healthy(deadline)? {
-            return Err(failure(
-                "service identity changed; reconnect before reading",
-            ));
-        }
-        self.ensure_current()
+        let deadline = deadline.min(Instant::now() + HEALTH_TIMEOUT);
+        (|| {
+            if !self.healthy(deadline)? {
+                return Err(failure(
+                    "service unavailable or identity changed; reconnect before reading",
+                ));
+            }
+            self.ensure_current()
+        })()
+        .map_err(|error| plugin_verification_failure(error, deadline))
     }
 
     pub(in crate::opencode) fn directory(&self) -> Option<&Path> {
@@ -201,19 +205,49 @@ impl ManagedConnection {
         operation: &str,
         limit: &str,
     ) -> Result<T, AppError> {
-        let mut url = api_url(&self.url, segments)?;
-        if !query.is_empty() {
-            url.query_pairs_mut().extend_pairs(query.iter().copied());
-        }
+        let plugin = matches!(segments, ["plugin"] | ["config"]);
+        let mut diagnostic = Some("plugin_update_verification".to_owned());
+        (|| {
+            let mut url = api_url(&self.url, segments)?;
+            if !query.is_empty() {
+                url.query_pairs_mut().extend_pairs(query.iter().copied());
+            }
+            // Plugin reads can initialize packages; identity probes keep their short timeout.
+            let timeout = if plugin {
+                remaining(deadline)?
+            } else {
+                HEALTH_TIMEOUT
+            };
+            let response = self
+                .request(url, deadline, timeout)?
+                .send()
+                .map_err(|error| {
+                    diagnostic = plugin_request_diagnostic(&error).map(str::to_owned);
+                    if plugin {
+                        request_failure(error)
+                    } else {
+                        failure(request_failure_reason(&error))
+                    }
+                })?;
+            diagnostic = (response.status() != StatusCode::OK)
+                .then(|| plugin_http_diagnostic(response.status()))
+                .flatten();
+            let value = response_json(response, deadline, max_bytes, operation, limit)?;
+            diagnostic = Some("plugin_update_verification".to_owned());
+            self.ensure_current()?;
 
-        let response = self
-            .request(url, deadline, HEALTH_TIMEOUT)?
-            .send()
-            .map_err(request_failure)?;
-        let value = response_json(response, deadline, max_bytes, operation, limit)?;
-        self.ensure_current()?;
-
-        Ok(value)
+            Ok(value)
+        })()
+        .map_err(|mut error: AppError| {
+            if plugin {
+                error.message = format!("OpenCode {operation}: {}", error.message);
+                if Instant::now() >= deadline {
+                    diagnostic = Some("plugin_update_timeout".to_owned());
+                }
+                error.detail = diagnostic;
+            }
+            error
+        })
     }
 
     pub(in crate::opencode) fn reload(&self, deadline: Instant) -> Result<(), AppError> {
@@ -262,10 +296,24 @@ impl ManagedConnection {
             return Err(AppError::validation("Invalid plugin operation"));
         }
 
-        let reservation = self.snapshot.reserve_side_effect(deadline)?;
-        if !self.healthy(deadline)? {
-            return Err(AppError::configuration(
-                "Plugin service identity changed; refresh before writing",
+        let reservation = self
+            .snapshot
+            .reserve_side_effect(deadline)
+            .map_err(|error| plugin_verification_failure(error, deadline))?;
+        let health_deadline = deadline.min(Instant::now() + HEALTH_TIMEOUT);
+        let healthy = self.healthy(health_deadline).map_err(|mut error| {
+            error.message = format!(
+                "Plugin {operation} pre-dispatch identity check failed: {}",
+                error.message
+            );
+            plugin_verification_failure(error, health_deadline)
+        })?;
+        if !healthy {
+            return Err(plugin_verification_failure(
+                AppError::configuration(format!(
+                    "Plugin {operation} pre-dispatch health probe timed out, service unavailable or identity changed; refresh before writing"
+                )),
+                health_deadline,
             ));
         }
 
@@ -278,37 +326,55 @@ impl ManagedConnection {
                 .append_pair("location[directory]", directory);
         }
 
-        let request = self
-            .client
-            .post(url)
-            .json(body)
-            .timeout(remaining(deadline)?.min(HEALTH_TIMEOUT));
+        let request = self.client.post(url).json(body).timeout(
+            remaining(deadline).map_err(|error| plugin_verification_failure(error, deadline))?,
+        );
         let request = match &self.registration.password {
             Some(password) => request.basic_auth("opencode", Some(password)),
             None => request,
         };
-        let unknown = || {
-            AppError::configuration(
-            "Plugin operation outcome unknown; refresh with GET before deciding whether to retry",
-        )
+        let unknown = |reason: &str, diagnostic| {
+            let mut error = AppError::configuration(format!(
+                "Plugin {operation} {reason}; outcome unknown; refresh with GET before deciding whether to retry"
+            ));
+            error.detail = diagnostic;
+            error
         };
-        let response = request.send().map_err(|_| unknown())?;
-        remaining(deadline).map_err(|_| unknown())?;
-        self.ensure_current().map_err(|_| unknown())?;
+        let response = request.send().map_err(|error| {
+            unknown(
+                request_failure_reason(&error),
+                plugin_request_diagnostic(&error).map(str::to_owned),
+            )
+        })?;
+        // A 204 commits the update outcome; subsequent reads are independent.
+        if operation == "update" && response.status() == StatusCode::NO_CONTENT {
+            return Ok((None, reservation));
+        }
+        remaining(deadline).map_err(|_| {
+            unknown(
+                "deadline expired after dispatch",
+                Some("plugin_update_timeout".to_owned()),
+            )
+        })?;
+        self.ensure_current().map_err(|_| {
+            unknown(
+                "selected service changed after dispatch",
+                Some("plugin_update_verification".to_owned()),
+            )
+        })?;
         let expected = if operation == "update" {
             StatusCode::NO_CONTENT
         } else {
             StatusCode::OK
         };
         if response.status() != expected {
-            return Err(unknown());
+            return Err(unknown(
+                &format!("runtime returned HTTP {}", response.status().as_u16()),
+                plugin_http_diagnostic(response.status()),
+            ));
         }
 
-        if operation == "update" {
-            Ok((None, reservation))
-        } else {
-            Ok((Some(response), reservation))
-        }
+        Ok((Some(response), reservation))
     }
 
     fn page_url(&self, session_id: Option<&str>, cursor: Option<&str>) -> Result<Url, AppError> {
@@ -512,13 +578,52 @@ fn valid_v2_version(version: &str) -> bool {
 }
 
 fn request_failure(error: reqwest::Error) -> AppError {
-    failure(if error.is_timeout() {
+    let mut failure = failure(request_failure_reason(&error));
+    failure.detail = plugin_request_diagnostic(&error).map(str::to_owned);
+    failure
+}
+
+fn request_failure_reason(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
         "API request timed out"
     } else if error.is_connect() {
         "API connection failed"
     } else {
         "API request failed"
-    })
+    }
+}
+
+fn plugin_request_diagnostic(error: &reqwest::Error) -> Option<&'static str> {
+    if error.is_timeout() {
+        Some("plugin_update_timeout")
+    } else if error.is_connect() {
+        Some("plugin_update_connection")
+    } else {
+        None
+    }
+}
+
+fn plugin_http_diagnostic(status: StatusCode) -> Option<String> {
+    (100..=599)
+        .contains(&status.as_u16())
+        .then(|| format!("plugin_update_runtime_http:{}", status.as_u16()))
+}
+
+pub(in crate::opencode) fn plugin_verification_failure(
+    mut error: AppError,
+    deadline: Instant,
+) -> AppError {
+    if error.code == crate::error::ErrorCode::ConfigurationFailed && error.detail.is_none() {
+        error.detail = Some(
+            if Instant::now() >= deadline {
+                "plugin_update_timeout"
+            } else {
+                "plugin_update_verification"
+            }
+            .to_owned(),
+        );
+    }
+    error
 }
 
 pub(in crate::opencode) fn decode_json<T: for<'de> Deserialize<'de>>(

@@ -13,6 +13,7 @@ import SettingsSearch from '$src/routes/settings/SettingsSearch.svelte';
 import AppSidebar from '$src/shell/AppSidebar.svelte';
 import MobileNavigation from '$src/shell/MobileNavigation.svelte';
 import { isNavigationItemActive, navigationItems } from '$src/shell/navigation.js';
+import { toast } from '$src/shell/toast.svelte.js';
 import Harness from '$src/test-utils/harness.svelte';
 import { LOG_TYPES, type LoggingState, type LogPage, type LogQuery, type LogRecord } from '$src/types/logging.js';
 import Logs from '../+page.svelte';
@@ -41,6 +42,7 @@ vi.mock('$app/state', async () => {
   };
 });
 vi.mock('$app/navigation', () => ({ goto: vi.fn().mockResolvedValue(undefined), beforeNavigate: vi.fn() }));
+vi.mock('$src/shell/toast.svelte.js', () => ({ toast: vi.fn() }));
 
 const disabled: LoggingState = {
   enabled: false,
@@ -1064,5 +1066,147 @@ test('Settings search is bilingual, static, focuses the logging anchor and inclu
   for (const type of LOG_TYPES) {
     expect(en[`logs.type.${type}`]).toBeTruthy();
     expect(zh[`logs.type.${type}`]).toBeTruthy();
+  }
+});
+
+test('LogDetails copies formatted record JSON without opening disclosure or querying backend', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  const originalClipboard = navigator.clipboard;
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  });
+
+  try {
+    const { config, adapter } = makeConfig();
+    const { container } = render(LogDetails, { record, trace: true }, { wrapper: Harness, wrapperProps: { config } });
+    await settle();
+
+    const copyBtn = screen.getByRole('button', { name: en['logs.copyDetails'] });
+    expect(copyBtn).toBeTruthy();
+    expect(adapter.queryLogs).not.toHaveBeenCalled();
+
+    const details = container.querySelector('details') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+
+    await fireEvent.click(copyBtn);
+    await settle();
+
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(JSON.stringify(record, null, 2));
+    expect(details.open).toBe(false);
+    expect(adapter.queryLogs).not.toHaveBeenCalled();
+    expect(vi.mocked(toast)).toHaveBeenCalledWith({
+      variant: 'success',
+      description: en['logs.detailsCopied'],
+    });
+  } finally {
+    if (originalClipboard) {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: originalClipboard });
+    } else {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  }
+});
+
+test('LogDetails trace copy reverses result records to oldest-first JSON without querying or toggling', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  const originalClipboard = navigator.clipboard;
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+
+  try {
+    const newer = { ...record, sequence: 43, event: 'trace-newer' };
+    const older = { ...record, sequence: 41, event: 'trace-older' };
+    const { config, adapter } = makeConfig({
+      queryLogs: vi.fn().mockResolvedValue({
+        records: [newer, older],
+        nextCursor: 'has-more',
+        invalidLines: 0,
+      }),
+    });
+
+    const { container } = render(LogDetails, { record, trace: true }, { wrapper: Harness, wrapperProps: { config } });
+    await settle();
+
+    const details = container.querySelector('details') as HTMLDetailsElement;
+    await expandDetails(details);
+    expect(adapter.queryLogs).toHaveBeenCalledOnce();
+
+    const copyTraceBtn = screen.getByRole('button', { name: en['logs.copyTrace'] });
+    await fireEvent.click(copyTraceBtn);
+    await settle();
+
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(JSON.stringify([older, newer], null, 2));
+    expect(adapter.queryLogs).toHaveBeenCalledOnce();
+    expect(details.open).toBe(true);
+    expect(vi.mocked(toast)).toHaveBeenCalledWith({
+      variant: 'success',
+      description: en['logs.traceCopied'].replace('{count}', '2'),
+    });
+  } finally {
+    if (originalClipboard) {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: originalClipboard });
+    } else {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  }
+});
+
+test('LogDetails guards against duplicate in-flight copy, disabled clicks, and surfaces generic failure without raw error message', async () => {
+  const pendingCopy = Promise.withResolvers<void>();
+  const writeText = vi
+    .fn()
+    .mockReturnValueOnce(pendingCopy.promise)
+    .mockRejectedValueOnce(new Error('private_clipboard_permission_denied'));
+  const originalClipboard = navigator.clipboard;
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+
+  try {
+    const { config } = makeConfig();
+    const { rerender } = render(
+      LogDetails,
+      { record, trace: false, disabled: false },
+      { wrapper: Harness, wrapperProps: { config } },
+    );
+    await settle();
+
+    const copyBtn = screen.getByRole('button', { name: en['logs.copyDetails'] });
+    await fireEvent.click(copyBtn);
+    expect(writeText).toHaveBeenCalledOnce();
+
+    // Duplicate click while in-flight is ignored
+    await fireEvent.click(copyBtn);
+    expect(writeText).toHaveBeenCalledOnce();
+
+    pendingCopy.resolve();
+    await settle();
+    expect(vi.mocked(toast)).toHaveBeenCalledWith({
+      variant: 'success',
+      description: en['logs.detailsCopied'],
+    });
+
+    // Disabled prop prevents copy execution
+    await rerender({ disabled: true });
+    await settle();
+    await fireEvent.click(copyBtn);
+    expect(writeText).toHaveBeenCalledOnce();
+
+    // Failure triggers generic toast without raw error message
+    await rerender({ disabled: false });
+    await settle();
+    await fireEvent.click(copyBtn);
+    await settle();
+
+    expect(writeText).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(toast)).toHaveBeenLastCalledWith({
+      variant: 'error',
+      description: en['logs.copyFailed'],
+    });
+    expect(document.body.textContent).not.toContain('private_clipboard_permission_denied');
+  } finally {
+    if (originalClipboard) {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: originalClipboard });
+    } else {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
   }
 });

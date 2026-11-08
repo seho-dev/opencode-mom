@@ -96,6 +96,15 @@ async fn bounded<T, F: std::future::Future<Output = Result<T, AppError>>>(
 }
 
 impl IslandApi {
+    pub(crate) async fn session(&self, session_id: &str) -> Result<IslandSession, AppError> {
+        identifier(session_id, "ses_")?;
+        let session: Data<Session> = self.read(&["session", session_id], &[]).await?;
+        if session.data.id != session_id {
+            return Err(invalid("session identity"));
+        }
+        session.data.public(false)
+    }
+
     pub(super) async fn permissions(
         &self,
         session_id: &str,
@@ -590,7 +599,7 @@ fn optional_string(value: &Value, key: &str, max: usize) -> Result<Option<String
     }
 }
 
-fn bounded_strings(value: &Value, max_items: usize) -> Result<Vec<String>, AppError> {
+pub(super) fn bounded_strings(value: &Value, max_items: usize) -> Result<Vec<String>, AppError> {
     let values = value.as_array().ok_or_else(|| invalid("response list"))?;
     if values.len() > max_items {
         return Err(failure("response item limit exceeded"));

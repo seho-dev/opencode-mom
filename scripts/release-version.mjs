@@ -9,19 +9,28 @@ export const VERSION_FILES = [
   'src-tauri/Cargo.toml',
   'src-tauri/Cargo.lock',
   'src-tauri/tauri.conf.json',
+  'src-tauri/Info.plist',
 ];
 
 export function parseVersion(version) {
-  if (
-    typeof version !== 'string' ||
-    version.trim() !== version ||
-    !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)
-  ) {
-    throw new Error(`Expected a stable version (X.Y.Z), got ${JSON.stringify(version)}`);
+  const match =
+    typeof version === 'string' &&
+    version.trim() === version &&
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.([1-9]\d*))?$/.exec(version);
+  if (!match) {
+    throw new Error(`Expected X.Y.Z or X.Y.Z-beta.N, got ${JSON.stringify(version)}`);
   }
-  const parts = version.split('.').map(Number);
+  const parts = match
+    .slice(1)
+    .filter((part) => part !== undefined)
+    .map(Number);
   if (!parts.every((part) => Number.isSafeInteger(part) && part <= 65535)) {
     throw new Error('Version components must be integers in 0..65535 (Windows VERSIONINFO limit)');
+  }
+  if (parts.length === 4 && (parts[0] < 1 || parts[0] > 9999 || parts[1] > 99 || parts[2] > 99 || parts[3] > 255)) {
+    throw new Error(
+      'Beta versions require major 1..9999, minor/patch 0..99 and beta number 1..255 (macOS bundle limits)',
+    );
   }
   return parts;
 }
@@ -29,10 +38,10 @@ export function parseVersion(version) {
 function compareVersions(left, right) {
   const a = parseVersion(left);
   const b = parseVersion(right);
-  for (let i = 0; i < a.length; i += 1) {
+  for (let i = 0; i < 3; i += 1) {
     if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1;
   }
-  return 0;
+  return Math.sign((a[3] ?? 256) - (b[3] ?? 256));
 }
 
 export function selectVersion(current, { subject = '', version = '', manual = false } = {}) {
@@ -44,7 +53,11 @@ export function selectVersion(current, { subject = '', version = '', manual = fa
     // Numeric-looking subjects are version requests, not descriptions with a silent fallback.
     if (/^[vV]?[+-]?\d/.test(payload)) explicit = payload;
   }
-  const next = explicit || `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+  const next =
+    explicit ||
+    (parts.length === 4
+      ? `${parts[0]}.${parts[1]}.${parts[2]}-beta.${parts[3] + 1}`
+      : `${parts[0]}.${parts[1]}.${parts[2] + 1}`);
   parseVersion(next);
   if (compareVersions(next, current) <= 0) throw new Error(`Version ${next} must be newer than ${current}`);
   return next;
@@ -73,6 +86,19 @@ function sources(root, read = (path) => readFileSync(resolve(root, path), 'utf8'
   return Object.fromEntries(VERSION_FILES.map((path) => [path, read(path)]));
 }
 
+function plistValue(text, key) {
+  const matches = [...text.matchAll(new RegExp(`(<key>${key}</key>\\s*<string>)([^<]*)(</string>)`, 'g'))];
+  if (matches.length !== 1) throw new Error(`Expected exactly one Info.plist ${key}`);
+  return matches[0];
+}
+
+function bundleVersions(version) {
+  const parts = parseVersion(version);
+  const short = parts.slice(0, 3).join('.');
+  // Apple bundle keys cannot use SemVer's -beta.N suffix; Tauri merges this plist before signing.
+  return { CFBundleShortVersionString: short, CFBundleVersion: parts.length === 4 ? `${short}b${parts[3]}` : short };
+}
+
 function sourceVersion(files, tag) {
   const pkg = JSON.parse(files['package.json']);
   const lock = JSON.parse(files['package-lock.json']);
@@ -92,6 +118,11 @@ function sourceVersion(files, tag) {
   for (const version of versions) parseVersion(version);
   if (!versions.every((version) => version === pkg.version)) {
     throw new Error(`App versions are out of sync: ${versions.join(', ')}`);
+  }
+  for (const [key, expected] of Object.entries(bundleVersions(pkg.version))) {
+    if (plistValue(files['src-tauri/Info.plist'], key)[2] !== expected) {
+      throw new Error(`App versions are out of sync: Info.plist ${key} must be ${expected}`);
+    }
   }
   if (tag !== undefined && tag !== `v${pkg.version}`) throw new Error(`Tag ${tag} does not match v${pkg.version}`);
   return pkg.version;
@@ -118,6 +149,13 @@ function updatedSources(files, version) {
   ]) {
     updated[path] = files[path].replace(block, block.replace(/^(version\s*=\s*")[^"]+/m, `$1${version}`));
   }
+  for (const [key, value] of Object.entries(bundleVersions(version))) {
+    const match = plistValue(updated['src-tauri/Info.plist'], key);
+    updated['src-tauri/Info.plist'] = updated['src-tauri/Info.plist'].replace(
+      match[0],
+      `${match[1]}${value}${match[3]}`,
+    );
+  }
   sourceVersion(updated, `v${version}`);
   return updated;
 }
@@ -132,6 +170,20 @@ export function generateChangelogSection({ version, date, subjects }) {
 }
 
 const STABLE_TAG = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+function releaseTag(tag) {
+  if (!tag?.startsWith('v')) return false;
+  try {
+    parseVersion(tag.slice(1));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function releaseMetadata(version) {
+  return { version, tag: `v${version}`, prerelease: String(parseVersion(version).length === 4) };
+}
 
 function gitRunner(root) {
   return (...args) =>
@@ -150,7 +202,12 @@ function readChangelog(root) {
 function historySection(git, version, target) {
   const tags = git('tag', '--list', '--merged', target)
     .split('\n')
-    .filter((tag) => STABLE_TAG.test(tag) && compareVersions(tag.slice(1), version) < 0);
+    .filter(
+      (tag) =>
+        releaseTag(tag) &&
+        (parseVersion(version).length === 4 || STABLE_TAG.test(tag)) &&
+        compareVersions(tag.slice(1), version) < 0,
+    );
   // An empty ancestor list is the only first-release fallback; Git failures must surface.
   const previous = tags.length
     ? git('describe', '--tags', '--abbrev=0', ...tags.map((tag) => `--match=${tag}`), target)
@@ -166,7 +223,7 @@ function historySection(git, version, target) {
 }
 
 export function releaseNotes({ root, tag, runGit }) {
-  if (!STABLE_TAG.test(tag ?? '')) throw new Error('Expected a stable release tag (vX.Y.Z)');
+  if (!releaseTag(tag)) throw new Error('Expected a release tag (vX.Y.Z or vX.Y.Z-beta.N)');
   const git = runGit ?? gitRunner(root);
   if (git('status', '--porcelain', '--', ...VERSION_FILES, 'CHANGELOG.md')) {
     throw new Error('Release notes require clean version files and CHANGELOG.md');
@@ -199,7 +256,7 @@ export function prepareRelease({ root, eventName, event = {}, ref, sha, defaultB
     const tag = ref.slice('refs/tags/'.length);
     const version = verifyVersions(root, tag);
     if (git('rev-parse', `${tag}^{commit}`) !== sha) throw new Error('Tag no longer matches the triggering commit');
-    return { release: 'true', version, tag, sha };
+    return { release: 'true', ...releaseMetadata(version), sha };
   }
   if (ref !== `refs/heads/${defaultBranch}`) {
     if (eventName === 'workflow_dispatch') throw new Error('Dispatch releases only from the default branch');
@@ -236,14 +293,14 @@ export function prepareRelease({ root, eventName, event = {}, ref, sha, defaultB
     ) {
       throw new Error(`Existing ${tag} is not this run's release commit`);
     }
-    if (!dryRun) return { release: 'true', version, tag, sha: taggedSha };
-    return { release: 'false', version, tag, sha, notes: historySection(git, version, 'HEAD') };
+    if (!dryRun) return { release: 'true', ...releaseMetadata(version), sha: taggedSha };
+    return { release: 'false', ...releaseMetadata(version), sha, notes: historySection(git, version, 'HEAD') };
   }
   if (git('rev-parse', `refs/remotes/origin/${defaultBranch}`) !== sha) {
     throw new Error('Default branch changed since this run started; release from its new HEAD');
   }
   for (const existing of tags) {
-    if (STABLE_TAG.test(existing)) {
+    if (releaseTag(existing) && (parseVersion(version).length === 4 || STABLE_TAG.test(existing))) {
       if (compareVersions(version, existing.slice(1)) <= 0) throw new Error(`${tag} is not newer than ${existing}`);
     }
   }
@@ -253,7 +310,7 @@ export function prepareRelease({ root, eventName, event = {}, ref, sha, defaultB
   const header = /^# Changelog(?:\r?\n|$)(?:\r?\n)*/m;
   const entry = `# Changelog\n\n${section}\n`;
   changelog = header.test(changelog) ? changelog.replace(header, () => entry) : entry + changelog;
-  if (dryRun) return { release: 'false', version, tag, sha, notes: section };
+  if (dryRun) return { release: 'false', ...releaseMetadata(version), sha, notes: section };
   for (const [path, text] of Object.entries(updated)) writeFileSync(resolve(root, path), text);
   writeFileSync(changelogPath, changelog);
   git('add', '--', ...VERSION_FILES, 'CHANGELOG.md');
@@ -269,7 +326,7 @@ export function prepareRelease({ root, eventName, event = {}, ref, sha, defaultB
     `${releaseSha}:refs/heads/${defaultBranch}`,
     `refs/tags/${tag}:refs/tags/${tag}`,
   );
-  return { release: 'true', version, tag, sha: releaseSha };
+  return { release: 'true', ...releaseMetadata(version), sha: releaseSha };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
@@ -277,12 +334,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     let result;
     if (process.argv[2] === 'notes') {
       const tag = process.argv[3];
-      if (!tag) throw new Error('Usage: node scripts/release-version.mjs notes vX.Y.Z');
+      if (!tag) throw new Error('Usage: node scripts/release-version.mjs notes vX.Y.Z[-beta.N]');
       process.stdout.write(releaseNotes({ root: process.cwd(), tag }));
     } else if (process.argv[2] === 'verify') {
       const tag = process.argv[3];
-      if (!tag) throw new Error('Usage: node scripts/release-version.mjs verify vX.Y.Z');
-      result = { version: verifyVersions(process.cwd(), tag) };
+      if (!tag) throw new Error('Usage: node scripts/release-version.mjs verify vX.Y.Z[-beta.N]');
+      result = releaseMetadata(verifyVersions(process.cwd(), tag));
     } else if (process.argv[2] === 'prepare') {
       result = prepareRelease({
         root: process.cwd(),
@@ -293,7 +350,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         defaultBranch: process.env.DEFAULT_BRANCH,
       });
     } else {
-      throw new Error('Usage: node scripts/release-version.mjs prepare | verify vX.Y.Z | notes vX.Y.Z');
+      throw new Error(
+        'Usage: node scripts/release-version.mjs prepare | verify vX.Y.Z[-beta.N] | notes vX.Y.Z[-beta.N]',
+      );
     }
     if (result) {
       const { notes, ...outputs } = result;

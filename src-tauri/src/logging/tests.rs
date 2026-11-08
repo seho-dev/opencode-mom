@@ -944,3 +944,21 @@ fn committed_disable_returns_authoritative_state_when_the_barrier_fails() {
             .logging_enabled
     );
 }
+
+#[test]
+fn notifications_safe_event_allowlist_fixed_strings() {
+    use super::types::safe_event;
+    use crate::logging::LogType;
+    for event in [
+        "notifications_connected",
+        "notifications_connection_failed",
+        "notifications_session_unavailable",
+        "notifications_show_failed",
+        "notifications_dispatch_failed",
+        "notifications_preferences_unavailable",
+    ] {
+        assert!(safe_event(LogType::App, event), "allowlist missing {event}");
+    }
+    assert!(!safe_event(LogType::App, "notifications_injected"));
+    assert!(!safe_event(LogType::App, "user_private_data"));
+}

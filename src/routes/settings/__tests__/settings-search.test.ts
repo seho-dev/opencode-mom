@@ -40,6 +40,13 @@ function makeAdapter() {
     savePreferences: vi.fn().mockResolvedValue(undefined),
     getAutostart: vi.fn().mockResolvedValue(false),
     setAutostart: vi.fn(),
+    getNotificationSettings: vi.fn().mockResolvedValue({
+      enabled: false,
+      agentCompleted: true,
+      approvalRequired: true,
+      agentError: true,
+    }),
+    setNotificationSettings: vi.fn(),
     getLidProtection: vi.fn().mockResolvedValue({ enabled: true, phase: 'protected', activeSessions: 2 }),
     getLoggingState: vi
       .fn()
@@ -113,6 +120,7 @@ function activePanel() {
 function expectNoWrites(adapter: ReturnType<typeof makeAdapter>) {
   for (const call of [
     adapter.setAutostart,
+    adapter.setNotificationSettings,
     adapter.setLidProtection,
     adapter.setLoggingEnabled,
     adapter.setIslandEnabled,
@@ -162,6 +170,8 @@ test('matches bilingual labels, descriptions and technical names locally, and fo
     ['idleTimeout', en['settings.proxy.idleTimeout']],
     ['局域网', en['settings.http.allowLan']],
     ['默认插件', en['settings.defaultPlugin']],
+    ['system notifications', en['settings.notifications']],
+    ['系统通知', en['settings.notifications']],
     ['登录', en['settings.autostart']],
     ['closed bag', en['settings.lid']],
     ['管理员', en['settings.lid']],
@@ -482,14 +492,14 @@ test('cross-tab search retains both panels and all drafts without periodic reads
   expectNoWrites(adapter);
 });
 
-test('inactive native info completion cannot start CLI installation or Island reads until re-entry', async () => {
+test('inactive native info completion cannot start CLI, Island or notification reads until re-entry', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 
   const info = Promise.withResolvers<{ version: string; platform: string }>();
   const { adapter } = mountPage('general', { getAppInfo: vi.fn().mockReturnValue(info.promise) });
 
   await settle();
-  expect(adapter.getAppInfo).toHaveBeenCalledTimes(3);
+  expect(adapter.getAppInfo).toHaveBeenCalledTimes(4);
   await fireEvent.click(screen.getByRole('tab', { name: 'MCP Proxy' }));
   info.resolve({ version: '2.0.0', platform: 'macos' });
   await settle();
@@ -497,12 +507,14 @@ test('inactive native info completion cannot start CLI installation or Island re
   expect(adapter.getOpenCodeInstallation).not.toHaveBeenCalled();
   expect(adapter.getOpenCodeServiceStatus).not.toHaveBeenCalled();
   expect(adapter.getIslandState).not.toHaveBeenCalled();
+  expect(adapter.getNotificationSettings).not.toHaveBeenCalled();
   await fireEvent.click(screen.getByRole('tab', { name: 'General' }));
   await settle();
   expect(adapter.getOpenCodeInstallation).toHaveBeenCalledOnce();
   expect(adapter.getOpenCodeServiceStatus).toHaveBeenCalledOnce();
   expect(adapter.getIslandState).toHaveBeenCalledOnce();
-  expect(adapter.getAppInfo).toHaveBeenCalledTimes(5);
+  expect(adapter.getNotificationSettings).toHaveBeenCalledOnce();
+  expect(adapter.getAppInfo).toHaveBeenCalledTimes(7);
   expectNoWrites(adapter);
 });
 

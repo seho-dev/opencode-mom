@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -39,7 +40,7 @@ fn temp_home(name: &str) -> TestHome {
 fn provider(id: &str, models: &[&str]) -> ProviderDef {
     ProviderDef {
         name: id.to_owned(),
-        package: Some("aisdk:@ai-sdk/openai-compatible".to_owned()),
+        package: Some("@opencode/ai/providers/openai-compatible".to_owned()),
         settings: None,
         headers: None,
         models: models
@@ -139,6 +140,29 @@ fn provider_crud_round_trip() {
     // The model id is the source of truth for `name` after the provider refactor.
     assert_eq!(acme.models["turbo"].name.as_deref(), Some("turbo"));
 
+    // Updating a model preserves arbitrary nested JSON nulls in settings while omitting absent optional blocks
+    let mut model_with_null = model_def("turbo");
+    model_with_null.settings = Some(
+        [("keep_null".to_owned(), serde_json::Value::Null)]
+            .into_iter()
+            .collect(),
+    );
+    providers::update_model(
+        &opencode,
+        &providers::ModelRef::new("acme", "turbo").unwrap(),
+        model_with_null,
+    )
+    .unwrap();
+    let doc_updated = opencode_mom_tauri::document::JsoncDoc::read(
+        &opencode,
+        opencode_mom_tauri::document::OPENCODE_SCHEMA,
+    )
+    .unwrap();
+    let turbo_raw = &doc_updated.raw()["providers"]["acme"]["models"]["turbo"];
+    assert_eq!(turbo_raw["settings"]["keep_null"], serde_json::Value::Null);
+    assert!(turbo_raw.get("cost").is_none());
+    assert!(turbo_raw.get("limit").is_none());
+
     providers::delete_model(
         &opencode,
         &providers::ModelRef::new("acme", "turbo").unwrap(),
@@ -180,6 +204,134 @@ fn provider_crud_round_trip() {
             .api_key
             .as_deref(),
         Some("new-secret")
+    );
+
+    // Model create/update does not serialize absent optional fields as null,
+    // preserves 0, false, and keeps nested JSON nulls in settings.
+    let complex_model = serde_json::from_value::<ModelDef>(serde_json::json!({
+        "id": "precise",
+        "family": "family-x",
+        "disabled": false,
+        "capabilities": {
+            "tools": false
+        },
+        "cost": {
+            "input": 0.0,
+            "output": 0.0
+        },
+        "limit": {
+            "context": 0
+        },
+        "settings": {
+            "arbitrary_null": null,
+            "temperature": 0.0
+        }
+    }))
+    .unwrap();
+    providers::create_model(&opencode, "acme", complex_model).unwrap();
+
+    let doc = opencode_mom_tauri::document::JsoncDoc::read(
+        &opencode,
+        opencode_mom_tauri::document::OPENCODE_SCHEMA,
+    )
+    .unwrap();
+    let raw_model = &doc.raw()["providers"]["acme"]["models"]["precise"];
+
+    // Absent optional blocks and fields are omitted, not serialized as null
+    assert!(raw_model.get("headers").is_none());
+    assert!(raw_model.get("variants").is_none());
+    assert!(raw_model["capabilities"].get("input").is_none());
+    assert!(raw_model["capabilities"].get("output").is_none());
+    assert!(raw_model["cost"].get("cache").is_none());
+    assert!(raw_model["limit"].get("output").is_none());
+
+    // 0 and false are preserved
+    assert_eq!(raw_model["disabled"], serde_json::Value::Bool(false));
+    assert_eq!(
+        raw_model["capabilities"]["tools"],
+        serde_json::Value::Bool(false)
+    );
+    assert_eq!(
+        raw_model["cost"]["input"],
+        serde_json::Value::Number(serde_json::Number::from_f64(0.0).unwrap())
+    );
+    assert_eq!(
+        raw_model["limit"]["context"],
+        serde_json::Value::Number(serde_json::Number::from(0))
+    );
+
+    // Arbitrary nested null in settings remains untouched
+    assert_eq!(
+        raw_model["settings"]["arbitrary_null"],
+        serde_json::Value::Null
+    );
+
+    // ProviderDef wire omission test: absent optional package, settings, and headers are omitted
+    let bare_provider = ProviderDef {
+        name: "bare".to_owned(),
+        package: None,
+        settings: None,
+        headers: None,
+        models: BTreeMap::new(),
+    };
+    let serialized_bare = serde_json::to_value(&bare_provider).unwrap();
+    assert_eq!(serialized_bare["name"], "bare");
+    assert!(serialized_bare.get("package").is_none());
+    assert!(serialized_bare.get("settings").is_none());
+    assert!(serialized_bare.get("headers").is_none());
+}
+
+#[test]
+fn group_persistence_omits_absent_and_empty_variants_while_preserving_null_collections() {
+    let home = temp_home("group-variants-omission");
+    write_opencode(&home);
+
+    let mut native_group = group(GroupType::Native, "variants-test");
+    let mut b_none = binding("reviewer", "acme/new");
+    b_none.variant = None;
+    let mut b_empty = binding("reviewer", "acme/fast");
+    b_empty.variant = Some("".to_owned());
+    let mut b_nonblank = binding("coder", "acme/fast");
+    b_nonblank.variant = Some("precise".to_owned());
+    native_group.open_code_agent_overrides = vec![b_none, b_empty, b_nonblank];
+    native_group.slim_agent_overrides = None;
+    native_group.omo_agent_overrides = None;
+    native_group.omo_category_mappings = None;
+
+    let (saved, _) = groups::save_group(&home.paths, native_group).unwrap();
+
+    let raw_config: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(home.paths.config_file()).unwrap()).unwrap();
+    let raw_saved_group = raw_config["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["id"] == saved.id.to_string())
+        .expect("group in config.json");
+
+    // Both None and empty string variants are omitted on disk in config.json; nonblank is preserved
+    assert!(raw_saved_group["openCodeAgentOverrides"][0]
+        .get("variant")
+        .is_none());
+    assert!(raw_saved_group["openCodeAgentOverrides"][1]
+        .get("variant")
+        .is_none());
+    assert_eq!(
+        raw_saved_group["openCodeAgentOverrides"][2]["variant"],
+        "precise"
+    );
+    // Required nullable group collections are explicitly preserved as JSON null
+    assert_eq!(
+        raw_saved_group["slimAgentOverrides"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        raw_saved_group["omoAgentOverrides"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        raw_saved_group["omoCategoryMappings"],
+        serde_json::Value::Null
     );
 }
 

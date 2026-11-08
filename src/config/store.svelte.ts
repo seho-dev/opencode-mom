@@ -40,6 +40,7 @@ import type {
   MomHttpSettings,
 } from '$src/types/mcp-proxy.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
+import type { NotificationPermission, NotificationSettings } from '$src/types/notifications.js';
 import type { PluginRemovalPlan, PluginRemovalTarget, PluginRuntime } from '$src/types/plugins.js';
 import type { LidState } from '$src/types/power.js';
 import type { PromptGenerationRequest } from '$src/types/prompt-generation.js';
@@ -698,6 +699,14 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     setAutostart: (enabled: boolean): Promise<boolean> => adapter.setAutostart(enabled),
     getLidProtection: (): Promise<LidState> => adapter.getLidProtection(),
     setLidProtection: (enabled: boolean): Promise<LidState> => adapter.setLidProtection(enabled),
+    getNotificationSettings: (): Promise<NotificationSettings> => adapter.getNotificationSettings(),
+    getNotificationPermission: (): Promise<NotificationPermission> => adapter.getNotificationPermission(),
+    requestNotificationPermission: (): Promise<NotificationPermission> => adapter.requestNotificationPermission(),
+    openNotificationSettings: (): Promise<void> => adapter.openNotificationSettings(),
+
+    setNotificationSettings: (settings: NotificationSettings): Promise<NotificationSettings> =>
+      adapter.setNotificationSettings(settings),
+
     getLoggingState: (): Promise<LoggingState> => adapter.getLoggingState(),
     setLoggingEnabled: (enabled: boolean): Promise<LoggingState> => adapter.setLoggingEnabled(enabled),
     queryLogs: (query: LogQuery): Promise<LogPage> => adapter.queryLogs(query),

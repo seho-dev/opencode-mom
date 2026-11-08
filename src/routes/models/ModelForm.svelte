@@ -49,7 +49,7 @@ let {
 } = $props();
 
 const defaults = () => ({
-  providerId: '',
+  providerId: defaultProviderId,
   id: '',
   family: '',
   disabled: false,
@@ -101,6 +101,10 @@ const schema = z
       if (!value.costOutput.trim()) issue(['costOutput'], i18n.t('validation.costRequired'));
     }
 
+    for (const key of ['costInput', 'costOutput', 'costCacheRead', 'costCacheWrite'] as const) {
+      if (value[key].trim() && !Number.isFinite(Number(value[key]))) issue([key], i18n.t('validation.costInvalid'));
+    }
+
     if (anyFilled(value.limitContext, value.limitOutput, value.limitInput)) {
       if (!value.limitContext.trim()) issue(['limitContext'], i18n.t('validation.limitRequired'));
       if (!value.limitOutput.trim()) issue(['limitOutput'], i18n.t('validation.limitRequired'));
@@ -110,22 +114,22 @@ const schema = z
       if (value[key].trim() && !isValidTokenCount(value[key])) issue([key], i18n.t('validation.limitInvalid'));
     }
 
-    if (parseObject(value.settings) === undefined) issue(['settings'], i18n.t('validation.jsonObject'));
-
+    const jsonError = (field: string) => i18n.t('modelForm.jsonObjectError', { field });
+    if (parseObject(value.settings) === undefined) issue(['settings'], jsonError(i18n.t('modelForm.options')));
     const headers = parseObject(value.headers);
-
-    if (headers === undefined) issue(['headers'], i18n.t('validation.jsonObject'));
+    if (headers === undefined) issue(['headers'], jsonError(i18n.t('modelForm.headers')));
     else if (Object.values(headers).some((header) => typeof header !== 'string'))
       issue(['headers'], i18n.t('validation.headersStrings'));
 
     value.variants.forEach((row, index) => {
-      if (row.key.trim() && parseObject(row.json) === undefined)
-        issue(['variants', index, 'json'], i18n.t('validation.jsonObject'));
+      if (!row.key.trim()) return;
+      const entry = parseObject(row.json);
+      if (entry === undefined) issue(['variants', index, 'json'], jsonError(i18n.t('modelForm.variantOptionsJson')));
+      else if ('id' in entry) issue(['variants', index, 'json'], i18n.t('modelForm.variantIdError'));
     });
   });
 
-// Whether the stored model already carries a capabilities block (edit mode only).
-let capabilitiesPresent = $state(false);
+let draftInitial = $state.raw<ModelDef | undefined>(undefined);
 let initialized = $state('');
 const form = createForm(() => ({
   defaultValues: defaults(),
@@ -134,10 +138,7 @@ const form = createForm(() => ({
 
   onSubmit: async ({ value }) => {
     try {
-      await onSave(
-        mode === 'edit' ? defaultProviderId : value.providerId,
-        formValuesToModel(value, mode, initial, capabilitiesPresent),
-      );
+      await onSave(mode === 'edit' ? defaultProviderId : value.providerId, formValuesToModel(value, draftInitial));
     } catch (error) {
       toast({ variant: 'error', description: error instanceof Error ? error.message : i18n.t('toast.saveFailed') });
     }
@@ -147,23 +148,12 @@ const variants = form.useSelector((state) => state.values.variants);
 const selectedProvider = form.useSelector((state) => state.values.providerId);
 
 $effect(() => {
-  if (mode === 'new') {
-    if (initialized === 'new') return;
-
-    initialized = 'new';
-    capabilitiesPresent = false;
-    form.reset(defaults());
-
-    return;
-  }
-
-  const key = initial ? `${defaultProviderId}/${initial.id}` : '';
-
-  if (!initial || initialized === key) return;
+  const key = initial ? `${mode}:${defaultProviderId}/${initial.id}` : mode === 'new' ? 'new' : '';
+  if (!key || initialized === key) return;
 
   initialized = key;
-  capabilitiesPresent = initial.capabilities !== undefined;
-  form.reset(modelToFormValues(initial, defaultProviderId, defaults()));
+  draftInitial = initial ? structuredClone($state.snapshot(initial)) : undefined;
+  form.reset(draftInitial ? modelToFormValues(draftInitial, defaultProviderId, defaults()) : defaults());
 });
 
 function addVariant() {
@@ -399,8 +389,15 @@ function removeVariant(index: number) {
                     value={field.state.value}
                     oninput={(event) => field.handleChange(event.currentTarget.value)}
                     onblur={field.handleBlur}
+                    aria-invalid={field.state.meta.errors.length ? 'true' : undefined}
+                    aria-describedby={field.state.meta.errors.length ? 'cost-cache-read-error' : undefined}
                     disabled={saving}
                   >
+                  {#if field.state.meta.errors.length}
+                    <p id="cost-cache-read-error" class="field-error" role="alert">
+                      {errorText(field.state.meta.errors)}
+                    </p>
+                  {/if}
                 {/snippet}</form.Field
               >
             </div>
@@ -415,8 +412,15 @@ function removeVariant(index: number) {
                     value={field.state.value}
                     oninput={(event) => field.handleChange(event.currentTarget.value)}
                     onblur={field.handleBlur}
+                    aria-invalid={field.state.meta.errors.length ? 'true' : undefined}
+                    aria-describedby={field.state.meta.errors.length ? 'cost-cache-write-error' : undefined}
                     disabled={saving}
                   >
+                  {#if field.state.meta.errors.length}
+                    <p id="cost-cache-write-error" class="field-error" role="alert">
+                      {errorText(field.state.meta.errors)}
+                    </p>
+                  {/if}
                 {/snippet}</form.Field
               >
             </div>
@@ -501,7 +505,7 @@ function removeVariant(index: number) {
       <legend>{i18n.t('modelForm.runtime')}</legend>
       <div class="form-grid">
         <div class="field">
-          <p class="group-title">{i18n.t('modelForm.options')}</p>
+          <label class="group-title" for="model-settings">{i18n.t('modelForm.options')}</label>
           <form.Field name="settings"
             >{#snippet children(field)}
               <textarea
@@ -510,7 +514,7 @@ function removeVariant(index: number) {
                 oninput={(event) => field.handleChange(event.currentTarget.value)}
                 onblur={field.handleBlur}
                 aria-invalid={field.state.meta.errors.length ? 'true' : undefined}
-                aria-describedby={field.state.meta.errors.length ? 'model-settings-error' : undefined}
+                aria-describedby={`model-settings-hint${field.state.meta.errors.length ? ' model-settings-error' : ''}`}
                 disabled={saving}
               ></textarea>
               {#if field.state.meta.errors.length}
@@ -518,10 +522,10 @@ function removeVariant(index: number) {
               {/if}
             {/snippet}</form.Field
           >
-          <small class="field-hint">{i18n.t('modelForm.optionsHint')}</small>
+          <small id="model-settings-hint" class="field-hint">{i18n.t('modelForm.optionsHint')}</small>
         </div>
         <div class="field">
-          <p class="group-title">{i18n.t('modelForm.headers')}</p>
+          <label class="group-title" for="model-headers">{i18n.t('modelForm.headers')}</label>
           <form.Field name="headers"
             >{#snippet children(field)}
               <textarea
@@ -530,7 +534,7 @@ function removeVariant(index: number) {
                 oninput={(event) => field.handleChange(event.currentTarget.value)}
                 onblur={field.handleBlur}
                 aria-invalid={field.state.meta.errors.length ? 'true' : undefined}
-                aria-describedby={field.state.meta.errors.length ? 'model-headers-error' : undefined}
+                aria-describedby={`model-headers-hint${field.state.meta.errors.length ? ' model-headers-error' : ''}`}
                 disabled={saving}
               ></textarea>
               {#if field.state.meta.errors.length}
@@ -538,7 +542,7 @@ function removeVariant(index: number) {
               {/if}
             {/snippet}</form.Field
           >
-          <small class="field-hint">{i18n.t('modelForm.headersHint')}</small>
+          <small id="model-headers-hint" class="field-hint">{i18n.t('modelForm.headersHint')}</small>
         </div>
         <div class="field full">
           <p class="group-title">{i18n.t('modelForm.variants')}</p>
@@ -565,7 +569,7 @@ function removeVariant(index: number) {
                     oninput={(event) => field.handleChange(event.currentTarget.value)}
                     onblur={field.handleBlur}
                     aria-invalid={field.state.meta.errors.length ? 'true' : undefined}
-                    aria-describedby={field.state.meta.errors.length ? `variant-${index}-error` : undefined}
+                    aria-describedby={`model-variants-hint${field.state.meta.errors.length ? ` variant-${index}-error` : ''}`}
                     disabled={saving}
                   ></textarea>
                   {#if field.state.meta.errors.length}
@@ -591,7 +595,7 @@ function removeVariant(index: number) {
               ><Plus size={14} /> {i18n.t('modelForm.addVariant')}</Button
             >
           </div>
-          <small class="field-hint">{i18n.t('modelForm.variantsHint')}</small>
+          <small id="model-variants-hint" class="field-hint">{i18n.t('modelForm.variantsHint')}</small>
         </div>
       </div>
     </fieldset>

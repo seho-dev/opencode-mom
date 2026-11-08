@@ -402,3 +402,13 @@ test('group list query trims leading and trailing whitespace', async () => {
   expect(screen.getByText('Alpha Lane')).toBeTruthy();
   expect(screen.queryByText('Beta Lane')).toBeNull();
 });
+
+test('renders copy action link targeting new group route with copyFrom query param', async () => {
+  const target = group('native', false);
+  mount({ groups: [target] });
+
+  const copyLink = await screen.findByRole('link', { name: `Copy ${target.name}` });
+  expect(copyLink).toBeDefined();
+  expect(copyLink.getAttribute('href')).toBe(`/groups/new?copyFrom=${encodeURIComponent(target.id)}`);
+  expect(copyLink.getAttribute('title')).toBe('Copy group');
+});

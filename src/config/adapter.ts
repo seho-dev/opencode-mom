@@ -38,6 +38,7 @@ import type {
   MomHttpSettings,
 } from '$src/types/mcp-proxy.js';
 import type { ModelCatalogEntry, ModelDef, ModelRef } from '$src/types/models.js';
+import type { NotificationPermission, NotificationSettings } from '$src/types/notifications.js';
 import type { PluginRemovalPlan, PluginRemovalTarget, PluginRuntime } from '$src/types/plugins.js';
 import type { LidState } from '$src/types/power.js';
 import type { PromptGenerationRequest } from '$src/types/prompt-generation.js';
@@ -130,6 +131,11 @@ export interface CommandAdapter {
   setAutostart(enabled: boolean): Result<boolean>;
   getLidProtection(): Result<LidState>;
   setLidProtection(enabled: boolean): Result<LidState>;
+  getNotificationSettings(): Result<NotificationSettings>;
+  getNotificationPermission(): Result<NotificationPermission>;
+  requestNotificationPermission(): Result<NotificationPermission>;
+  openNotificationSettings(): Result<void>;
+  setNotificationSettings(settings: NotificationSettings): Result<NotificationSettings>;
   getLoggingState(): Result<LoggingState>;
   setLoggingEnabled(enabled: boolean): Result<LoggingState>;
   queryLogs(query: LogQuery): Result<LogPage>;
@@ -182,6 +188,46 @@ export type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) =
 const readGroup = (group: Group): Group => ({ ...group, type: groupTypeFromWire(group.type) });
 const writeGroup = (group: Group): Group => ({ ...group, type: groupTypeToWire(group.type) as GroupType });
 const projectScope = (projectId?: string | null) => (projectId == null ? {} : { projectId });
+
+function readNotificationPermission(value: unknown): NotificationPermission {
+  switch (value) {
+    case 'prompt':
+    case 'granted':
+    case 'denied':
+    case 'unavailable':
+    case 'unsupported':
+      return value;
+    default:
+      throw {
+        code: 'configuration_failed',
+        message: 'Notification permission could not be confirmed.',
+      } satisfies CommandError;
+  }
+}
+function readNotificationSettings(value: unknown): NotificationSettings {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    !('enabled' in value) ||
+    typeof value.enabled !== 'boolean' ||
+    !('agentCompleted' in value) ||
+    typeof value.agentCompleted !== 'boolean' ||
+    !('approvalRequired' in value) ||
+    typeof value.approvalRequired !== 'boolean' ||
+    !('agentError' in value) ||
+    typeof value.agentError !== 'boolean'
+  )
+    throw {
+      code: 'configuration_failed',
+      message: 'Notification settings could not be confirmed.',
+    } satisfies CommandError;
+  return {
+    enabled: value.enabled,
+    agentCompleted: value.agentCompleted,
+    approvalRequired: value.approvalRequired,
+    agentError: value.agentError,
+  };
+}
 
 export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
   return {
@@ -243,6 +289,13 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     setAutostart: (enabled) => invoke('set_autostart', { enabled }),
     getLidProtection: () => invoke('get_lid_protection'),
     setLidProtection: (enabled) => invoke('set_lid_protection', { enabled }),
+    getNotificationSettings: async () => readNotificationSettings(await invoke('get_notification_settings')),
+    getNotificationPermission: async () => readNotificationPermission(await invoke('get_notification_permission')),
+    requestNotificationPermission: async () =>
+      readNotificationPermission(await invoke('request_notification_permission')),
+    openNotificationSettings: () => invoke('open_notification_settings'),
+    setNotificationSettings: async (settings) =>
+      readNotificationSettings(await invoke('set_notification_settings', { settings })),
     getLoggingState: () => invoke('get_logging_state'),
     setLoggingEnabled: (enabled) => invoke('set_logging_enabled', { enabled }),
     queryLogs: (query) => invoke('query_logs', { query }),

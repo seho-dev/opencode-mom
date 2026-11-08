@@ -12,7 +12,7 @@ vi.mock('../toast.svelte.js', () => ({ toast: vi.fn() }));
 
 beforeEach(() => vi.mocked(toast).mockClear());
 
-function mount(overrides: Record<string, unknown> = {}) {
+function mount(overrides: Record<string, unknown> = {}, props: { macos?: boolean } = {}) {
   const config = {
     preferences: { locale: 'en', theme: 'dark' },
     loading: false,
@@ -20,8 +20,10 @@ function mount(overrides: Record<string, unknown> = {}) {
     openProjectPage: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
-  const view = render(AppHeader, {}, { wrapper: Harness, wrapperProps: { config: config as unknown as ConfigStore } });
-
+  const view = render(AppHeader, props, {
+    wrapper: Harness,
+    wrapperProps: { config: config as unknown as ConfigStore },
+  });
   return { config, ...view };
 }
 
@@ -93,4 +95,28 @@ test('late opener failure after header teardown does not create a stale toast', 
   reject(new Error('Late browser error'));
   await tick();
   expect(toast).not.toHaveBeenCalled();
+});
+
+test('app header applies data-tauri-drag-region on macOS and keeps interactive buttons out of drag regions', () => {
+  const { container } = mount({}, { macos: true });
+  const header = container.querySelector('header');
+  expect(header?.hasAttribute('data-tauri-drag-region')).toBe(true);
+
+  const headerMain = container.querySelector('.header-main');
+  expect(headerMain?.hasAttribute('data-tauri-drag-region')).toBe(true);
+
+  const buttons = screen.getAllByRole('button');
+  expect(buttons.length).toBeGreaterThan(0);
+  for (const button of buttons) {
+    expect(button.hasAttribute('data-tauri-drag-region')).toBe(false);
+  }
+});
+
+test('app header strips data-tauri-drag-region when macos is false', () => {
+  const { container } = mount({}, { macos: false });
+  const header = container.querySelector('header');
+  expect(header?.hasAttribute('data-tauri-drag-region')).toBe(false);
+
+  const headerMain = container.querySelector('.header-main');
+  expect(headerMain?.hasAttribute('data-tauri-drag-region')).toBe(false);
 });

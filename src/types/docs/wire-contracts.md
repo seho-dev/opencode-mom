@@ -21,6 +21,10 @@
 - **Permission results**: Preserve the `ok` discriminator in `PermissionParse` and `mode` discriminator in `PermissionView`; only successful/rules branches carry rules.
 - **Usage shapes**: Keep timestamped `TokenUsageRecord.time` separate from aggregated `DailyTokenUsage.date`; both retain numeric input/output counts.
 
+## Native notification records
+
+`notifications.ts` owns `NotificationSettings` (`enabled`, `agentCompleted`, `approvalRequired`, `agentError`, all required booleans) and the separate `NotificationPermission` union (`prompt | granted | denied | unavailable | unsupported`). Rust persists preferences as `state.notifications`, not `AppPreferences` or `AppState`; OS authorization is queried independently and never inferred from the enabled preference. A granted status does not guarantee presentation under Focus / Do Not Disturb. Permission get/request IPC carries no arguments; opening system settings resolves void.
+
 ## Diagnostic log records
 
 `logging.ts` owns `LoggingState`, `LogRecord`, `LogQuery` and `LogPage`. `LOG_TYPES` supplies the fixed type vocabulary; `LogStatus` is strictly `success | error`. Records use UTC RFC3339 timestamps, a session UUID, a sequence and an operation UUID to connect checkpoints and final results. Optional duration/error-code/context fields are not raw error objects or arbitrary configuration dictionaries.
@@ -52,5 +56,5 @@ network metadata alongside proxy state.
 
 `prompt-generation.ts` defines the shared generation request and constant-derived preset/kind types.
 
-- **Island contract**: Keep wire records in `island.ts`; required numeric `connectionGeneration` is the native cache generation, not a URL/credential, and monotonically invalidates target-local UI state. `IslandView` is `compact`/`peek`/`expanded`; permission `save?: string[]` holds only server-provided rules; `IslandPermissionDecision` is `once`/`always`/`reject`. Always needs explicit consent and a fresh backend check of the exact pending request with nonempty save rules; never infer rules from resources. Question answers use field keys/option values; messages expose only public user/assistant text.
+- **Island contract**: Keep wire records in `island.ts`; required numeric `connectionGeneration` is the native cache generation, not a URL/credential, and monotonically invalidates target-local UI state. Required numeric `completionSequence` counts deduplicated successful main-session events within that generation, never inferred status transitions; initial or reconnected UI reads establish a baseline without replay. `IslandView` is `compact`/`peek`/`expanded`; permission `save?: string[]` holds only server-provided rules; `IslandPermissionDecision` is `once`/`always`/`reject`. Always needs explicit consent and a fresh backend check of the exact pending request with nonempty save rules; never infer rules from resources. Question answers use field keys/option values; messages expose only public user/assistant text.
 - **Prompt generation**: Derive kind/preset unions from `src/utils/constants.ts`; kinds are `agent`, `command` and `behavior` (Global `AGENTS.md`). Optional `model: ModelRef` and separate optional `variant` default to the OpenCode service model when both are omitted; preset instructions and provider credentials never enter this wire contract.

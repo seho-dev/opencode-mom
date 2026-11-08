@@ -29,7 +29,7 @@ const config = (overrides: Record<string, unknown> = {}) =>
     catalogModels: () => [],
     models: () => [],
     ...overrides,
-  }) as ConfigStore;
+  }) as unknown as ConfigStore;
 
 async function selectProvider() {
   await fireEvent.click(screen.getByRole('button', { name: 'Provider' }));
@@ -191,4 +191,154 @@ test('initial.limit.input null renders empty string and modelToFormValues preser
 
   const limitContext = screen.getByRole('combobox', { name: 'Context' }) as HTMLInputElement;
   expect(limitContext.value).toBe('0');
+});
+
+test('editing a model with multiline variant json and backend-shaped nullable fields saves successfully', async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  const multilineVariantJson = `{\n  "settings": {\n    "reasoningEffort": "high"\n  }\n}`;
+  const initial = {
+    id: 'backend-variant-model',
+    name: null,
+    family: 'custom-family',
+    disabled: null,
+    capabilities: {
+      tools: true,
+      input: null,
+      output: null,
+    },
+    cost: {
+      input: 0,
+      output: 0,
+      cache: null,
+    },
+    limit: {
+      context: 128000,
+      output: 4096,
+      input: null,
+    },
+    settings: null,
+    headers: null,
+    variants: [
+      {
+        id: 'high',
+        settings: { reasoningEffort: 'high' },
+      },
+    ],
+  } as unknown as ModelDef;
+
+  render(
+    ModelForm,
+    { mode: 'edit', defaultProviderId: 'example', initial, onSave },
+    { wrapper: Harness, wrapperProps: { config: config() } },
+  );
+
+  await waitFor(() =>
+    expect((screen.getByRole('textbox', { name: 'Variant name' }) as HTMLInputElement).value).toBe('high'),
+  );
+
+  const variantJsonInput = screen.getByRole('textbox', { name: 'Variant options JSON' }) as HTMLTextAreaElement;
+  await fireEvent.input(variantJsonInput, { target: { value: multilineVariantJson } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save model' }));
+
+  await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+  expect(onSave).toHaveBeenCalledWith('example', {
+    id: 'backend-variant-model',
+    family: 'custom-family',
+    capabilities: { tools: true },
+    cost: { input: 0, output: 0 },
+    limit: { context: 128000, output: 4096 },
+    variants: [
+      {
+        id: 'high',
+        settings: { reasoningEffort: 'high' },
+      },
+    ],
+  });
+});
+
+test('invalid Options JSON errors only its own field and does not blame valid variant', async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  const initial: ModelDef = {
+    id: 'field-isolation-model',
+    variants: [{ id: 'high', settings: { reasoningEffort: 'high' } }],
+  };
+
+  const { container } = render(
+    ModelForm,
+    { mode: 'edit', defaultProviderId: 'example', initial, onSave },
+    { wrapper: Harness, wrapperProps: { config: config() } },
+  );
+
+  const settingsArea = container.querySelector('#model-settings') as HTMLTextAreaElement;
+  await fireEvent.input(settingsArea, { target: { value: '{invalid_json' } });
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Save model' }));
+
+  expect(onSave).not.toHaveBeenCalled();
+  await waitFor(() => {
+    const settingsError = document.getElementById('model-settings-error');
+    expect(settingsError).not.toBeNull();
+    expect(settingsError?.textContent).toContain('valid JSON object');
+  });
+
+  // Variant row has NO error
+  expect(document.getElementById('variant-0-error')).toBeNull();
+});
+
+test('saving realistic backend model keeps nested null in settings and omits absent optional blocks', async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  const initial: ModelDef = {
+    id: 'backend-model',
+    settings: {
+      reasoning: null,
+      temperature: 0,
+    },
+    cost: {
+      input: 0,
+      output: 0,
+    },
+    limit: {
+      context: 128000,
+      output: 4096,
+      input: null,
+    },
+  };
+
+  const { container } = render(
+    ModelForm,
+    {
+      mode: 'edit',
+      defaultProviderId: 'example',
+      initial,
+      onSave,
+    },
+    { wrapper: Harness, wrapperProps: { config: config() } },
+  );
+
+  const settingsEl = container.querySelector('#model-settings') as HTMLTextAreaElement;
+  expect(settingsEl.value).toContain('"reasoning": null');
+  expect(settingsEl.value).toContain('"temperature": 0');
+
+  // limit.input was null, rendered as empty in UI, omitted on save
+  const limitInput = screen.getByRole('combobox', { name: 'Input' }) as HTMLInputElement;
+  expect(limitInput.value).toBe('');
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Save model' }));
+
+  await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+  expect(onSave).toHaveBeenCalledWith('example', {
+    id: 'backend-model',
+    settings: {
+      reasoning: null,
+      temperature: 0,
+    },
+    cost: {
+      input: 0,
+      output: 0,
+    },
+    limit: {
+      context: 128000,
+      output: 4096,
+    },
+  });
 });

@@ -24,8 +24,11 @@ pub struct ProviderSettings {
 #[serde(rename_all = "camelCase")]
 pub struct ProviderDef {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub package: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub settings: Option<ProviderSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub headers: Option<BTreeMap<String, String>>,
     #[serde(default)]
     pub models: BTreeMap<String, ModelDef>,
@@ -35,14 +38,23 @@ pub struct ProviderDef {
 #[serde(rename_all = "snake_case")]
 pub struct ModelDef {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub family: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub disabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<ModelCapabilities>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<ModelCost>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<ModelLimit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub settings: Option<BTreeMap<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub headers: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub variants: Option<Vec<ModelVariant>>,
 }
 
@@ -50,8 +62,11 @@ pub struct ModelDef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ModelCapabilities {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<Vec<String>>,
 }
 
@@ -59,23 +74,31 @@ pub struct ModelCapabilities {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ModelCost {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache: Option<ModelCacheCost>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ModelCacheCost {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub read: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub write: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ModelLimit {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<u64>,
 }
 
@@ -97,6 +120,7 @@ pub struct ModelVariant {
 pub struct AgentModelBinding {
     pub agent_name: String,
     pub model_ref: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
 }
 
@@ -105,6 +129,7 @@ pub struct AgentModelBinding {
 pub struct OmoCategoryMapping {
     pub category_name: String,
     pub model_ref: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
 }
 
@@ -175,6 +200,26 @@ pub struct AppPreferences {
     pub default_plugin: DefaultPlugin,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+pub struct NotificationSettings {
+    pub enabled: bool,
+    pub agent_completed: bool,
+    pub approval_required: bool,
+    pub agent_error: bool,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            agent_completed: true,
+            approval_required: true,
+            agent_error: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSelectionState {
@@ -189,6 +234,8 @@ pub struct AppSelectionState {
     pub island_enabled: bool,
     #[serde(default)]
     pub logging_enabled: bool,
+    #[serde(default)]
+    pub notifications: NotificationSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

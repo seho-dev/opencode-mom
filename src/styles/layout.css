@@ -5,6 +5,17 @@
   height: 100dvh;
   overflow: hidden;
 }
+.app-shell.macos {
+  position: relative;
+}
+.window-drag-region {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 240px;
+  height: 36px;
+  user-select: none;
+}
 .sidebar {
   background: var(--surface-input);
   border-right: 1px solid var(--border-subtle);
@@ -14,6 +25,9 @@
   gap: 24px;
   height: 100dvh;
   overflow-y: auto;
+}
+.app-shell.macos .sidebar {
+  padding-top: 56px;
 }
 .brand {
   font-family: var(--font-heading);

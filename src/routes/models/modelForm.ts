@@ -41,7 +41,6 @@ export const initMods = (values?: ModelModality[]) => {
 export const parseObject = (text: string): Record<string, unknown> | undefined =>
   !text.trim() ? {} : (safeParseJsonObject(text) ?? undefined);
 export const anyFilled = (...values: string[]) => values.some((value) => value.trim() !== '');
-const num = (value: string) => (value.trim() === '' ? undefined : Number(value));
 
 export function modelToFormValues(initial: ModelDef, providerId: string, defaults: ModelFormValues): ModelFormValues {
   const rows = initial.variants ?? [];
@@ -72,12 +71,7 @@ export function modelToFormValues(initial: ModelDef, providerId: string, default
   };
 }
 
-export function formValuesToModel(
-  value: ModelFormValues,
-  mode: 'new' | 'edit',
-  initial?: ModelDef,
-  capabilitiesPresent = false,
-): ModelDef {
+export function formValuesToModel(value: ModelFormValues, initial?: ModelDef): ModelDef {
   const {
     id,
     family,
@@ -106,34 +100,35 @@ export function formValuesToModel(
   const inputModalities = MODALITIES.filter((modality) => modalityInput[modality]);
   const outputModalities = MODALITIES.filter((modality) => modalityOutput[modality]);
   const cacheUsed = anyFilled(costCacheRead, costCacheWrite);
-  const capabilitiesNeeded = capabilitiesPresent || tools || inputModalities.length > 0 || outputModalities.length > 0;
+  const capabilitiesNeeded =
+    initial?.capabilities != null || tools || inputModalities.length > 0 || outputModalities.length > 0;
   return {
     id: id.trim(),
     ...(family.trim() && { family: family.trim() }),
-    ...((disabled || (mode === 'edit' && initial?.disabled === true)) && { disabled }),
+    ...((disabled || initial?.disabled != null) && { disabled }),
     ...(capabilitiesNeeded && {
       capabilities: {
         tools,
-        ...(inputModalities.length && { input: inputModalities }),
-        ...(outputModalities.length && { output: outputModalities }),
+        ...((inputModalities.length || initial?.capabilities?.input != null) && { input: inputModalities }),
+        ...((outputModalities.length || initial?.capabilities?.output != null) && { output: outputModalities }),
       },
     }),
     ...(costUsed && {
       cost: {
-        input: num(costInput) as number,
-        output: num(costOutput) as number,
+        ...(costInput.trim() && { input: Number(costInput) }),
+        ...(costOutput.trim() && { output: Number(costOutput) }),
         ...(cacheUsed && {
           cache: {
-            ...(costCacheRead.trim() && { read: num(costCacheRead) as number }),
-            ...(costCacheWrite.trim() && { write: num(costCacheWrite) as number }),
+            ...(costCacheRead.trim() && { read: Number(costCacheRead) }),
+            ...(costCacheWrite.trim() && { write: Number(costCacheWrite) }),
           },
         }),
       },
     }),
     ...(limitUsed && {
       limit: {
-        context: Number(limitContext),
-        output: Number(limitOutput),
+        ...(limitContext.trim() && { context: Number(limitContext) }),
+        ...(limitOutput.trim() && { output: Number(limitOutput) }),
         ...(limitInput.trim() && { input: Number(limitInput) }),
       },
     }),

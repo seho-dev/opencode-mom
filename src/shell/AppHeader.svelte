@@ -8,6 +8,7 @@ import AppearanceControls from './AppearanceControls.svelte';
 import MobileNavigation from './MobileNavigation.svelte';
 import { toast } from './toast.svelte.js';
 
+let { macos = false }: { macos?: boolean } = $props();
 const config = getConfig();
 const i18n = getI18n();
 let opening = $state(false);
@@ -32,8 +33,8 @@ onDestroy(() => {
 });
 </script>
 
-<header class="header">
-  <div class="header-main">
+<header class="header" data-tauri-drag-region={macos ? '' : undefined}>
+  <div class="header-main" data-tauri-drag-region={macos ? '' : undefined}>
     <MobileNavigation />
   </div>
   <div class="header-meta">

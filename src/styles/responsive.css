@@ -10,6 +10,12 @@
     height: 52px;
     padding: 0 16px;
   }
+  .window-drag-region {
+    display: none;
+  }
+  .app-shell.macos .header {
+    padding-left: 96px;
+  }
   .header-meta {
     gap: 10px;
   }
@@ -62,6 +68,9 @@
     display: flex;
     flex-direction: column;
     gap: 24px;
+  }
+  .app-shell.macos .drawer-panel {
+    padding-top: 44px;
   }
   .drawer-top {
     display: flex;

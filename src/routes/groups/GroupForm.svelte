@@ -1,6 +1,7 @@
 <script lang="ts">
 import { Trash2 } from '@lucide/svelte';
 import { createForm } from '@tanstack/svelte-form';
+import { untrack } from 'svelte';
 import { z } from 'zod';
 import { goto } from '$app/navigation';
 import { Button } from '$src/components/button/index.js';
@@ -27,16 +28,17 @@ import { BUILTIN_AGENTS, buildModelVariants } from '$src/utils/index.js';
 
 const config = getConfig();
 const i18n = getI18n();
-let { group }: { group?: Group } = $props();
+let { group, initialGroup }: { group?: Group; initialGroup?: Omit<Group, 'id' | 'updatedAt'> } = $props();
+const source = $derived(group ?? initialGroup);
 const defaultValues = $derived({
-  name: group?.name ?? '',
-  description: group?.description ?? '',
-  type: group?.type ?? config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE,
-  native: group?.openCodeAgentOverrides ?? ([] as AgentModelBinding[]),
-  slim: group?.slimAgentOverrides ?? ([] as AgentModelBinding[]),
-  omo: group?.omoAgentOverrides ?? ([] as AgentModelBinding[]),
-  categories: group?.omoCategoryMappings ?? ([] as CategoryMapping[]),
-  isEnabled: group?.isEnabled ?? false,
+  name: source?.name ?? '',
+  description: source?.description ?? '',
+  type: source?.type ?? config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE,
+  native: source?.openCodeAgentOverrides ?? ([] as AgentModelBinding[]),
+  slim: source?.slimAgentOverrides ?? ([] as AgentModelBinding[]),
+  omo: source?.omoAgentOverrides ?? ([] as AgentModelBinding[]),
+  categories: source?.omoCategoryMappings ?? ([] as CategoryMapping[]),
+  isEnabled: source?.isEnabled ?? false,
 });
 const form = createForm(() => ({
   defaultValues,
@@ -80,7 +82,9 @@ const omo = $derived(values.current.omo);
 const categories = $derived(values.current.categories);
 let initialized = $state('');
 let seenReset = $state(-1);
-let tab = $state<MappingKind>(defaultTab(config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE));
+let tab = $state<MappingKind>(
+  defaultTab(untrack(() => initialGroup?.type ?? config.preferences.defaultPlugin ?? GROUP_TYPE_NATIVE)),
+);
 let pending = $state<GroupType | null>(null);
 const builtinSystem = $derived(tab === GROUP_TYPE_SLIM || tab === GROUP_TYPE_OMO ? tab : null);
 const mappingOptions = $derived(

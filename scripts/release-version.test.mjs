@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
@@ -34,6 +34,10 @@ function fixture(t) {
       2,
     )}\n`,
     'src-tauri/tauri.conf.json': '{"version":"0.1.0","bundle":{"macOS":{"signingIdentity":"-"}}}\n',
+    'src-tauri/Info.plist':
+      '<?xml version="1.0"?><plist version="1.0"><dict>\n' +
+      '<key>CFBundleShortVersionString</key><string>0.1.0</string>\n' +
+      '<key>CFBundleVersion</key><string>0.1.0</string>\n</dict></plist>\n',
     'src-tauri/Cargo.toml': '[package]\nname = "opencode-mom"\nversion = "0.1.0"\n\n[dependencies]\nother = "0.1.0"\n',
     'src-tauri/Cargo.lock':
       'version = 4\n\n[[package]]\nname = "other"\nversion = "0.1.0"\nsource = "registry+example"\n\n' +
@@ -190,8 +194,49 @@ test('version components respect the Windows 16-bit bound in parsing and release
   assert.throws(() => selectVersion('0.1.65535', { manual: true }), /0\.\.65535/);
 });
 
+test('beta versions compare numerically, increment within the channel, and require explicit stable promotion', () => {
+  assert.deepEqual(parseVersion('2.0.1-beta.1'), [2, 0, 1, 1]);
+  assert.equal(selectVersion('2.0.0', { subject: 'release: 2.0.1-beta.1' }), '2.0.1-beta.1');
+  assert.equal(selectVersion('2.0.1-beta.9', { subject: 'release' }), '2.0.1-beta.10');
+  assert.equal(selectVersion('2.0.1-beta.9', { manual: true }), '2.0.1-beta.10');
+  assert.equal(selectVersion('2.0.1-beta.9', { manual: true, version: '2.0.1' }), '2.0.1');
+  assert.equal(selectVersion('2.0.1-beta.9', { manual: true, version: '2.0.2-beta.1' }), '2.0.2-beta.1');
+  for (const [current, version] of [
+    ['2.0.1-beta.9', '2.0.1-beta.8'],
+    ['2.0.1-beta.9', '2.0.1-beta.9'],
+    ['2.0.1-beta.9', '2.0.0'],
+    ['2.0.1', '2.0.1-beta.10'],
+  ]) {
+    assert.throws(() => selectVersion(current, { manual: true, version }), /must be newer/);
+  }
+});
+
+test('beta syntax and native macOS limits fail closed instead of silently releasing stable', () => {
+  for (const version of [
+    '2.0.1-beta',
+    '2.0.1-beta.0',
+    '2.0.1-beta.01',
+    '2.0.1-beta.-1',
+    '2.0.1-beta.1.1',
+    '2.0.1-beta.1+build',
+    '2.0.1-alpha.1',
+    '2.0.1-rc.1',
+    '2.0.1-beta.256',
+    '0.1.1-beta.1',
+    '10000.0.1-beta.1',
+    '1.100.1-beta.1',
+    '1.0.100-beta.1',
+  ]) {
+    assert.throws(() => parseVersion(version), undefined, version);
+    assert.throws(() => selectVersion('2.0.0', { subject: `release: ${version}` }), undefined, version);
+  }
+  assert.throws(() => parseVersion('2.0.1-beta.1\n'));
+  assert.deepEqual(parseVersion('9999.99.99-beta.255'), [9999, 99, 99, 255]);
+  assert.throws(() => selectVersion('2.0.1-beta.255', { manual: true }), /1\.\.255/);
+});
+
 test('out-of-range release requests abort before git mutations or fixture writes', (t) => {
-  for (const version of ['65536.1.1', '1.65536.1', '1.1.65536', '']) {
+  for (const version of ['65536.1.1', '1.65536.1', '1.1.65536', '1.0.1-beta.256', '1.0.100-beta.1', '']) {
     for (const manual of [false, true]) {
       const { root, files, state, options } = repository(t, version ? `release: ${version}` : 'release');
       if (!version) syncVersions(root, '0.1.65535');
@@ -199,7 +244,7 @@ test('out-of-range release requests abort before git mutations or fixture writes
         Object.keys(files).map((path) => [path, readFileSync(join(root, path), 'utf8')]),
       );
       const request = manual ? { ...options, eventName: 'workflow_dispatch', event: { inputs: { version } } } : options;
-      assert.throws(() => prepareRelease(request), /0\.\.65535/);
+      assert.throws(() => prepareRelease(request), /0\.\.65535|macOS bundle limits/);
       assert.ok(
         state.calls.every((args) => !['add', 'commit', 'tag', 'push'].includes(args[0] === '-c' ? args[2] : args[0])),
       );
@@ -248,6 +293,37 @@ test('tag verification checks every app source and rejects malformed tags or inc
   assert.throws(() => verifyVersions(root, 'v0.1.0'), /out of sync/);
   assert.throws(() => syncVersions(root, '0.3.0'), /out of sync/);
   assert.equal(readFileSync(join(root, 'package.json'), 'utf8'), files['package.json']);
+});
+
+test('beta app sources retain SemVer while macOS metadata uses the native beta suffix and detects drift', (t) => {
+  const { root, files } = fixture(t);
+  syncVersions(root, '2.0.1-beta.1');
+  assert.equal(verifyVersions(root, 'v2.0.1-beta.1'), '2.0.1-beta.1');
+  assert.throws(() => verifyVersions(root, 'v2.0.1'), /does not match/);
+  const path = join(root, 'src-tauri/Info.plist');
+  const plist = readFileSync(path, 'utf8');
+  assert.match(plist, /<key>CFBundleShortVersionString<\/key><string>2\.0\.1<\/string>/);
+  assert.match(plist, /<key>CFBundleVersion<\/key><string>2\.0\.1b1<\/string>/);
+  const output = join(root, 'github_output');
+  const stdout = execFileSync('node', [resolve('scripts/release-version.mjs'), 'verify', 'v2.0.1-beta.1'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, GITHUB_OUTPUT: output },
+  });
+  assert.deepEqual(JSON.parse(stdout), { version: '2.0.1-beta.1', tag: 'v2.0.1-beta.1', prerelease: 'true' });
+  assert.match(readFileSync(output, 'utf8'), /(?:^|\n)prerelease=true\n/);
+  for (const value of ['2.0.1</string>', '2.0.1b1</string>']) {
+    writeFileSync(path, plist.replace(value, '2.0.0</string>'));
+    assert.throws(() => verifyVersions(root), /out of sync/);
+    assert.throws(() => syncVersions(root, '2.0.1-beta.2'), /out of sync/);
+  }
+  writeFileSync(path, plist);
+  syncVersions(root, '2.0.1');
+  assert.equal(verifyVersions(root, 'v2.0.1'), '2.0.1');
+  assert.ok(!readFileSync(path, 'utf8').includes('b1'));
+  for (const path of Object.keys(files).filter((path) => path.includes('macos-helper'))) {
+    assert.equal(readFileSync(join(root, path), 'utf8'), files[path]);
+  }
 });
 
 test('verification supports Windows CRLF and detects drift in each app source', (t) => {
@@ -438,11 +514,137 @@ test('existing tag builds verify versions and never bump', (t) => {
   const { root, state, options } = repository(t, 'ordinary work');
   state.tags['v0.1.0'] = { sha: options.sha };
   const tagPush = { ...options, ref: 'refs/tags/v0.1.0' };
-  assert.deepEqual(prepareRelease(tagPush), { release: 'true', version: '0.1.0', tag: 'v0.1.0', sha: options.sha });
+  assert.deepEqual(prepareRelease(tagPush), {
+    release: 'true',
+    version: '0.1.0',
+    tag: 'v0.1.0',
+    prerelease: 'false',
+    sha: options.sha,
+  });
   assert.equal(state.defaultHead, options.sha);
   assert.ok(state.calls.every((args) => args[0] !== 'push'));
   assert.throws(() => readFileSync(join(root, 'CHANGELOG.md')), /ENOENT/);
   assert.throws(() => prepareRelease({ ...tagPush, ref: 'refs/tags/v0.2.0' }), /does not match/);
+});
+
+test('beta preparation, reruns and existing tag builds always report prerelease=true', (t) => {
+  const { root, state, options, restoreTrigger } = repository(t, 'release: 2.0.1-beta.1');
+  const result = prepareRelease(options);
+  assert.equal(result.prerelease, 'true');
+  assert.equal(result.tag, 'v2.0.1-beta.1');
+  assert.equal(verifyVersions(root), '2.0.1-beta.1');
+  restoreTrigger();
+  assert.deepEqual(prepareRelease(options), result);
+  syncVersions(root, result.version);
+  state.head = result.sha;
+  assert.deepEqual(prepareRelease({ ...options, ref: `refs/tags/${result.tag}`, sha: result.sha }), result);
+  assert.equal(state.calls.filter((args) => args[0] === 'push').length, 1);
+});
+
+test('beta dry runs do not write, reject non-monotonic tags and use earlier beta history only for beta releases', (t) => {
+  const { root, state, options } = repository(t);
+  const dispatch = {
+    ...options,
+    eventName: 'workflow_dispatch',
+    event: { inputs: { version: '2.0.1-beta.10', dry_run: true } },
+  };
+  state.tags = { 'v2.0.0': {}, 'v2.0.1-beta.9': {} };
+  state.lastStableTag = 'v2.0.1-beta.9';
+  const result = prepareRelease(dispatch);
+  assert.equal(result.release, 'false');
+  assert.equal(result.prerelease, 'true');
+  assert.equal(verifyVersions(root), '0.1.0');
+  assert.ok(state.calls.some((args) => args.join(' ') === 'log --format=%s v2.0.1-beta.9..HEAD'));
+  assert.ok(!state.calls.some((args) => args[0] === 'push' || args[0] === '-c'));
+  state.tags['v2.0.1-beta.11'] = {};
+  assert.throws(() => prepareRelease(dispatch), /not newer than v2.0.1-beta.11/);
+  delete state.tags['v2.0.1-beta.11'];
+  state.tags['v2.0.1'] = {};
+  assert.throws(() => prepareRelease(dispatch), /not newer than v2.0.1/);
+  delete state.tags['v2.0.1'];
+  state.calls = [];
+  state.lastStableTag = 'v2.0.0';
+  const stable = prepareRelease({ ...dispatch, event: { inputs: { version: '2.0.1', dry_run: true } } });
+  assert.equal(stable.prerelease, 'false');
+  const describe = state.calls.find((args) => args[0] === 'describe');
+  assert.ok(describe.includes('--match=v2.0.0'));
+  assert.ok(!describe.includes('--match=v2.0.1-beta.9'));
+});
+
+test('beta release notes select the exact beta section', (t) => {
+  const { root } = fixture(t);
+  syncVersions(root, '2.0.1-beta.1');
+  writeFileSync(
+    join(root, 'CHANGELOG.md'),
+    '# Changelog\n\n## 2.0.1 - 2026-10-09\n\n- stable\n\n## 2.0.1-beta.1 - 2026-10-07\n\n- beta\n\n## 2.0.0 - 2026-10-01\n\n- old\n',
+  );
+  const runGit = (...args) => {
+    if (args[0] === 'status') return '';
+    if (args[0] === 'rev-parse') return 'a'.repeat(40);
+    throw new Error(`Unexpected git call: ${args.join(' ')}`);
+  };
+  assert.equal(releaseNotes({ root, tag: 'v2.0.1-beta.1', runGit }), '## 2.0.1-beta.1 - 2026-10-07\n\n- beta\n');
+});
+
+test('publish workflow keeps beta prerelease and non-latest on creation and reruns, failing closed on missing channel', (t) => {
+  const workflow = readFileSync(resolve('.github/workflows/release.yml'), 'utf8');
+  const publish = workflow.split('      - name: Publish only after every platform succeeded\n')[1];
+  const script = publish.split('        run: |\n')[1].replace(/^ {10}/gm, '');
+  for (const [channel, exists] of [
+    ['true', false],
+    ['true', true],
+    ['false', false],
+    ['', false],
+  ]) {
+    const { root } = fixture(t);
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    const scripts = {
+      git: '#!/bin/sh\nprintf "%s\\n" "$RELEASE_SHA"\n',
+      node: '#!/bin/sh\nprintf "Release notes\\n"\n',
+      gh: '#!/bin/sh\nprintf "%s\\n" "$*" >> "$GH_LOG"\nif [ "$2" = view ]; then exit "$GH_EXISTS"; fi\n',
+    };
+    for (const [name, text] of Object.entries(scripts)) {
+      writeFileSync(join(bin, name), text);
+      chmodSync(join(bin, name), 0o755);
+    }
+    mkdirSync(join(root, 'release-assets'));
+    const version = channel === 'false' ? '2.0.1' : '2.0.1-beta.1';
+    for (const suffix of ['aarch64.dmg', 'x64.dmg', 'aarch64.app.tar.gz', 'x64.app.tar.gz', 'x64-setup.exe']) {
+      writeFileSync(join(root, 'release-assets', `opencode-mom_${version}_${suffix}`), 'fixture');
+    }
+    const log = join(root, 'gh.log');
+    const run = () =>
+      execFileSync('bash', ['-c', script], {
+        cwd: root,
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          PRERELEASE: channel,
+          RELEASE_VERSION: version,
+          RELEASE_TAG: `v${version}`,
+          RELEASE_SHA: 'a'.repeat(40),
+          RUNNER_TEMP: root,
+          GH_TOKEN: '',
+          GH_LOG: log,
+          GH_EXISTS: exists ? '0' : '1',
+        },
+        stdio: 'pipe',
+      });
+    if (!channel) {
+      assert.throws(run);
+      assert.throws(() => readFileSync(log), /ENOENT/);
+      continue;
+    }
+    run();
+    const calls = readFileSync(log, 'utf8').trim().split('\n');
+    for (const call of calls.filter((call) => /^release (create|edit) /.test(call))) {
+      assert.ok(call.includes(`--prerelease=${channel}`), call);
+      if (channel === 'true') assert.ok(call.includes('--latest=false'), call);
+    }
+    assert.equal(calls.filter((call) => call.startsWith('release create ')).length, exists ? 0 : 1);
+    assert.ok(calls.some((call) => call.startsWith('release edit ') && call.includes('--draft=false')));
+  }
 });
 
 test('releaseNotes extracts exact version section without bleeding into adjacent sections across CRLF and LF', (t) => {
@@ -543,8 +745,8 @@ test('releaseNotes propagates git errors and non-ENOENT filesystem errors', (t) 
 
 test('releaseNotes throws on malformed tag or checkout mismatch', (t) => {
   const { root } = fixture(t);
-  assert.throws(() => releaseNotes({ root, tag: '0.1.0' }), /Expected a stable release tag/);
-  assert.throws(() => releaseNotes({ root, tag: 'v0.1.0-beta' }), /Expected a stable release tag/);
+  assert.throws(() => releaseNotes({ root, tag: '0.1.0' }), /Expected a release tag/);
+  assert.throws(() => releaseNotes({ root, tag: 'v0.1.0-beta' }), /Expected a release tag/);
 
   const runGitMismatch = (...args) => {
     if (args[0] === 'status') return '';

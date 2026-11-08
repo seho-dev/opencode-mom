@@ -40,18 +40,19 @@
 
 ## ✨ 核心特性
 
-- **🧩 模型组一键切换**：在**仪表盘**、**Groups 页面**或**系统托盘**一键即时切换整套模型组合配置。
+- **🧩 模型组一键切换**：在**仪表盘**、**Groups 页面**或**系统托盘**一键即时切换整套模型组合配置，支持复制现有模型组，在预填表单中修改并显式保存为新组。
 - **🧠 Provider、Model 与 Agent 管理**：轻松注册自定义 API Endpoint（兼容 OpenAI、Anthropic 等协议），管理模型限额与定价，配置 Agent 权限与系统提示词（支持内联 JSON 及 Markdown 格式）。
 - **🔌 MCP 与 Skill 管理**：集中管理 MCP 服务，自动打码敏感凭证；内置 **MCP HTTP Proxy**，可将本地 stdio MCP 服务转为 HTTP/SSE 供外部客户端接入。支持浏览与管理本地及远程 Skill。
-- **🏝️ MOM Mini Island（macOS）**：专为 Mac 刘海屏设计的悬浮状态胶囊，直观展示实时会话状态、波形动效，并支持直接单次授权、表单回复及中断任务。
+- **🏝️ MOM Mini Island（macOS）**：专为 Mac 刘海屏设计的悬浮状态胶囊，在无刘海机型上同样贴合屏幕顶边，直观展示缓存的项目与会话上下文、会话与待处理请求计数、实时会话状态、波形动效、主任务完成环绕流光与待审批常驻提醒，并支持直接单次授权、表单回复及中断任务。
 - **💤 合盖守护（macOS / Windows）**：**仅在 OpenCode 会话处于实际工作中时**阻止笔记本休眠，任务完成后自动恢复原系统电源策略。
+- **🔔 系统原生通知（macOS / Windows）**：在**设置 → 通用**中开启**系统通知**（默认关闭），再独立选择主 Agent 完成、审批请求与 Agent 错误三类提醒。macOS 首次开启时请求系统授权；Windows 检查已安装应用的通知状态，并在需要时打开系统设置。修改系统权限后，在 MOM 中点击**刷新通知设置**。保存的通知偏好与系统授权相互独立。MOM 运行期间（包括驻留托盘时）生效，不依赖 Mini Island；专注或勿扰模式仍可能阻止展示。请使用打包后的 macOS 应用或已安装的 Windows 应用。
 - **📊 实时仪表盘与系统托盘**：实时查看服务健康状态、工作会话数、Token 消耗统计、活动热力图，通过托盘菜单常驻后台便捷操作。
 
 ### 🪵 本地诊断日志
 
 - **独立控制与专属查看器**：在**设置 → 通用**中提供独立开关（默认关闭），关闭记录仍保留已有历史；导航菜单提供独立的 `/logs` 查看器（未嵌入设置页），支持手动刷新、打开存储目录与确认后清空历史。
 - **关联追踪与状态记录**：记录关键变更操作的结果，普通轮询成功不记入日志，电源与 Mini Island 仅记录已发布的状态流转；每条记录包含必需的 `type`、`status`（`success` | `error`）并由 `operationId` 关联检查点（单步检查点成功不代表整体操作成功）。
-- **查看与筛选机制**：查看器支持按类型、结果状态及时间范围筛选，基于游标按页加载更早记录（每页 50 条），单项操作可追溯最多 100 条保留事件；日志轮转或清空后分页游标失效，手动刷新将重置查询。
+- **查看与筛选机制**：查看器支持按类型、结果状态及时间范围筛选，基于游标按页加载更早记录（每页 50 条），单项操作可追溯最多 100 条保留事件；日志轮转或清空后分页游标失效，手动刷新将重置查询。支持将单条记录与操作过程以格式化 JSON 复制到剪贴板，仅按时间顺序导出当前已加载的保留事件而不额外拉取历史，定位为诊断排查辅助而非完整合规审计日志。
 - **存储规格与访问权限**：本地存储于 `~/.config/opencode-mom/logs`（Windows 为 `%USERPROFILE%\.config\opencode-mom\logs`），最多轮转保留 5 个 5 MiB 的 JSONL 文件；Unix 设置目录 `0700`/文件 `0600` 权限，Windows 采用继承权限（未进行私有 ACL 校验）。
 - **安全白名单与诊断性质**：采用严格字段白名单，绝不记录凭据、密码、Token 及其校验数据、提示词、会话消息、配置内容、请求与响应体或原始错误，无任何自动上传；本功能仅供本地诊断调试而非合规审计，进程被强制终止、磁盘故障或队列溢出可能导致记录丢失。
 
@@ -75,13 +76,13 @@
    ```
 
 ### 环境要求
-- 需已安装 **[OpenCode v2](https://opencode.ai/v2/docs/)**（用于获取实时服务状态、会话监控及 Mini Island 功能；普通配置编辑可独立使用）。
+- 需已安装 **[OpenCode v2](https://opencode.ai/v2/docs/)**（用于获取实时服务状态、会话监控、Mini Island 及系统原生通知功能；普通配置编辑可独立使用）。
 
 ## 🔧 配置写入机制
 
 MOM 将自身状态保存在 `~/.config/opencode-mom/config.json` 中，仅对目标配置文件进行精准增量修改，绝不破坏未受管字段：
 
-日志功能开关存储为 `state.loggingEnabled`（默认 `false`），独立于主题、语言、模型组与项目选择，日志记录单独保存在 logs/ 下的 JSONL 文件中，不写入 config.json。
+日志功能开关存储为 `state.loggingEnabled`（默认 `false`），独立于主题、语言、模型组与项目选择，日志记录单独保存在 logs/ 下的 JSONL 文件中，不写入 config.json。通知设置存储为 `state.notifications`（默认关闭），独立于主题、语言、模型组与日志；在 macOS 或 Windows 开启后，系统原生通知将提示根 Agent 完成、审批请求及 Agent 错误。
 
 | 模型组类型 | 目标配置文件 | 增量修改的字段 |
 | :--- | :--- | :--- |
@@ -112,11 +113,13 @@ cargo test --manifest-path src-tauri/Cargo.toml    # Rust 后端测试
 
 项目通过 GitHub Actions 的 **Release** 工作流在默认分支触发发布：
 
-- **自动触发**：向默认分支提交标题为 `release` 或 `release: 描述` 的 commit（自动提升下一补丁版本，例如 `2.0.1`），或使用 `release: X.Y.Z` 显式发布更新的稳定版本。
-- **手动触发**：在 GitHub Actions 中手动 dispatch 执行 `Release` 工作流，支持可选的 `version`（`X.Y.Z`，留空默认提升下一补丁版本）。
+- **自动触发**：向默认分支提交标题为 `release` 或 `release: 描述` 的 commit（自动提升下一补丁版本，如 `2.0.1`；若当前处于 beta 则递增下一 beta，如 `2.0.1-beta.2`），或使用 `release: X.Y.Z` / `release: X.Y.Z-beta.N` 显式发布指定版本。
+- **手动触发**：在 GitHub Actions 中手动 dispatch 执行 `Release` 工作流，支持可选的 `version`（`X.Y.Z` 或 `X.Y.Z-beta.N`，留空默认提升下一补丁版本或下一 beta）。
+- **Beta 发布与转为 Stable**：开启 beta 发布时指定 `X.Y.Z-beta.N`；beta 期间自动触发将递增 beta 序号（`-beta.N+1`）。从 beta 转为 stable 必须显式指定目标版本 `X.Y.Z`。Beta 版本在 GitHub Release 中标记为预发布（pre-release），不设为 latest。
+- **更新检查机制**：应用内置的更新检查仅追踪最新 stable 稳定版本。Beta 用户仅在对应的同版本或更新的 stable 发布时收到更新提示，不会提示后续 beta 版本。
 - **预演模式（Dry Run）**：手动触发时可设置 `dry_run: true`（默认为 `false`），仅预览计算后的版本号与发布说明，不会生成 commit、tag、推送、构建或发布。
-- **发布说明与安全提示**：GitHub Release 说明精准引用 `CHANGELOG.md` 中对应 tag 的章节内容（若缺失则回退到 commit 历史记录），并附带平台安全提示说明。直接推送版本匹配的 `vX.Y.Z` tag 会校验清单一致性并直接发布，不执行 changelog 回写。
-- **权限与重试保护**：工作流使用具备 `contents: write` 权限的内置 `GITHUB_TOKEN`；分支与 tag 规则必须允许 release bot 推送自动生成的 commit 与 tag，Token 写权限本身不会绕过分支保护。发布准备阶段向 `CHANGELOG.md` 顶部追加条目，同步 5 个清单文件（`package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`），保持 `macos-helper` 独立不被修改，并原子推送分支与 tag。所有平台构建成功后才发布；若构建或发布失败，重新运行原有失败工作流即可继续，无需再次递增版本。
+- **发布说明与安全提示**：GitHub Release 说明精准引用 `CHANGELOG.md` 中对应 tag 的章节内容（若缺失则回退到 commit 历史记录），并附带平台安全提示说明。直接推送版本匹配的 `vX.Y.Z` 或 `vX.Y.Z-beta.N` tag 会校验清单一致性并直接发布，不执行 changelog 回写。
+- **权限与重试保护**：工作流使用具备 `contents: write` 权限的内置 `GITHUB_TOKEN`；分支与 tag 规则必须允许 release bot 推送自动生成的 commit 与 tag，Token 写权限本身不会绕过分支保护。发布准备阶段向 `CHANGELOG.md` 顶部追加条目，同步 6 个清单文件（`package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/Info.plist`），保持 `macos-helper` 独立不被修改，并原子推送分支与 tag。所有平台构建成功后才发布；若构建或发布失败，重新运行原有失败工作流即可继续，无需再次递增版本。
 
 ## 📄 开源许可证
 

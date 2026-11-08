@@ -82,8 +82,27 @@ fn stable_version(tag: &str) -> Result<[u32; 3], AppError> {
     Ok(version)
 }
 
+fn current_version(version: &str) -> Result<([u32; 3], bool), AppError> {
+    let Some((base, beta)) = version.split_once("-beta.") else {
+        return stable_version(version).map(|version| (version, false));
+    };
+    let invalid = || AppError::configuration("Invalid beta release version");
+    let parts = stable_version(base)?;
+    if beta.is_empty()
+        || beta.starts_with('0')
+        || !beta.bytes().all(|byte| byte.is_ascii_digit())
+        || !matches!(beta.parse::<u32>(), Ok(1..=255))
+        || !(1..=9999).contains(&parts[0])
+        || parts[1] > 99
+        || parts[2] > 99
+    {
+        return Err(invalid());
+    }
+    Ok((parts, true))
+}
+
 pub fn check_for_updates(current_version: &str) -> Result<UpdateCheck, AppError> {
-    stable_version(current_version)?;
+    self::current_version(current_version)?;
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
         .connect_timeout(Duration::from_secs(5))
@@ -98,7 +117,7 @@ fn fetch_update(
     current_version: &str,
     url: &str,
 ) -> Result<UpdateCheck, AppError> {
-    let current = stable_version(current_version)?;
+    let (current, beta) = self::current_version(current_version)?;
     let response = client
         .get(url)
         .header(
@@ -156,7 +175,8 @@ fn fetch_update(
     let latest = stable_version(&release.tag_name)?;
     let [major, minor, patch] = latest;
     result.latest_version = Some(format!("{major}.{minor}.{patch}"));
-    result.update_available = latest > current;
+    // Keep the stable-only feed; the final release is newer than a beta with the same core.
+    result.update_available = latest > current || (beta && latest == current);
     Ok(result)
 }
 

@@ -23,6 +23,7 @@ src/
 ├── resource_file.rs     # Checked publication and recovery
 ├── http_server.rs       # Application-wide HTTP listener
 ├── mcp_proxy/           # MCP gateway service
+├── notifications.rs     # Native OS notifications for OpenCode events
 ├── opencode/            # Local OpenCode integration
 ├── island/              # Native Mini Island
 └── power/               # Lid protection
@@ -34,6 +35,7 @@ src/
 | :--- | :--- | :--- |
 | Desktop ownership | `lib.rs` | Initialize captured state and coordinate service shutdown. |
 | Persistence | `models.rs` | Own app config types and serialized writes. |
+| Native notifications | `notifications.rs`, `notifications/permission.rs` | Monitor OpenCode events; separate saved preferences from native OS authorization and fixed settings actions. |
 | Scope authority | `paths.rs` | Resolve Global sources and isolated project roots. |
 | Preserving edits | `document.rs`, `jsonc.rs` | Choose plain writes or JSONC path patches. |
 | Resource publication | `resource_file.rs` | Validate source snapshots and retain recovery backups on failure. |

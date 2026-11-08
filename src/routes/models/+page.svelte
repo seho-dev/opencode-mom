@@ -173,7 +173,7 @@ async function remove() {
         {#each pagedModels as model}
           <tr>
             <td>{model.providerId}</td>
-            <td>{model.name ?? i18n.t('common.unnamed')}</td>
+            <td>{model.name ?? ('id' in model ? model.id : i18n.t('common.unnamed'))}</td>
             <td>{(model.limit as { context?: number })?.context ?? i18n.t('common.unset')}</td>
             <td class="row-actions">
               {#if activeTab === 'custom'}

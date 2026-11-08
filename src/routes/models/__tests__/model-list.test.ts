@@ -149,6 +149,26 @@ describe('/models actions and copy contract', () => {
     expect(screen.getByText('Custom GPT')).toBeDefined();
   });
 
+  test('custom model without a name falls back to the model id instead of an unnamed placeholder', () => {
+    const unnamedModel = { ...customModel, id: 'no-name-model', ref: 'openai/no-name-model', name: undefined };
+    const mockConfig = createMockConfig({
+      catalog: [unnamedModel],
+      models: () => [unnamedModel],
+    });
+    render(ModelsPage, {}, { wrapper: Harness, wrapperProps: { config: mockConfig } });
+
+    expect(screen.getByText('no-name-model')).toBeDefined();
+    expect(screen.queryByText('unnamed')).toBeNull();
+  });
+
+  test('named custom model still renders its name', () => {
+    const mockConfig = createMockConfig({ models: () => [customModel] });
+    render(ModelsPage, {}, { wrapper: Harness, wrapperProps: { config: mockConfig } });
+
+    expect(screen.getByText('Custom GPT')).toBeDefined();
+    expect(screen.queryByText('unnamed')).toBeNull();
+  });
+
   test('custom tab shows persisted models even while catalog is loading', () => {
     const mockConfig = createMockConfig({
       catalogLoading: true,

@@ -23,7 +23,6 @@ let healthSessions = $state(0);
 let healthError = $state<unknown>(null);
 let action = $state<'reload' | 'switch' | 'open' | 'settings' | 'quit' | null>(null);
 let actionError = $state<{ cause: unknown; updates?: boolean } | null>(null);
-let notice = $state(false);
 let visible = false;
 let disposed = false;
 let healthRequest = 0;
@@ -80,7 +79,6 @@ function shown() {
 
   visible = true;
   actionError = null;
-  notice = false;
   void config.refresh().catch((cause: unknown) => {
     actionError = { cause };
   });
@@ -98,7 +96,6 @@ async function runAction(kind: NonNullable<typeof action>, perform: () => Promis
 
   action = kind;
   actionError = null;
-  notice = false;
 
   try {
     await perform();
@@ -114,17 +111,21 @@ function switchGroup(group: Group) {
 
   return runAction('switch', async () => {
     await config.switchGroup(group.id);
-    if (group.type !== 'native') notice = true;
+    action = 'reload';
+    await reloadRuntime();
   });
 }
 
+async function reloadRuntime() {
+  healthRequest += 1;
+  health = 'unchecked';
+
+  await config.reloadOpencode();
+  if (!disposed && visible) await checkHealth();
+}
+
 function reload() {
-  return runAction('reload', async () => {
-    healthRequest += 1;
-    health = 'unchecked';
-    await config.reloadOpencode();
-    if (visible) await checkHealth();
-  });
+  return runAction('reload', reloadRuntime);
 }
 
 async function dismiss(event: KeyboardEvent) {
@@ -328,10 +329,6 @@ onMount(() => {
     {:else if action === 'reload' || config.reloading}
       <p class="m-0 shrink-0 px-1 text-[10px] leading-[14px] text-[var(--text-secondary)]" role="status">
         {i18n.t('tray.reloading')}
-      </p>
-    {:else if notice}
-      <p class="m-0 shrink-0 px-1 text-[10px] leading-[14px] text-[var(--text-secondary)]" role="status">
-        {i18n.t('tray.groupSwitched')}
       </p>
     {/if}
   </main>

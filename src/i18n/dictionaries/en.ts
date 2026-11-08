@@ -453,7 +453,7 @@ export const en = {
   'tray.status.online': 'online',
   'tray.status.unavailable': 'unavailable',
   'tray.statusHelp':
-    'Checks may start the local OpenCode service. Only on open and after Reload; never in the background.',
+    'Checks may start the local OpenCode service. Only on open and after reloads (including all group switches); never in the background.',
   'tray.statusOnlineOne': 'OpenCode responded successfully. {count} active session. {help}',
   'tray.statusOnlineMany': 'OpenCode responded successfully. {count} active sessions. {help}',
   'tray.statusUnavailable':
@@ -471,7 +471,6 @@ export const en = {
   'tray.active': 'ACTIVE',
   'tray.switching': 'Switching group…',
   'tray.reloading': 'Reloading OpenCode…',
-  'tray.groupSwitched': 'Group switched. Reload to apply plugin changes.',
 
   // dashboard
   'dashboard.metaTitle': 'Dashboard · opencode-mom',

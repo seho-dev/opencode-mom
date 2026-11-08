@@ -428,7 +428,8 @@ export const zh: Record<MessageKey, string> = {
   'tray.status.checking': '正在检查…',
   'tray.status.online': '在线',
   'tray.status.unavailable': '不可用',
-  'tray.statusHelp': '仅打开托盘和 Reload 后检查，不在后台检查；可能启动本地 OpenCode 服务。',
+  'tray.statusHelp':
+    '仅打开托盘和重新加载后检查（包括切换任意分组后的自动重新加载），不在后台检查；可能启动本地 OpenCode 服务。',
   'tray.statusOnlineOne': 'OpenCode 响应成功。{count} 个活跃会话。{help}',
   'tray.statusOnlineMany': 'OpenCode 响应成功。{count} 个活跃会话。{help}',
   'tray.statusUnavailable': '无法检查运行时状态：{message} 这并不表示 OpenCode 已离线。{help}',
@@ -445,7 +446,6 @@ export const zh: Record<MessageKey, string> = {
   'tray.active': '当前',
   'tray.switching': '正在切换分组…',
   'tray.reloading': '正在重新加载 OpenCode…',
-  'tray.groupSwitched': '分组已切换。请重新加载以应用插件更改。',
 
   // dashboard
   'dashboard.metaTitle': '仪表盘 · opencode-mom',

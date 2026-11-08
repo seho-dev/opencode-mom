@@ -145,9 +145,114 @@ test('renders real group names, canonical type labels and eligibility; switches 
   expect(calls('switch_group')).toEqual([['switch_group', { id: 'slim-id' }]]);
   expect(screen.getByRole('button', { name: 'My plugin group, Slim' }).getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByRole('button', { name: 'My local group, OpenCode' }).getAttribute('aria-pressed')).toBe('false');
-  expect(await screen.findByText('Group switched. Reload to apply plugin changes.')).toBeTruthy();
+  // Every group switch reloads OpenCode, so no manual "reload to apply" notice is shown.
+  await waitFor(() => expect(calls('opencode_reload')).toHaveLength(1));
+  expect(screen.queryByText('Group switched. Reload to apply plugin changes.')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'My plugin group, Slim' }));
   expect(calls('switch_group')).toHaveLength(1);
+  expect(calls('opencode_reload')).toHaveLength(1);
+});
+
+test('switching back to the initial native group reloads OpenCode again, for two reloads total', async () => {
+  const { config } = mount();
+  const nativeButton = () => screen.getByRole('button', { name: 'My local group, OpenCode' }) as HTMLButtonElement;
+  const waitIdle = async () => {
+    await waitFor(() => expect(nativeButton().disabled).toBe(false));
+  };
+
+  await waitFor(() => expect(config.loading).toBe(false));
+  await fireEvent.click(screen.getByRole('button', { name: 'My plugin group, Slim' }));
+  await waitFor(() => expect(config.selectedGroupId).toBe('slim-id'));
+  await waitFor(() => expect(calls('opencode_reload')).toHaveLength(1));
+  await waitIdle();
+  await fireEvent.click(nativeButton());
+  await waitFor(() => expect(config.selectedGroupId).toBe('native-id'));
+  await waitFor(() => expect(calls('opencode_reload')).toHaveLength(2));
+  await waitIdle();
+  expect(calls('switch_group')).toEqual([
+    ['switch_group', { id: 'slim-id' }],
+    ['switch_group', { id: 'native-id' }],
+  ]);
+  expect(screen.queryByText('Group switched. Reload to apply plugin changes.')).toBeNull();
+});
+
+test.each([
+  // Native needs a different starting group because it is selected by default.
+  ['My local group, OpenCode', 'native-id', 'My agent group, OMO'],
+  ['My plugin group, Slim', 'slim-id', null],
+  ['My agent group, OMO', 'omo-id', null],
+] as const)(
+  'switching to %s reloads OpenCode after the switch completes and re-checks runtime health',
+  async (label, id, from) => {
+    const { config } = mount();
+
+    await waitFor(() => expect(config.loading).toBe(false));
+
+    if (from) {
+      await fireEvent.click(screen.getByRole('button', { name: from }));
+      await waitFor(() => expect(config.selectedGroupId).toBe('omo-id'));
+      await waitFor(() => expect(calls('opencode_reload')).toHaveLength(1));
+      await waitFor(() =>
+        expect((screen.getByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(false),
+      );
+    }
+
+    await emit('tray:shown');
+    await screen.findByText('online');
+    const healthChecks = calls('opencode_active_sessions').length;
+    const reloads = from ? 2 : 1;
+
+    let finishReload = () => {};
+    const fallback = native.invoke.getMockImplementation();
+
+    native.invoke.mockImplementation((command: string, args?: Record<string, unknown>) =>
+      command === 'opencode_reload'
+        ? new Promise<void>((resolve) => {
+            finishReload = resolve;
+          })
+        : fallback?.(command, args),
+    );
+
+    await fireEvent.click(screen.getByRole('button', { name: label }));
+    await waitFor(() => expect(config.selectedGroupId).toBe(id));
+    expect(calls('switch_group').at(-1)).toEqual(['switch_group', { id }]);
+    // Switching invalidates in-flight config reads, so the reload may be issued before they settle.
+    await waitFor(() => expect(calls('opencode_reload')).toHaveLength(reloads));
+
+    // Tray switched by itself, so the manual "reload to apply" notice is unnecessary.
+    expect(screen.queryByText('Group switched. Reload to apply plugin changes.')).toBeNull();
+    finishReload();
+    await waitFor(() => expect(calls('opencode_active_sessions')).toHaveLength(healthChecks + 1));
+    await screen.findByText('online');
+  },
+);
+
+test('a failed automatic reload keeps the switched group selected and reports the native error', async () => {
+  const { config } = mount();
+
+  await waitFor(() => expect(config.loading).toBe(false));
+  await emit('tray:shown');
+  await screen.findByText('online');
+
+  const fallback = native.invoke.getMockImplementation();
+
+  native.invoke.mockImplementation((command: string, args?: Record<string, unknown>) =>
+    command === 'opencode_reload' ? Promise.reject(new Error('Reload failed')) : fallback?.(command, args),
+  );
+
+  await fireEvent.click(screen.getByRole('button', { name: 'My plugin group, Slim' }));
+  await waitFor(() => expect(calls('opencode_reload')).toHaveLength(1));
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: 'My plugin group, Slim' }) as HTMLButtonElement).disabled).toBe(false),
+  );
+
+  expect(config.selectedGroupId).toBe('slim-id');
+  expect(calls('switch_group')).toEqual([['switch_group', { id: 'slim-id' }]]);
+  // A failed reload must not be retried implicitly.
+  expect(calls('opencode_reload')).toHaveLength(1);
+  // The manual "reload to apply" notice is superseded by the automatic reload attempt.
+  expect(screen.queryByText('Group switched. Reload to apply plugin changes.')).toBeNull();
+  expect(screen.getByRole('alert').textContent).toContain('Reload failed');
 });
 
 test('Open, Settings and Quit invoke the exact native commands; Reload is serialized and checks health after completion', async () => {
@@ -407,10 +512,8 @@ test('persisted locale refresh updates visible status details and switch notices
       name: i18n.t('tray.groupLabel', { name: 'My plugin group', type: zh['groupForm.typeSlim'] }),
     }),
   );
-  await screen.findByText(zh['tray.groupSwitched']);
   setPersistedLocale('en');
   await config.reloadKeepingDraft();
-  await screen.findByText(en['tray.groupSwitched']);
 
   const online = screen.getByText(en['tray.status.online']);
 
@@ -420,7 +523,6 @@ test('persisted locale refresh updates visible status details and switch notices
   expect(screen.getByRole('button', { name: en['tray.reload'] }).title).toBe(en['tray.reloadTitle']);
   expect(screen.getByRole('button', { name: 'Not enabled, OpenCode, disabled' }).title).toContain('enable this group');
   expect(screen.getByRole('button', { name: 'My plugin group, Slim' }).getAttribute('aria-pressed')).toBe('true');
-  expect(screen.queryByText(zh['tray.groupSwitched'])).toBeNull();
   expect(calls('opencode_active_sessions')).toHaveLength(1);
   expect(calls('save_preferences')).toHaveLength(0);
   expect(calls('opencode_list_models')).toHaveLength(0);

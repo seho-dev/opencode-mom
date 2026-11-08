@@ -24,33 +24,42 @@ interface Bucket {
 
 const buckets = $derived.by<Bucket[]>(() => {
   if (!calendar) return [];
+
   const validCells = calendar.cells.filter(
     (cell): cell is { date: string; count: number; input: number; output: number } =>
       cell.date !== null && cell.count !== null && cell.input !== null && cell.output !== null,
   );
+
   if (!validCells.length) return [];
 
   if (period === 'year') {
     const byMonth = new Map<string, Bucket>();
+
     for (let m = 1; m <= 12; m++) {
       const mm = String(m).padStart(2, '0');
+
       byMonth.set(mm, { key: mm, label: mm, input: 0, output: 0, total: 0 });
     }
+
     for (const cell of validCells) {
       const mm = cell.date.slice(5, 7);
       const bucket = byMonth.get(mm);
+
       if (bucket) {
         bucket.input += cell.input;
         bucket.output += cell.output;
         bucket.total += cell.count;
       }
     }
+
     return [...byMonth.values()];
   }
 
   if (period === 'day') {
     const day = validCells[validCells.length - 1];
+
     if (!day) return [];
+
     return [
       {
         key: `${day.date}-in`,

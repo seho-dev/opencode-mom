@@ -82,6 +82,7 @@ impl PluginRemovalPlan {
         {
             return Err(AppError::validation("Invalid plugin removal snapshot"));
         }
+
         Ok(())
     }
 }
@@ -122,11 +123,13 @@ fn removal_text(
     {
         return Err(changed());
     }
+
     let array = object.array_value("plugins").ok_or_else(changed)?;
     let elements = array.elements();
     if entries.len() != elements.len() {
         return Err(changed());
     }
+
     let mut removed = false;
     for (entry, element) in entries.iter().zip(elements).rev() {
         if matches_entry(target, global::package(entry), document)? {
@@ -134,11 +137,14 @@ fn removal_text(
             removed = true;
         }
     }
+
     if !removed {
         return Err(changed());
     }
+
     let text = root.to_string();
     global::read_declarations(&text)?;
+
     Ok(text)
 }
 
@@ -157,6 +163,7 @@ fn collect_sources(
             "Plugin is absent from the selected runtime",
         ));
     }
+
     let mut sources = Vec::new();
     for source in &state.preview.data {
         let PluginConfigSource::Document {
@@ -174,9 +181,11 @@ fn collect_sources(
         for entry in &entries {
             matched |= matches_entry(target, global::package(entry), Path::new(path))?;
         }
+
         if !matched {
             continue;
         }
+
         let expected_path = snapshot
             .path
             .to_str()
@@ -201,10 +210,12 @@ fn collect_sources(
             "Plugin has no removable Global declaration",
         ));
     }
+
     for (_, snapshot, _) in &sources {
         snapshot.validate()?;
     }
     state.scope.ensure_current()?;
+
     Ok(sources)
 }
 
@@ -239,6 +250,7 @@ pub(super) fn remove_with(
     if connection.plugin_service_key(&state.runtime.directory)? != plan.service_key {
         return Err(changed());
     }
+
     let sources = collect_sources(paths, &state, &plan.target)?;
     if sources
         .iter()
@@ -247,6 +259,7 @@ pub(super) fn remove_with(
     {
         return Err(changed());
     }
+
     let mut updates: Vec<(Snapshot, String)> = Vec::new();
     for (_, snapshot, replacement) in sources {
         if let Some((existing, text)) = updates
@@ -261,6 +274,7 @@ pub(super) fn remove_with(
             updates.push((snapshot, replacement));
         }
     }
+
     let _reservation = connection.reserve_plugin_removal(deadline)?;
     resource_file::replace_checked(&updates, |_| {
         for source in &plan.sources {
@@ -269,5 +283,6 @@ pub(super) fn remove_with(
         connection.verify_identity(deadline)?;
         state.scope.ensure_current()
     })?;
+
     Ok(())
 }

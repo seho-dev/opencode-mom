@@ -19,6 +19,7 @@ vi.mock('$app/state', async () => {
   });
   let params = { id: 'team/review' };
   let url = new URL('http://localhost/commands');
+
   return {
     page: {
       get url() {
@@ -40,6 +41,7 @@ vi.mock('$app/state', async () => {
     },
   };
 });
+
 const page: { params: { id?: string }; url: URL } = routePage;
 const command: SlashCommandEntry = {
   id: 'team/review',
@@ -52,6 +54,7 @@ const command: SlashCommandEntry = {
   resolvedPath: '/resolved/commands/team/review.md',
   content: '---\ndescription: Review\n---\n\n<script>unsafe()</script>\n$ARGUMENTS\n',
 };
+
 function config(overrides: Record<string, unknown> = {}, selected: string | null = 'project-a') {
   return makeScopedConfig(
     {
@@ -66,6 +69,7 @@ function config(overrides: Record<string, unknown> = {}, selected: string | null
     selected,
   );
 }
+
 beforeEach(() => {
   page.params = { id: command.id };
   page.url = new URL('http://localhost/commands');
@@ -74,6 +78,7 @@ beforeEach(() => {
 
 test('project list is writable and same-name Global comparison remains independently readonly', async () => {
   const store = config();
+
   render(Commands, {}, { wrapper: Harness, wrapperProps: { config: store } });
   await screen.findByRole('link', { name: `/${command.name}` });
   expect(store.listSlashCommands).toHaveBeenCalledExactlyOnceWith('project-a');
@@ -108,6 +113,7 @@ test('comparison error preserves project rows and late project responses cannot 
     )
     .mockResolvedValueOnce({ data: [{ ...command, name: 'global' }], diagnostics: [] });
   const store = config({ listSlashCommands });
+
   render(Commands, {}, { wrapper: Harness, wrapperProps: { config: store } });
   await waitFor(() => expect(listSlashCommands).toHaveBeenCalledWith('project-a'));
   await fireEvent.click(screen.getByRole('button', { name: 'Return to Global' }));
@@ -119,9 +125,13 @@ test('comparison error preserves project rows and late project responses cannot 
 
 test('new routes write explicit Global null even when the shared selector points at a project', async () => {
   page.url = new URL('http://localhost/commands/new');
+
   const store = config();
+
   render(NewCommand, {}, { wrapper: Harness, wrapperProps: { config: store } });
+
   const content = '---\ndescription: A\nagent: plan\nmodel: x/y\nsubagent: true\n---\n\n$1 $ARGUMENTS';
+
   await fireEvent.input(screen.getByLabelText('Command name'), { target: { value: 'team/review' } });
   await fireEvent.input(screen.getByLabelText('Full Markdown document'), { target: { value: content } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -134,9 +144,11 @@ test('new routes write explicit Global null even when the shared selector points
 
 test('detail previews raw Markdown safely, edit freezes snapshot and conflict keeps the complete draft', async () => {
   page.url = new URL('http://localhost/commands/team%2Freview?project=project-b');
+
   const updateSlashCommand = vi.fn().mockRejectedValue(new Error('changed externally'));
   const store = config({ updateSlashCommand });
   const { container } = render(Detail, {}, { wrapper: Harness, wrapperProps: { config: store } });
+
   await screen.findByRole('heading', { name: `/${command.name}` });
   expect(container.querySelector('pre')?.textContent).toBe(command.content);
   expect(container.querySelector('script')).toBeNull();
@@ -145,7 +157,9 @@ test('detail previews raw Markdown safely, edit freezes snapshot and conflict ke
   expect(screen.getAllByText(en['scope.projectWritable'])).toHaveLength(1);
   expect(screen.getByText(en['commands.contentHint'], { exact: false })).toBeTruthy();
   expect(screen.queryByText(/Referenced agents and models must/)).toBeNull();
+
   const input = screen.getByLabelText('Full Markdown document') as HTMLTextAreaElement;
+
   await fireEvent.input(input, { target: { value: '' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await screen.findByText(/changed externally/);
@@ -158,8 +172,10 @@ test('detail previews raw Markdown safely, edit freezes snapshot and conflict ke
 
 test('readonly comparison ignores edit query; delete uses the untouched expected source and route scope', async () => {
   page.url = new URL('http://localhost/commands/team%2Freview?readonly=1&edit=1');
+
   const store = config();
   const mounted = render(Detail, {}, { wrapper: Harness, wrapperProps: { config: store } });
+
   await screen.findByRole('heading', { name: `/${command.name}` });
   expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
@@ -189,6 +205,7 @@ test('same ID scope changes ignore stale source completion', async () => {
         }),
     )
     .mockResolvedValueOnce({ ...command, content: 'Project B', sourcePath: '/b/review.md' });
+
   page.url = new URL('http://localhost/commands/team%2Freview?project=project-a');
   render(Detail, {}, { wrapper: Harness, wrapperProps: { config: config({ getSlashCommand }) } });
   await waitFor(() => expect(getSlashCommand).toHaveBeenCalledOnce());
@@ -205,10 +222,13 @@ test('Global comparison errors stay isolated from writable project list', async 
     .mockResolvedValueOnce({ data: [command], diagnostics: [] })
     .mockRejectedValueOnce(new Error('Global denied'))
     .mockResolvedValueOnce({ data: [], diagnostics: [] });
+
   render(Commands, {}, { wrapper: Harness, wrapperProps: { config: config({ listSlashCommands }) } });
   await screen.findByRole('link', { name: `/${command.name}` });
   await fireEvent.click(screen.getByRole('checkbox', { name: 'Show global configuration' }));
+
   const alert = await screen.findByRole('alert');
+
   expect(alert.textContent).toContain('Global denied');
   expect(screen.getByRole('link', { name: `/${command.name}` })).toBeTruthy();
   expect(screen.getByRole('link', { name: `Edit ${command.name}` })).toBeTruthy();
@@ -229,6 +249,7 @@ test('route change destroys a pending editor so a late saved source cannot repla
     .fn()
     .mockResolvedValueOnce(command)
     .mockResolvedValueOnce({ ...command, id: 'other', name: 'other', content: 'Other content' });
+
   render(Detail, {}, { wrapper: Harness, wrapperProps: { config: config({ getSlashCommand, updateSlashCommand }) } });
   await screen.findByRole('heading', { name: `/${command.name}` });
   await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));

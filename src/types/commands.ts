@@ -11,6 +11,9 @@ export type SlashCommandEntry = {
 };
 
 export type SlashCommandList = { data: SlashCommandEntry[]; diagnostics: string[] };
+
 export type SlashCommandDraft = { name: string; content: string };
+
 export type SlashCommandUpdate = { id: string; content: string; expectedPath: string; expectedContent: string };
+
 export type SlashCommandDelete = { id: string; expectedPath: string; expectedContent: string };

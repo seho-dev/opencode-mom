@@ -9,12 +9,12 @@ import { groupBindings } from '$src/utils/dashboard.js';
 let {
   type,
   busy,
-  variant = 'full',
+  variant,
   onswitch,
 }: {
   type: GroupType;
   busy: boolean;
-  variant?: 'tile' | 'featured' | 'full';
+  variant: 'tile' | 'featured';
   onswitch: (type: GroupType, trigger: HTMLButtonElement) => void;
 } = $props();
 const config = getConfig();
@@ -26,13 +26,14 @@ const bindings = $derived(current ? groupBindings(current) : []);
 const label = $derived(i18n.t(GROUP_TYPE_LABELS[type]));
 const unavailable = $derived(!config.loading && !config.groups.length && !!config.error);
 const Icon = $derived(type === 'native' ? Terminal : type === 'slim' ? Bolt : Network);
-const headingId = $derived(variant === 'featured' ? `runtime-featured-${type}` : `runtime-${type}`);
+const uid = $props.id();
+const headingId = $derived(`runtime-${variant}-${type}-${uid}`);
 </script>
 
 <article
   class="runtime-card flex min-w-0 flex-col rounded-[3px] border border-[var(--border-default)] bg-[var(--surface-panel)] transition-colors hover:border-[var(--accent-primary)]/50"
   class:p-3.5={variant === 'tile'}
-  class:p-5={variant !== 'tile'}
+  class:p-5={variant === 'featured'}
   class:h-full={variant === 'featured'}
   data-variant={variant}
   data-active={Boolean(current)}
@@ -140,13 +141,11 @@ const headingId = $derived(variant === 'featured' ? `runtime-featured-${type}` :
           ><Icon size={20} aria-hidden="true" /></span
         >
         <div class="min-w-0">
-          {#if variant === 'featured'}
-            <p
-              class="mb-0.5 font-[var(--font-heading)] text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--accent-primary)]"
-            >
-              {i18n.t('dashboard.featuredRuntime')}
-            </p>
-          {/if}
+          <p
+            class="mb-0.5 font-[var(--font-heading)] text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--accent-primary)]"
+          >
+            {i18n.t('dashboard.featuredRuntime')}
+          </p>
           <h2
             id={headingId}
             class="font-[var(--font-heading)] text-sm font-bold uppercase tracking-wider text-[var(--text-primary)]"
@@ -164,12 +163,7 @@ const headingId = $derived(variant === 'featured' ? `runtime-featured-${type}` :
           </p>
         </div>
       </div>
-      {#if current && variant !== 'featured'}
-        <span
-          class="shrink-0 rounded-[2px] border border-[var(--accent-primary)]/40 bg-[var(--surface-active)] px-1.5 py-0.5 font-[var(--font-heading)] text-[9px] font-bold uppercase tracking-wider text-[var(--accent-primary)]"
-          >{i18n.t('dashboard.current')}</span
-        >
-      {:else if variant === 'featured' && !config.loading && !unavailable}
+      {#if !config.loading && !unavailable}
         <span
           class="shrink-0 rounded-[2px] border border-[var(--border-default)]/60 bg-[var(--surface-input)] px-2 py-1 font-mono text-[10px] tabular-nums text-[var(--text-secondary)]"
         >
@@ -203,7 +197,7 @@ const headingId = $derived(variant === 'featured' ? `runtime-featured-${type}` :
         </a>
       {:else}
         <p class="py-1 text-xs text-[var(--text-secondary)]">
-          {i18n.t(variant === 'featured' ? (groups.length ? 'dashboard.chooseGroup' : 'dashboard.noGroups') : 'dashboard.noActiveGroup')}
+          {i18n.t(groups.length ? 'dashboard.chooseGroup' : 'dashboard.noGroups')}
         </p>
       {/if}
     </div>
@@ -266,14 +260,14 @@ const headingId = $derived(variant === 'featured' ? `runtime-featured-${type}` :
                       : 'dashboard.noGroups',
             )}
           </p>
-          {#if !config.loading && !unavailable && (variant !== 'featured' || current)}
+          {#if !config.loading && !unavailable && current}
             <Button
-              href={current ? `/groups/${current.id}/edit` : '/groups/new'}
+              href={`/groups/${current.id}/edit`}
               variant="outline"
               size="sm"
               disabled={busy}
               class="text-[var(--accent-primary)]"
-              ><Plus size={12} />{i18n.t(current ? 'dashboard.assignMappings' : 'dashboard.createGroup')}</Button
+              ><Plus size={12} />{i18n.t('dashboard.assignMappings')}</Button
             >
           {/if}
         </div>
@@ -285,16 +279,15 @@ const headingId = $derived(variant === 'featured' ? `runtime-featured-${type}` :
         class="flex-1 bg-[var(--surface-active)] text-[var(--accent-primary)] uppercase tracking-wide"
         disabled={busy || !groups.length || unavailable}
         aria-haspopup="dialog"
-        aria-label={variant === 'featured' ? undefined : i18n.t('dashboard.switchRuntime', { type: label })}
         onclick={(event) => onswitch(type, event.currentTarget)}
         >{i18n.t('dashboard.switchGroup')}</Button
       >
       <Button
         href={current ? `/groups/${current.id}/edit` : '/groups'}
-        variant={variant === 'featured' ? 'outline' : 'secondary'}
-        size={variant === 'featured' ? 'sm' : 'icon'}
+        variant="outline"
+        size="sm"
         disabled={busy}
-        class={variant === 'featured' ? 'text-[var(--accent-primary)] uppercase tracking-wide' : ''}
+        class="text-[var(--accent-primary)] uppercase tracking-wide"
         aria-label={current ? i18n.t('groups.editAria', { name: current.name }) : i18n.t('groups.directoryButton')}
         title={i18n.t('groups.editTitle')}
       >
@@ -309,7 +302,6 @@ const headingId = $derived(variant === 'featured' ? `runtime-featured-${type}` :
   position: relative;
 }
 
-.runtime-card[data-variant="full"],
 .runtime-card[data-variant="featured"] {
   min-height: 332px;
 }

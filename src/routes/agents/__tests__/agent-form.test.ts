@@ -9,6 +9,7 @@ import NewAgent from '../new/+page.svelte';
 
 const { goto } = vi.hoisted(() => ({ goto: vi.fn() }));
 const routeId = new SvelteMap([['id', 'helper']]);
+
 vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$app/state', () => ({
   page: {
@@ -68,7 +69,9 @@ function mount(
     createAgent,
     updateAgent,
   };
+
   render(component, {}, { wrapper: Harness, wrapperProps: { config: config as ConfigStore } });
+
   return {
     createAgent,
     updateAgent,
@@ -90,6 +93,7 @@ beforeEach(() => {
 
 test('built-in edit is read-only even when the agent exists in config', () => {
   routeId.set('id', 'build');
+
   const { updateAgent } = mount(EditAgent, [
     {
       id: 'build',
@@ -104,6 +108,7 @@ test('built-in edit is read-only even when the agent exists in config', () => {
       ],
     },
   ]);
+
   expect(screen.getByRole('status').textContent).toBe('Built-in agents are read-only.');
   expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
   expect(screen.queryByRole('textbox', { name: /Description/ })).toBeNull();
@@ -112,6 +117,7 @@ test('built-in edit is read-only even when the agent exists in config', () => {
 
 test('edit waits for an initially missing agent and loads it when available', async () => {
   const { setAgents, setLoading, updateAgent } = mount(EditAgent, [], true);
+
   expect(screen.queryByRole('alert')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
   setLoading(false);
@@ -165,6 +171,7 @@ test('edit switches agent snapshots when the route id changes without remounting
     },
   ]);
   const description = screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ });
+
   await waitFor(() => expect(description.value).toBe('First description'));
   await fireEvent.input(description, { target: { value: 'Unsaved description' } });
   routeId.set('id', 'second');
@@ -176,6 +183,7 @@ test('edit switches agent snapshots when the route id changes without remounting
 
 test('new agent requires a non-reserved name and description before creating', async () => {
   const { createAgent } = mount(NewAgent);
+
   await fireEvent.click(screen.getByRole('button', { name: 'Create agent' }));
   expect(await screen.findByText('Name is required.')).toBeTruthy();
   expect(screen.getByText('Required by opencode.')).toBeTruthy();
@@ -190,6 +198,7 @@ test('new agent requires a non-reserved name and description before creating', a
 
 test('new agent sends source, storage, model variant and permission rules', async () => {
   const { createAgent } = mount(NewAgent);
+
   await fireEvent.input(screen.getByRole('textbox', { name: /Name/ }), { target: { value: '  helper  ' } });
   await fireEvent.input(screen.getByRole('textbox', { name: /Description/ }), { target: { value: 'Custom helper' } });
   await fireEvent.click(screen.getByRole('radio', { name: 'Inline' }));
@@ -205,6 +214,7 @@ test('new agent sends source, storage, model variant and permission rules', asyn
     id: 'helper',
     source: 'inline',
     storage: 'inline',
+
     mutation: {
       fields: {
         model: 'demo/fast#quick',
@@ -245,6 +255,7 @@ test('edit loads the selected source snapshot and clears removed model and promp
     ],
   };
   const { updateAgent } = mount(EditAgent, [agent]);
+
   await waitFor(() =>
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ }).value).toBe('Inline description'),
   );
@@ -263,6 +274,7 @@ test('edit loads the selected source snapshot and clears removed model and promp
     id: 'helper',
     source: 'both',
     storage: 'global_markdown',
+
     mutation: {
       fields: {
         model: undefined,
@@ -274,6 +286,7 @@ test('edit loads the selected source snapshot and clears removed model and promp
         steps: undefined,
         prompt: undefined,
       },
+
       clearFields: ['model', 'prompt'],
       expectedPath: '/resolved/helper.md',
       expectedContent: '---\ndescription: Markdown description\nmodel: demo/fast\n---\n\nMarkdown prompt',
@@ -297,6 +310,7 @@ test('edit restores the source snapshot after formResetVersion changes', async (
   };
   const { reset, updateAgent } = mount(EditAgent, [agent]);
   const description = screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ });
+
   await waitFor(() => expect(description.value).toBe('Saved description'));
   await fireEvent.input(description, { target: { value: 'Unsaved description' } });
   expect(description.value).toBe('Unsaved description');
@@ -329,11 +343,14 @@ test('edit source picker offers one Markdown choice for multiple alias previews'
     ],
   };
   const { updateAgent } = mount(EditAgent, [agent]);
+
   await waitFor(() =>
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ }).value).toBe('Singular alias'),
   );
   await fireEvent.click(screen.getByLabelText('Edit source'));
+
   const listbox = await screen.findByRole('listbox');
+
   expect(within(listbox).getAllByRole('option', { name: 'Global Markdown' })).toHaveLength(1);
   expect(within(listbox).queryByRole('option', { name: 'Inline' })).toBeNull();
   await fireEvent.click(within(listbox).getByRole('option', { name: 'Global Markdown' }));
@@ -369,8 +386,11 @@ test.each(['inline', 'global_markdown'] as const)(
       sources: [source],
     };
     const { setAgents, updateAgent, reset } = mount(EditAgent, [agent]);
+
     updateAgent.mockRejectedValue({ code: 'configuration_failed', message: 'Source changed' });
+
     const description = screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ });
+
     await waitFor(() => expect(description.value).toBe('Original description'));
     await fireEvent.input(description, { target: { value: 'Draft description' } });
     await choose('Model', 'Clear / inherit');
@@ -388,12 +408,14 @@ test.each(['inline', 'global_markdown'] as const)(
         ],
       },
     ]);
+
     for (let attempt = 0; attempt < 2; attempt++) {
       await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
       await waitFor(() => expect(updateAgent).toHaveBeenCalledTimes(attempt + 1));
       expect(updateAgent.mock.calls[attempt]?.[0]).toMatchObject({
         id: 'helper',
         storage,
+
         mutation: {
           fields: { description: 'Draft description' },
           clearFields: ['model'],
@@ -403,6 +425,7 @@ test.each(['inline', 'global_markdown'] as const)(
       });
       expect(description.value).toBe('Draft description');
     }
+
     expect(goto).not.toHaveBeenCalled();
     reset.set('version', 1);
     await waitFor(() => expect(description.value).toBe('External description'));
@@ -423,14 +446,19 @@ test('inline edit echoes backend content unchanged after JavaScript numeric norm
     '{"description":"Original description","temperature":1.0,"nested":{"float":1.0,"large":9007199254740993},"array":[1.0,9007199254740995]}';
   const wire = `{"id":"helper","source":"inline","sources":[{"storage":"inline","resolvedPath":"/resolved/helper","content":${JSON.stringify(content)},"raw":${content},"fields":${content}}]}`;
   const agent: AgentDefinition = JSON.parse(JSON.stringify(JSON.parse(wire)));
+
   expect(JSON.stringify(agent.sources?.[0]?.raw)).not.toBe(content);
+
   const { updateAgent } = mount(EditAgent, [agent]);
   const description = screen.getByRole<HTMLInputElement>('textbox', { name: /Description/ });
+
   await waitFor(() => expect(description.value).toBe('Original description'));
   await fireEvent.input(description, { target: { value: 'Description edit' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
   await waitFor(() => expect(updateAgent).toHaveBeenCalledOnce());
+
   const mutation = updateAgent.mock.calls[0]?.[0]?.mutation;
+
   expect(mutation).toMatchObject({ expectedPath: '/resolved/helper', expectedContent: content });
   expect(mutation).not.toHaveProperty('expectedRaw');
   expect(mutation?.fields).not.toHaveProperty('temperature');
@@ -449,6 +477,7 @@ test('agentSchema validates id, description, steps, and permissions directly', a
   };
   const schema = agentSchema(messages, true);
   const valid = { ...emptyAgentValues, id: 'my-agent', description: 'Description' };
+
   expect(schema.safeParse(valid).success).toBe(true);
   expect(schema.safeParse({ ...valid, permission: '[{"action":"*","resource":"*","effect":"ask"}]' }).success).toBe(
     true,
@@ -463,10 +492,13 @@ test('agentSchema validates id, description, steps, and permissions directly', a
     ['permission', '[1]', messages.permissionsInvalid],
   ] as const) {
     const result = schema.safeParse({ ...valid, [name]: value });
+
     expect(result.success).toBe(false);
     expect(result.error?.issues.find((issue) => issue.path[0] === name)?.message).toBe(error);
   }
+
   const reserved = schema.safeParse({ ...valid, id: 'build' });
+
   expect(reserved.success).toBe(false);
   expect(reserved.error?.issues.find((issue) => issue.path[0] === 'id')?.message).toBe(messages.idReserved);
   expect(fieldError([{ message: 'bad field' }])).toBe('bad field');

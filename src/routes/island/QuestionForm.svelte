@@ -26,21 +26,29 @@ const fieldDisabled = $derived(busy || !answerable);
 
 function choices(field: IslandQuestionField): string[] {
   const value = answers[field.key];
+
   return Array.isArray(value) ? value : [];
 }
+
 function toggle(field: IslandQuestionField, value: string, checked: boolean) {
   answers[field.key] = checked ? [...choices(field), value] : choices(field).filter((entry) => entry !== value);
 }
+
 function addCustom(field: IslandQuestionField) {
   const value = (customText[field.key] ?? '').trim();
+
   if (!value) return;
+
   answers[field.key] = [...new Set([...choices(field), value])];
   customText[field.key] = '';
 }
+
 function submit(event: SubmitEvent) {
   event.preventDefault();
   if (busy || !answerable) return;
+
   const result: IslandAnswer = {};
+
   for (const field of question.fields) {
     const value =
       field.type === 'multiselect'
@@ -50,12 +58,15 @@ function submit(event: SubmitEvent) {
           : typeof answers[field.key] === 'string'
             ? (answers[field.key] as string)
             : '';
+
     if (field.required && (Array.isArray(value) ? value.length === 0 : !value.trim())) {
       invalid = true;
       return;
     }
+
     result[field.key] = Array.isArray(value) ? [...value] : value;
   }
+
   invalid = false;
   onanswer(result);
 }

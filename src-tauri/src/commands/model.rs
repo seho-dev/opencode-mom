@@ -1,21 +1,12 @@
 use tauri::State;
 
 use crate::error::AppError;
-use crate::models::{ModelDef, ProviderDef};
+use crate::models::ModelDef;
 use crate::paths::ConfigPaths;
 use crate::providers::{self, ModelRef};
 use crate::refs;
 
 type CommandResult<T> = Result<T, AppError>;
-
-#[tauri::command]
-pub async fn list_models(state: State<'_, ConfigPaths>) -> CommandResult<Vec<ProviderDef>> {
-    let paths = state.inner().clone();
-    super::spawn_blocking_task("Model discovery", move || {
-        providers::list_providers(&paths.opencode_file())
-    })
-    .await
-}
 
 #[tauri::command]
 pub async fn create_model(

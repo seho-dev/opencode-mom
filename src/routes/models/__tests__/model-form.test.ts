@@ -9,6 +9,7 @@ import ModelForm from '../ModelForm.svelte';
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 const scrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
 });
@@ -38,6 +39,7 @@ async function selectProvider() {
 
 test('new model requires an ID before saving', async () => {
   const onSave = vi.fn();
+
   render(
     ModelForm,
     { mode: 'new', providers: [provider], onSave },
@@ -53,6 +55,7 @@ test('new model requires an ID before saving', async () => {
 
 test('invalid model token limits block saving and show a field error', async () => {
   const onSave = vi.fn();
+
   render(
     ModelForm,
     { mode: 'new', providers: [provider], onSave },
@@ -80,6 +83,7 @@ test('new model maps JSON and variants while retaining capability defaults', asy
     { mode: 'new', providers: [provider], onSave },
     { wrapper: Harness, wrapperProps: { config: config() } },
   );
+
   await selectProvider();
   await fireEvent.input(screen.getByRole('textbox', { name: 'Model ID' }), { target: { value: '  model-a  ' } });
   await fireEvent.input(screen.getByRole('textbox', { name: 'Family' }), { target: { value: '  family-a  ' } });
@@ -114,6 +118,7 @@ test('editing a model initializes saved fields and omits absent optional blocks'
     family: 'old-family',
     variants: [{ id: 'balanced', body: { speed: 1 } }],
   };
+
   render(
     ModelForm,
     { mode: 'edit', defaultProviderId: 'example', initial, onSave },
@@ -138,6 +143,7 @@ test('editing a model initializes saved fields and omits absent optional blocks'
 
 test('editing an explicit empty capabilities block preserves its false tools value', async () => {
   const onSave = vi.fn().mockResolvedValue(undefined);
+
   render(
     ModelForm,
     { mode: 'edit', defaultProviderId: 'example', initial: { id: 'existing', capabilities: {} }, onSave },
@@ -156,14 +162,17 @@ test('initial.limit.input null renders empty string and modelToFormValues preser
   const onSave = vi.fn().mockResolvedValue(undefined);
   const initialWithZeroAndNull: ModelDef = {
     id: 'zero-model',
+
     cost: {
       input: 0,
       output: 0,
+
       cache: {
         read: 0,
         write: 0,
       },
     },
+
     limit: {
       context: 0,
       output: 0,
@@ -183,13 +192,16 @@ test('initial.limit.input null renders empty string and modelToFormValues preser
   );
 
   const limitInput = screen.getByRole('combobox', { name: 'Input' }) as HTMLInputElement;
+
   expect(limitInput.value).toBe('');
   expect(limitInput.value).not.toBe('null');
 
   const costInput = screen.getByRole('spinbutton', { name: 'Input' }) as HTMLInputElement;
+
   expect(costInput.value).toBe('0');
 
   const limitContext = screen.getByRole('combobox', { name: 'Context' }) as HTMLInputElement;
+
   expect(limitContext.value).toBe('0');
 });
 

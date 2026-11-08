@@ -1,20 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'vite';
-
-function deferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
+import { deferred, withServer } from './vite-harness.mjs';
 
 test('resource facades stay lazy and MCP deletion does not refresh the global catalog', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
@@ -78,14 +67,11 @@ test('resource facades stay lazy and MCP deletion does not refresh the global ca
     await assert.rejects(store.deleteMcp('test'), failure);
     assert.equal(store.error?.message, failure.message);
     assert.deepEqual(store.draftRecovery?.payload, { name: 'test' });
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('resource writes return saved entries without refresh and never retain secret drafts in recovery', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
@@ -142,14 +128,11 @@ test('resource writes return saved entries without refresh and never retain secr
       assert.ok(!JSON.stringify(store.draftRecovery).includes('secret'));
       assert.equal(store.saving, false);
     }
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('manual update and project facades stay lazy and do not touch config loading, refresh, or recovery', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
@@ -190,14 +173,11 @@ test('manual update and project facades stay lazy and do not touch config loadin
     assert.equal(store.error, null);
     assert.equal(store.notice, null);
     assert.equal(store.draftRecovery, null);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('OpenCode installation/update facades stay lazy and never use global mutations or refresh', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
@@ -242,14 +222,11 @@ test('OpenCode installation/update facades stay lazy and never use global mutati
     assert.equal(store.notice, null);
     assert.equal(store.draftRecovery, null);
     assert.equal(calls.length, 6);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('service facades stay lazy; failed writes retain no secrets and successful saves invalidate only target data', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
@@ -302,14 +279,11 @@ test('service facades stay lazy; failed writes retain no secrets and successful 
         'opencode_set_service_target',
       ],
     );
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('catalog and usage replies from an old service target cannot succeed or repopulate caches', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const catalogRead = deferred();
@@ -343,14 +317,11 @@ test('catalog and usage replies from an old service target cannot succeed or rep
     assert.equal(store.catalogError, null);
     assert.equal(store.catalogLoading, false);
     assert.deepEqual(calls, ['opencode_list_models', 'opencode_token_usage_records', 'opencode_set_service_target']);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('a failed pending target save cannot poison the catalog or unrelated state and allows fresh reads afterward', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     let resolveCatalog;
@@ -410,15 +381,12 @@ test('a failed pending target save cannot poison the catalog or unrelated state 
     assert.ok(!JSON.stringify(store.draftRecovery).includes('local-secret'));
     assert.deepEqual(await store.loadCatalog(), catalog);
     assert.deepEqual(await store.loadTokenUsageRecords(), records);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 for (const completion of ['resolve', 'reject']) {
   test(`pending target saves block new reads and unconfirmed replies before save ${completion}`, async () => {
-    const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-    try {
+    await withServer(async (vite) => {
       const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
       const catalog = [{ ref: 'provider/confirmed' }];
       const records = [{ time: 1, input: 1, output: 1 }];
@@ -470,15 +438,12 @@ for (const completion of ['resolve', 'reject']) {
       assert.deepEqual(await store.loadCatalog(), catalog);
       assert.deepEqual(await store.loadTokenUsageRecords(), records);
       for (const key of ['error', 'notice', 'draftRecovery', 'catalogError']) assert.equal(store[key], null);
-    } finally {
-      await vite.close();
-    }
+    });
   });
 }
 
 test('reads spanning a failed save remain valid when they finish after the failure', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const catalogRead = deferred();
     const usageRead = deferred();
@@ -507,14 +472,11 @@ test('reads spanning a failed save remain valid when they finish after the failu
     assert.deepEqual(store.catalog, catalog);
     assert.equal(store.catalogError, null);
     assert.equal(store.catalogLoading, false);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('reads launched during pending target saves never dispatch IPC, including after an earlier save succeeds', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const firstSave = deferred();
     const secondSave = deferred();
@@ -556,15 +518,12 @@ test('reads launched during pending target saves never dispatch IPC, including a
     assert.deepEqual(await store.loadTokenUsageRecords(), records);
     assert.deepEqual(calls, ['catalog', 'usage']);
     assert.equal(store.catalogError, null);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 for (const completion of ['resolve', 'reject']) {
   test(`old-target ${completion} cannot overwrite the newest target catalog, loading or errors`, async () => {
-    const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-    try {
+    await withServer(async (vite) => {
       const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
       const catalogs = [deferred(), deferred(), deferred()];
       const usages = [deferred(), deferred(), deferred()];
@@ -616,8 +575,6 @@ for (const completion of ['resolve', 'reject']) {
       assert.deepEqual(store.catalog, catalog);
       assert.equal(store.catalogLoading, false);
       for (const key of ['error', 'notice', 'draftRecovery', 'catalogError']) assert.equal(store[key], null);
-    } finally {
-      await vite.close();
-    }
+    });
   });
 }

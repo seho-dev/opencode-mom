@@ -6,6 +6,7 @@ import ResourceScope from '../ResourceScope.svelte';
 import { makeScopedConfig } from './scope-config.js';
 
 const originalScroll = HTMLElement.prototype.scrollIntoView;
+
 beforeAll(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
 });
@@ -17,14 +18,21 @@ afterAll(() => {
 test('scope picker keeps Global first, searches paths, supports keyboard and retains confirmed selection after failure', async () => {
   const selectProject = vi.fn().mockRejectedValue(new Error('save denied'));
   const config = makeScopedConfig({ selectProject });
+
   render(ResourceScope, {}, { wrapper: Harness, wrapperProps: { config } });
   expect(screen.getByText('/work/alpha')).toBeTruthy();
+
   const trigger = screen.getByRole('button', { name: 'Select configuration scope' });
+
   await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+
   const options = await screen.findAllByRole('option');
+
   expect(options[0]?.textContent).toContain('Global');
   expect(options[1]?.textContent).toContain('/work/alpha');
+
   const search = screen.getByRole('combobox', { name: 'Search options' });
+
   await fireEvent.input(search, { target: { value: '/other' } });
   expect(screen.getAllByRole('option')).toHaveLength(2);
   await fireEvent.keyDown(search, { key: 'ArrowDown' });
@@ -44,6 +52,7 @@ test('native picker cancellation makes no change; add selects returned folder an
     .mockResolvedValueOnce('/new/folder')
     .mockResolvedValueOnce('/work/alpha');
   const config = makeScopedConfig({ pickProjectFolder }, null);
+
   render(ResourceScope, {}, { wrapper: Harness, wrapperProps: { config } });
   await fireEvent.click(screen.getByRole('button', { name: 'Add folder' }));
   expect(config.addProject).not.toHaveBeenCalled();
@@ -62,6 +71,7 @@ test('manage only forgets folders, prevents pending dismissal/removal, and retur
   let resolve = () => {};
   const config = makeScopedConfig();
   const original = config.removeProject;
+
   config.removeProject = vi.fn(async (id: string) => {
     await new Promise<void>((done) => {
       resolve = done;
@@ -70,7 +80,9 @@ test('manage only forgets folders, prevents pending dismissal/removal, and retur
   });
   render(ResourceScope, {}, { wrapper: Harness, wrapperProps: { config } });
   await fireEvent.click(screen.getByRole('button', { name: 'Manage folders' }));
+
   const dialog = await screen.findByRole('dialog');
+
   expect(within(dialog).getByText(en['scope.removeHint'])).toBeTruthy();
   await fireEvent.click(within(dialog).getByRole('button', { name: 'Remove folder /work/alpha from MOM' }));
   expect(

@@ -34,7 +34,9 @@ export const initMods = (values?: ModelModality[]) => {
     video: false,
     pdf: false,
   };
+
   for (const value of values ?? []) selected[value] = true;
+
   return selected;
 };
 
@@ -44,6 +46,7 @@ export const anyFilled = (...values: string[]) => values.some((value) => value.t
 
 export function modelToFormValues(initial: ModelDef, providerId: string, defaults: ModelFormValues): ModelFormValues {
   const rows = initial.variants ?? [];
+
   return {
     ...defaults,
     providerId,
@@ -65,6 +68,7 @@ export function modelToFormValues(initial: ModelDef, providerId: string, default
     variants: rows.length
       ? rows.map((entry) => {
           const { id: variantId, ...rest } = entry ?? {};
+
           return { key: variantId ?? '', json: prettyJson(rest) };
         })
       : [emptyVariant()],
@@ -102,6 +106,7 @@ export function formValuesToModel(value: ModelFormValues, initial?: ModelDef): M
   const cacheUsed = anyFilled(costCacheRead, costCacheWrite);
   const capabilitiesNeeded =
     initial?.capabilities != null || tools || inputModalities.length > 0 || outputModalities.length > 0;
+
   return {
     id: id.trim(),
     ...(family.trim() && { family: family.trim() }),

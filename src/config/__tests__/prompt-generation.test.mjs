@@ -1,20 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'vite';
-
-function deferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
+import { deferred, withServer } from './vite-harness.mjs';
 
 test('adapter and store forward exact prompt generation payload for agent and command kinds', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -49,14 +38,11 @@ test('adapter and store forward exact prompt generation payload for agent and co
     const storeResult = await store.generatePrompt(explicitRequest);
     assert.equal(storeResult, 'generated for command:shorten');
     assert.deepEqual(calls.at(-1), ['opencode_generate_prompt', { request: explicitRequest }]);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('store.generatePrompt passes through raw errors without retrying and keeps secrets out of store state', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -136,14 +122,11 @@ test('store.generatePrompt passes through raw errors without retrying and keeps 
     assert.equal('instructions' in store, false);
 
     assert.ok(calls.every(([command]) => command === 'opencode_generate_prompt'));
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('store.generatePrompt guards against concurrent service target saves and stale late replies', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -198,7 +181,5 @@ test('store.generatePrompt guards against concurrent service target saves and st
     assert.equal(store.notice, null);
     assert.equal(store.error, null);
     assert.equal(store.draftRecovery, null);
-  } finally {
-    await vite.close();
-  }
+  });
 });

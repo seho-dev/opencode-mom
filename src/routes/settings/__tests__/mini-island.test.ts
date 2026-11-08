@@ -8,7 +8,9 @@ import type { IslandState } from '$src/types/island.js';
 import MiniIsland from '../MiniIsland.svelte';
 
 const native = vi.hoisted(() => ({ isTauri: vi.fn(() => true) }));
+
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: native.isTauri }));
+
 const initial: IslandState = {
   supported: true,
   enabled: false,
@@ -21,6 +23,7 @@ const initial: IslandState = {
   notchWidth: 180,
   topInset: 32,
 };
+
 function mount(overrides: Record<string, unknown> = {}, active = true) {
   const config = {
     preferences: { theme: 'dark', locale: 'en' },
@@ -34,8 +37,10 @@ function mount(overrides: Record<string, unknown> = {}, active = true) {
     { active },
     { wrapper: Harness, wrapperProps: { config: config as unknown as ConfigStore } },
   );
+
   return { ...view, config };
 }
+
 function mountTarget(overrides: Record<string, unknown> = {}) {
   const adapter = {
     getAppInfo: vi.fn().mockResolvedValue({ version: '2.0.0', platform: 'macos' }),
@@ -47,8 +52,10 @@ function mountTarget(overrides: Record<string, unknown> = {}) {
   };
   const config = createConfigStore(adapter as unknown as CommandAdapter, false, false);
   const view = render(MiniIsland, {}, { wrapper: Harness, wrapperProps: { config } });
+
   return { ...view, config, adapter };
 }
+
 beforeEach(() => native.isTauri.mockReturnValue(true));
 
 test('inactive mount defers platform detection and a late macOS result waits until re-entry to read state', async () => {
@@ -59,6 +66,7 @@ test('inactive mount defers platform detection and a late macOS result waits unt
     }),
   );
   const view = mount({ getAppInfo }, false);
+
   await tick();
   expect(getAppInfo).not.toHaveBeenCalled();
   await view.rerender({ active: true });
@@ -69,7 +77,9 @@ test('inactive mount defers platform detection and a late macOS result waits unt
   expect(view.config.getIslandState).not.toHaveBeenCalled();
   await view.rerender({ active: true });
   await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(false));
+
   const control = screen.getByRole('checkbox');
+
   expect(view.config.getIslandState).toHaveBeenCalledOnce();
   await view.rerender({ active: false });
   await fireEvent.click(control);
@@ -86,6 +96,7 @@ test('platform failure retries only on re-entry and teardown prevents late platf
     platform: 'macos',
   });
   const view = mount({ getAppInfo });
+
   await tick();
   await tick();
   expect(getAppInfo).toHaveBeenCalledOnce();
@@ -94,6 +105,7 @@ test('platform failure retries only on re-entry and teardown prevents late platf
   await view.rerender({ active: true });
   await waitFor(() => expect(view.config.getIslandState).toHaveBeenCalledOnce());
   view.unmount();
+
   let finish!: (info: { version: string; platform: string }) => void;
   const pending = mount({
     getAppInfo: vi.fn().mockReturnValue(
@@ -102,6 +114,7 @@ test('platform failure retries only on re-entry and teardown prevents late platf
       }),
     ),
   });
+
   pending.unmount();
   finish({ version: '2.0.0', platform: 'macos' });
   await tick();
@@ -118,6 +131,7 @@ test('macOS switch reads independently, defaults off, guards pending and uses na
   );
   const view = mount({ setIslandEnabled });
   const control = (await screen.findByRole('checkbox', { name: 'OpenCode mini island' })) as HTMLInputElement;
+
   await waitFor(() => expect(control.checked).toBe(false));
   await waitFor(() => expect(control.hasAttribute('disabled')).toBe(false));
   expect(screen.getByText(/Local OpenCode V2 sessions and pending requests/).textContent).toContain(
@@ -135,6 +149,7 @@ test('macOS switch reads independently, defaults off, guards pending and uses na
 
 test.each(['windows', 'linux', 'other'])('native %s hides island and does not fetch state', async (platform) => {
   const view = mount({ getAppInfo: vi.fn().mockResolvedValue({ version: '2.0.0', platform }) });
+
   await tick();
   expect(screen.queryByRole('checkbox')).toBeNull();
   expect(view.config.getIslandState).not.toHaveBeenCalled();
@@ -142,14 +157,18 @@ test.each(['windows', 'linux', 'other'])('native %s hides island and does not fe
 
 test('browser and unsupported macOS do not show the switch', async () => {
   native.isTauri.mockReturnValue(false);
+
   const browser = mount();
+
   await tick();
   expect(screen.queryByRole('checkbox')).toBeNull();
   expect(browser.config.getAppInfo).not.toHaveBeenCalled();
   expect(browser.config.getIslandState).not.toHaveBeenCalled();
   browser.unmount();
   native.isTauri.mockReturnValue(true);
+
   const unsupported = mount({ getIslandState: vi.fn().mockResolvedValue({ ...initial, supported: false }) });
+
   await waitFor(() => expect(unsupported.config.getIslandState).toHaveBeenCalledOnce());
   await tick();
   expect(screen.queryByRole('checkbox')).toBeNull();
@@ -170,12 +189,14 @@ test('disabling only writes the Island setting, never replies to pending request
     islandInterrupt,
   });
   const control = (await screen.findByRole('checkbox', { name: 'OpenCode mini island' })) as HTMLInputElement;
+
   await waitFor(() => expect(control.checked).toBe(true));
   await fireEvent.click(control);
   expect(setIslandEnabled).toHaveBeenCalledExactlyOnceWith(false);
   await waitFor(() => expect(control.disabled).toBe(false));
   expect(control.checked).toBe(false);
   view.unmount();
+
   for (const operation of [islandReplyPermission, islandReplyQuestion, islandCancelQuestion, islandInterrupt])
     expect(operation).not.toHaveBeenCalled();
 });
@@ -184,6 +205,7 @@ test('read/save errors preserve confirmed state and retry only reads; teardown g
   const getIslandState = vi.fn().mockRejectedValueOnce(new Error('Read failed')).mockResolvedValueOnce(initial);
   const setIslandEnabled = vi.fn().mockRejectedValueOnce(new Error('Write failed'));
   const view = mount({ getIslandState, setIslandEnabled });
+
   expect((await screen.findByRole('alert')).textContent).toContain('Read failed');
   expect(screen.getByRole('checkbox').hasAttribute('disabled')).toBe(true);
   await fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
@@ -193,6 +215,7 @@ test('read/save errors preserve confirmed state and retry only reads; teardown g
   expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
   expect(setIslandEnabled).toHaveBeenCalledOnce();
   view.unmount();
+
   let finish!: (value: IslandState) => void;
   const pending = mount({
     getIslandState: vi.fn().mockImplementation(
@@ -202,6 +225,7 @@ test('read/save errors preserve confirmed state and retry only reads; teardown g
         }),
     ),
   });
+
   await waitFor(() => expect(pending.config.getIslandState).toHaveBeenCalledOnce());
   pending.unmount();
   mount();
@@ -216,6 +240,7 @@ test.each([false, true])(
     const value = { ...initial, enabled, connection: enabled ? ('connected' as const) : ('disabled' as const) };
     const view = mountTarget({ getIslandState: vi.fn().mockResolvedValue(value) });
     const control = (await screen.findByRole('checkbox')) as HTMLInputElement;
+
     await waitFor(() => expect(control.disabled).toBe(false));
     expect(control.checked).toBe(enabled);
     await view.config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
@@ -250,6 +275,7 @@ test('target changes during loading reject old readback and coalesce one latest 
         }),
     );
   const view = mountTarget({ getIslandState });
+
   await waitFor(() => expect(getIslandState).toHaveBeenCalledOnce());
   await view.config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
   await tick();
@@ -258,7 +284,9 @@ test('target changes during loading reject old readback and coalesce one latest 
   expect(getIslandState).toHaveBeenCalledOnce();
   finish({ ...initial, enabled: true, error: 'Old target' });
   await waitFor(() => expect(getIslandState).toHaveBeenCalledTimes(2));
+
   const control = screen.getByRole('checkbox') as HTMLInputElement;
+
   expect(control.checked).toBe(false);
   expect(screen.queryByText(/Old target/)).toBeNull();
   finishLatest(initial);
@@ -278,6 +306,7 @@ test('target change during a preference save defers readback, ignores the old sa
   );
   const view = mountTarget({ setIslandEnabled });
   const control = (await screen.findByRole('checkbox')) as HTMLInputElement;
+
   await waitFor(() => expect(control.disabled).toBe(false));
   await fireEvent.click(control);
   await view.config.setOpenCodeServiceTarget(null);

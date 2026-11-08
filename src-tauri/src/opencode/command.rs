@@ -49,6 +49,7 @@ pub(super) fn collect_output(
                     ))
                 })?;
             }
+
             if let Some(status) = status {
                 if !status.success() {
                     return Ok(Output {
@@ -57,9 +58,11 @@ pub(super) fn collect_output(
                         stderr: Vec::new(),
                     });
                 }
+
                 if let Some(error) = read_error.take() {
                     return Err(read_failure(error));
                 }
+
                 if eof {
                     return Ok(Output {
                         status,
@@ -68,6 +71,7 @@ pub(super) fn collect_output(
                     });
                 }
             }
+
             if started.elapsed() >= timeout {
                 return Err(AppError::configuration(if status.is_some() {
                     format!("{operation} output timed out.")
@@ -75,11 +79,13 @@ pub(super) fn collect_output(
                     format!("{operation} timed out. Check the OpenCode CLI and retry.")
                 }));
             }
+
             if !eof && read_error.is_none() {
                 let remaining = max_bytes
                     .saturating_sub(bytes.len() as u64)
                     .saturating_add(1)
                     .min(buffer.len() as u64) as usize;
+
                 match read_available(stdout, &mut buffer[..remaining]) {
                     Ok(0) => eof = true,
                     Ok(count) => {
@@ -91,6 +97,7 @@ pub(super) fn collect_output(
                         }
                         continue;
                     }
+
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                     Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
                     Err(error) => read_error = Some(error),
@@ -114,6 +121,7 @@ fn prepare_stdout(stdout: &ChildStdout) -> io::Result<()> {
     if flags == -1 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } == -1 {
         return Err(io::Error::last_os_error());
     }
+
     Ok(())
 }
 
@@ -131,6 +139,7 @@ fn prepare_stdout(stdout: &ChildStdout) -> io::Result<()> {
     if handle.is_null() || handle == INVALID_HANDLE_VALUE {
         return Err(io::Error::from_raw_os_error(ERROR_INVALID_HANDLE as i32));
     }
+
     Ok(())
 }
 
@@ -162,9 +171,11 @@ fn read_available(stdout: &mut ChildStdout, buffer: &mut [u8]) -> io::Result<usi
             Err(error)
         };
     }
+
     if available == 0 {
         return Err(io::ErrorKind::WouldBlock.into());
     }
+
     let count = buffer.len().min(available as usize);
     match stdout.read(&mut buffer[..count]) {
         Err(error) if error.raw_os_error() == Some(ERROR_BROKEN_PIPE as i32) => Ok(0),

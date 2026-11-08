@@ -42,6 +42,7 @@ const filtered = $derived(
 );
 const currentPage = $derived(Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize))));
 const rows = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+
 $effect(() => {
   void query;
   void skills.length;
@@ -51,12 +52,16 @@ $effect(() => {
 async function load() {
   const seq = ++request;
   const scope = projectId;
+
   loading = true;
   error = '';
   diagnostics = [];
+
   try {
     const result = await (scope === null ? config.listSkills() : config.listSkills(scope));
+
     if (seq !== request) return;
+
     skills = result.data;
     diagnostics = result.diagnostics;
   } catch (cause) {
@@ -68,6 +73,7 @@ async function load() {
     if (seq === request) loading = false;
   }
 }
+
 $effect(() => {
   void projectId;
   skills = [];
@@ -76,33 +82,42 @@ $effect(() => {
   untrack(() => {
     void load();
   });
+
   return () => {
     request += 1;
   };
 });
 $effect(() => {
   const compare = projectId !== null && showGlobal;
+
   globalSkills = [];
   globalDiagnostics = [];
   globalError = '';
+
   if (compare)
     untrack(() => {
       void loadGlobal();
     });
   else globalLoading = false;
+
   return () => {
     globalRequest += 1;
   };
 });
+
 async function loadGlobal() {
   const id = ++globalRequest;
+
   globalLoading = true;
   globalError = '';
   globalSkills = [];
   globalDiagnostics = [];
+
   try {
     const result = await config.listSkills();
+
     if (id !== globalRequest) return;
+
     globalSkills = result.data;
     globalDiagnostics = result.diagnostics;
   } catch (cause) {
@@ -111,10 +126,12 @@ async function loadGlobal() {
     if (id === globalRequest) globalLoading = false;
   }
 }
+
 function refresh() {
   void load();
   if (projectId && showGlobal) void loadGlobal();
 }
+
 function href(id: string, scope: string | null) {
   return `/skills/${encodeURIComponent(id)}${scope !== null ? `?project=${encodeURIComponent(scope)}` : projectId ? '?readonly=1' : ''}`;
 }

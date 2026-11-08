@@ -569,6 +569,7 @@ fn http_test_app(paths: ConfigPaths) -> tauri::App<tauri::test::MockRuntime> {
             app.manage(proxy.clone());
             app.manage(paths.clone());
             crate::setup_http(app, &paths, &proxy);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -634,6 +635,7 @@ fn http_initialization_failure_preserves_setup_proxy_ipc_and_files() {
             fs::create_dir(&http_path).unwrap();
             fs::write(http_path.join("untouched"), b"private-invalid").unwrap();
         }
+
         let proxy_path = directory.join("mcp-proxy.json");
         crate::mcp_proxy::config::save_config(&proxy_path, &Default::default()).unwrap();
         if invalid_legacy_auth {
@@ -649,6 +651,7 @@ fn http_initialization_failure_preserves_setup_proxy_ipc_and_files() {
             .unwrap();
             crate::private_file::publish(&proxy_path, &bytes).unwrap();
         }
+
         let proxy_before = fs::read(&proxy_path).unwrap();
         let app = http_test_app(paths);
         let http = app.state::<HttpServerState>();
@@ -664,6 +667,7 @@ fn http_initialization_failure_preserves_setup_proxy_ipc_and_files() {
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
+
         for (cmd, body) in [
             ("get_mom_http_settings", json!({})),
             (
@@ -675,6 +679,7 @@ fn http_initialization_failure_preserves_setup_proxy_ipc_and_files() {
         ] {
             assert_eq!(invoke_http_test(&webview, cmd, body).unwrap_err(), expected);
         }
+
         let settings: McpProxySettingsDto =
             invoke_http_test(&webview, "get_mcp_proxy_settings", json!({}))
                 .unwrap()

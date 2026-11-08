@@ -90,6 +90,7 @@ fn scans_singular_plural_override_and_diagnostics_without_cascading_get_failure(
         Some(home.path().join("elsewhere/config.jsonc")),
         Some(override_dir.clone()),
     );
+
     for dir in paths.command_dirs() {
         write(
             &dir.join("team/review.v2.md"),
@@ -98,6 +99,7 @@ fn scans_singular_plural_override_and_diagnostics_without_cascading_get_failure(
         write(&dir.join("broken.md"), "---\nbroken: [\n---\nbody");
         write(&dir.join("ignore.txt"), "ignore");
     }
+
     let list = list(&paths).unwrap();
     assert_eq!(list.data.len(), 4);
     assert_eq!(list.diagnostics.len(), 4);
@@ -133,6 +135,7 @@ fn invalid_names_and_outside_ids_do_not_touch_files() {
     ] {
         assert!(create(&paths, draft(name, "body")).is_err(), "{name:?}");
     }
+
     let outside = home.path().join("outside.md");
     write(&outside, "outside");
     assert!(get(&paths, outside.to_str().unwrap()).is_err());
@@ -259,6 +262,7 @@ fn project_command_aliases_cannot_expose_or_mutate_readonly_resources() {
                 if config && alias != "leaf" {
                     continue;
                 }
+
                 let home = tempfile::tempdir().unwrap();
                 let paths = ConfigPaths::for_home(home.path());
                 let root = home.path().join("project");
@@ -297,6 +301,7 @@ fn project_command_aliases_cannot_expose_or_mutate_readonly_resources() {
                 if alias != "leaf" {
                     fs::remove_dir(&link).unwrap();
                 }
+
                 let destination = if alias == "leaf" {
                     &target
                 } else {
@@ -324,6 +329,7 @@ fn project_command_aliases_cannot_expose_or_mutate_readonly_resources() {
                         crate::error::ErrorCode::ValidationFailed
                     );
                 }
+
                 if command_dir == "commands" {
                     assert!(create(&scoped, draft(name, "ours")).is_err());
                 }
@@ -378,6 +384,7 @@ fn project_command_to_command_aliases_support_crud() {
         if alias != "leaf" {
             create(&scoped, draft(name, "body")).unwrap();
         }
+
         let entry = list(&scoped)
             .unwrap()
             .data
@@ -412,9 +419,11 @@ fn project_command_retarget_into_agents_is_rejected_before_backups() {
     assert!(update_inner(&scoped, edit(&command, "ours"), |_| {
         fs::rename(scoped.commands_write_dir(), &original).unwrap();
         symlink(&agents, scoped.commands_write_dir()).unwrap();
+
         Ok(())
     })
     .is_err());
+
     for directory in [&original, &agents] {
         assert_eq!(
             fs::read_to_string(directory.join("review.md")).unwrap(),
@@ -473,6 +482,7 @@ fn checked_create_rejects_competing_file_without_clobber() {
     let paths = ConfigPaths::for_home(home.path());
     assert!(create_inner(&paths, draft("review", "ours"), |path| {
         fs::write(path, "theirs").unwrap();
+
         Ok(())
     })
     .is_err());
@@ -526,6 +536,7 @@ fn project_alias_escape_is_rejected_before_directory_creation_or_backup() {
     assert!(update_inner(&scoped, edit(&command, "ours"), |_| {
         fs::rename(scoped.commands_write_dir(), &original).unwrap();
         symlink(&outside, scoped.commands_write_dir()).unwrap();
+
         Ok(())
     })
     .is_err());
@@ -557,6 +568,7 @@ fn checked_replacement_runs_guards_before_backup_and_before_publication() {
     assert!(
         resource_file::replace_checked(&[(snapshot.clone(), "ours".into())], |_| {
             assert_eq!(fs::read_dir(parent).unwrap().count(), 1);
+
             Err(AppError::validation("blocked before staging"))
         })
         .is_err()
@@ -568,8 +580,10 @@ fn checked_replacement_runs_guards_before_backup_and_before_publication() {
         resource_file::replace_checked(&[(snapshot, "ours".into())], |_| {
             if fs::read_dir(parent).unwrap().count() > 1 {
                 staged = true;
+
                 return Err(AppError::validation("blocked before publication"));
             }
+
             Ok(())
         })
         .is_err()

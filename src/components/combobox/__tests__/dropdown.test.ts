@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest';
 import Harness from './dropdown-harness.svelte';
 
 const scrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
 });
@@ -16,6 +17,7 @@ test('the free-text combobox portals options and preserves pointer, keyboard and
   const onAgentChange = vi.fn();
   const { container, unmount } = render(Harness, { onAgentChange });
   const input = screen.getByRole('combobox', { name: 'Agent' }) as HTMLInputElement;
+
   // JSDOM has no layout; Bits UI treats an empty client rect list as a hidden anchor.
   vi.spyOn(input, 'getClientRects').mockReturnValue([new DOMRect(16, 320, 368, 36)] as unknown as DOMRectList);
   input.focus();
@@ -62,8 +64,11 @@ test('the searchable select keeps its portaled search focused and supports selec
   const onModelChange = vi.fn();
   const { container } = render(Harness, { onModelChange });
   const trigger = screen.getByRole('button', { name: 'Model', exact: true });
+
   await fireEvent.click(trigger);
+
   const search = await screen.findByRole('combobox', { name: 'Search options' });
+
   expect(container.contains(screen.getByRole('listbox'))).toBe(false);
   expect(document.activeElement).toBe(search);
   await fireEvent.input(search, { target: { value: 'Option 12' } });
@@ -98,11 +103,14 @@ test('the searchable select keeps its portaled search focused and supports selec
 
 test('a short select keeps keyboard navigation and skips disabled options', async () => {
   const onModelChange = vi.fn();
+
   render(Harness, {
     options: [{ value: 'Blocked', disabled: true }, { value: 'First' }, { value: 'Second' }],
     onModelChange,
   });
+
   const trigger = screen.getByRole('button', { name: 'Model', exact: true });
+
   trigger.focus();
   await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
   expect(screen.queryByRole('combobox', { name: 'Search options' })).toBeNull();

@@ -72,10 +72,12 @@ pub(super) fn model_refs(
                 "Invalid OpenCode model catalog identity",
             ));
         }
+
         if model.enabled {
             refs.insert(format!("{}/{}", model.provider_id, model.model_id));
         }
     }
+
     Ok(refs)
 }
 
@@ -115,6 +117,7 @@ fn list_models(
         if provider_filter.is_some_and(|filter| provider_id != filter) {
             continue;
         }
+
         let config_model = config_providers
             .iter()
             .find(|provider| provider.name == provider_id)
@@ -138,6 +141,7 @@ fn list_models(
         });
     }
     connection.ensure_current()?;
+
     Ok(catalog)
 }
 

@@ -78,6 +78,7 @@ impl Cache {
         if self.connection == Some(connection) {
             return None;
         }
+
         match connection {
             "connected" => Some((LogStatus::Success, "island_connected")),
             "error" => Some((LogStatus::Error, "island_connection_failed")),
@@ -97,11 +98,13 @@ impl Cache {
         if !self.current(generation) {
             return Err(disabled());
         }
+
         let previous = (self.view, self.selected_session.clone());
         self.view = view;
         if view != IslandView::Expanded {
             self.selected_session = None;
         }
+
         Ok(previous)
     }
 
@@ -199,6 +202,7 @@ impl Cache {
         if let Some(cancel) = self.cancel.take() {
             let _ = cancel.send(true);
         }
+
         Ok(self.generation)
     }
 }
@@ -332,6 +336,7 @@ async fn cancellable<T>(
     if *cancel.borrow() {
         return Err(disabled());
     }
+
     match race(cancel.changed(), future).await {
         Ok(_) => Err(disabled()),
         Err(value) => Ok(value),
@@ -430,6 +435,7 @@ impl IslandService {
                         cache.error =
                             Some("Mini Island window unavailable; use Refresh to retry".into());
                     }
+
                     return Err(AppError::configuration(
                         "Mini Island window unavailable; use Refresh to retry",
                     ));
@@ -439,6 +445,7 @@ impl IslandService {
                 service.start_monitor(generation);
                 changed(app);
             }
+
             Ok(())
         })
     }
@@ -462,12 +469,15 @@ impl IslandService {
             models::save_config(&paths.config_file(), &config)?;
             self.update_preferences(config.state.preferences);
         }
+
         if let Err(error) = self.apply_enabled(app, enabled) {
             if persist_enabled(paths, false).is_err() {
                 eprintln!("failed to persist disabled Mini Island after window setup failure");
             }
+
             return Err(error);
         }
+
         Ok(())
     }
 
@@ -481,14 +491,17 @@ impl IslandService {
         {
             if !enabled {
                 window::close(app);
+
                 return Ok(());
             }
+
             let (generation, mode) = {
                 let mut cache = lock(&self.cache);
                 cache.enabled = true;
                 cache.connection = Some("connecting");
                 (cache.generation, cache.view)
             };
+
             match window::open(app, mode) {
                 Ok(placement) => {
                     let mut cache = lock(&self.cache);
@@ -502,6 +515,7 @@ impl IslandService {
                     window::close(app);
                     lock(&self.cache).window_failed(generation);
                     eprintln!("Mini Island setup failed; main app remains available");
+
                     return Err(error);
                 }
             }
@@ -509,6 +523,7 @@ impl IslandService {
         }
         #[cfg(not(target_os = "macos"))]
         let _ = (app, enabled);
+
         Ok(())
     }
 
@@ -535,18 +550,22 @@ impl IslandService {
             if !cache.current(generation) {
                 return false;
             }
+
             if let Some(previous) = cache.cancel.replace(cancel) {
                 let _ = previous.send(true);
             }
         }
+
         if let Some(previous) = task.take() {
             previous.abort();
         }
+
         let next = tauri::async_runtime::spawn(run(receiver));
         {
             let cache = lock(&self.cache);
             if cache.current(generation) {
                 *task = Some(next);
+
                 return true;
             }
         }
@@ -597,6 +616,7 @@ impl IslandService {
         if !cache.enabled {
             return Err(disabled());
         }
+
         Ok(cache.generation)
     }
 
@@ -619,6 +639,7 @@ impl IslandService {
             lock(&self.cache).set_view(generation, view)?;
             let (sender, receiver) = tokio::sync::oneshot::channel();
             let _ = sender.send(Ok(()));
+
             Ok(receiver)
         }
     }
@@ -633,6 +654,7 @@ impl IslandService {
         {
             return Err(disabled());
         }
+
         let api = cache
             .api
             .clone()
@@ -642,6 +664,7 @@ impl IslandService {
             .as_ref()
             .ok_or_else(disabled)?
             .subscribe();
+
         Ok((cache.generation, cache.api_generation, api, cancel))
     }
 
@@ -683,6 +706,7 @@ impl IslandService {
         if !self.connected_generation(context.0, context.1) || *cancel.borrow() {
             return Err(disabled());
         }
+
         let result = cancellable(&mut cancel, action(context.2)).await?;
         if !self.connected_generation(context.0, context.1) || *cancel.borrow() {
             return Err(disabled());
@@ -705,12 +729,14 @@ impl IslandService {
         {
             return Err(AppError::validation("Invalid Island session identifier"));
         }
+
         let context = self.context(Some(expected_connection_generation))?;
         {
             let mut cache = lock(&self.cache);
             if !cache.current(context.0) || cache.api_generation != context.1 {
                 return Err(disabled());
             }
+
             if cache.view == IslandView::Expanded {
                 cache.selected_session = Some(session_id.clone());
             }
@@ -739,8 +765,10 @@ impl IslandService {
                         }
                     }
                 }
+
                 return result;
             }
+
             let generation = {
                 let mut cache = lock(&self.cache);
                 if !cache.current(generation) {
@@ -755,6 +783,7 @@ impl IslandService {
         }
         #[cfg(not(target_os = "macos"))]
         let _ = app;
+
         Ok(())
     }
 
@@ -773,6 +802,7 @@ impl IslandService {
                     .retry_connection(app, generation)
             });
         }
+
         let (generation, api_generation, api, mut cancel) = self.context(None)?;
         let revision = next_revision(&self.cache, generation)?;
         let result = cancellable(&mut cancel, api.snapshot()).await?;
@@ -809,6 +839,7 @@ impl IslandService {
         if published {
             changed(app);
         }
+
         Ok(())
     }
 }
@@ -825,6 +856,7 @@ fn next_revision(cache: &Mutex<Cache>, generation: u64) -> Result<u64, AppError>
         return Err(disabled());
     }
     cache.revision += 1;
+
     Ok(cache.revision)
 }
 
@@ -864,6 +896,7 @@ fn changed(app: &AppHandle) {
             eprintln!("failed to dispatch Mini Island window notification");
         }
     }
+
     #[cfg(not(target_os = "macos"))]
     let _ = app;
 }
@@ -881,6 +914,7 @@ async fn monitor(
         if *cancel.borrow() || !lock(&cache).current(generation) {
             return;
         }
+
         let result =
             match cancellable(&mut cancel, connected(&notifications, &cache, generation)).await {
                 Ok(result) => result,
@@ -889,11 +923,13 @@ async fn monitor(
         if !lock(&cache).current(generation) {
             return;
         }
+
         if result.is_err() {
             let mut state = lock(&cache);
             if !state.current(generation) {
                 return;
             }
+
             if state.connection == Some("connected") {
                 failures = 0;
             }
@@ -901,6 +937,7 @@ async fn monitor(
             drop(state);
             notify(&notifications);
         }
+
         let delay = delays[failures.min(delays.len() - 1)];
         failures = failures.saturating_add(1);
         if cancellable(&mut cancel, tokio::time::sleep(Duration::from_secs(delay)))
@@ -953,12 +990,14 @@ async fn connected(
                 pending.record(event?, &state, tokio::time::Instant::now());
                 continue;
             }
+
             if pending.snapshot {
                 let revision = next_revision(cache, generation)?;
                 let snapshot = api.snapshot().await?;
                 let mut state = lock(cache);
                 pending.publish(&mut state, generation, api_generation, revision, snapshot);
             }
+
             let notify_visible = {
                 let state = lock(cache);
                 if !state.current(generation)
@@ -974,6 +1013,7 @@ async fn connected(
             }
             pending = Coalescer::default();
         }
+
         let event = events.next().await?;
         let state = lock(cache);
         if !state.current(generation) || state.api_generation != api_generation {
@@ -999,6 +1039,7 @@ pub(crate) fn setup(
     let mut service = IslandService::default();
     service.notifications = notifications;
     app.manage(service);
+
     match models::load_config(&paths.config_file()) {
         Ok(config) => {
             let service = app.state::<IslandService>();
@@ -1013,6 +1054,7 @@ pub(crate) fn setup(
                 }
             }
         }
+
         Err(_) => eprintln!("Mini Island preferences unavailable; feature left disabled"),
     }
 }
@@ -1029,6 +1071,7 @@ pub(crate) fn on_main<T: Send + 'static>(
             let _ = sender.send(action(&handle));
         })
         .map_err(|_| AppError::configuration("Mini Island native dispatcher unavailable"))?;
+
         return receiver
             .recv()
             .map_err(|_| AppError::configuration("Mini Island native dispatcher closed"))?;
@@ -1040,15 +1083,18 @@ pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent
     if window.label() != "island" {
         return;
     }
+
     #[cfg(target_os = "macos")]
     if matches!(event, tauri::WindowEvent::Destroyed) {
         // The per-window listener captures native identity; a label cannot identify a retired window.
         return;
     }
+
     #[cfg(target_os = "macos")]
     if !window::event_is_current(window) {
         return;
     }
+
     let app = window.app_handle();
     let Some(service) = app.try_state::<IslandService>() else {
         return;
@@ -1056,6 +1102,7 @@ pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent
     if !lock(&service.cache).enabled {
         return;
     }
+
     match event {
         tauri::WindowEvent::Focused(false) => {
             #[cfg(target_os = "macos")]

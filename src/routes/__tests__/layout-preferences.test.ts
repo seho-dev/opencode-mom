@@ -8,6 +8,7 @@ import type { ThemePreference } from '$src/types/app.js';
 import Layout from '../+layout.svelte';
 
 type Handler = (event: { payload: unknown }) => void;
+
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
   isTauri: vi.fn(() => true),
@@ -15,10 +16,12 @@ const native = vi.hoisted(() => ({
   listeners: new Map<string, Handler>(),
   unlisten: vi.fn(),
 }));
+
 vi.mock('@tauri-apps/api/core', () => ({ invoke: native.invoke, isTauri: native.isTauri }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: native.listen }));
 vi.mock('$src/config/adapter.js', async (importOriginal) => {
   const adapter = await importOriginal<typeof import('$src/config/adapter.js')>();
+
   return { ...adapter, createCommandAdapter: () => adapter.createTauriAdapter(native.invoke) };
 });
 vi.mock('$app/navigation', () => ({ goto: vi.fn().mockResolvedValue(undefined) }));
@@ -52,7 +55,9 @@ beforeEach(() => {
         preferences: { locale: 'en', theme: persistedTheme },
       };
     }
+
     if (command === 'opencode_list_models') return [];
+
     throw new Error(`Unexpected command: ${command}`);
   });
   native.listen.mockImplementation(async (name: string, handler: Handler) => {
@@ -66,7 +71,9 @@ beforeEach(() => {
 
 test('main keeps its navigation/config listeners and does not subscribe to tray preference updates', async () => {
   page.url = new URL('http://localhost/');
+
   const view = mount();
+
   await waitFor(() => expect(native.listeners.size).toBe(2));
   await waitFor(() => expect(calls('load_app_state')).toHaveLength(1));
   expect(listen).toHaveBeenCalledWith('tray:navigate', expect.any(Function), { target: 'main' });
@@ -77,6 +84,7 @@ test('main keeps its navigation/config listeners and does not subscribe to tray 
 
   const navigate = native.listeners.get('tray:navigate');
   const changed = native.listeners.get('tray:config-changed');
+
   navigate?.({ payload: '/groups' });
   expect(goto).not.toHaveBeenCalled();
   navigate?.({ payload: '/settings' });
@@ -97,18 +105,22 @@ test('main keeps its navigation/config listeners and does not subscribe to tray 
 
 test('tray reloads persisted dark/light/dark preferences without saving or requesting the model catalog', async () => {
   const view = mount();
+
   await waitFor(() => expect(listen).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(calls('load_app_state')).toHaveLength(2));
   expect(listen).toHaveBeenCalledExactlyOnceWith('app:preferences-changed', expect.any(Function), {
     target: 'tray',
   });
   expect(document.documentElement.dataset.theme).toBe('dark');
+
   const changed = native.listeners.get('app:preferences-changed');
+
   for (const theme of ['light', 'dark'] as const) {
     persistedTheme = theme;
     changed?.({ payload: null });
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe(theme));
   }
+
   expect(calls('load_app_state')).toHaveLength(4);
   expect(calls('save_preferences')).toHaveLength(0);
   expect(calls('opencode_list_models')).toHaveLength(0);
@@ -121,6 +133,7 @@ test('tray reloads persisted dark/light/dark preferences without saving or reque
 
 test('tray catches a persisted light theme changed before listener registration finishes', async () => {
   let register!: (unlisten: () => void) => void;
+
   native.listen.mockReturnValueOnce(
     new Promise<() => void>((resolve) => {
       register = resolve;
@@ -139,14 +152,18 @@ test('tray catches a persisted light theme changed before listener registration 
 
 test.each(['/tray', '/'])('late listener registration after unmount cleans up without reloading (%s)', async (path) => {
   page.url = new URL(`http://localhost${path}`);
+
   const registrations: (() => void)[] = [];
+
   native.listen.mockImplementation(
     (name: string) =>
       new Promise<() => void>((resolve) => {
         registrations.push(() => resolve(() => native.unlisten(name)));
       }),
   );
+
   const view = mount();
+
   await waitFor(() => expect(listen).toHaveBeenCalledTimes(path === '/tray' ? 1 : 2));
   await waitFor(() => expect(calls('load_app_state')).toHaveLength(1));
   view.unmount();
@@ -158,6 +175,7 @@ test.each(['/tray', '/'])('late listener registration after unmount cleans up wi
 test('tray listener registration failures are reported without changing persisted preferences', async () => {
   const error = new Error('Listener denied');
   const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+
   native.listen.mockRejectedValueOnce(error);
   persistedTheme = 'light';
   mount();

@@ -22,19 +22,6 @@ pub async fn save_group(
 }
 
 #[tauri::command]
-pub async fn copy_group(
-    state: State<'_, ConfigPaths>,
-    id: Uuid,
-    name: Option<String>,
-) -> CommandResult<ModelGroup> {
-    let paths = state.inner().clone();
-    super::spawn_blocking_task("Copy group", move || {
-        groups::copy_group(&paths, id, name).map(|(group, _)| group)
-    })
-    .await
-}
-
-#[tauri::command]
 pub async fn delete_group(state: State<'_, ConfigPaths>, id: Uuid) -> CommandResult<()> {
     let paths = state.inner().clone();
     super::spawn_blocking_task("Delete group", move || {
@@ -63,5 +50,6 @@ pub async fn switch_group(
             "group_switch_committed_notify_failed",
         );
     }
+
     Ok(())
 }

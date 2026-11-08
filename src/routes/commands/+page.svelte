@@ -32,12 +32,15 @@ let globalRequest = 0;
 const pageSize = 10;
 const filtered = $derived(filter(commands));
 const globalFiltered = $derived(filter(globalCommands));
+
 function filter(entries: SlashCommandEntry[]) {
   const text = query.trim().toLowerCase();
+
   return entries.filter((entry) =>
     `${entry.name} ${entry.description ?? ''} ${entry.sourcePath}`.toLowerCase().includes(text),
   );
 }
+
 $effect(() => {
   void query;
   page = 1;
@@ -47,12 +50,16 @@ $effect(() => {
 async function load() {
   const seq = ++request;
   const scope = projectId;
+
   loading = true;
   error = '';
   diagnostics = [];
+
   try {
     const result = await config.listSlashCommands(scope);
+
     if (seq !== request) return;
+
     commands = result.data;
     diagnostics = result.diagnostics;
   } catch (cause) {
@@ -64,15 +71,20 @@ async function load() {
     if (seq === request) loading = false;
   }
 }
+
 async function loadGlobal() {
   const seq = ++globalRequest;
+
   globalLoading = true;
   globalError = '';
   globalCommands = [];
   globalDiagnostics = [];
+
   try {
     const result = await config.listSlashCommands(null);
+
     if (seq !== globalRequest) return;
+
     globalCommands = result.data;
     globalDiagnostics = result.diagnostics;
   } catch (cause) {
@@ -81,6 +93,7 @@ async function loadGlobal() {
     if (seq === globalRequest) globalLoading = false;
   }
 }
+
 $effect(() => {
   void projectId;
   commands = [];
@@ -89,6 +102,7 @@ $effect(() => {
   untrack(() => {
     void load();
   });
+
   return () => {
     request += 1;
   };
@@ -96,24 +110,30 @@ $effect(() => {
 $effect(() => {
   const scope = projectId;
   const compare = showGlobal;
+
   globalCommands = [];
   globalDiagnostics = [];
   globalError = '';
   globalPage = 1;
+
   if (scope !== null && compare)
     untrack(() => {
       void loadGlobal();
     });
   else globalLoading = false;
+
   return () => {
     globalRequest += 1;
   };
 });
+
 function href(id: string, scope: string | null, compare = false, edit = false) {
   const params = new URLSearchParams();
+
   if (scope !== null) params.set('project', scope);
   if (compare) params.set('readonly', '1');
   if (edit) params.set('edit', '1');
+
   return `/commands/${encodeURIComponent(id)}${params.size ? `?${params}` : ''}`;
 }
 </script>

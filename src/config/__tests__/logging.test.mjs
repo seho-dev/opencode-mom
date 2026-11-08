@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'vite';
+import { withServer } from './vite-harness.mjs';
 
 test('logging commands preserve exact IPC names, query fields, results, and one-shot failures', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { LOG_TYPES } = await vite.ssrLoadModule('/src/types/logging.ts');
     assert.deepEqual(LOG_TYPES, [
       'app',
@@ -61,14 +60,11 @@ test('logging commands preserve exact IPC names, query fields, results, and one-
       assert.equal(calls.length, before + 1);
       assert.deepEqual(calls.at(-1), expected);
     }
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('logging facades stay lazy and never retain payloads, results, or private failures in shared state', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -134,14 +130,11 @@ test('logging facades stay lazy and never retain payloads, results, or private f
       assert.deepEqual(calls.at(-1), expected);
       assert.equal(JSON.stringify(store), before);
     }
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('global initialization and refresh never prefetch logging or add logging preferences', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
@@ -162,7 +155,5 @@ test('global initialization and refresh never prefetch logging or add logging pr
     ]);
     assert.deepEqual(store.preferences, preferences);
     assert.equal(store.loading, false);
-  } finally {
-    await vite.close();
-  }
+  });
 });

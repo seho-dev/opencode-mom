@@ -182,9 +182,11 @@ pub async fn get_mcp_proxy_state(
         security_errors
             .push("MCP runtime cleanup failed; process outcome may be uncertain".to_string());
     }
+
     if !http.auth_ready() {
         security_errors.push("MOM HTTP authentication is not configured".to_string());
     }
+
     if settings.allow_lan {
         security_errors.push("LAN access is enabled (0.0.0.0)".to_string());
     }
@@ -271,6 +273,7 @@ pub async fn get_mcp_proxy_server(
         .iter()
         .find(|s| s.id == id)
         .ok_or_else(|| AppError::not_found(format!("proxy server '{id}' not found")))?;
+
     Ok(McpProxyServerDto::from(service))
 }
 
@@ -375,9 +378,11 @@ fn extract_command(
                     }
                 }
             }
+
             return Ok(cmd);
         }
     }
+
     Err(AppError::validation(
         "MCP server configuration missing valid command",
     ))
@@ -420,6 +425,7 @@ fn slugify_id(name: &str) -> String {
             slug.push('-');
         }
     }
+
     let slug = slug.trim_matches('-').trim_matches('_');
     if slug.is_empty() || slug.len() > 64 {
         format!("srv-{}", Uuid::new_v4().simple())
@@ -493,6 +499,7 @@ pub async fn close_mcp_proxy_unit(
             .legacy_sessions()
             .close_session(&request.unit_id)
             .await?;
+
         Ok(())
     }
     .await;

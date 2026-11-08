@@ -67,6 +67,7 @@ fn disable_is_a_barrier_and_old_operations_cannot_cross_enable_generations() {
     for _ in 0..20 {
         op(&service, "preferences_save").finish(&Ok::<_, AppError>(()));
     }
+
     let disabled = service.set_enabled(false).unwrap();
     assert!(!disabled.enabled);
     assert!(!disabled.recording);
@@ -244,6 +245,7 @@ fn pages_are_latest_first_snapshot_safe_and_filterable() {
         }
         storage.write(&value).unwrap();
     }
+
     let first = storage
         .query(LogQuery {
             limit: Some(2),
@@ -309,6 +311,7 @@ fn pages_are_latest_first_snapshot_safe_and_filterable() {
         .unwrap()
         .records
         .is_empty());
+
     for invalid in [
         LogQuery {
             limit: Some(0),
@@ -360,6 +363,7 @@ fn rotation_and_clear_bound_storage_and_invalidate_cursors() {
         .unwrap()
         .next_cursor
         .unwrap();
+
     for sequence in 3..100 {
         storage.write(&record(sequence)).unwrap();
     }
@@ -370,9 +374,11 @@ fn rotation_and_clear_bound_storage_and_invalidate_cursors() {
         })
         .is_err());
     assert!(fs::read_dir(&logs).unwrap().count() <= 5);
+
     for entry in fs::read_dir(&logs).unwrap() {
         assert!(entry.unwrap().metadata().unwrap().len() <= 1500);
     }
+
     let first = storage
         .query(LogQuery {
             limit: Some(1),
@@ -532,6 +538,7 @@ fn failed_enable_persistence_preserves_every_retained_file() {
         op(&service, "preferences_save").finish(&Ok::<_, AppError>(()));
         service.set_enabled(false).unwrap();
     }
+
     let snapshots = || {
         fs::read_dir(paths.logs_dir())
             .unwrap()
@@ -632,8 +639,10 @@ fn partial_write_failure_disables_recording_without_exposing_io_details() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+
         return;
     }
+
     let (_directory, _paths, service) = setup();
     service.set_enabled(true).unwrap();
     let limit = libc::rlimit {
@@ -713,6 +722,7 @@ fn query_never_returns_untrusted_unknown_or_sensitive_string_fields() {
         value[key] = field;
         bad_lines.push(value);
     }
+
     let mut wrong_step = base;
     wrong_step["type"] = json!("group");
     wrong_step["event"] = json!("group_switch_validated");
@@ -740,6 +750,7 @@ fn query_never_returns_untrusted_unknown_or_sensitive_string_fields() {
 fn instance_api_captures_flows_lifecycle_and_filters_without_global_install() {
     let (_directory, _paths, service) = setup();
     service.set_enabled(true).unwrap();
+
     for result in [
         Ok(()),
         Err(AppError::references(
@@ -758,6 +769,7 @@ fn instance_api_captures_flows_lifecycle_and_filters_without_global_install() {
     assert_eq!(page.records[0].kind, LogType::Http);
     assert_eq!(page.records[0].status, LogStatus::Error);
     assert_ne!(page.records[1].operation_id, page.records[4].operation_id);
+
     for (index, status, code) in [
         (1, LogStatus::Error, Some(ErrorCode::ReferencesBlocked)),
         (4, LogStatus::Success, None),
@@ -776,6 +788,7 @@ fn instance_api_captures_flows_lifecycle_and_filters_without_global_install() {
         assert_eq!(finished.error_code, code);
         assert!(finished.duration_ms.is_some());
         assert!(finished.context.is_none());
+
         for (checkpoint, event) in flow.records[1..]
             .iter()
             .zip(["group_switch_projection_complete", "group_switch_validated"])
@@ -793,6 +806,7 @@ fn instance_api_captures_flows_lifecycle_and_filters_without_global_install() {
             assert!(checkpoint.error_code.is_none());
         }
     }
+
     let encoded = serde_json::to_string(&page).unwrap();
     assert!(!encoded.contains("private"));
     assert!(!encoded.contains("secret"));
@@ -821,6 +835,7 @@ fn queued_records_drain_but_inflight_old_work_never_enters_a_new_generation() {
         failure.finish::<()>(&Err(AppError::configuration("private failure")));
     });
     ready.recv().unwrap();
+
     for _ in 0..20 {
         op(&service, "preferences_save").finish(&Ok::<_, AppError>(()));
     }
@@ -861,11 +876,14 @@ fn every_declared_type_roundtrips_through_the_instance_writer_and_query() {
         (LogType::Island, "island_enabled_set"),
         (LogType::Logging, "logging_cleared"),
     ];
+
     for (kind, event) in events {
         service.record(kind, LogStatus::Success, event);
     }
+
     let page = query(&service);
     assert_eq!(page.records.len(), events.len());
+
     for (value, (kind, event)) in page.records.iter().zip(events.into_iter().rev()) {
         assert_eq!(value.kind, kind);
         assert_eq!(value.event, event);
@@ -877,6 +895,7 @@ fn every_declared_type_roundtrips_through_the_instance_writer_and_query() {
 fn invalid_queries_do_not_stop_healthy_recording() {
     let (_directory, _paths, service) = setup();
     service.set_enabled(true).unwrap();
+
     for query in [
         LogQuery {
             cursor: Some("invalid".to_owned()),

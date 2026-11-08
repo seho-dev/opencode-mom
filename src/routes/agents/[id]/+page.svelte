@@ -28,13 +28,17 @@ async function load() {
   const id = page.params.id ?? '';
   const scope = projectId;
   const key = `${scope ?? 'global'}:${id}`;
+
   loading = true;
   data = null;
   error = '';
   missing = false;
+
   try {
     const result = await (scope === null ? config.getAgent(id) : config.getAgent(id, scope));
+
     if (seq !== request) return;
+
     data = result;
     loadedId = key;
   } catch (cause) {
@@ -46,12 +50,14 @@ async function load() {
     if (seq === request) loading = false;
   }
 }
+
 $effect(() => {
   void load();
   return () => {
     request += 1;
   };
 });
+
 function text(value: unknown) {
   return typeof value === 'string' ? value : value == null ? '—' : prettyJson(value);
 }

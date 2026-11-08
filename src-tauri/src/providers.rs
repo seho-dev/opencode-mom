@@ -71,11 +71,8 @@ pub fn custom_provider_ids(
             set.insert(key.clone());
         }
     }
-    Ok(set)
-}
 
-pub fn is_custom_provider(opencode_file: &Path, provider_id: &str) -> Result<bool, AppError> {
-    Ok(custom_provider_ids(opencode_file)?.contains(provider_id))
+    Ok(set)
 }
 
 fn ensure_custom_provider_in_doc(
@@ -91,6 +88,7 @@ fn ensure_custom_provider_in_doc(
             "model operations are only allowed for custom providers: {provider_id}"
         )));
     }
+
     Ok(())
 }
 
@@ -114,6 +112,7 @@ pub fn create_provider(
     {
         return Err(AppError::validation("provider package is required"));
     }
+
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     let providers = providers_from_root(document.raw())?;
     if providers.iter().any(|item| item.name == provider.name) {
@@ -127,6 +126,7 @@ pub fn create_provider(
         Some(provider_value(&provider)),
     )?;
     document.save(opencode_file)?;
+
     Ok(provider)
 }
 
@@ -149,6 +149,7 @@ pub fn update_provider(
     }
     apply_patches(&mut document, provider_field_patches(&provider))?;
     document.save(opencode_file)?;
+
     Ok(provider)
 }
 
@@ -163,6 +164,7 @@ pub fn delete_provider(opencode_file: &Path, provider_id: &str) -> Result<(), Ap
     }
     document.patch(&["providers", provider_id], None)?;
     document.save(opencode_file)?;
+
     Ok(())
 }
 
@@ -188,6 +190,7 @@ pub fn create_model(
         Some(model_value(&model)),
     )?;
     document.save(opencode_file)?;
+
     Ok(model)
 }
 
@@ -203,12 +206,14 @@ pub fn update_model(
             model.id
         )));
     }
+
     let model = with_model_name(model);
     let mut document = JsoncDoc::read(opencode_file, OPENCODE_SCHEMA)?;
     ensure_custom_provider_in_doc(document.raw(), &model_ref.provider_id)?;
     ensure_model_exists(document.raw(), model_ref)?;
     apply_patches(&mut document, model_field_patches(model_ref, &model)?)?;
     document.save(opencode_file)?;
+
     Ok(model)
 }
 
@@ -220,6 +225,7 @@ pub fn delete_model(opencode_file: &Path, model_ref: &ModelRef) -> Result<(), Ap
     let segments: Vec<&str> = path.iter().map(String::as_str).collect();
     document.patch(&segments, None)?;
     document.save(opencode_file)?;
+
     Ok(())
 }
 
@@ -231,6 +237,7 @@ fn apply_patches(
         let segments: Vec<_> = path.iter().map(String::as_str).collect();
         document.patch(&segments, value)?;
     }
+
     Ok(())
 }
 
@@ -259,6 +266,7 @@ fn providers_from_root(root: &Map<String, Value>) -> Result<Vec<ProviderDef>, Ap
         .map(|(name, value)| provider_from_value(name, value))
         .collect::<Result<Vec<_>, _>>()?;
     parsed.sort_by(|left, right| left.name.cmp(&right.name));
+
     Ok(parsed)
 }
 
@@ -309,6 +317,7 @@ pub fn model_from_value(id: &str, value: Value) -> Result<ModelDef, AppError> {
         headers: Option<BTreeMap<String, String>>,
         variants: Option<Vec<crate::models::ModelVariant>>,
     }
+
     let payload: ModelPayload = serde_json::from_value(value).map_err(|_| {
         AppError::validation(format!(
             "invalid OpenCode provider shape at: providers.*.models.{id}"
@@ -459,6 +468,7 @@ fn model_field_patches(
     let updated = value
         .as_object()
         .ok_or_else(|| AppError::configuration("model value must be an object"))?;
+
     Ok(updated
         .iter()
         .map(|(field, value)| {
@@ -500,6 +510,7 @@ fn to_value<T: serde::Serialize>(value: T) -> Option<Value> {
 
 fn validate_provider(provider: &ProviderDef) -> Result<(), AppError> {
     validate_id(&provider.name, IdKind::Provider)?;
+
     for (id, model) in &provider.models {
         if id != &model.id {
             return Err(AppError::validation(format!(
@@ -509,6 +520,7 @@ fn validate_provider(provider: &ProviderDef) -> Result<(), AppError> {
         }
         validate_id(&model.id, IdKind::Model)?;
     }
+
     Ok(())
 }
 
@@ -561,6 +573,7 @@ mod tests {
         let model = model_from_value("nested/model", serde_json::json!({"name": "Model"})).unwrap();
         let patches = model_field_patches(&model_ref, &model).unwrap();
         assert_eq!(patches.len(), MODEL_FIELDS.len());
+
         for field in MODEL_FIELDS {
             let mut path = model_path_vec(&model_ref);
             path.push((*field).to_owned());

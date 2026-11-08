@@ -7,6 +7,7 @@ import Harness from '$src/test-utils/harness.svelte';
 import Settings from '../+page.svelte';
 
 vi.mock('$src/shell/toast.svelte.js', () => ({ toast: vi.fn() }));
+
 function mount(overrides: Record<string, unknown> = {}) {
   const config = {
     preferences: { locale: 'en', theme: 'dark' },
@@ -34,7 +35,9 @@ function mount(overrides: Record<string, unknown> = {}) {
     }),
     ...overrides,
   } as unknown as ConfigStore;
+
   render(Settings, {}, { wrapper: Harness, wrapperProps: { config } });
+
   return config;
 }
 
@@ -56,6 +59,7 @@ test('reads OS status before enabling interaction and updates only after readbac
   const config = mount({ getAutostart, setAutostart });
   const autostart = screen.getByRole('checkbox', { name: 'Launch at login' }) as HTMLInputElement;
   const lid = screen.getByRole('checkbox', { name: 'Stay awake with lid closed' }) as HTMLInputElement;
+
   expect(autostart.disabled).toBe(true);
   expect(lid.disabled).toBe(true);
   expect(lid.checked).toBe(false);
@@ -84,10 +88,13 @@ test('failed save preserves confirmed OS status and allows retry without a start
   const setAutostart = vi.fn().mockRejectedValueOnce(new Error('permission denied')).mockResolvedValueOnce(false);
   const config = mount({ getAutostart: vi.fn().mockResolvedValue(true), setAutostart });
   const autostart = screen.getByRole('checkbox', { name: 'Launch at login' }) as HTMLInputElement;
+
   await waitFor(() => expect(autostart.checked).toBe(true));
   expect(setAutostart).not.toHaveBeenCalled();
   await fireEvent.click(autostart);
+
   const alert = await screen.findByRole('alert');
+
   expect(alert.textContent).toContain('permission denied');
   expect(autostart.checked).toBe(true);
   expect(autostart.disabled).toBe(false);
@@ -105,6 +112,7 @@ test('native unavailable is an honest disabled error state with read retry', asy
   const config = mount({ getAutostart });
   const alert = await screen.findByRole('alert');
   const autostart = screen.getByRole('checkbox', { name: 'Launch at login' }) as HTMLInputElement;
+
   expect(alert.textContent).toContain('Desktop application required');
   expect(autostart.disabled).toBe(true);
   expect(config.setAutostart).not.toHaveBeenCalled();
@@ -116,8 +124,11 @@ test('native unavailable is an honest disabled error state with read retry', asy
 test('uses OS readback instead of requested value and refresh only reads status', async () => {
   const getAutostart = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
   const setAutostart = vi.fn().mockResolvedValue(false);
+
   mount({ getAutostart, setAutostart });
+
   const autostart = screen.getByRole('checkbox', { name: 'Launch at login' }) as HTMLInputElement;
+
   await waitFor(() => expect(autostart.disabled).toBe(false));
   await fireEvent.click(autostart);
   await waitFor(() => expect(autostart.disabled).toBe(false));
@@ -133,6 +144,7 @@ test('unavailable autostart does not block the independent lid preference', asyn
   const getAutostart = vi.fn().mockRejectedValue(new Error('Login unavailable'));
   const config = mount({ getAutostart });
   const lid = screen.getByRole('checkbox', { name: 'Stay awake with lid closed' }) as HTMLInputElement;
+
   await waitFor(() => expect(lid.disabled).toBe(false));
   await fireEvent.click(lid);
   await waitFor(() => expect(lid.checked).toBe(true));
@@ -145,6 +157,7 @@ test('unavailable autostart does not block the independent lid preference', asyn
 
 test('mount and system refresh read local app details without checking updates', async () => {
   const config = mount();
+
   await screen.findByText('Installed version: 0.1.0');
   expect(config.getAppInfo).toHaveBeenCalledOnce();
   expect(config.checkForUpdates).not.toHaveBeenCalled();
@@ -158,6 +171,7 @@ test('mount and system refresh read local app details without checking updates',
 
 test('failed default plugin persistence restores confirmed selection and allows retrying the same option', async () => {
   vi.mocked(toast).mockClear();
+
   const savePreferences = vi
     .fn()
     .mockRejectedValueOnce(new Error('disk is read-only'))
@@ -167,6 +181,7 @@ test('failed default plugin persistence restores confirmed selection and allows 
       savePreferences,
       getAutostart: async () => false,
       getLidProtection: async () => ({ enabled: false, phase: 'disabled' }),
+
       getLoggingState: async () => ({
         enabled: false,
         recording: false,
@@ -174,6 +189,7 @@ test('failed default plugin persistence restores confirmed selection and allows 
         error: null,
         droppedRecords: 0,
       }),
+
       getAppInfo: async () => ({ version: '0.1.0', platform: 'other' }),
       getMomHttpSettings: async () => ({ port: 18765, allowLan: false }),
       getMcpProxySettings: async () => ({ enabled: false, idleTimeout: 300, maxUnits: 16, revision: 1 }),
@@ -182,9 +198,12 @@ test('failed default plugin persistence restores confirmed selection and allows 
     false,
     false,
   );
+
   render(Settings, {}, { wrapper: Harness, wrapperProps: { config } });
+
   const native = screen.getByRole('button', { name: 'Native' }) as HTMLButtonElement;
   const slim = screen.getByRole('button', { name: 'Slim' }) as HTMLButtonElement;
+
   expect(native.getAttribute('aria-pressed')).toBe('true');
   expect(slim.getAttribute('aria-pressed')).toBe('false');
   await fireEvent.click(native);

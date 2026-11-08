@@ -220,6 +220,7 @@ pub async fn list_agents(
     let paths = state.inner().clone();
     super::spawn_blocking_task("Agent discovery", move || {
         let agents = agents::list(&paths.for_project(project_id)?)?;
+
         Ok(agents.into_iter().map(Into::into).collect())
     })
     .await
@@ -343,6 +344,7 @@ fn validate_agent_model_reference(
     if model.is_empty() {
         return Ok(());
     }
+
     let model_ref = crate::providers::ModelRef::parse(model).map_err(|error| {
         AppError::validation(format!("agent model must be provider/model: {error}"))
     })?;

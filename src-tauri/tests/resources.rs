@@ -115,6 +115,7 @@ fn project_scope_reads_only_exact_root_sources_and_preserves_global_paths() {
             "skills": ["./team-skills", home.0.join("custom"), "~/custom", "http://127.0.0.1:1/ignored"]
         }).to_string()));
     }
+
     for outside in [
         ".config/opencode",
         "workspace",
@@ -127,6 +128,7 @@ fn project_scope_reads_only_exact_root_sources_and_preserves_global_paths() {
     }
     home.write(".config/opencode/agents/global.md", "global");
     home.write(".config/opencode/skills/Global.md", "global");
+
     for ignored in [
         "workspace/project/team-skills",
         "workspace/project/.claude/skills",
@@ -228,6 +230,7 @@ fn project_scope_reads_only_exact_root_sources_and_preserves_global_paths() {
         paths.for_project(Some(project.id)).unwrap_err().code,
         ErrorCode::NotFound
     );
+
     for error in [
         agents::list(&scoped).unwrap_err(),
         mcp::list(&scoped).unwrap_err(),
@@ -336,6 +339,7 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
     let config_before = fs::read(paths.config_file()).unwrap();
     let agent: commands::AgentDefinitionDto =
         serde_json::from_value(json!({"id":"new", "source":"inline", "storage":"inline"})).unwrap();
+
     for id in [project.id, uuid::Uuid::new_v4()] {
         let state = || app.state::<ConfigPaths>();
         let errors = [
@@ -476,6 +480,7 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
             .selected_project_id,
         Some(project.id)
     );
+
     for error in [
         block_on(commands::list_agents(app.state(), Some(project.id))).unwrap_err(),
         block_on(commands::get_agent(
@@ -614,6 +619,7 @@ fn project_scope_rejects_managed_global_roots_but_not_ancestors_or_unrelated_pro
         home.0.join(".config"),
         home.0.join("cwd"),
     );
+
     for relative in [
         ".config/opencode",
         ".config/opencode/agents",
@@ -637,6 +643,7 @@ fn project_scope_rejects_managed_global_roots_but_not_ancestors_or_unrelated_pro
             "{relative}",
         );
     }
+
     for relative in [
         "",
         ".config",
@@ -661,6 +668,7 @@ fn project_scope_rejects_managed_global_roots_but_not_ancestors_or_unrelated_pro
 #[test]
 fn project_scope_rejects_global_directory_aliases_and_fixed_source_aliases() {
     use std::os::unix::fs::symlink;
+
     for global_is_alias in [false, true] {
         let home = Home::new();
         let global = home.0.join(".config/opencode");
@@ -686,6 +694,7 @@ fn project_scope_rejects_global_directory_aliases_and_fixed_source_aliases() {
             ErrorCode::ValidationFailed
         );
     }
+
     let home = Home::new();
     let paths = home.paths();
     let global_file = home.write(".config/opencode/opencode.json", "{}");
@@ -699,6 +708,7 @@ fn project_scope_rejects_global_directory_aliases_and_fixed_source_aliases() {
         paths.for_project(Some(project.id)).unwrap_err().code,
         ErrorCode::ValidationFailed
     );
+
     for error in [
         agents::list(&scoped).unwrap_err(),
         mcp::list(&scoped).unwrap_err(),
@@ -748,6 +758,7 @@ fn unrelated_unreadable_global_resources_do_not_block_project_browsing() {
     if unsafe { libc::geteuid() } == 0 {
         return;
     }
+
     let home = Home::new();
     let global = home.0.join(".config/opencode");
     let root = home.0.join("project");
@@ -962,6 +973,7 @@ fn mcp_replacements_do_not_inherit_local_fields_or_validate_using_shadow_default
         server.source_paths,
         vec![lower.display().to_string(), higher.display().to_string()]
     );
+
     for replacement in [
         json!({"url":"https://invalid.test"}),
         json!({"type":"local"}),
@@ -1174,6 +1186,7 @@ fn serve(
                     break;
                 }
             }
+
             let request = String::from_utf8(request).unwrap();
             let path = format!(
                 "/catalog{}",
@@ -1373,6 +1386,7 @@ fn get_skill_reports_matching_http_winner_failures_and_ignores_unrelated_catalog
             ],
         );
     }
+
     let home = Home::new();
     home.write(".config/opencode/skills/Visible.md", "visible");
     let (url, server) = serve(vec![(
@@ -1397,6 +1411,7 @@ fn get_skill_fails_honestly_when_http_index_cannot_rule_out_a_requested_override
             if local {
                 home.write(".config/opencode/skills/Wanted.md", "possible shadow");
             }
+
             let (url, server) = serve(vec![("/catalog/index.json", status, body.to_owned(), None)]);
             configure_catalog(&home, &url);
             let error = skills::get(&home.paths(), "Wanted").unwrap_err();
@@ -1405,6 +1420,7 @@ fn get_skill_fails_honestly_when_http_index_cannot_rule_out_a_requested_override
             assert_eq!(server.join().unwrap(), vec!["/catalog/index.json"]);
         }
     }
+
     let home = Home::new();
     home.write("last/Wanted.md", "verified final winner");
     let (url, server) = serve(vec![(
@@ -1444,6 +1460,7 @@ fn inaccessible_skill_source_and_malformed_config_leave_successful_sources_visib
 #[test]
 fn deleting_mcp_keeps_original_modes_and_removes_owned_backups_and_temp_files() {
     use std::os::unix::fs::PermissionsExt;
+
     for mode in [0o644, 0o600] {
         let home = Home::new();
         let original = r#"{
@@ -1843,6 +1860,7 @@ fn invalid_mcp_drafts_do_not_write_files() {
         assert_eq!(error.code, ErrorCode::ValidationFailed);
         assert_eq!(fs::read_dir(&home.0).unwrap().count(), 0);
     }
+
     for name in ["", " ", "bad\nname", &"a".repeat(257)] {
         let home = Home::new();
         assert!(mcp::create(
@@ -1872,6 +1890,7 @@ fn mcp_v2_timeout_protocol_codemode_and_oauth_roundtrip_preserve_secrets_and_unk
     let saved = mcp::update(&home.paths(), mcp_update(&created, edited.clone())).unwrap();
     assert_eq!(saved.config, edited.as_object().unwrap().clone());
     assert_eq!(mcp::get(&home.paths(), "full-v2").unwrap(), saved);
+
     for (index, options) in [
         json!({"timeout":{},"oauth":{},"protocol":"auto","codemode":false}),
         json!({"timeout":{"startup":1},"oauth":false,"protocol":"legacy"}),
@@ -1907,6 +1926,7 @@ fn invalid_documented_v2_mcp_fields_reject_create_and_update_without_writes() {
     ] {
         invalid.push(json!({"timeout":timeout}));
     }
+
     for field in ["startup", "catalog", "execution"] {
         for value in [
             json!(0),
@@ -1922,6 +1942,7 @@ fn invalid_documented_v2_mcp_fields_reject_create_and_update_without_writes() {
             invalid.push(json!({"timeout":timeout}));
         }
     }
+
     for protocol in [
         json!("2025-03-26"),
         json!("AUTO"),
@@ -1931,9 +1952,11 @@ fn invalid_documented_v2_mcp_fields_reject_create_and_update_without_writes() {
     ] {
         invalid.push(json!({"protocol":protocol}));
     }
+
     for codemode in [json!("true"), json!(1), json!(null)] {
         invalid.push(json!({"codemode":codemode}));
     }
+
     for field in [
         "client_id",
         "client_secret",
@@ -1945,6 +1968,7 @@ fn invalid_documented_v2_mcp_fields_reject_create_and_update_without_writes() {
         oauth.insert(field.to_owned(), json!(false));
         invalid.push(json!({"oauth":oauth}));
     }
+
     for value in [
         json!(0),
         json!(65536),
@@ -1955,9 +1979,11 @@ fn invalid_documented_v2_mcp_fields_reject_create_and_update_without_writes() {
     ] {
         invalid.push(json!({"oauth":{"callback_port":value}}));
     }
+
     for oauth in [json!(true), json!(null), json!([]), json!("secret-value")] {
         invalid.push(json!({"oauth":oauth}));
     }
+
     let existing = Home::new();
     let current = mcp::create(&existing.paths(), mcp_draft("existing", json!({"type":"remote","url":"https://example.test","oauth":{"client_secret":"real-secret"},"future":"keep"}))).unwrap();
     let before = fs::read_to_string(&current.source_path).unwrap();
@@ -2026,6 +2052,7 @@ fn skill_autoinvoke_alias_and_explicit_metadata_precedence_are_preserved_with_fu
         assert_eq!(fetched.autoinvoke, expected, "{id}");
         assert_eq!(fetched.content, content);
     }
+
     let listed = skills::list(&home.paths()).unwrap();
     assert_eq!(listed.data.len(), 7);
     assert!(listed.diagnostics.is_empty());
@@ -2061,6 +2088,7 @@ fn local_skill_create_and_flat_nested_unicode_edits_preserve_full_markdown_and_s
         }
     )
     .is_err());
+
     for (relative, id) in [
         (".config/opencode/skills/Flat.md", "Flat"),
         (".config/opencode/skills/nested/深い/SKILL.md", "深い"),
@@ -2120,6 +2148,7 @@ fn resource_management_preserves_managed_root_and_duplicate_config_symlinks() {
     for name in ["opencode.json", "opencode.jsonc"] {
         symlink(&config, global.join(name)).unwrap();
     }
+
     let current = mcp::get(&home.paths(), "linked").unwrap();
     let saved = mcp::update(
         &home.paths(),
@@ -2130,6 +2159,7 @@ fn resource_management_preserves_managed_root_and_duplicate_config_symlinks() {
     )
     .unwrap();
     assert_eq!(saved.source_paths.len(), 2);
+
     for name in ["opencode.json", "opencode.jsonc"] {
         assert!(fs::symlink_metadata(global.join(name))
             .unwrap()
@@ -2228,6 +2258,7 @@ fn skill_create_blocks_invalid_ids_content_duplicates_and_uncertain_discovery() 
         .is_err());
         assert_eq!(fs::read_dir(&home.0).unwrap().count(), 0);
     }
+
     for content in [
         "",
         " ",
@@ -2246,9 +2277,11 @@ fn skill_create_blocks_invalid_ids_content_duplicates_and_uncertain_discovery() 
         .is_err());
         assert_eq!(fs::read_dir(&home.0).unwrap().count(), 0);
     }
+
     let home = Home::new();
     home.write(".claude/skills/Flat.md", "duplicate");
     home.write(".agents/skills/nested/Directory/SKILL.md", "duplicate");
+
     for id in ["Flat", "Directory"] {
         assert!(skills::create(
             &home.paths(),
@@ -2278,6 +2311,7 @@ fn skill_create_refuses_destination_symlinks_including_dangling_and_update_prese
     let home = Home::new();
     let root = home.0.join(".config/opencode/skills");
     fs::create_dir_all(&root).unwrap();
+
     for id in ["Escape", "Dangling"] {
         let target = home
             .0
@@ -2297,6 +2331,7 @@ fn skill_create_refuses_destination_symlinks_including_dangling_and_update_prese
         assert!(!target.join("SKILL.md").exists());
         fs::remove_file(root.join(id)).unwrap();
     }
+
     let real = home.write("installed.md", "original body");
     fs::set_permissions(&real, fs::Permissions::from_mode(0o644)).unwrap();
     let alias = root.join("Linked.md");

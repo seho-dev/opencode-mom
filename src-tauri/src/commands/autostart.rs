@@ -13,6 +13,7 @@ pub async fn get_autostart(app: tauri::AppHandle) -> Result<bool, AppError> {
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = app;
+
             Err(AppError::configuration(
                 "autostart is unsupported on this platform",
             ))
@@ -41,6 +42,7 @@ pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool,
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             let _ = (app, enabled);
+
             Err(AppError::configuration(
                 "autostart is unsupported on this platform",
             ))

@@ -20,12 +20,16 @@ const needsAttention = $derived(!!state && (!!state.error || (state.enabled && !
 
 export async function refresh() {
   if (!mounted || !active || pending) return;
+
   const version = generation;
+
   reloadQueued = false;
   pending = 'read';
   error = null;
+
   try {
     const result = await config.getLoggingState();
+
     if (mounted && active && version === generation) state = result;
   } catch {
     if (mounted && active && version === generation) error = 'read';
@@ -39,12 +43,16 @@ export async function refresh() {
 
 async function setEnabled(next: boolean, control: HTMLElement) {
   if (!mounted || !active || !state || pending) return;
+
   const version = generation;
   const restoreFocus = document.activeElement === control;
+
   pending = 'save';
   error = null;
+
   try {
     const result = await config.setLoggingEnabled(next);
+
     if (mounted && active && version === generation) {
       state = result;
       if (result.enabled !== next) error = 'save';
@@ -76,7 +84,9 @@ onMount(() => {
 
 $effect(() => {
   if (!mounted) return;
+
   const entered = active;
+
   untrack(() => {
     generation += 1;
     reloadQueued = entered;

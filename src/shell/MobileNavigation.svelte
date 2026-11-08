@@ -23,16 +23,19 @@ async function openDrawer() {
   await tick();
   closeButton?.focus();
 }
+
 async function closeDrawer() {
   open = false;
   await tick();
   menuButton?.focus();
 }
+
 async function navigateFromDrawer(event: MouseEvent, href: string) {
   event.preventDefault();
   await goto(href);
   open = false;
 }
+
 async function reloadFromDrawer() {
   try {
     await config.reloadOpencode();
@@ -41,12 +44,15 @@ async function reloadFromDrawer() {
     /* global feedback */
   }
 }
+
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     closeDrawer();
     return;
   }
+
   if (event.key !== 'Tab') return;
+
   const focusable = [
     closeButton,
     ...navigationLinks,
@@ -60,6 +66,7 @@ function handleKeydown(event: KeyboardEvent) {
     : currentIndex === focusable.length - 1
       ? 0
       : currentIndex + 1;
+
   event.preventDefault();
   focusable[nextIndex]?.focus();
 }

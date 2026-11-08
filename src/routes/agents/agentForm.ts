@@ -1,10 +1,12 @@
 import { createForm } from '@tanstack/svelte-form';
 import { z } from 'zod';
+import { readError } from '$src/components/configuration/read-error.js';
 import type { PermissionRule } from '$src/types/agents.js';
 import type { PermissionParse, PermissionView } from '$src/types/ui.js';
 import { isBuiltinAgentId, isJsonObject, joinModelSelector, prettyJson, splitModelSelector } from '$src/utils/index.js';
 
 export { joinModelSelector, splitModelSelector };
+
 export const pretty = prettyJson;
 
 export type AgentFieldValues = {
@@ -86,11 +88,7 @@ export type AgentForm = ReturnType<typeof createAgentForm>;
 export function fieldError(errors: unknown[]): string {
   return errors
     .map((error) =>
-      typeof error === 'string'
-        ? error
-        : error && typeof error === 'object' && 'message' in error
-          ? String(error.message)
-          : '',
+      typeof error === 'string' || (error && typeof error === 'object' && 'message' in error) ? readError(error) : '',
     )
     .filter(Boolean)
     .join(', ');
@@ -98,6 +96,7 @@ export function fieldError(errors: unknown[]): string {
 
 export function agentMutationFields(values: AgentFormValues): Record<string, unknown> {
   const rules = permissionRules(values.permission);
+
   return {
     model: values.model ? joinModelSelector(values.model, values.variant) : undefined,
     mode: values.mode || undefined,
@@ -113,6 +112,7 @@ export function agentMutationFields(values: AgentFormValues): Record<string, unk
 
 const isRule = (value: unknown): value is PermissionRule => {
   if (!isJsonObject(value)) return false;
+
   return typeof value.action === 'string' && typeof value.resource === 'string' && typeof value.effect === 'string';
 };
 
@@ -130,7 +130,9 @@ export function parsePermission(value: string): PermissionParse {
 
 export function permissionView(permission: string): PermissionView {
   const parsed = parsePermission(permission);
+
   if (parsed.ok) return { mode: 'rules', rules: parsed.rules };
+
   // Distinguish malformed JSON from a valid array with non-rule entries.
   try {
     return Array.isArray(JSON.parse(permission || '[]')) ? { mode: 'json' } : { mode: 'invalid' };
@@ -146,6 +148,8 @@ export function serializePermissionRules(rules: PermissionRule[]): string {
 // Returns the parsed rules, or throws so callers surface the textarea's error state.
 export function permissionRules(permission: string): PermissionRule[] {
   const parsed = parsePermission(permission);
+
   if (!parsed.ok) throw new Error('Permissions must be an array of {action, resource, effect} rules');
+
   return parsed.rules;
 }

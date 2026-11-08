@@ -6,7 +6,7 @@ Paths name source modules; `settings/SettingsSearch.svelte` is relative to `src/
 
 - **Project and update messages**: `header.*` covers the GitHub opener; `settings.*` covers manual version checks, macOS trust guidance, and optional Star support. Keep security steps/quarantine commands equivalent across locales; Star support never gates downloads.
 
-- **CLI update messages**: `settings.opencode*` covers local installation details, every backend method/reason, explicit stable checks, exact path/version confirmation, and separate command/readback failures. Keep local-only/no-sudo/no-service-restart warnings equivalent across locales; app updates stay separate.
+- **CLI update messages**: `settings.opencode*` covers local installation details, the displayed method/reason strings, explicit stable checks, exact path/version confirmation, and separate command/readback failures. Keep local-only/no-sudo/no-service-restart warnings equivalent across locales; app updates stay separate.
 
 - **Service operation messages**: Model catalog loading/errors and lid-monitor scope describe the selected local OpenCode service, not CLI transport. Keep CLI wording for installation, updates and Shared Service bootstrap only.
 

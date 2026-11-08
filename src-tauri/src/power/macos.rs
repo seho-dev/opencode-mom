@@ -37,6 +37,7 @@ fn random_token() -> Result<[u8; 32], AppError> {
     File::open("/dev/urandom")
         .and_then(|mut file| file.read_exact(&mut token))
         .map_err(|_| error("Could not generate the helper authentication token"))?;
+
     Ok(token)
 }
 
@@ -69,6 +70,7 @@ impl StagedSource {
         file.write_all(HELPER)
             .and_then(|_| file.sync_all())
             .map_err(|_| error("Could not persist the embedded helper bytes"))?;
+
         Ok(source)
     }
 }
@@ -137,6 +139,7 @@ fn authorize(source: &Path, token: &[u8; 32], uid: u32, pid: u32) -> Result<(), 
     if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
         return Err(error("Could not bound the authorization result"));
     }
+
     let deadline = Instant::now() + AUTH_TIMEOUT;
     let mut output = Vec::new();
     let mut exited = None;
@@ -155,18 +158,21 @@ fn authorize(source: &Path, token: &[u8; 32], uid: u32, pid: u32) -> Result<(), 
             Err(io) if io.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(_) => return Err(error("Could not read the authorization result")),
         }
+
         if exited.is_none() {
             exited = child
                 .0
                 .try_wait()
                 .map_err(|_| error("Could not collect administrator authorization"))?;
         }
+
         if let Some(status) = exited {
             if !status.success() {
                 return Err(error(
                     "Administrator authorization or safe helper launch failed",
                 ));
             }
+
             if eof {
                 return if output == b"READY\n" || output == b"READY\r\n" {
                     Ok(())
@@ -175,6 +181,7 @@ fn authorize(source: &Path, token: &[u8; 32], uid: u32, pid: u32) -> Result<(), 
                 };
             }
         }
+
         if Instant::now() >= deadline {
             return Err(error("Administrator authorization timed out"));
         }
@@ -198,6 +205,7 @@ fn verify_socket_path(uid: u32) -> Result<(), AppError> {
             "The helper control socket has unsafe ownership or permissions",
         ));
     }
+
     Ok(())
 }
 
@@ -208,6 +216,7 @@ fn verify_root_peer(stream: &UnixStream) -> Result<i32, AppError> {
     if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) } != 0 || uid != 0 {
         return Err(error("The control peer is not the authorized root helper"));
     }
+
     let mut pid: libc::pid_t = 0;
     let mut length = std::mem::size_of_val(&pid) as libc::socklen_t;
     // SAFETY: stream keeps its fd alive; pid is writable for the advertised pid_t
@@ -226,6 +235,7 @@ fn verify_root_peer(stream: &UnixStream) -> Result<i32, AppError> {
     {
         return Err(error("Could not verify the root helper process"));
     }
+
     Ok(pid)
 }
 
@@ -250,6 +260,7 @@ fn connect_bounded() -> Result<UnixStream, AppError> {
     let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
     address.sun_family = libc::AF_UNIX as libc::sa_family_t;
     address.sun_len = std::mem::size_of_val(&address) as u8;
+
     for (destination, source) in address.sun_path.iter_mut().zip(SOCKET.as_bytes()) {
         *destination = *source as libc::c_char;
     }
@@ -268,6 +279,7 @@ fn connect_bounded() -> Result<UnixStream, AppError> {
                 "Could not connect to the administrator-authorized helper",
             ));
         }
+
         let mut descriptor = libc::pollfd {
             fd,
             events: libc::POLLOUT,
@@ -278,6 +290,7 @@ fn connect_bounded() -> Result<UnixStream, AppError> {
         if unsafe { libc::poll(&mut descriptor, 1, 2000) } <= 0 {
             return Err(error("The helper connection timed out"));
         }
+
         let mut status: libc::c_int = 0;
         let mut length = std::mem::size_of_val(&status) as libc::socklen_t;
         // SAFETY: stream owns fd; status has the advertised c_int output capacity
@@ -297,6 +310,7 @@ fn connect_bounded() -> Result<UnixStream, AppError> {
             return Err(error("The helper connection failed"));
         }
     }
+
     Ok(stream)
 }
 
@@ -311,6 +325,7 @@ fn exchange<const N: usize>(stream: &mut UnixStream, request: &[u8]) -> Result<[
                 "The helper acknowledgment timed out; recovery may be required",
             ));
         }
+
         if sent < request.len() {
             match stream.write(&request[sent..]) {
                 Ok(0) => return Err(error("The authorized helper disconnected")),
@@ -326,16 +341,19 @@ fn exchange<const N: usize>(stream: &mut UnixStream, request: &[u8]) -> Result<[
                         "The helper exited without a verified restoration acknowledgment",
                     ))
                 }
+
                 Ok(count) => received += count,
                 Err(io) if io.kind() == std::io::ErrorKind::WouldBlock => {}
                 Err(io) if io.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => return Err(error("Could not read the bounded helper acknowledgment")),
             }
         }
+
         if received < N {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+
     Ok(response)
 }
 
@@ -371,6 +389,7 @@ impl NativeController {
             if matches!(operation, protocol::Operation::Busy(_)) && !flag {
                 return Err(error("The helper did not confirm lid protection"));
             }
+
             Ok(())
         });
         if acknowledged {
@@ -378,6 +397,7 @@ impl NativeController {
         } else {
             self.stream.take();
         }
+
         if result.is_err() {
             self.restoration_unconfirmed = true;
         } else if !matches!(operation, protocol::Operation::Busy(_)) {
@@ -392,6 +412,7 @@ impl PowerController for NativeController {
         if self.stream.is_some() {
             return Ok(());
         }
+
         if self.authorization_attempted {
             return Err(error(
                 "Restart the app to authorize or recover the macOS helper again",
@@ -403,6 +424,7 @@ impl PowerController for NativeController {
         if uid == 0 {
             return Err(error("Run the desktop app as a regular user, not as root"));
         }
+
         let token = random_token()?;
         let source = StagedSource::create(&token)?;
         self.restoration_unconfirmed = true;
@@ -415,6 +437,7 @@ impl PowerController for NativeController {
         self.stream = Some(stream);
         self.sequence = 1;
         self.restoration_unconfirmed = false;
+
         Ok(())
     }
 
@@ -444,6 +467,7 @@ impl PowerController for NativeController {
         if self.stream.is_none() {
             return self.idle();
         }
+
         let result = self.send(protocol::Operation::Stop);
         if result.is_ok() {
             self.stream.take();

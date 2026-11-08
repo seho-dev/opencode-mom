@@ -62,18 +62,22 @@ function mount(list: (typeof lists)[number], flags: { loading?: boolean; saving?
     formResetVersion: 7,
     refresh: vi.fn().mockResolvedValue(undefined),
   };
+
   render(list.component, {}, { wrapper: Harness, wrapperProps: { config: config as unknown as ConfigStore } });
+
   return { config, guards, button: screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement };
 }
 
 test.each(lists)('$name refresh reads the central store and stays disabled for the full request', async (list) => {
   const { config, guards, button } = mount(list);
   let finish!: () => void;
+
   config.refresh.mockReturnValueOnce(
     new Promise<void>((resolve) => {
       finish = resolve;
     }),
   );
+
   const draft = config.draftRecovery;
   const error = config.error;
 
@@ -109,6 +113,7 @@ test.each(lists.flatMap((list) => ['loading', 'saving'].map((flag) => ({ ...list
   '$name refresh cannot run while $flag',
   async (list) => {
     const { config, button } = mount(list, { [list.flag]: true });
+
     expect(button.disabled).toBe(true);
     await fireEvent.click(button);
     expect(config.refresh).not.toHaveBeenCalled();

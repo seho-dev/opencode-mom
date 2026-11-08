@@ -18,6 +18,7 @@ pub fn project_slim_active(
         group.slim_agent_overrides.as_deref(),
     )?;
     document.patch(&["preset"], Some(Value::String(group.name.clone())))?;
+
     Ok(document)
 }
 
@@ -29,6 +30,7 @@ pub fn update_slim_preset(
 ) -> Result<JsoncDoc, crate::error::AppError> {
     let mut document = source.clone();
     merge_slim_preset(&mut document, name, overrides)?;
+
     Ok(document)
 }
 
@@ -41,14 +43,17 @@ pub fn rename_slim_preset(
     if let Some(preset) = slim_preset(source, old_name) {
         let entries: Vec<(String, Value)> =
             preset.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
         for (key, value) in entries {
             document.patch(&["presets", new_name, key.as_str()], Some(value))?;
         }
         document.patch(&["presets", old_name], None)?;
     }
+
     if active_slim_preset(source) == Some(old_name) {
         document.patch(&["preset"], Some(Value::String(new_name.to_owned())))?;
     }
+
     Ok(document)
 }
 
@@ -61,6 +66,7 @@ pub fn delete_slim_preset(
     if active_slim_preset(source) == Some(name) {
         document.patch(&["preset"], None)?;
     }
+
     Ok(document)
 }
 
@@ -94,11 +100,14 @@ fn merge_slim_preset(
         if slim_preset(document, name).is_none() {
             document.patch(&["presets", name], Some(Value::Object(Map::new())))?;
         }
+
         return Ok(());
     }
+
     for (agent, value) in bindings {
         document.patch(&["presets", name, agent], Some(value))?;
     }
+
     Ok(())
 }
 
@@ -116,13 +125,16 @@ pub fn project_omo(
     if group.group_type != GroupType::Omo {
         return Ok(document);
     }
+
     for (name, value) in mapping_values(group.omo_agent_overrides.as_deref().unwrap_or_default()) {
         document.patch(&["opencode", "agents", name.as_str()], Some(value))?;
     }
+
     for (name, value) in category_values(group.omo_category_mappings.as_deref().unwrap_or_default())
     {
         document.patch(&["opencode", "categories", name.as_str()], Some(value))?;
     }
+
     Ok(document)
 }
 
@@ -135,9 +147,11 @@ pub fn remove_omo_mappings(
     for (name, _) in mapping_values(group.omo_agent_overrides.as_deref().unwrap_or_default()) {
         document.patch(&["opencode", "agents", name.as_str()], None)?;
     }
+
     for (name, _) in category_values(group.omo_category_mappings.as_deref().unwrap_or_default()) {
         document.patch(&["opencode", "categories", name.as_str()], None)?;
     }
+
     Ok(document)
 }
 
@@ -159,6 +173,7 @@ pub fn project_opencode(
     if group.group_type != GroupType::Native {
         return Ok((document, warnings));
     }
+
     if !document.raw().get("agents").is_some_and(Value::is_object) {
         for binding in group
             .open_code_agent_overrides
@@ -170,8 +185,10 @@ pub fn project_opencode(
                 binding.agent_name
             ));
         }
+
         return Ok((document, warnings));
     }
+
     for binding in group
         .open_code_agent_overrides
         .iter()
@@ -200,6 +217,7 @@ pub fn project_opencode(
         let path = ["agents", binding.agent_name.as_str(), "model"];
         document.patch(&path, Some(Value::String(selector)))?;
     }
+
     Ok((document, warnings))
 }
 
@@ -217,6 +235,7 @@ pub fn remove_opencode_overrides(
     {
         document.patch(&["agents", binding.agent_name.as_str(), "model"], None)?;
     }
+
     Ok(document)
 }
 

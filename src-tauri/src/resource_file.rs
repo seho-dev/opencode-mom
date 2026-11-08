@@ -33,8 +33,10 @@ impl Snapshot {
             Ok(path) => path,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 absent(logical)?;
+
                 return Ok(None);
             }
+
             Err(error) => return Err(AppError::io("resolve", logical, error)),
         };
         after_resolve(logical);
@@ -59,6 +61,7 @@ impl Snapshot {
         validate_metadata(&self.path, &self.identity)?;
         let current = fs::read_to_string(&self.path)
             .map_err(|error| AppError::io("read", &self.path, error))?;
+
         for alias in &self.aliases {
             validate_source(alias, &self.path)?;
         }
@@ -66,6 +69,7 @@ impl Snapshot {
         if current != self.content {
             return Err(changed(&self.path));
         }
+
         Ok(())
     }
 }
@@ -142,11 +146,14 @@ fn replace_inner(
                 AppError::io("replace (original retained in .bak)", &snapshot.path, error)
             })?;
         }
+
         Ok(())
     })();
+
     for temporary in staged {
         let _ = fs::remove_file(temporary);
     }
+
     if result.is_ok() {
         for backup in backups {
             if let Err(error) = fs::remove_file(&backup) {
@@ -185,6 +192,7 @@ pub(crate) fn delete_checked(
             return Err(changed(logical));
         }
     }
+
     #[cfg(not(unix))]
     if current.created().ok() != identity.created().ok()
         || current.file_type() != identity.file_type()
@@ -217,6 +225,7 @@ impl Directory {
                 parent.validate()?;
                 resolved
             }
+
             Err(error) => return Err(AppError::io("resolve directory", logical, error)),
         };
         let directory = Self {
@@ -226,6 +235,7 @@ impl Directory {
             resolved,
         };
         directory.validate()?;
+
         Ok(directory)
     }
 
@@ -243,6 +253,7 @@ impl Directory {
             resolved,
         };
         child.validate()?;
+
         Ok(child)
     }
 
@@ -265,6 +276,7 @@ impl Directory {
         if current.created().ok() != self.identity.created().ok() {
             return Err(changed(&self.logical));
         }
+
         Ok(())
     }
 
@@ -292,6 +304,7 @@ impl Directory {
             // Hard linking publishes complete content without replacing any existing file or symlink.
             fs::hard_link(&temporary, &target)
                 .map_err(|error| AppError::io("create", &target, error))?;
+
             Ok(())
         })();
         let _ = fs::remove_file(temporary);
@@ -319,6 +332,7 @@ fn regular_file(path: &Path) -> Result<fs::Metadata, AppError> {
             path.display()
         )));
     }
+
     Ok(metadata)
 }
 
@@ -334,12 +348,14 @@ fn validate_metadata(path: &Path, expected: &fs::Metadata) -> Result<(), AppErro
             return Err(changed(path));
         }
     }
+
     #[cfg(not(unix))]
     if current.created().ok() != expected.created().ok()
         || current.permissions().readonly() != expected.permissions().readonly()
     {
         return Err(changed(path));
     }
+
     Ok(())
 }
 
@@ -348,6 +364,7 @@ fn validate_source(logical: &Path, resolved: &Path) -> Result<(), AppError> {
         return Err(changed(logical));
     }
     regular_file(resolved)?;
+
     Ok(())
 }
 
@@ -359,6 +376,7 @@ fn write_new(path: &Path, bytes: &[u8]) -> Result<(), AppError> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
+
     let mut file = options
         .open(path)
         .map_err(|error| AppError::io("create", path, error))?;

@@ -19,25 +19,36 @@ const view = $derived(permissionView(permission));
 function commit(rules: PermissionRule[]) {
   onchange(serializePermissionRules(rules));
 }
+
 function update(index: number, field: keyof PermissionRule, value: string) {
   if (view.mode !== 'rules') return;
+
   commit(view.rules.map((rule, i) => (i === index ? { ...rule, [field]: value } : rule)));
 }
+
 function move(index: number, delta: number) {
   if (view.mode !== 'rules') return;
+
   const rules = [...view.rules];
   const target = index + delta;
+
   if (target < 0 || target >= rules.length) return;
+
   const [rule] = rules.splice(index, 1);
+
   rules.splice(target, 0, rule as PermissionRule);
   commit(rules);
 }
+
 function remove(index: number) {
   if (view.mode !== 'rules') return;
+
   commit(view.rules.filter((_, i) => i !== index));
 }
+
 function add() {
   const rules = view.mode === 'rules' ? view.rules : [];
+
   commit([...rules, { action: '*', resource: '*', effect: 'ask' }]);
 }
 </script>

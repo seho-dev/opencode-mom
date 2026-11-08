@@ -267,6 +267,7 @@ impl AppConfig {
                 )));
             }
         }
+
         Ok(())
     }
 }
@@ -278,6 +279,7 @@ pub fn load_config(path: &Path) -> Result<AppConfig, AppError> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(AppConfig::default())
         }
+
         Err(error) => return Err(AppError::io("read", path, error)),
     };
     let mut config: AppConfig = serde_json::from_slice(&content).map_err(|error| {
@@ -287,6 +289,7 @@ pub fn load_config(path: &Path) -> Result<AppConfig, AppError> {
         .state
         .selected_project_id
         .filter(|id| config.projects.iter().any(|project| project.id == *id));
+
     Ok(config)
 }
 
@@ -311,6 +314,7 @@ pub fn add_project(config_file: &Path, path: &str) -> Result<ProjectFolder, AppE
     };
     config.state.selected_project_id = Some(project.id);
     save_config(config_file, &config)?;
+
     Ok(project)
 }
 
@@ -335,6 +339,7 @@ pub fn select_project(config_file: &Path, id: Option<Uuid>) -> Result<(), AppErr
     if id.is_some_and(|id| !config.projects.iter().any(|project| project.id == id)) {
         return Err(AppError::not_found("project not found"));
     }
+
     config.state.selected_project_id = id;
     save_config(config_file, &config)
 }
@@ -358,6 +363,7 @@ pub fn save_config(path: &Path, config: &AppConfig) -> Result<(), AppError> {
             crate::resource_file::absent(path)?;
             path.to_owned()
         }
+
         Err(error) => return Err(AppError::io("resolve application config", path, error)),
     };
     let directory = target
@@ -375,6 +381,7 @@ pub fn save_config(path: &Path, config: &AppConfig) -> Result<(), AppError> {
                 path.display()
             )))
         }
+
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(AppError::io("inspect application config", path, error)),
     };
@@ -389,6 +396,7 @@ pub fn save_config(path: &Path, config: &AppConfig) -> Result<(), AppError> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
+
     let mut file = options
         .open(&temporary)
         .map_err(|error| AppError::io("create", &temporary, error))?;
@@ -409,6 +417,7 @@ pub fn save_config(path: &Path, config: &AppConfig) -> Result<(), AppError> {
             // Publication committed; callers must not roll back a successful save.
             eprintln!("Application config saved, but directory sync failed");
         }
+
         Ok(())
     })();
     let _ = fs::remove_file(&temporary);

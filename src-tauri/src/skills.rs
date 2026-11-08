@@ -173,6 +173,7 @@ fn discover_until(
             &mut result.diagnostics,
         );
     }
+
     for source in configured_sources(paths, &mut result.diagnostics) {
         if source
             .get(..7)
@@ -187,6 +188,7 @@ fn discover_until(
                         if let Err(error) = &skill {
                             result.diagnostics.push(error.to_string());
                         }
+
                         if skill.is_ok() || only.is_some() {
                             snapshots.remove(&id);
                             entries.insert(id, skill);
@@ -214,6 +216,7 @@ fn discover_until(
         }
     }
     result.data = entries.into_values().collect::<Result<Vec<_>, _>>()?;
+
     Ok((result, snapshots))
 }
 
@@ -246,6 +249,7 @@ fn validate_new_id(id: &str) -> Result<(), AppError> {
     {
         return Err(AppError::validation("New skill ID must be 1–128 ASCII letters, digits, hyphens or underscores, not a reserved Windows name"));
     }
+
     Ok(())
 }
 
@@ -255,6 +259,7 @@ fn validate_content(content: &str) -> Result<(), AppError> {
             "Skill content must be nonempty Markdown, without NUL, at most 2 MiB",
         ));
     }
+
     Ok(())
 }
 
@@ -268,9 +273,11 @@ fn ensure_create_available(paths: &ConfigPaths, id: &str) -> Result<(), AppError
     if !existing.diagnostics.is_empty() {
         return Err(AppError::configuration("Skill discovery is incomplete; resolve unavailable or invalid sources before creating a skill"));
     }
+
     if existing.data.iter().any(|entry| entry.id == id) {
         return Err(AppError::validation("A skill with this ID already exists"));
     }
+
     Ok(())
 }
 
@@ -302,8 +309,10 @@ fn create_inner(
         if directory.validate().is_ok() {
             let _ = fs::remove_dir(&directory.resolved);
         }
+
         return Err(error);
     }
+
     Ok(entry)
 }
 
@@ -327,16 +336,19 @@ fn update_inner(
     if current.kind != SkillKind::Local {
         return Err(AppError::validation("Remote skills are read-only"));
     }
+
     if !discovered.diagnostics.is_empty() {
         return Err(AppError::configuration(
             "Skill discovery is incomplete; resolve invalid or unavailable sources before saving",
         ));
     }
+
     if current.path != draft.expected_path || current.content != draft.expected_content {
         return Err(AppError::configuration(
             "Skill changed; reload before saving",
         ));
     }
+
     let entry = parse_entry(
         &current.id,
         &current.path,
@@ -356,6 +368,7 @@ fn update_inner(
                 "Skill discovery became incomplete; reload before saving",
             ));
         }
+
         let winner = discovered
             .data
             .into_iter()
@@ -369,8 +382,10 @@ fn update_inner(
                 "Skill source changed; reload before saving",
             ));
         }
+
         Ok(())
     })?;
+
     Ok(entry)
 }
 
@@ -378,6 +393,7 @@ fn configured_sources(paths: &ConfigPaths, diagnostics: &mut Vec<String>) -> Vec
     if paths.is_project() {
         return Vec::new();
     }
+
     let mut sources = Vec::new();
     for path in paths.global_config_files() {
         let parsed = (|| {
@@ -404,6 +420,7 @@ fn configured_sources(paths: &ConfigPaths, diagnostics: &mut Vec<String>) -> Vec
                 })
                 .collect::<Result<Vec<_>, _>>()
         })();
+
         match parsed {
             Ok(entries) => sources.extend(entries),
             Err(error) => diagnostics.push(format!("{}: {error}", path.display())),
@@ -422,6 +439,7 @@ fn scan_root(
     let mut files = Vec::new();
     collect_files(root, root, &mut BTreeSet::new(), &mut files, diagnostics);
     files.sort();
+
     for path in files {
         let id = if path.parent() == Some(root) {
             path.file_stem()
@@ -435,6 +453,7 @@ fn scan_root(
         if only.is_some_and(|requested| requested != id) {
             continue;
         }
+
         let mut snapshot = None;
         let parsed = Snapshot::read(&path)
             .and_then(|value| {
@@ -453,9 +472,11 @@ fn scan_root(
             });
         let parsed = parsed
             .map_err(|error| AppError::new(error.code, format!("{}: {error}", path.display())));
+
         if let Err(error) = &parsed {
             diagnostics.push(error.to_string());
         }
+
         if parsed.is_ok() || only.is_some() {
             if only.is_some() {
                 if let Some(snapshot) = snapshot {
@@ -481,6 +502,7 @@ fn collect_files(
         Err(error) if directory == root && error.kind() == std::io::ErrorKind::NotFound => return,
         Err(error) => {
             diagnostics.push(AppError::io("resolve", directory, error).to_string());
+
             return;
         }
     };
@@ -489,6 +511,7 @@ fn collect_files(
             "{}: skipped symlink recursion loop",
             directory.display()
         ));
+
         return;
     }
     // ponytail: cap pathological nesting; use an iterative walker if deeper layouts matter.
@@ -497,12 +520,15 @@ fn collect_files(
             "{}: skill directory nesting exceeds 128",
             directory.display()
         ));
+
         return;
     }
+
     let children = match fs::read_dir(directory) {
         Ok(children) => children,
         Err(error) => {
             diagnostics.push(AppError::io("read", directory, error).to_string());
+
             return;
         }
     };
@@ -517,13 +543,16 @@ fn collect_files(
         })
         .collect::<Vec<_>>();
     children.sort();
+
     for path in children {
         let is_entry = path.file_name().is_some_and(|name| name == "SKILL.md")
             || (directory == root && path.extension().is_some_and(|extension| extension == "md"));
+
         match fs::metadata(&path) {
             Ok(metadata) if metadata.is_dir() => {
                 collect_files(root, &path, ancestors, files, diagnostics)
             }
+
             Ok(metadata) if metadata.is_file() && is_entry => files.push(path),
             Ok(_) => {}
             Err(_) if is_entry => files.push(path),
@@ -554,6 +583,7 @@ fn parse_entry(
             return Err(AppError::validation("unclosed skill frontmatter"));
         }
     }
+
     let name = document
         .frontmatter
         .get("name")
@@ -626,6 +656,7 @@ fn scan_catalog(
     if Instant::now() >= deadline {
         return Err(AppError::configuration("Skill scan deadline exceeded"));
     }
+
     let mut base = Url::parse(source).map_err(|error| AppError::validation(error.to_string()))?;
     if !matches!(base.scheme(), "http" | "https")
         || !base.username().is_empty()
@@ -637,9 +668,11 @@ fn scan_catalog(
             "catalog must be an HTTP(S) base URL without credentials, query, or fragment",
         ));
     }
+
     if !base.path().ends_with('/') {
         base.set_path(&format!("{}/", base.path()));
     }
+
     let client = catalog_client()?;
     let index = catalog_url(&base, "index.json")?;
     let index_text = fetch_text(client, &index, cache, deadline)?;
@@ -658,9 +691,11 @@ fn scan_catalog(
             continue;
         }
         validate_relative(&skill.name, true)?;
+
         for file in &skill.files {
             validate_relative(file, false)?;
         }
+
         if let (Some(file), Some(id)) = (file, id) {
             targets.push((
                 id.to_owned(),
@@ -668,9 +703,11 @@ fn scan_catalog(
             ));
         }
     }
+
     if Instant::now() >= deadline {
         return Err(AppError::configuration("Skill scan deadline exceeded"));
     }
+
     let mut entries = Vec::new();
     for chunk in targets.chunks(4) {
         if Instant::now() >= deadline {
@@ -706,14 +743,17 @@ fn scan_catalog(
             }
         });
     }
+
     if entries.iter().all(|(_, entry)| entry.is_ok()) {
         cache_text(cache, &index, &index_text);
+
         for ((_, url), (_, entry)) in targets.iter().zip(&entries) {
             if let Ok(entry) = entry {
                 cache_text(cache, url, &entry.content);
             }
         }
     }
+
     Ok(entries)
 }
 
@@ -733,6 +773,7 @@ fn validate_relative(path: &str, single: bool) -> Result<(), AppError> {
             "unsafe catalog path '{path}'"
         )));
     }
+
     Ok(())
 }
 
@@ -744,6 +785,7 @@ fn catalog_url(base: &Url, relative: &str) -> Result<Url, AppError> {
     if url.origin() != base.origin() || !url.path().starts_with(base.path()) {
         return Err(AppError::validation("catalog entry escapes its source"));
     }
+
     Ok(url)
 }
 
@@ -758,18 +800,21 @@ fn fetch_text(
             "fetch {url}: skill scan deadline exceeded"
         )));
     }
+
     if let Some(text) = cache
         .and_then(|cache| cache.lock().ok())
         .and_then(|mut cache| cache.get(url.as_str(), Instant::now()))
     {
         return Ok(text);
     }
+
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
         return Err(AppError::configuration(format!(
             "fetch {url}: skill scan deadline exceeded"
         )));
     }
+
     let response = client
         .get(url.clone())
         .timeout(remaining.min(Duration::from_secs(10)))
@@ -781,12 +826,14 @@ fn fetch_text(
             response.status()
         )));
     }
+
     if response
         .content_length()
         .is_some_and(|length| length > MAX_BODY)
     {
         return Err(AppError::validation(format!("{url}: body exceeds 2 MiB")));
     }
+
     let mut bytes = Vec::new();
     response
         .take(MAX_BODY + 1)
@@ -795,6 +842,7 @@ fn fetch_text(
     if bytes.len() as u64 > MAX_BODY {
         return Err(AppError::validation(format!("{url}: body exceeds 2 MiB")));
     }
+
     if Instant::now() >= deadline {
         return Err(AppError::configuration(format!(
             "fetch {url}: skill scan deadline exceeded"

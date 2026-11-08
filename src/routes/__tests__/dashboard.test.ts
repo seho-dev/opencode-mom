@@ -14,6 +14,7 @@ import { formatTokensM } from '$src/utils/dashboard.js';
 import Dashboard from '../+page.svelte';
 
 const scrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
 });
@@ -30,6 +31,7 @@ afterEach(() => vi.useRealTimers());
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 const dayBounds = (date: string) => {
   const day = parseDate(date);
+
   return {
     from: day.toDate(timezone).getTime(),
     to: day.add({ days: 1 }).toDate(timezone).getTime() - 1,
@@ -56,6 +58,7 @@ const makeGroup = (id: string, type: Group['type'], isEnabled = false): Group =>
   omoAgentOverrides: null,
   omoCategoryMappings: null,
 });
+
 function mount(overrides: Record<string, unknown> = {}) {
   const config = {
     preferences: { locale: 'en', theme: 'dark' },
@@ -73,33 +76,56 @@ function mount(overrides: Record<string, unknown> = {}) {
     ...overrides,
   } as unknown as ConfigStore;
   const view = render(Dashboard, {}, { wrapper: Harness, wrapperProps: { config } });
+
   return { config, ...view };
 }
+
 function tokenCard() {
   return screen.getByRole('heading', { name: 'Token usage' }).closest('.metric') as HTMLElement;
 }
+
 function expectTokens(input: number | null, output: number | null) {
   const card = within(tokenCard());
   const inputValue = card.getByText('Input').nextElementSibling;
   const outputValue = card.getByText('Output').nextElementSibling;
+
   expect(inputValue?.textContent).toBe(input === null ? '—' : formatTokensM(input));
   expect(outputValue?.textContent).toBe(output === null ? '—' : formatTokensM(output));
   expect(inputValue?.getAttribute('title')).toBe(input === null ? null : input.toLocaleString('en-US'));
   expect(outputValue?.getAttribute('title')).toBe(output === null ? null : output.toLocaleString('en-US'));
 }
+
 function labeledButton(name: string) {
+  if (name.endsWith(' tokens')) {
+    const match = [...document.querySelectorAll<HTMLButtonElement>('.day-grid button')].find(
+      (button) => button.getAttribute('aria-label') === name,
+    );
+
+    if (match) return match;
+  }
+
   const container =
-    name.startsWith('Usage ') || name === 'Heatmap period' || name === 'Year'
-      ? document.querySelector(name.startsWith('Usage ') ? '.usage-controls' : '.heatmap-controls')
-      : document.body;
+    (name.startsWith('Usage ')
+      ? document.querySelector('.usage-controls')
+      : name === 'Heatmap period' || name === 'Year' || name === 'Refresh activity'
+        ? document.querySelector('.heatmap-controls')
+        : name.startsWith('Switch ')
+          ? document.querySelector('.runtime-card[data-variant="tile"]')?.parentElement
+          : null) ?? document.body;
+
   return within(container as HTMLElement).getByLabelText(name, { selector: 'button' }) as HTMLButtonElement;
 }
+
 async function select(name: string, option: string) {
   const trigger = labeledButton(name);
+
   await fireEvent.click(trigger);
+
   const panel = document.getElementById(trigger.getAttribute('aria-controls') ?? '')?.parentElement as HTMLElement;
+
   await fireEvent.click(within(within(panel).getByRole('listbox')).getByRole('option', { name: option }));
 }
+
 async function readyDialog(name: string) {
   const dialog = await screen.findByRole('dialog', { name });
   const layers = (
@@ -107,27 +133,37 @@ async function readyDialog(name: string) {
       bitsDismissableLayers: Map<{ opts: { ref: { current: HTMLElement | null } } }, unknown>;
     }
   ).bitsDismissableLayers;
+
   await waitFor(() => expect([...layers.keys()].some((layer) => layer.opts.ref.current === dialog)).toBe(true));
+
   return dialog;
 }
 
 test('metric headers use shared icon states while cards retain native navigation semantics', () => {
   const { container } = mount();
   const cards = [...container.querySelectorAll<HTMLElement>('.metric')];
+
   expect(cards).toHaveLength(4);
+
   for (const card of cards) {
     const icon = card.querySelector('.metric-label svg');
+
     expect(icon?.getAttribute('aria-hidden')).toBe('true');
     expect(icon?.getAttribute('class')).not.toContain('text-[var(--accent-primary)]');
   }
+
   const links = cards.filter((card) => card.tagName === 'A');
+
   expect(links.map((link) => link.getAttribute('href'))).toEqual(['/providers', '/models', '/groups']);
+
   for (const link of links) {
     expect(link.tabIndex).toBe(0);
     link.focus();
     expect(document.activeElement).toBe(link);
   }
+
   const usage = tokenCard();
+
   expect(usage.tagName).toBe('DIV');
   expect(usage.hasAttribute('role')).toBe(false);
   expect(usage.hasAttribute('tabindex')).toBe(false);
@@ -157,8 +193,11 @@ test('current selection is global; multiple enabled groups remain selectable and
     }),
   };
   const config = createConfigStore(adapter as unknown as Parameters<typeof createConfigStore>[0]);
+
   await waitFor(() => expect(config.loading).toBe(false));
+
   const switchGroup = vi.spyOn(config, 'switchGroup');
+
   render(Dashboard, {}, { wrapper: Harness, wrapperProps: { config } });
   expect(screen.getAllByText('No group selected')).toHaveLength(2);
   expect(screen.getAllByText('Current selection')).toHaveLength(1);
@@ -166,9 +205,13 @@ test('current selection is global; multiple enabled groups remain selectable and
   expect(screen.getByRole('heading', { name: 'Enabled groups' }).parentElement?.nextElementSibling?.textContent).toBe(
     '4',
   );
+
   const trigger = labeledButton('Switch Native group');
+
   await fireEvent.click(trigger);
+
   const dialog = await readyDialog('Switch group');
+
   expect(within(dialog).getAllByRole('radio')).toHaveLength(3);
   expect(within(dialog).queryByRole('radio', { name: 'Slim available' })).toBeNull();
   expect((within(dialog).getByRole('radio', { name: 'Native current' }) as HTMLInputElement).checked).toBe(true);
@@ -189,16 +232,21 @@ test('current selection is global; multiple enabled groups remain selectable and
   await waitFor(() => expect(document.activeElement).toBe(trigger));
 
   const slimTrigger = labeledButton('Switch Slim group');
+
   await fireEvent.click(slimTrigger);
+
   const slimDialog = await readyDialog('Switch group');
   const slimRadio = within(slimDialog).getByRole('radio', { name: 'Slim available' }) as HTMLInputElement;
+
   expect(slimRadio.checked).toBe(false);
   expect(within(slimDialog).queryByText('Current selection')).toBeNull();
   expect(within(slimDialog).queryByText('example/core')).toBeNull();
   expect(within(slimDialog).getByText('example/slim')).toBeTruthy();
   await fireEvent.click(slimRadio);
   await fireEvent.click(within(slimDialog).getByRole('button', { name: 'Confirm switch' }));
+
   const reloadDialog = await readyDialog('Reload opencode now?');
+
   expect(config.selectedGroupId).toBe('Slim available');
   expect(screen.queryByRole('link', { name: 'Edit Native other' })).toBeNull();
   expect(screen.getAllByText('No group selected')).toHaveLength(2);
@@ -214,11 +262,16 @@ test('pending switch blocks duplicate submission and dismissal', async () => {
         finish = resolve;
       }),
   );
+
   mount({ groups: [makeGroup('Native next', 'native', true), makeGroup('Slim available', 'slim', true)], switchGroup });
   await fireEvent.click(labeledButton('Switch Native group'));
+
   const dialog = await readyDialog('Switch group');
+
   await fireEvent.click(within(dialog).getByRole('radio', { name: 'Native next' }));
+
   const confirm = within(dialog).getByRole('button', { name: 'Confirm switch' });
+
   confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await waitFor(() => expect(switchGroup).toHaveBeenCalledExactlyOnceWith('Native next'));
@@ -233,6 +286,7 @@ test('pending switch blocks duplicate submission and dismissal', async () => {
 test('failed switch keeps selected group and dialog for retry; plugin success asks before reload', async () => {
   const switchGroup = vi.fn().mockRejectedValueOnce(new Error('write failed')).mockResolvedValueOnce(undefined);
   const reloadOpencode = vi.fn().mockRejectedValueOnce(new Error('reload failed')).mockResolvedValueOnce(undefined);
+
   mount({
     groups: [
       makeGroup('Slim current', 'slim', true),
@@ -244,7 +298,9 @@ test('failed switch keeps selected group and dialog for retry; plugin success as
     reloadOpencode,
   });
   await fireEvent.click(labeledButton('Switch Slim group'));
+
   let dialog = await readyDialog('Switch group');
+
   await fireEvent.click(within(dialog).getByRole('radio', { name: 'Slim next' }));
   await fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm switch' }));
   await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('Your selection is kept'));
@@ -269,6 +325,7 @@ test('record loading and failure hide both token views without blocking groups; 
     .mockImplementationOnce(() => new Promise<TokenUsageRecord[]>((_, fail) => (reject = fail)))
     .mockRejectedValueOnce(new Error('Still unavailable'))
     .mockResolvedValueOnce(records);
+
   mount({
     groups: [makeGroup('Native current', 'native', true)],
     selectedGroupId: 'Native current',
@@ -277,10 +334,13 @@ test('record loading and failure hide both token views without blocking groups; 
   await screen.findByText('Loading OpenCode token usage…');
   expectTokens(null, null);
   expect(tokenCard().getAttribute('aria-busy')).toBe('true');
+
   for (const name of ['Usage period', 'Heatmap period', 'Year', 'Refresh activity']) {
     expect(labeledButton(name).disabled).toBe(true);
   }
+
   const switchTrigger = labeledButton('Switch Native group');
+
   expect(switchTrigger.disabled).toBe(false);
   expect(screen.queryByLabelText(/ tokens$/, { selector: 'button' })).toBeNull();
   flushSync(() => reject(new Error('CLI unavailable')));
@@ -303,6 +363,7 @@ test('record loading and failure hide both token views without blocking groups; 
 
 test('usage periods and historical usage year leave the heatmap and inspector unchanged', async () => {
   const { config } = mount();
+
   await screen.findByText('2024 total');
   expectTokens(123_456, 7_890);
   expect(within(tokenCard()).getByText('Today')).toBeTruthy();
@@ -314,16 +375,22 @@ test('usage periods and historical usage year leave the heatmap and inspector un
   expect(screen.getByText('Peak day').textContent).toContain('Jan 1, 2024 · 3.00M');
   expect(screen.getByTitle('3,396,374')).toBeTruthy();
   expect(screen.queryByText(/agent.steps/i)).toBeNull();
+
   for (const title of ['0.00M', '≤0.10M', '≤1.00M', '≤10.00M', '>10.00M']) {
     expect(screen.getByTitle(title)).toBeTruthy();
   }
+
   const leapDay = labeledButton('Feb 29, 2024: 0.24M tokens');
+
   expect(leapDay.getAttribute('title')).toBe('Feb 29, 2024: 240,005 tokens');
   expect(leapDay.getAttribute('data-level')).toBe('2');
   await fireEvent.pointerEnter(leapDay);
+
   const inspector = screen.getByText('Cell inspector:').parentElement as HTMLElement;
+
   expect(inspector.textContent).toContain('Input 0.20M');
   expect(inspector.textContent).toContain('Output 0.04M');
+
   for (const [period, caption, input, output] of [
     ['Week', 'This week', 343_476, 52_898],
     ['Month', 'This month', 123_456, 7_890],
@@ -337,6 +404,7 @@ test('usage periods and historical usage year leave the heatmap and inspector un
     expect(inspector.textContent).toContain('Feb 29, 2024: 0.24M tokens');
     expect(labeledButton('Jan 1, 2024: 3.00M tokens')).toBeTruthy();
   }
+
   await select('Usage year', '2023');
   expectTokens(1_234_567_890, 6_000_012);
   expect(within(tokenCard()).getByText('1234.57M')).toBeTruthy();
@@ -349,9 +417,12 @@ test('usage periods and historical usage year leave the heatmap and inspector un
 
 test('heatmap day, week, and month leave usage selections unchanged and reset the inspector', async () => {
   const { config } = mount();
+
   await screen.findByText('2024 total');
   await fireEvent.pointerEnter(labeledButton('Feb 29, 2024: 0.24M tokens'));
+
   const inspector = screen.getByText('Cell inspector:').parentElement as HTMLElement;
+
   for (const [period, caption, total, cells] of [
     ['Week', 'This week', '0.40M', 5],
     ['Month', 'This month', '0.13M', 1],
@@ -365,23 +436,29 @@ test('heatmap day, week, and month leave usage selections unchanged and reset th
     expect(screen.queryByLabelText(/Jan 1, 2024:/, { selector: 'button' })).toBeNull();
     expect(inspector.textContent).toContain('Focus or hover a day to inspect');
   }
+
   expect(config.loadTokenUsageRecords).toHaveBeenCalledExactlyOnceWith();
 });
 
 test('historical heatmap and usage years persist independently through period changes', async () => {
   const { config } = mount();
+
   await screen.findByText('2024 total');
   await select('Usage period', 'Year');
   await select('Usage year', '2023');
   await select('Usage period', 'Day');
+
   const inspector = screen.getByText('Cell inspector:').parentElement as HTMLElement;
+
   await select('Year', '2023');
   expect(screen.getByText('2023 total').textContent).toContain('1240.57M');
   expectTokens(123_456, 7_890);
   expect(within(tokenCard()).getByText('Today')).toBeTruthy();
   for (const period of ['Day', 'Week', 'Month', 'Year']) await select('Heatmap period', period);
   expect(labeledButton('Year').textContent).toContain('2023');
+
   const historicDay = labeledButton('Dec 31, 2023: 1240.57M tokens');
+
   await fireEvent.focus(historicDay);
   await select('Usage period', 'Year');
   expect(labeledButton('Usage year').textContent).toContain('2023');
@@ -395,8 +472,11 @@ test('historical heatmap and usage years persist independently through period ch
 
 test('heatmap keyboard navigation and selector Escape preserve selection and roving focus', async () => {
   const { config } = mount();
+
   await screen.findByText('2024 total');
+
   const first = labeledButton('Jan 1, 2024: 3.00M tokens');
+
   expect(first.tabIndex).toBe(0);
   await fireEvent.focus(first);
   await fireEvent.keyDown(first, { key: 'ArrowRight' });
@@ -405,10 +485,14 @@ test('heatmap keyboard navigation and selector Escape preserve selection and rov
   expect(document.activeElement?.getAttribute('aria-label')).toBe('Jan 9, 2024: 0.00M tokens');
   await fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'End' });
   expect(document.activeElement?.getAttribute('aria-label')).toBe('Mar 1, 2024: 0.13M tokens');
+
   const inspector = screen.getByText('Cell inspector:').parentElement as HTMLElement;
+
   expect(inspector.textContent).toContain('Input 0.12M');
   expect(inspector.textContent).toContain('Output <0.01M');
+
   const year = labeledButton('Year');
+
   await fireEvent.keyDown(year, { key: 'ArrowDown' });
   await fireEvent.keyDown(year, { key: 'ArrowDown' });
   await fireEvent.keyDown(year, { key: 'Escape' });
@@ -423,7 +507,9 @@ test('heatmap keyboard navigation and selector Escape preserve selection and rov
   expect(labeledButton('Jan 1, 2023: 0.00M tokens').tabIndex).toBe(0);
   expect(document.activeElement).toBe(year);
   await select('Year', '2024');
+
   const usagePeriod = labeledButton('Usage period');
+
   await fireEvent.keyDown(usagePeriod, { key: 'ArrowDown' });
   await fireEvent.keyDown(usagePeriod, { key: 'ArrowDown' });
   await fireEvent.keyDown(usagePeriod, { key: 'Escape' });
@@ -441,42 +527,58 @@ test.each([
   '%s usage and heatmap agree on exact Input and Output and keep one keyboard focus target',
   async (period, caption, input, output) => {
     const { config } = mount();
+
     await screen.findByText('2024 total');
+
     const inspector = screen.getByText('Cell inspector:').parentElement as HTMLElement;
+
     await select('Usage period', period);
     await select('Heatmap period', period);
     expectTokens(input, output);
+
     const heatmap = screen.getByRole('region', { name: /token usage heatmap/i });
     const total = within(heatmap).getByText(period === 'Year' ? '2024 total' : `Total · ${caption}`);
+
     expect(total.querySelector('strong')?.getAttribute('title')).toBe((input + output).toLocaleString('en-US'));
+
     const dates = screen.getAllByLabelText(/ tokens$/, { selector: 'button' }) as HTMLButtonElement[];
+
     expect(dates.filter((cell) => cell.tabIndex === 0)).toHaveLength(1);
+
     let inspectedInput = 0;
     let inspectedOutput = 0;
+
     for (const cell of dates.filter((cell) => !cell.getAttribute('aria-label')?.endsWith('0.00M tokens'))) {
       await fireEvent.focus(cell);
+
       const inputTitle = within(inspector)
         .getByText(/^Input /)
         .getAttribute('title') as string;
       const outputTitle = within(inspector)
         .getByText(/^Output /)
         .getAttribute('title') as string;
+
       inspectedInput += Number(inputTitle.replaceAll(',', ''));
       inspectedOutput += Number(outputTitle.replaceAll(',', ''));
     }
+
     expect([inspectedInput, inspectedOutput]).toEqual([input, output]);
+
     if (period !== 'Day') {
       expect(screen.getByTitle('Mar 2, 2024: future date').tagName).toBe('SPAN');
       expect(screen.queryByLabelText(/Mar 2, 2024:/, { selector: 'button' })).toBeNull();
     }
+
     if (period === 'Week') {
       const monday = labeledButton('Feb 26, 2024: 0.03M tokens');
+
       await fireEvent.focus(monday);
       await fireEvent.keyDown(monday, { key: 'ArrowRight' });
       expect(document.activeElement?.getAttribute('aria-label')).toBe('Feb 27, 2024: 0.00M tokens');
       await fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'End' });
       expect(document.activeElement?.getAttribute('aria-label')).toBe('Mar 1, 2024: 0.13M tokens');
     }
+
     if (period === 'Month') expect(screen.getByTitle('Mar 31, 2024: future date')).toBeTruthy();
     expect(config.loadTokenUsageRecords).toHaveBeenCalledExactlyOnceWith();
   },
@@ -487,13 +589,16 @@ test('mount and manual refresh use one in-flight shared read and preserve both s
   const loadTokenUsageRecords = vi.fn(
     () => new Promise<TokenUsageRecord[]>((resolve, reject) => pending.push({ resolve, reject })),
   );
+
   mount({
     groups: [makeGroup('Native current', 'native', true)],
     selectedGroupId: 'Native current',
     loadTokenUsageRecords,
   });
   await screen.findByText('Loading OpenCode token usage…');
+
   const refresh = labeledButton('Refresh activity');
+
   refresh.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   refresh.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   expect(loadTokenUsageRecords).toHaveBeenCalledExactlyOnceWith();
@@ -535,7 +640,9 @@ test('mount and manual refresh use one in-flight shared read and preserve both s
   await fireEvent.focus(labeledButton('Dec 31, 2022: <0.01M tokens'));
   await fireEvent.click(refresh);
   await screen.findByText('Loading OpenCode token usage…');
+
   const switchTrigger = labeledButton('Switch Native group');
+
   for (const [name, value] of [
     ['Usage period', 'Year'],
     ['Usage year', '2023'],
@@ -543,9 +650,11 @@ test('mount and manual refresh use one in-flight shared read and preserve both s
     ['Year', '2022'],
   ]) {
     const trigger = labeledButton(name);
+
     expect(trigger.textContent).toContain(value);
     expect(trigger.disabled).toBe(true);
   }
+
   expectTokens(null, null);
   expect(screen.queryByLabelText(/ tokens$/, { selector: 'button' })).toBeNull();
   expect(screen.queryByText('Cell inspector:')).toBeNull();
@@ -561,6 +670,7 @@ test('mount and manual refresh use one in-flight shared read and preserve both s
   expect(screen.queryByText('2022 total')).toBeNull();
   expect(screen.queryByTitle(/future date$/)).toBeNull();
   expect(switchTrigger.disabled).toBe(false);
+
   for (const [name, value] of [
     ['Usage period', 'Year'],
     ['Usage year', '2023'],
@@ -568,9 +678,11 @@ test('mount and manual refresh use one in-flight shared read and preserve both s
     ['Year', '2022'],
   ]) {
     const trigger = labeledButton(name);
+
     expect(trigger.textContent).toContain(value);
     expect(trigger.disabled).toBe(true);
   }
+
   await fireEvent.click(labeledButton('Retry token usage'));
   await screen.findByText('Loading OpenCode token usage…');
   expectTokens(null, null);
@@ -580,6 +692,7 @@ test('mount and manual refresh use one in-flight shared read and preserve both s
   await screen.findByText('No tokens recorded for 2022.');
   expectTokens(0, 0);
   expect(screen.getByText('2022 total').textContent).toContain('0.00M');
+
   for (const [name, value] of [
     ['Usage period', 'Year'],
     ['Usage year', '2023'],
@@ -587,9 +700,11 @@ test('mount and manual refresh use one in-flight shared read and preserve both s
     ['Year', '2022'],
   ]) {
     const trigger = labeledButton(name);
+
     expect(trigger.textContent).toContain(value);
     expect(trigger.disabled).toBe(false);
   }
+
   expect(loadTokenUsageRecords.mock.calls).toEqual([[], [], [], []]);
   expect(screen.queryByRole('alert')).toBeNull();
 });
@@ -603,14 +718,20 @@ test('empty records are valid zero tokens with future blanks and one keyboard fo
   expect(screen.getByText('Active days').textContent).toContain('0');
   expect(screen.getByText('Peak day').textContent).toContain('—');
   expect(screen.getByTitle('Mar 2, 2024: future date').tagName).toBe('SPAN');
+
   const dates = screen.getAllByLabelText(/: 0.00M tokens$/, { selector: 'button' }) as HTMLButtonElement[];
+
   expect(dates).toHaveLength(61);
   expect(dates.filter((cell) => cell.tabIndex === 0)).toHaveLength(1);
+
   const first = labeledButton('Jan 1, 2024: 0.00M tokens');
+
   await fireEvent.focus(first);
   await fireEvent.keyDown(first, { key: 'ArrowDown' });
   expect(document.activeElement?.getAttribute('aria-label')).toBe('Jan 2, 2024: 0.00M tokens');
+
   const inspector = screen.getByText('Cell inspector:').parentElement as HTMLElement;
+
   expect(inspector.textContent).toContain('Input 0.00M');
   expect(inspector.textContent).toContain('Output 0.00M');
   expect(dates.filter((cell) => cell.tabIndex === 0)).toHaveLength(1);
@@ -646,12 +767,14 @@ test('unmounted dashboards ignore late shared-read success and failure', async (
 test('quick actions link to creation routes and MCP proxy status shows unknown on failure without fake zero', async () => {
   const getMcpProxyState = vi.fn().mockRejectedValueOnce(new Error('Proxy offline'));
   const view = mount({ getMcpProxyState });
+
   await screen.findByText('2024 total');
 
   const quickActionsRegion = screen.getByRole('region', { name: 'Quick actions' });
   const quickLinks = within(quickActionsRegion)
     .getAllByRole('link')
     .map((link) => [link.textContent?.trim(), link.getAttribute('href')]);
+
   expect(quickLinks).toEqual([
     ['New group', '/groups/new'],
     ['New provider', '/providers/new'],
@@ -661,6 +784,7 @@ test('quick actions link to creation routes and MCP proxy status shows unknown o
 
   const proxyHeading = screen.getByRole('heading', { name: 'MCP proxy' });
   const proxyCard = proxyHeading.closest('a') as HTMLAnchorElement;
+
   expect(proxyCard.getAttribute('href')).toBe('/mcp?tab=proxy');
   await waitFor(() => expect(within(proxyCard).getByText('Unavailable')).toBeTruthy());
   expect(within(proxyCard).getByText('—')).toBeTruthy();
@@ -696,15 +820,18 @@ test.each([
     generation: 1,
   } as const satisfies McpProxyStateDto;
   const getMcpProxyState = vi.fn().mockResolvedValue(fullDto);
+
   mount({ preferences: { locale, theme: 'dark' }, getMcpProxyState });
 
   const proxyHeading = screen.getByRole('heading', { name: dictionary['dashboard.mcpProxy'] });
   const proxyAnchor = proxyHeading.closest('a') as HTMLAnchorElement;
+
   expect(proxyAnchor.getAttribute('href')).toBe('/mcp?tab=proxy');
 
   expect(await within(proxyAnchor).findByText(dictionary[`mcp.proxy.${state}` as keyof typeof en])).toBeTruthy();
 
   const countText = dictionary['dashboard.proxyServicesCount'].replace('{count}', String(fullDto.enabledServices));
+
   expect(within(proxyAnchor).getByText(countText)).toBeTruthy();
   expect(proxyAnchor.textContent).not.toMatch(/(?:settings|mcp)\.proxy\.(?:running|stopped)/);
   expect(getMcpProxyState).toHaveBeenCalledExactlyOnceWith();
@@ -718,8 +845,10 @@ test('prioritizes featured runtime and tile ordering matching default plugin pre
   });
 
   const featuredHeading = screen.getByRole('heading', { name: /Slim runtime/i });
+
   expect(featuredHeading.closest('[data-variant="featured"]')).toBeTruthy();
 
   const tileButtons = screen.getAllByRole('button', { name: /Switch .* group/i });
+
   expect(tileButtons[0].getAttribute('aria-label')).toContain('Slim');
 });

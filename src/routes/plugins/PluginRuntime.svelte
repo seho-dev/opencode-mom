@@ -57,6 +57,7 @@ $effect(() => {
   untrack(() => {
     void refresh();
   });
+
   return () => {
     request += 1;
   };
@@ -73,9 +74,12 @@ onDestroy(() => {
 
 function sourceName(item: PluginRuntimeItem) {
   if (item.source.type === 'package') return item.source.target;
+
   if (item.source.type === 'local') return item.source.path;
+
   return item.id ?? i18n.t(sourceLabels[item.source.type]);
 }
+
 function setUpdateDiagnostic(cause: unknown) {
   if (
     !cause ||
@@ -87,27 +91,35 @@ function setUpdateDiagnostic(cause: unknown) {
     typeof cause.detail !== 'string'
   )
     return;
+
   if (cause.detail === 'plugin_update_timeout') updateDiagnostic = 'timeout';
   else if (cause.detail === 'plugin_update_connection') updateDiagnostic = 'connection';
   else if (cause.detail === 'plugin_update_verification') updateDiagnostic = 'verification';
   else {
     const status = /^plugin_update_runtime_http:([1-5]\d{2})$/.exec(cause.detail);
+
     if (status && status[0] === cause.detail) updateDiagnostic = Number(status[1]);
   }
 }
+
 async function refresh(keepSuccess = false) {
   if (pending) return;
+
   const seq = ++request;
   const key = identity;
+
   pending = 'read';
   error = '';
   updateDiagnostic = null;
   runtime = null;
   removalPlan = null;
   if (!keepSuccess) success = '';
+
   try {
     const result = await config.listPluginRuntime();
+
     if (!mounted || seq !== request || key !== identity) return;
+
     runtime = result;
     uncertain = false;
   } catch {
@@ -119,9 +131,11 @@ async function refresh(keepSuccess = false) {
     if (mounted && seq === request && key === identity) pending = '';
   }
 }
+
 function canUpdatePackage(item: PluginRuntimeItem) {
   return item.source.type === 'package' && item.source.outdated === true && item.canUpdate && !item.source.updating;
 }
+
 async function update() {
   if (
     pending ||
@@ -132,16 +146,20 @@ async function update() {
     )
   )
     return;
+
   const target = updateTarget;
   const key = identity;
   const seq = ++request;
+
   pending = 'update';
   error = '';
   updateDiagnostic = null;
   success = '';
+
   try {
     await config.updatePluginPackage(target);
     if (!mounted || seq !== request || key !== identity) return;
+
     success = 'update';
     uncertain = true;
     runtime = null;
@@ -159,23 +177,29 @@ async function update() {
     if (mounted && seq === request && key === identity) pending = '';
   }
 }
+
 async function prepareRemoval(item: PluginRuntimeItem) {
   if (pending || uncertain || !item.canRemove || (item.source.type !== 'package' && item.source.type !== 'local'))
     return;
+
   const target =
     item.source.type === 'package'
       ? { type: 'package' as const, target: item.source.target }
       : { type: 'local' as const, path: item.source.path };
   const seq = ++request;
   const key = identity;
+
   pending = 'prepare';
   error = '';
   updateDiagnostic = null;
   success = '';
   removalPlan = null;
+
   try {
     const plan = await config.preparePluginRemoval(target);
+
     if (!mounted || seq !== request || key !== identity) return;
+
     removalPlan = plan;
   } catch {
     if (mounted && seq === request && key === identity) {
@@ -186,18 +210,23 @@ async function prepareRemoval(item: PluginRuntimeItem) {
     if (mounted && seq === request && key === identity) pending = '';
   }
 }
+
 async function removeDeclaration() {
   if (pending || uncertain || !removalPlan) return;
+
   const plan = removalPlan;
   const seq = ++request;
   const key = identity;
+
   pending = 'remove';
   error = '';
   updateDiagnostic = null;
   success = '';
+
   try {
     await config.removePluginDeclaration(plan);
     if (!mounted || seq !== request || key !== identity) return;
+
     removalPlan = null;
     success = 'remove';
     pending = '';

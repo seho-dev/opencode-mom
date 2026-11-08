@@ -40,20 +40,29 @@ const canUpgrade = $derived(
 
 async function load() {
   if (!mounted || !active || !native || pending || serviceBusy || confirmation) return;
+
   const seq = ++request;
+
   pending = 'inspect';
   error = '';
   result = null;
   upgradedVersion = null;
+
   try {
     if (!appInfo) {
       const info = await config.getAppInfo();
+
       if (!mounted || !active || seq !== request) return;
+
       appInfo = info;
     }
+
     if (!active) return;
+
     const info = await config.getOpenCodeInstallation();
+
     if (!mounted || seq !== request) return;
+
     installation = info;
     needsRefresh = false;
   } catch (cause) {
@@ -80,14 +89,19 @@ async function check() {
     needsRefresh
   )
     return;
+
   const seq = ++request;
+
   pending = 'check';
   error = '';
   result = null;
   upgradedVersion = null;
+
   try {
     const update = await config.checkOpenCodeUpdate();
+
     if (!mounted || seq !== request) return;
+
     installation = update.installation;
     result = update;
   } catch (cause) {
@@ -103,31 +117,42 @@ async function check() {
 function confirmUpgrade() {
   if (!mounted || !active || !canUpgrade || pending || !installation?.binaryPath || !installation.version || !result)
     return;
+
   confirmation = {
     binaryPath: installation.binaryPath,
     version: installation.version,
     targetVersion: result.latestVersion,
   };
 }
+
 function closeConfirmation() {
   if (!pending) confirmation = null;
 }
+
 async function upgrade() {
   if (!mounted || !active || !canUpgrade || pending || !confirmation) return;
+
   const expected = confirmation;
   const seq = ++request;
+
   pending = 'upgrade';
   error = '';
+
   let completed = false;
+
   try {
     await config.upgradeOpenCode(expected.binaryPath, expected.version, expected.targetVersion);
     if (!mounted || seq !== request) return;
+
     completed = true;
     result = null;
     needsRefresh = true;
     if (!active) return;
+
     const info = await config.getOpenCodeInstallation();
+
     if (!mounted || seq !== request) return;
+
     installation = info;
     needsRefresh = false;
     upgradedVersion = info.version;
@@ -159,6 +184,7 @@ onMount(() => {
 
 $effect(() => {
   if (!mounted || !active) return;
+
   untrack(() => {
     native = isTauri();
     if (native && !installation && !needsRefresh) void load();

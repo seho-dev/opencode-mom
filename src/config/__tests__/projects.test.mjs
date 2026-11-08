@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'vite';
+import { deferred, withServer } from './vite-harness.mjs';
 
 const first = { id: '11111111-1111-4111-8111-111111111111', path: '/projects/first' };
 const second = { id: '22222222-2222-4222-8222-222222222222', path: '/projects/second' };
@@ -11,19 +11,9 @@ const state = (extra = {}) => ({
   preferences: { theme: 'dark', locale: 'en' },
   ...extra,
 });
-function deferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 
 test('project management preserves IPC commands, payloads, cancellation, results, and errors', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     let picked = null;
@@ -54,14 +44,11 @@ test('project management preserves IPC commands, payloads, cancellation, results
     await assert.rejects(adapter.addProject(first.path), failure);
     await assert.rejects(adapter.selectProject(first.id), failure);
     await assert.rejects(adapter.removeProject(first.id), failure);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('resource IPC omits absent or null global scope and sends only explicit project IDs', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
     const result = {};
@@ -96,14 +83,11 @@ test('resource IPC omits absent or null global scope and sends only explicit pro
       assert.strictEqual(await adapter[method](...args, first.id), result);
       assert.deepEqual(calls.at(-1), [command, { ...payload, projectId: first.id }]);
     }
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('project initialization accepts old snapshots and normalizes stale persisted selection', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     let loaded = state();
     const store = createConfigStore({ loadAppState: async () => loaded }, false);
@@ -121,14 +105,11 @@ test('project initialization accepts old snapshots and normalizes stale persiste
     await store.refresh();
     assert.deepEqual(store.projects, [first]);
     assert.equal(store.selectedProjectId, null);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('project operations are lazy, deduplicate returned IDs and paths, and remove selected scope to Global', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
@@ -188,14 +169,11 @@ test('project operations are lazy, deduplicate returned IDs and paths, and remov
     assert.equal(store.notice, null);
     assert.equal(store.draftRecovery, null);
     assert.equal(store.formResetVersion, resetVersion);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('project persistence is guarded independently and failures preserve selection without path recovery', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const pending = deferred();
     const failure = { code: 'configuration_failed', message: 'Project persistence failed' };
@@ -247,14 +225,11 @@ test('project persistence is guarded independently and failures preserve selecti
     assert.strictEqual(store.error, existingError);
     assert.equal(store.notice, null);
     assert.strictEqual(store.draftRecovery, recovery);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('stale global snapshots cannot undo persisted project operations and fresh Group snapshots preserve scope', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     let persisted = state({ projects: [first, second], selectedProjectId: first.id });
     let pending;
@@ -301,14 +276,11 @@ test('stale global snapshots cannot undo persisted project operations and fresh 
     assert.deepEqual(store.projects, [first]);
     assert.equal(store.selectedProjectId, first.id);
     assert.equal(store.error, null);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('explicit-scope resource facades never replace global agents and omitted Global writes ignore shared selection', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const calls = [];
@@ -353,7 +325,5 @@ test('explicit-scope resource facades never replace global agents and omitted Gl
     assert.ok(writes.every(([, payload]) => !('projectId' in payload)));
     assert.equal(store.selectedProjectId, first.id);
     assert.deepEqual(store.agents, state().agents);
-  } finally {
-    await vite.close();
-  }
+  });
 });

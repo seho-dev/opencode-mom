@@ -69,13 +69,17 @@ async function copyDetails(kind: 'record' | 'trace' = 'record') {
 
 async function loadTrace() {
   if (!mounted || !trace || !expanded || disabled || loading || !record.operationId) return;
+
   const seq = ++request;
   const version = epoch;
   const operationId = record.operationId;
+
   loading = true;
   error = false;
+
   try {
     const page = await config.queryLogs({ operationId, limit: TRACE_LIMIT });
+
     if (mounted && expanded && !disabled && seq === request && version === epoch && operationId === record.operationId)
       result = page;
   } catch {
@@ -88,6 +92,7 @@ async function loadTrace() {
 
 function onToggle(event: Event) {
   expanded = (event.currentTarget as HTMLDetailsElement).open;
+
   if (!expanded) {
     copyGeneration += 1;
     request += 1;
@@ -122,6 +127,7 @@ onMount(() => {
 
 function displayTime(timestamp: string) {
   const date = new Date(timestamp);
+
   return Number.isNaN(date.getTime()) ? timestamp : timeFormat.format(date);
 }
 </script>

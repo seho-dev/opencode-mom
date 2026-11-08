@@ -19,6 +19,7 @@ function mount(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
   const view = render(AppUpdates, {}, { wrapper: Harness, wrapperProps: { config: config as unknown as ConfigStore } });
+
   return { config, ...view };
 }
 
@@ -45,6 +46,7 @@ test('inactive updates do not start operations and a pending app-info read survi
       wrapperProps: { config: config as unknown as ConfigStore },
     },
   );
+
   await tick();
   expect(config.getAppInfo).not.toHaveBeenCalled();
   await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
@@ -73,10 +75,13 @@ test('reads installed version locally, checks only on click, guards pending and 
       }),
   );
   const { config } = mount({ checkForUpdates });
+
   await screen.findByText('Installed version: 0.1.0');
   expect(checkForUpdates).not.toHaveBeenCalled();
   expect(config.openProjectPage).not.toHaveBeenCalled();
+
   const checkButton = screen.getByRole('button', { name: 'Check for updates' }) as HTMLButtonElement;
+
   await fireEvent.click(checkButton);
   expect(checkButton.disabled).toBe(true);
   expect(checkButton.getAttribute('aria-busy')).toBe('true');
@@ -100,13 +105,16 @@ test('reads installed version locally, checks only on click, guards pending and 
 
 test('new macOS release opens a GUI-first security guide with an optional command, downloads and Star', async () => {
   const { config } = mount({ checkForUpdates: vi.fn().mockResolvedValue(latest) });
+
   await screen.findByText('Installed version: 0.1.0');
   expect(screen.getByRole('button', { name: 'Star on GitHub' })).toBeTruthy();
   expect(config.openProjectPage).not.toHaveBeenCalled();
   await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
   await screen.findByText('Version 0.2.0 is available.');
+
   const summary = screen.getByText('Installing an update on macOS');
   const details = summary.closest('details') as HTMLDetailsElement;
+
   expect(details.open).toBe(true);
   expect(details.textContent).toContain('ad-hoc signed');
   expect(details.textContent).toContain('notarized by Apple');
@@ -119,7 +127,9 @@ test('new macOS release opens a GUI-first security guide with an optional comman
     'Optional fallback: if the trusted download is still blocked, run this in Terminal',
   );
   expect(details.textContent).toContain('no sudo, no global Gatekeeper changes.');
+
   const command = screen.getByText(quarantineCommand);
+
   expect(command.tagName).toBe('CODE');
   expect(command.textContent).toBe(quarantineCommand);
   expect(command.classList.contains('select-text')).toBe(true);
@@ -157,6 +167,7 @@ test('unknown platform stays honest and local app-info retry can enable macOS gu
     platform: 'macos',
   });
   const { config } = mount({ getAppInfo, checkForUpdates: vi.fn().mockResolvedValue(latest) });
+
   expect((await screen.findByRole('alert')).textContent).toContain('Desktop application required');
   await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
   await screen.findByText('Version 0.2.0 is available.');
@@ -185,9 +196,13 @@ test.each([
       .fn()
       .mockRejectedValueOnce(new Error('GitHub rate limit'))
       .mockResolvedValueOnce(current);
+
     mount({ preferences: { locale, theme: 'dark' }, checkForUpdates });
+
     const button = screen.getByRole('button', { name: check });
+
     expect(checkForUpdates).not.toHaveBeenCalled();
+
     for (const label of [check, retry]) {
       expect(screen.getByRole('button', { name: label })).toBe(button);
       expect(button.getAttribute('aria-label')).toBe(label);
@@ -200,6 +215,7 @@ test.each([
       await fireEvent.click(button);
       if (label === check) expect((await screen.findByRole('alert')).textContent).toContain('GitHub rate limit');
     }
+
     await waitFor(() => expect(button.getAttribute('aria-busy')).toBe('false'));
     expect(screen.getByRole('button', { name: check })).toBe(button);
     expect(checkForUpdates).toHaveBeenCalledTimes(2);
@@ -221,9 +237,12 @@ test.each([
         }),
     )
     .mockResolvedValueOnce(undefined);
+
   mount({ openProjectPage, checkForUpdates: vi.fn().mockResolvedValue(latest) });
   await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+
   const button = (await screen.findByRole('button', { name })) as HTMLButtonElement;
+
   await fireEvent.click(button);
   expect(button.disabled).toBe(true);
   expect(button.getAttribute('aria-busy')).toBe('true');
@@ -248,9 +267,12 @@ test('late update results after teardown do not bleed into a new settings view',
       }),
   );
   const first = mount({ checkForUpdates });
+
   await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
   first.unmount();
+
   const second = mount();
+
   finish(latest);
   await tick();
   expect(screen.queryByText('Version 0.2.0 is available.')).toBeNull();
@@ -274,6 +296,7 @@ test('late local app details and opener errors after teardown do not bleed into 
       }),
   );
   const first = mount({ getAppInfo, openProjectPage });
+
   await fireEvent.click(screen.getByRole('button', { name: 'Star on GitHub' }));
   first.unmount();
   mount();
@@ -290,13 +313,17 @@ test('Chinese update feedback, GUI-first guidance and courteous Star copy match 
   await screen.findByText('已安装版本：0.1.0');
   await fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
   await screen.findByText('发现新版本 0.2.0。');
+
   const details = screen.getByText('在 macOS 上安装更新').closest('details') as HTMLDetailsElement;
+
   expect(details.open).toBe(true);
   expect(details.textContent).toContain('如被拦截，先用 系统设置 → 隐私与安全性 → 仍要打开');
   expect(details.textContent).toContain('通常无需下面的终端命令');
   expect(details.textContent).toContain('可选后备方案：若信任的官方下载仍被拦截，请在终端自行运行下方命令');
   expect(details.textContent).toContain('不要用 sudo 或全局关闭 Gatekeeper');
+
   const command = screen.getByText(quarantineCommand);
+
   expect(command.tagName).toBe('CODE');
   expect(command.textContent).toBe(quarantineCommand);
   expect(command.classList.contains('select-text')).toBe(true);

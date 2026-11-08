@@ -76,53 +76,29 @@ impl ModelReferenceIndex {
 pub fn collect_model_references(paths: &ConfigPaths) -> Result<ModelReferenceIndex, AppError> {
     let mut references = agents::model_references(paths)?;
     let config = crate::models::load_config(&paths.config_file())?;
-    for group in config.groups {
-        let group_id = group.id;
-        let group_name = group.name.clone();
-        add_group_references(
-            &mut references,
-            group.open_code_agent_overrides,
-            group_id,
-            &group_name,
-            "openCodeAgentOverrides",
-        )?;
-        if let Some(bindings) = group.slim_agent_overrides {
-            add_group_references(
-                &mut references,
-                bindings,
-                group_id,
-                &group_name,
-                "slimAgentOverrides",
-            )?;
-        }
-        if let Some(bindings) = group.omo_agent_overrides {
-            add_group_references(
-                &mut references,
-                bindings,
-                group_id,
-                &group_name,
-                "omoAgentOverrides",
-            )?;
-        }
-        if let Some(mappings) = group.omo_category_mappings {
-            for mapping in mappings {
-                references.push(ModelReference {
-                    source: ReferenceSource::ApplicationGroup,
-                    location: format!(
-                        "group.{group_id}.omoCategoryMappings.{}.model",
-                        mapping.category_name
-                    ),
-                    model_ref: ModelRef::parse(&mapping.model_ref).map_err(|error| {
+    for group in &config.groups {
+        for (field, name, model) in crate::groups::group_model_references(group) {
+            references.push(ModelReference {
+                source: ReferenceSource::ApplicationGroup,
+                location: format!("group.{}.{field}.{name}.model", group.id),
+                model_ref: ModelRef::parse(model).map_err(|error| {
+                    if field == "omoCategoryMappings" {
                         AppError::validation(format!(
-                            "invalid model reference in group '{}', category '{}': {error}",
-                            group_name, mapping.category_name
+                            "invalid model reference in group '{}', category '{name}': {error}",
+                            group.name
                         ))
-                    })?,
-                });
-            }
+                    } else {
+                        AppError::validation(format!(
+                            "invalid model reference in group '{}', field '{field}', agent '{name}': {error}",
+                            group.name
+                        ))
+                    }
+                })?,
+            });
         }
     }
     references.extend(scan_plugin_references(paths)?);
+
     Ok(ModelReferenceIndex::new(references))
 }
 
@@ -133,11 +109,13 @@ pub fn scan_plugin_references(paths: &ConfigPaths) -> Result<Vec<ModelReference>
         let document = JsoncDoc::parse(&content)?;
         scan_slim(&document, &mut references)?;
     }
+
     if let Some(content) = crate::document::read_text(&paths.omo_file())? {
         let document = JsoncDoc::parse(&content)?;
         scan_omo(&document, &mut references)?;
     }
     references.sort();
+
     Ok(references)
 }
 
@@ -148,10 +126,12 @@ fn scan_slim(document: &JsoncDoc, references: &mut Vec<ModelReference>) -> Resul
     let presets = presets
         .as_object()
         .ok_or_else(|| AppError::validation("Slim presets must be an object"))?;
+
     for (preset, entries) in presets {
         let entries = entries.as_object().ok_or_else(|| {
             AppError::validation(format!("Slim presets.{preset} must be an object"))
         })?;
+
         for (agent, entry) in entries {
             let entry = entry.as_object().ok_or_else(|| {
                 AppError::validation(format!("Slim presets.{preset}.{agent} must be an object"))
@@ -167,6 +147,7 @@ fn scan_slim(document: &JsoncDoc, references: &mut Vec<ModelReference>) -> Resul
             }
         }
     }
+
     Ok(())
 }
 
@@ -177,6 +158,7 @@ fn scan_omo(document: &JsoncDoc, references: &mut Vec<ModelReference>) -> Result
     let opencode = opencode
         .as_object()
         .ok_or_else(|| AppError::validation("OMO opencode must be an object"))?;
+
     for (key, source) in [
         ("agents", ReferenceSource::OmoAgent),
         ("categories", ReferenceSource::OmoCategory),
@@ -187,6 +169,7 @@ fn scan_omo(document: &JsoncDoc, references: &mut Vec<ModelReference>) -> Result
         let entries = entries
             .as_object()
             .ok_or_else(|| AppError::validation(format!("OMO opencode.{key} must be an object")))?;
+
         for (name, entry) in entries {
             let entry = entry.as_object().ok_or_else(|| {
                 AppError::validation(format!("OMO opencode.{key}.{name} must be an object"))
@@ -202,28 +185,7 @@ fn scan_omo(document: &JsoncDoc, references: &mut Vec<ModelReference>) -> Result
             }
         }
     }
-    Ok(())
-}
 
-fn add_group_references(
-    references: &mut Vec<ModelReference>,
-    bindings: impl IntoIterator<Item = crate::models::AgentModelBinding>,
-    group_id: uuid::Uuid,
-    group_name: &str,
-    field: &str,
-) -> Result<(), AppError> {
-    for binding in bindings {
-        references.push(ModelReference {
-            source: ReferenceSource::ApplicationGroup,
-            location: format!("group.{group_id}.{field}.{}.model", binding.agent_name),
-            model_ref: ModelRef::parse(&binding.model_ref).map_err(|error| {
-                AppError::validation(format!(
-                    "invalid model reference in group '{group_name}', field '{field}', agent '{}': {error}",
-                    binding.agent_name
-                ))
-            })?,
-        });
-    }
     Ok(())
 }
 
@@ -247,6 +209,7 @@ pub fn collect_agent_references(paths: &ConfigPaths) -> Result<AgentReferenceInd
                 &format!("agents.{}.inline", definition.id),
             );
         }
+
         for markdown in definition.markdown {
             scan_permission_references(
                 &mut references,
@@ -255,6 +218,7 @@ pub fn collect_agent_references(paths: &ConfigPaths) -> Result<AgentReferenceInd
             );
         }
     }
+
     let config: AppConfig = crate::models::load_config(&paths.config_file())?;
     for group in config.groups {
         let owner_prefix = format!("group.{}", group.id);
@@ -270,6 +234,7 @@ pub fn collect_agent_references(paths: &ConfigPaths) -> Result<AgentReferenceInd
                 &format!("{owner_prefix}.slimAgentOverrides"),
             );
         }
+
         if let Some(bindings) = &group.omo_agent_overrides {
             add_group_agent_references(
                 &mut references,
@@ -290,6 +255,7 @@ pub fn collect_agent_references(paths: &ConfigPaths) -> Result<AgentReferenceInd
             "default_agent".to_owned(),
         );
     }
+
     if let Some(commands) = opencode.get("commands").and_then(Value::as_object) {
         for (name, command) in commands {
             if let Some(agent) = command
@@ -307,6 +273,7 @@ pub fn collect_agent_references(paths: &ConfigPaths) -> Result<AgentReferenceInd
         }
     }
     scan_permission_references(&mut references, &Value::Object(document.raw().clone()), "");
+
     Ok(references)
 }
 
@@ -353,6 +320,7 @@ fn scan_permission_references(
                 scan_permission_references(references, nested, owner_prefix);
             }
         }
+
         return;
     };
     if let Some(rules) = object.get("permissions").and_then(Value::as_array) {
@@ -363,12 +331,14 @@ fn scan_permission_references(
             if rule.get("action").and_then(Value::as_str) != Some("subagent") {
                 continue;
             }
+
             let Some(agent) = rule.get("resource").and_then(Value::as_str) else {
                 continue;
             };
             if agent.is_empty() || agent.contains(['*', '?']) {
                 continue;
             }
+
             let owner = if owner_prefix.is_empty() {
                 format!("permissions[{index}]")
             } else {
@@ -377,10 +347,12 @@ fn scan_permission_references(
             add_agent_reference(references, agent, AgentReferenceKind::PermissionTask, owner);
         }
     }
+
     for (key, nested) in object {
         if owner_prefix.is_empty() && key == "agents" {
             continue;
         }
+
         let nested_prefix = if owner_prefix.is_empty() {
             key.clone()
         } else {

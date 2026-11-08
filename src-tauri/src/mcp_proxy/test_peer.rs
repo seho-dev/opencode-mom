@@ -33,6 +33,7 @@ impl ServerHandler for FakePeer {
         if self.mode != "modern-narrow" {
             capabilities.tools.as_mut().unwrap().list_changed = Some(true);
         }
+
         let mut config = ServerConfig::new(capabilities)
             .with_server_info(Implementation::new(self.tag.clone(), "0.0.0"));
         config.protocol_version = self.supported_protocol_versions()[0].clone();
@@ -57,9 +58,11 @@ impl ServerHandler for FakePeer {
             )
             .await
             .map_err(|_| ErrorData::internal_error("progress failed", None))?;
+
         match params.name.as_ref() {
             "wait" => {
                 context.ct.cancelled().await;
+
                 Ok(CallToolResult::success(vec![]).into())
             }
             "mrtr" if params.request_state.is_none() => {
@@ -68,6 +71,7 @@ impl ServerHandler for FakePeer {
                     "roots".into(),
                     InputRequest::ListRoots(ListRootsRequest::default()),
                 );
+
                 Ok(InputRequiredResult::new(Some(requests), Some(OPAQUE_STATE.into())).into())
             }
             "mrtr" => {
@@ -77,6 +81,7 @@ impl ServerHandler for FakePeer {
                 {
                     return Err(ErrorData::invalid_params("continuation changed", None));
                 }
+
                 Ok(CallToolResult::structured(
                     json!({"continued": true, "pid": std::process::id()}),
                 )
@@ -112,6 +117,7 @@ impl ServerHandler for FakePeer {
             context.sink().notify_tool_list_changed().await.unwrap();
         }
         context.cancelled().await;
+
         Ok(())
     }
 
@@ -140,8 +146,10 @@ async fn main() {
     let tag = args.next().expect("tag");
     if mode == "unread" {
         std::future::pending::<()>().await;
+
         return;
     }
+
     let peer = FakePeer { mode, tag };
     let server = peer
         .serve((tokio::io::stdin(), tokio::io::stdout()))

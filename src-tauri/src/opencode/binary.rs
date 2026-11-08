@@ -39,6 +39,7 @@ pub(super) fn opencode_candidates() -> Vec<PathBuf> {
         } else {
             "opencode"
         };
+
         for directory in [
             ".opencode/bin",
             ".local/bin",
@@ -83,14 +84,17 @@ pub(super) fn resolve_path_command_in(
     if command.as_os_str().is_empty() {
         return None;
     }
+
     if command.is_absolute() || command.components().count() > 1 {
         let absolute = if command.is_absolute() {
             command.to_path_buf()
         } else {
             cwd.join(command)
         };
+
         return executable(&absolute).then_some(absolute);
     }
+
     for directory in env::split_paths(path?) {
         let directory = if directory.is_absolute() {
             directory
@@ -129,11 +133,13 @@ fn executable(path: &Path) -> bool {
     if !metadata.is_file() {
         return false;
     }
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         metadata.permissions().mode() & 0o111 != 0
     }
+
     #[cfg(not(unix))]
     {
         true

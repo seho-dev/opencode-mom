@@ -44,23 +44,31 @@ const validPort = $derived(Number.isInteger(settings.port) && settings.port >= 1
 
 async function readStatus(manual = false, afterMutation = false) {
   if (!mounted || !active) return;
+
   if (querying || saving) {
     refreshQueued ||= afterMutation;
     return;
   }
+
   refreshQueued = false;
+
   const seq = ++request;
+
   querying = true;
   refreshing = manual;
+
   try {
     const [fetchedSettings, fetchedState] = http
       ? [await config.getMomHttpSettings(), null]
       : await Promise.all([config.getMcpProxySettings(), config.getMcpProxyState()]);
+
     if (!mounted || seq !== request) return;
+
     if (!isDirty) {
       settings = { ...settings, ...fetchedSettings };
       savedSettings = { ...settings };
     }
+
     runtimeState = fetchedState;
     known = true;
     error = '';
@@ -81,17 +89,23 @@ async function readStatus(manual = false, afterMutation = false) {
 
 async function save() {
   if (!mounted || !active || saving || querying || !known || (http && !validPort)) return;
+
   const seq = ++request;
+
   saving = true;
   error = '';
+
   try {
     if (http) {
       await config.setMomHttpSettings({ port: settings.port, allowLan: settings.allowLan });
     } else {
       const { enabled, idleTimeout, maxUnits, revision } = settings;
+
       await config.saveMcpProxySettings({ enabled, idleTimeout, maxUnits, revision }, revision);
     }
+
     if (!mounted || seq !== request) return;
+
     savedSettings = { ...settings };
     toast({
       variant: 'success',
@@ -117,6 +131,7 @@ onMount(() => {
 
 $effect(() => {
   if (!mounted) return;
+
   if (active) {
     untrack(() => void readStatus());
   }

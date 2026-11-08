@@ -6,7 +6,7 @@ use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use futures::StreamExt;
 use rmcp::model::*;
-use rmcp::transport::streamable_http_server::session::SessionManager;
+use rmcp::transport::streamable_http_server::session::{ServerSseMessage, SessionManager};
 use rmcp::transport::OneshotTransport;
 use rmcp::RoleServer;
 use tokio_util::sync::CancellationToken;
@@ -42,6 +42,7 @@ fn extract_server_id(query_str: &str) -> Result<String, StatusCode> {
         if pair.is_empty() {
             continue;
         }
+
         let mut parts = pair.splitn(2, '=');
         let key = parts.next().unwrap_or("");
         let value = parts.next().unwrap_or("");
@@ -49,6 +50,7 @@ fn extract_server_id(query_str: &str) -> Result<String, StatusCode> {
             if server_id.is_some() {
                 return Err(StatusCode::BAD_REQUEST);
             }
+
             let decoded = percent_encoding::percent_decode_str(value).decode_utf8_lossy();
             if decoded.is_empty() {
                 return Err(StatusCode::BAD_REQUEST);
@@ -76,6 +78,23 @@ fn sse_response(
     .into_response()
 }
 
+fn legacy_sse_event(
+    event: ServerSseMessage,
+) -> Result<axum::response::sse::Event, serde_json::Error> {
+    let mut outgoing = axum::response::sse::Event::default();
+    if let Some(id) = event.event_id {
+        outgoing = outgoing.id(id);
+    }
+
+    if let Some(message) = event.message {
+        outgoing = outgoing.data(serde_json::to_string(message.as_ref())?);
+    } else {
+        outgoing = outgoing.data("");
+    }
+
+    Ok(outgoing)
+}
+
 async fn handle_mcp(
     State(proxy): State<ProxyService>,
     Extension(http): Extension<HttpContext>,
@@ -95,6 +114,7 @@ async fn handle_mcp(
     if state.shutdown_token.is_cancelled() || state.proxy_token.is_cancelled() {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
+
     let method = req.method().clone();
     if method != Method::POST && method != Method::GET && method != Method::DELETE {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
@@ -196,10 +216,12 @@ async fn handle_legacy(
                 biased;
                 _ = state.shutdown_token.cancelled() => {
                     let _ = state.legacy_sessions.close_session(&session.id).await;
+
                     return StatusCode::SERVICE_UNAVAILABLE.into_response();
                 }
                 _ = state.proxy_token.cancelled() => {
                     let _ = state.legacy_sessions.close_session(&session.id).await;
+
                     return StatusCode::SERVICE_UNAVAILABLE.into_response();
                 }
                 result = session.manager.initialize_session(&session.id, message) => result,
@@ -208,6 +230,7 @@ async fn handle_legacy(
                 Ok(res) => res,
                 Err(_) => {
                     let _ = state.legacy_sessions.close_session(&session.id).await;
+
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
             };
@@ -226,6 +249,7 @@ async fn handle_legacy(
                     pending.into_session();
                     response
                 }
+
                 Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             };
         }
@@ -251,18 +275,7 @@ async fn handle_legacy(
                     Err(_) => return StatusCode::NOT_FOUND.into_response(),
                 };
 
-                let event_stream = sse_stream.map(|event| {
-                    let mut outgoing = axum::response::sse::Event::default();
-                    if let Some(id) = event.event_id {
-                        outgoing = outgoing.id(id);
-                    }
-                    if let Some(msg) = event.message {
-                        outgoing = outgoing.data(serde_json::to_string(msg.as_ref())?);
-                    } else {
-                        outgoing = outgoing.data("");
-                    }
-                    Ok::<_, serde_json::Error>(outgoing)
-                });
+                let event_stream = sse_stream.map(legacy_sse_event);
                 sse_response(event_stream, state.shutdown_token, state.proxy_token)
             }
             JsonRpcMessage::Notification(_) | JsonRpcMessage::Response(_) => {
@@ -298,18 +311,7 @@ async fn handle_legacy(
             Err(_) => return StatusCode::NOT_FOUND.into_response(),
         };
 
-        let event_stream = sse_stream.map(|event| {
-            let mut outgoing = axum::response::sse::Event::default();
-            if let Some(id) = event.event_id {
-                outgoing = outgoing.id(id);
-            }
-            if let Some(msg) = event.message {
-                outgoing = outgoing.data(serde_json::to_string(msg.as_ref())?);
-            } else {
-                outgoing = outgoing.data("");
-            }
-            Ok::<_, serde_json::Error>(outgoing)
-        });
+        let event_stream = sse_stream.map(legacy_sse_event);
         sse_response(event_stream, state.shutdown_token, state.proxy_token)
     } else if method == Method::DELETE {
         let Some(session_id) = headers.get("Mcp-Session-Id").and_then(|h| h.to_str().ok()) else {
@@ -380,6 +382,7 @@ async fn handle_modern(state: HttpState, service: ProxyServiceConfig, req: Reque
     if state.shutdown_token.is_cancelled() || state.proxy_token.is_cancelled() {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
+
     if state.budget.available_permits() == 0 {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
@@ -428,7 +431,9 @@ async fn handle_modern(state: HttpState, service: ProxyServiceConfig, req: Reque
                     guard.disarm();
                 }
             }
+
             let event = axum::response::sse::Event::default().data(data);
+
             Some((Ok::<_, serde_json::Error>(event), (receiver, guard)))
         },
     );

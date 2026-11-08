@@ -80,6 +80,7 @@ const pageReady = $derived(!!result && !retained && !clearing && !confirmOpen);
 
 function firstQuery(): LogQuery {
   const now = Date.now();
+
   return {
     ...(type ? { type } : {}),
     ...(status ? { status } : {}),
@@ -95,15 +96,21 @@ function firstQuery(): LogQuery {
 
 async function loadPage(query = firstQuery()) {
   if (!mounted || clearing) return;
+
   historyEpoch += 1;
+
   const request = ++queryRequest;
   const filters = filterKey;
+
   querying = true;
   queryError = false;
   cleared = false;
+
   try {
     const page = await config.queryLogs(query);
+
     if (!mounted || request !== queryRequest) return;
+
     result = page;
     querySnapshot = { ...query, cursor: undefined };
     committedFilters = filters;
@@ -116,11 +123,15 @@ async function loadPage(query = firstQuery()) {
 
 async function loadState() {
   if (!mounted || clearing || stateLoading) return;
+
   const request = ++stateRequest;
+
   stateLoading = true;
   stateError = false;
+
   try {
     const state = await config.getLoggingState();
+
     if (mounted && request === stateRequest) logging = state;
   } catch {
     if (mounted && request === stateRequest) stateError = true;
@@ -131,26 +142,32 @@ async function loadState() {
 
 async function refresh() {
   if (!mounted || querying || stateLoading || clearing || confirmOpen) return;
+
   await Promise.all([loadPage(), loadState()]);
 }
 
 function changeFilter(field: 'type' | 'status' | 'period', value: string) {
   if (!mounted || clearing || confirmOpen) return;
+
   if (field === 'type') type = value as LogType | '';
   else if (field === 'status') status = value as LogStatus | '';
   else period = value;
+
   void loadPage();
 }
 
 function loadMore() {
   if (!pageReady || !result?.nextCursor) return;
+
   void loadPage({ ...querySnapshot, cursor: result.nextCursor });
 }
 
 async function openDirectory() {
   if (!mounted || opening || clearing || confirmOpen) return;
+
   opening = true;
   openError = false;
+
   try {
     await config.openLogsDirectory();
   } catch {
@@ -162,6 +179,7 @@ async function openDirectory() {
 
 async function clearHistory() {
   if (!mounted || !confirmOpen || clearing || opening) return;
+
   clearing = true;
   clearError = false;
   committedFilters = '';
@@ -171,9 +189,12 @@ async function clearHistory() {
   querying = false;
   stateLoading = false;
   stateError = true;
+
   try {
     const state = await config.clearLogs();
+
     if (!mounted) return;
+
     logging = state;
     stateError = false;
     queryError = false;
@@ -194,12 +215,14 @@ async function clearHistory() {
 
 function displayTime(timestamp: string) {
   const date = new Date(timestamp);
+
   return Number.isNaN(date.getTime()) ? timestamp : timeFormat.format(date);
 }
 
 onMount(() => {
   mounted = true;
   void refresh();
+
   return () => {
     mounted = false;
     queryRequest += 1;

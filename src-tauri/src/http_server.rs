@@ -134,6 +134,7 @@ impl MomHttpSettings {
         if self.port == 0 {
             return Err(AppError::validation("MOM HTTP port must be in 1..=65535"));
         }
+
         Ok(())
     }
 }
@@ -161,6 +162,7 @@ fn publish_config(path: &std::path::Path, config: &HttpConfig) -> Result<(), App
     crate::private_file::publish(path, &bytes).map_err(|error| {
         AppError::configuration(format!("save MOM HTTP configuration: {error:?}"))
     })?;
+
     Ok(())
 }
 
@@ -201,6 +203,7 @@ impl HttpServer {
         if !value.is_object() || value.get("auth").is_some_and(|auth| !auth.is_object()) {
             return Err(AppError::configuration("invalid MOM HTTP configuration"));
         }
+
         let mut config: HttpConfig = serde_json::from_value(value.clone())
             .map_err(|_| AppError::configuration("invalid MOM HTTP configuration"))?;
         config.settings.validate()?;
@@ -213,6 +216,7 @@ impl HttpServer {
             )?;
             publish_config(&config_path, &config)?;
         }
+
         if config
             .auth
             .token_verifier
@@ -223,6 +227,7 @@ impl HttpServer {
                 "invalid MOM HTTP authentication verifier",
             ));
         }
+
         let shutdown_token = CancellationToken::new();
         Ok(Self {
             config_path,
@@ -281,6 +286,7 @@ impl HttpServer {
         if self.shutdown_token.is_cancelled() {
             return Err(AppError::configuration("MOM HTTP service is shutting down"));
         }
+
         let key = auth::generate_key();
         let config = HttpConfig {
             settings: runtime.settings,
@@ -316,8 +322,10 @@ impl HttpServer {
                 LogStatus::Error,
                 "http_key_committed_cleanup_failed",
             );
+
             return Ok(key.raw_token);
         }
+
         let mut state = self.auth.write().unwrap_or_else(|error| error.into_inner());
         if !self.shutdown_token.is_cancelled() {
             state.epoch = if runtime.listener_handle.is_some() {
@@ -326,6 +334,7 @@ impl HttpServer {
                 self.shutdown_token.child_token()
             };
         }
+
         Ok(key.raw_token)
     }
 
@@ -345,6 +354,7 @@ impl HttpServer {
             if self.shutdown_token.is_cancelled() {
                 return Err(AppError::configuration("MOM HTTP service is shutting down"));
             }
+
             if runtime
                 .listener_handle
                 .as_ref()
@@ -352,6 +362,7 @@ impl HttpServer {
             {
                 return Ok(runtime.bound_addr.expect("running HTTP listener address"));
             }
+
             let listener = Self::bind(runtime.settings).await?;
             self.serve(&mut runtime, listener)
         }
@@ -378,12 +389,14 @@ impl HttpServer {
         if self.shutdown_token.is_cancelled() {
             return Err(AppError::configuration("MOM HTTP service is shutting down"));
         }
+
         let shutdown_token = self.shutdown_token.child_token();
         {
             let mut state = self.auth.write().unwrap_or_else(|error| error.into_inner());
             state.epoch.cancel();
             state.epoch = shutdown_token.child_token();
         }
+
         let mut router = self.router.clone();
         if router.has_routes() {
             router = router.route_layer(axum::middleware::from_fn_with_state(
@@ -395,6 +408,7 @@ impl HttpServer {
                 auth::enforce,
             ));
         }
+
         let stop = shutdown_token.clone();
         runtime.listener_handle = Some(tokio::spawn(async move {
             if axum::serve(listener, router)
@@ -407,6 +421,7 @@ impl HttpServer {
         }));
         runtime.shutdown_token = shutdown_token;
         runtime.bound_addr = Some(addr);
+
         Ok(addr)
     }
 
@@ -449,6 +464,7 @@ impl HttpServer {
         if self.shutdown_token.is_cancelled() {
             return Err(AppError::configuration("MOM HTTP service is shutting down"));
         }
+
         if settings == runtime.settings
             && runtime
                 .listener_handle
@@ -464,6 +480,7 @@ impl HttpServer {
             .unwrap_or_else(|error| error.into_inner())
             .epoch
             .cancel();
+
         if let Err(error) = Self::stop(&mut runtime, Duration::from_secs(8)).await {
             if cleanup.await.is_err() {
                 self.shutdown_token.cancel();
@@ -473,8 +490,10 @@ impl HttpServer {
                     "http_stopped_cleanup_failed",
                 );
             }
+
             return Err(error);
         }
+
         let prepared = async {
             let listener = Self::bind(settings).await?;
             let path = self.config_path.clone();
@@ -513,12 +532,14 @@ impl HttpServer {
                 "http_admission_closed_cleanup_failed",
             );
         }
+
         match prepared {
             Ok(listener) => {
                 runtime.settings = settings;
                 if cleanup.is_ok() {
                     self.serve(&mut runtime, listener)?;
                 }
+
                 Ok(())
             }
             Err(error) => {
@@ -533,6 +554,7 @@ impl HttpServer {
                         }
                     }
                 }
+
                 Err(error)
             }
         }
@@ -551,17 +573,20 @@ impl HttpServer {
                 }
                 Err(_) => {
                     handle.abort();
+
                     if let Err(error) = handle.await {
                         if !error.is_cancelled() {
                             record(LogType::Http, LogStatus::Error, "http_listener_task_failed");
                         }
                     }
+
                     return Err(AppError::configuration(
                         "timed out waiting for MOM HTTP shutdown",
                     ));
                 }
             }
         }
+
         Ok(())
     }
 

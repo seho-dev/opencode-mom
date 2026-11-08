@@ -4,7 +4,7 @@ Source-relative paths below are relative to `src/components/`, not this docs dir
 
 ## Primitive APIs and bindings
 
-- **Barrels**: Primitive-family folders expose `index.ts`; preserve short/prefixed aliases. Badge/spinner export named components without `Root`; dashboard/configuration and top-level components have no barrel.
+- **Barrels**: Primitive-family folders expose `index.ts`; preserve short/prefixed aliases. Spinner exports a named component without `Root`; dashboard/configuration and top-level components have no barrel.
 
 - **Class merging**: Class-based wrappers destructure `class` as `className` and use `cn(baseOrVariants, className)` from `../utils/index.ts`; it combines `clsx` and `tailwind-merge`.
 
@@ -12,7 +12,7 @@ Source-relative paths below are relative to `src/components/`, not this docs dir
 
 - **Binding and children**: Preserve exposed bindable refs, values, checked/indeterminate state, and open state. Native elements use `bind:this`; Bits primitives use `bind:ref`; snippet containers render their typed children.
 
-- **Bits composition**: Dialog, Tooltip, Checkbox, and Separator forward remaining props to Bits primitives. Dialog/Tooltip content wraps its portal internally; Popover pickers spread both `wrapperProps` and `props` in child snippets.
+- **Bits composition**: Dialog and Checkbox forward remaining props to Bits primitives. Dialog content wraps its portal internally; Popover pickers spread both `wrapperProps` and `props` in child snippets.
 
 - **Styling hooks**: Combine Tailwind classes with `../styles/tokens.css` tokens and preserve `data-slot`. Table/heading/form/feedback classes are shared with `../styles/table.css`, `head.css`, `forms.css`, and `feedback.css`.
 
@@ -32,8 +32,8 @@ Source-relative paths below are relative to `src/components/`, not this docs dir
 
 | Responsibility | File | Description |
 | --- | --- | --- |
-| Public family API | `button/index.ts`, `checkbox/index.ts`, `dialog/index.ts`, `tooltip/index.ts` | Component aliases; button and checkbox also expose prop types. |
-| Variants | `button/button.svelte`, `alert/alert.svelte`, `badge/badge.svelte`, `toast/toast.svelte` | Module-script `tv()` definitions and `VariantProps` types. |
+| Public family API | `button/index.ts`, `checkbox/index.ts`, `dialog/index.ts` | Component aliases; button and checkbox also expose prop types. |
+| Variants | `button/button.svelte`, `toast/toast.svelte` | Module-script `tv()` definitions and `VariantProps` types. |
 | Modal composition | `dialog/dialog-content.svelte` | Portal, overlay, children snippet, optional close control, destructive variant. |
 | Free-text selection | `combobox/combobox.svelte` | Bindable string, label/value filtering, keyboard highlight, portaled options. |
 | Fixed-choice selection | `Select.svelte` | Exports `SelectOption`; skips disabled choices and optionally focuses search. |

@@ -29,6 +29,7 @@ vi.mock('$app/state', async () => {
     url: new URL('http://localhost/settings'),
     params: {},
   };
+
   return {
     page: {
       get url() {
@@ -124,6 +125,7 @@ test.each([false, true])(
   'HTTP=%s retains in-flight read/save guards across activation without periodic reads',
   async (http) => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
     let finishRead!: (value: McpProxySettingsDto | MomHttpSettings) => void;
     let finishSave!: () => void;
     const pendingRead = new Promise<McpProxySettingsDto | MomHttpSettings>((resolve) => {
@@ -140,6 +142,7 @@ test.each([false, true])(
       [http ? 'setMomHttpSettings' : 'saveMcpProxySettings']: setSettings,
     });
     const view = render(McpProxySettings, { http, active: false }, { wrapper: Harness, wrapperProps: { config } });
+
     await settle();
     expect(getSettings).not.toHaveBeenCalled();
     expect(config.getMcpProxyState).not.toHaveBeenCalled();
@@ -158,7 +161,9 @@ test.each([false, true])(
     expect(setSettings).not.toHaveBeenCalled();
     await view.rerender({ active: true });
     await settle();
+
     const input = screen.getByLabelText(http ? 'Port' : 'Session Idle Timeout (seconds)') as HTMLInputElement;
+
     await fireEvent.input(input, { target: { value: '24567' } });
     await fireEvent.click(screen.getByRole('button', { name: http ? 'Save HTTP Settings' : 'Save Gateway Settings' }));
     expect(setSettings).toHaveBeenCalledOnce();
@@ -183,6 +188,7 @@ test.each([false, true])(
 
 test.each([false, true])('HTTP=%s refreshes clean fields but retains dirty drafts and their revision', async (http) => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const baseline = http ? defaultHttpSettings : defaultSettings;
   const getSettings = vi.fn().mockResolvedValue({ ...baseline });
   const getMcpProxyState = vi.fn().mockResolvedValue(defaultProxyState);
@@ -191,10 +197,12 @@ test.each([false, true])('HTTP=%s refreshes clean fields but retains dirty draft
     getMcpProxyState,
   });
   const view = render(McpProxySettings, { http }, { wrapper: Harness, wrapperProps: { config } });
+
   await settle();
 
   const field = http ? 'port' : 'idleTimeout';
   const input = screen.getByLabelText(http ? 'Port' : 'Session Idle Timeout (seconds)') as HTMLInputElement;
+
   getSettings.mockResolvedValue({ ...baseline, [field]: 23457, ...(!http && { revision: 6 }) });
   await vi.advanceTimersByTimeAsync(60000);
   expect(getSettings).toHaveBeenCalledOnce();
@@ -213,6 +221,7 @@ test.each([false, true])('HTTP=%s refreshes clean fields but retains dirty draft
 
   await fireEvent.click(screen.getByRole('button', { name: http ? 'Save HTTP Settings' : 'Save Gateway Settings' }));
   await settle();
+
   if (http) {
     expect(config.setMomHttpSettings).toHaveBeenCalledExactlyOnceWith({ ...defaultHttpSettings, port: 24567 });
     expect(config.saveMcpProxySettings).not.toHaveBeenCalled();
@@ -223,6 +232,7 @@ test.each([false, true])('HTTP=%s refreshes clean fields but retains dirty draft
     );
     expect(config.setMomHttpSettings).not.toHaveBeenCalled();
   }
+
   expect(getSettings).toHaveBeenCalledTimes(4);
   expect(input.value).toBe('23458');
   await vi.advanceTimersByTimeAsync(60000);
@@ -236,6 +246,7 @@ test.each([
   [true, true],
 ])('HTTP=%s save failure=%s reads back successful saves once without periodic reads', async (http, fails) => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   let resolve!: () => void;
   let reject!: (reason: unknown) => void;
   const pending = new Promise<void>((yes, no) => {
@@ -250,11 +261,13 @@ test.each([
     [http ? 'setMomHttpSettings' : 'saveMcpProxySettings']: saveSettings,
   });
   const view = render(McpProxySettings, { http }, { wrapper: Harness, wrapperProps: { config } });
+
   await settle();
 
   const field = http ? 'port' : 'idleTimeout';
   const input = screen.getByLabelText(http ? 'Port' : 'Session Idle Timeout (seconds)') as HTMLInputElement;
   const save = screen.getByRole('button', { name: http ? 'Save HTTP Settings' : 'Save Gateway Settings' });
+
   await fireEvent.input(input, { target: { value: '24567' } });
   await fireEvent.click(save);
   await fireEvent.click(save);
@@ -269,6 +282,7 @@ test.each([
     getSettings.mockResolvedValue({ ...baseline, [field]: 24568, ...(!http && { revision: 6 }) });
     resolve();
   }
+
   await settle();
   expect((save as HTMLButtonElement).disabled).toBe(false);
   expect(getSettings).toHaveBeenCalledTimes(fails ? 1 : 2);
@@ -285,6 +299,7 @@ test.each([
 
 test.each([false, true])('HTTP=%s does not start a save while a status read is in flight', async (http) => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const baseline = http ? defaultHttpSettings : defaultSettings;
   let resolve!: (value: McpProxySettingsDto | MomHttpSettings) => void;
   const pending = new Promise<McpProxySettingsDto | MomHttpSettings>((yes) => {
@@ -296,13 +311,18 @@ test.each([false, true])('HTTP=%s does not start a save while a status read is i
     .mockReturnValueOnce(pending);
   const config = makeConfig({ [http ? 'getMomHttpSettings' : 'getMcpProxySettings']: getSettings });
   const view = render(McpProxySettings, { http }, { wrapper: Harness, wrapperProps: { config } });
+
   await settle();
+
   const refreshing = view.component.refresh();
+
   await settle();
   await view.component.refresh();
+
   const save = screen.getByRole('button', {
     name: http ? 'Save HTTP Settings' : 'Save Gateway Settings',
   }) as HTMLButtonElement;
+
   expect(save.disabled).toBe(true);
   await fireEvent.click(save);
   expect(config.saveMcpProxySettings).not.toHaveBeenCalled();
@@ -336,20 +356,27 @@ test.each([
   const baseline = http ? defaultHttpSettings : defaultSettings;
   const getSettings = vi.fn().mockResolvedValue(baseline);
   const saveSettings = vi.fn().mockReturnValue(pending);
+
   if (operation === 'read') getSettings.mockReturnValueOnce(pending);
+
   const config = makeConfig({
     [http ? 'getMomHttpSettings' : 'getMcpProxySettings']: getSettings,
     [http ? 'setMomHttpSettings' : 'saveMcpProxySettings']: saveSettings,
   });
   const view = render(McpProxySettings, { http }, { wrapper: Harness, wrapperProps: { config } });
+
   await settle();
+
   if (operation === 'save') {
     await fireEvent.click(screen.getByRole('button', { name: http ? 'Save HTTP Settings' : 'Save Gateway Settings' }));
     expect(saveSettings).toHaveBeenCalledOnce();
   }
+
   view.unmount();
+
   if (fails) reject(new Error('Late failure'));
   else finish(operation === 'read' ? baseline : undefined);
+
   await pending.catch(() => {});
   await settle();
   expect(getSettings).toHaveBeenCalledOnce();
@@ -369,15 +396,20 @@ test('HTTP token close queues listener-only readback and retains dirty port/LAN 
     .mockResolvedValue({ port: 24568, allowLan: false });
   const config = makeConfig({ getMomHttpSettings });
   const view = render(McpProxySettings, { http: true }, { wrapper: Harness, wrapperProps: { config } });
+
   await settle();
+
   const port = screen.getByRole('spinbutton', { name: 'Port' }) as HTMLInputElement;
   const allowLan = screen.getByRole('checkbox', { name: 'Allow LAN' }) as HTMLInputElement;
+
   expect(allowLan.checked).toBe(false);
   await fireEvent.input(port, { target: { value: '24567' } });
   await fireEvent.click(allowLan);
   expect(allowLan.checked).toBe(true);
   await fireEvent.click(screen.getByRole('button', { name: 'Rotate Secret Token…' }));
+
   const refreshing = view.component.refresh();
+
   expect(getMomHttpSettings).toHaveBeenCalledTimes(2);
   await fireEvent.click(screen.getByRole('button', { name: 'Generate New Token' }));
   await screen.findByLabelText('New Secret Token Generated');
@@ -402,6 +434,7 @@ test('HTTP token close queues listener-only readback and retains dirty port/LAN 
 
 test('settings switches to MCP Proxy tab and does not read autostart on proxy tab', async () => {
   page.url = new URL('http://localhost/settings?tab=mcp-proxy');
+
   const getAutostart = vi.fn().mockResolvedValue(false);
   const config = makeConfig({ getAutostart });
 
@@ -413,12 +446,15 @@ test('settings switches to MCP Proxy tab and does not read autostart on proxy ta
   });
 
   const proxy = within(screen.getByRole('tabpanel', { name: 'MCP Proxy' }));
+
   expect(proxy.getByRole('region', { name: 'MCP Proxy Gateway' })).toBeDefined();
   expect(proxy.getByRole('spinbutton', { name: 'Session Idle Timeout (seconds)' })).toBeDefined();
   expect(proxy.getByRole('spinbutton', { name: 'Maximum Concurrent Units' })).toBeDefined();
   expect(proxy.queryByRole('button', { name: 'Rotate Secret Token…', hidden: true })).toBeNull();
   expect(screen.queryByRole('dialog')).toBeNull();
+
   const generalPanel = document.getElementById('settings-tabpanel-general') as HTMLElement;
+
   expect(generalPanel.hidden).toBe(true);
   expect(within(generalPanel).getByRole('spinbutton', { name: 'Port', hidden: true })).toBeDefined();
   expect(screen.queryByRole('spinbutton', { name: 'Port' })).toBeNull();
@@ -427,21 +463,27 @@ test('settings switches to MCP Proxy tab and does not read autostart on proxy ta
 
 test('General owns HTTP settings and header refresh without periodic reads on either tab', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const config = makeConfig();
   const { unmount } = render(SettingsPage, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await settle();
+
   const generalPanel = screen.getByRole('tabpanel', { name: 'General' });
   const general = within(generalPanel);
+
   expect((document.getElementById('settings-tabpanel-mcp-proxy') as HTMLElement).hidden).toBe(true);
   expect(screen.queryByRole('checkbox', { name: 'Enable MCP Gateway' })).toBeNull();
   expect(general.getByRole('button', { name: 'Rotate Secret Token…' })).toBeDefined();
 
   const port = general.getByRole('spinbutton', { name: 'Port' }) as HTMLInputElement;
   const save = general.getByRole('button', { name: 'Save HTTP Settings' }) as HTMLButtonElement;
+
   for (const value of ['', '0', '65536', '18765.5']) {
     await fireEvent.input(port, { target: { value } });
     expect(save.disabled).toBe(true);
   }
+
   expect(config.saveMcpProxySettings).not.toHaveBeenCalled();
   expect(config.setMomHttpSettings).not.toHaveBeenCalled();
   await fireEvent.input(port, { target: { value: '18765' } });
@@ -460,7 +502,9 @@ test('General owns HTTP settings and header refresh without periodic reads on ei
   await settle();
   expect(generalPanel.hidden).toBe(true);
   expect(general.getByRole('spinbutton', { name: 'Port', hidden: true })).toBe(port);
+
   const proxy = within(screen.getByRole('tabpanel', { name: 'MCP Proxy' }));
+
   expect(proxy.getByRole('spinbutton', { name: 'Session Idle Timeout (seconds)' })).toBeDefined();
   await vi.advanceTimersByTimeAsync(60000);
   expect(config.getMomHttpSettings).toHaveBeenCalledTimes(3);
@@ -481,12 +525,14 @@ test('General owns HTTP settings and header refresh without periodic reads on ei
 
 test('HTTP settings displays error banner after a failed read', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const getMomHttpSettings = vi
     .fn()
     .mockResolvedValueOnce(defaultHttpSettings)
     .mockRejectedValue(new Error('Read failed'));
   const config = makeConfig({ getMomHttpSettings });
   const view = render(McpProxySettings, { http: true }, { wrapper: Harness, wrapperProps: { config } });
+
   await settle();
   expect(screen.queryByRole('alert')).toBeNull();
   await view.component.refresh();
@@ -497,6 +543,7 @@ test('HTTP settings displays error banner after a failed read', async () => {
 
 test('McpProxySettings saves gateway settings with expected revision', async () => {
   page.url = new URL('http://localhost/settings?tab=mcp-proxy');
+
   const saveMcpProxySettings = vi.fn().mockResolvedValue(undefined);
   const config = makeConfig({ saveMcpProxySettings });
 
@@ -507,8 +554,11 @@ test('McpProxySettings saves gateway settings with expected revision', async () 
   });
 
   const idleTimeoutInput = screen.getByLabelText('Session Idle Timeout (seconds)');
+
   await fireEvent.input(idleTimeoutInput, { target: { value: '450' } });
+
   const saveBtn = screen.getByRole('button', { name: 'Save Gateway Settings' });
+
   await fireEvent.click(saveBtn);
 
   await waitFor(() => {
@@ -543,10 +593,13 @@ test.each(['disabled', 'unavailable'] as const)('General token rotation works wi
   });
 
   const rotateBtn = screen.getByRole('button', { name: /Rotate Secret Token/i });
+
   await fireEvent.click(rotateBtn);
 
   expect(screen.getByRole('dialog', { name: 'Rotate MOM HTTP Secret Token' })).toBeDefined();
+
   const confirmBtn = screen.getByRole('button', { name: 'Generate New Token' });
+
   await fireEvent.click(confirmBtn);
 
   await waitFor(() => {
@@ -554,11 +607,13 @@ test.each(['disabled', 'unavailable'] as const)('General token rotation works wi
   });
 
   const keyInput = (await screen.findByLabelText('New Secret Token Generated')) as HTMLInputElement;
+
   expect(keyInput.value).toBe('secret-key-super-safe');
   expect(keyInput.name).toBe('mom-http-new-token');
   expect(keyInput.id).toBe('mom-http-new-token');
 
   const closeBtn = screen.getByRole('button', { name: 'Close' });
+
   await fireEvent.click(closeBtn);
   await settle();
   expect(config.getMomHttpSettings).toHaveBeenCalledTimes(2);
@@ -582,15 +637,21 @@ test.each(['displayed', 'pending'] as const)(
       .fn()
       .mockReturnValue(phase === 'pending' ? rotation : Promise.resolve('one-time-http-token'));
     const writeText = vi.fn().mockResolvedValue(undefined);
+
     vi.stubGlobal('navigator', { clipboard: { writeText } });
+
     const config = makeConfig({ rotateMomHttpKey, refresh: vi.fn() });
+
     render(SettingsPage, {}, { wrapper: Harness, wrapperProps: { config } });
     await settle();
+
     const generalPanel = screen.getByRole('tabpanel', { name: 'General' });
     const port = within(generalPanel).getByRole('spinbutton', { name: 'Port' }) as HTMLInputElement;
+
     await fireEvent.input(port, { target: { value: '24567' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Rotate Secret Token…' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Generate New Token' }));
+
     if (phase === 'displayed') {
       expect(((await screen.findByLabelText('New Secret Token Generated')) as HTMLInputElement).value).toBe(
         'one-time-http-token',
@@ -615,10 +676,12 @@ test.each(['displayed', 'pending'] as const)(
     expect(generalPanel.hidden).toBe(false);
     expect(within(generalPanel).getByRole('spinbutton', { name: 'Port' })).toBe(port);
     expect(port.value).toBe('24567');
+
     if (phase === 'pending') {
       finishRotation('late-http-token');
       await settle();
     }
+
     await fireEvent.click(document.querySelector('#settings-http-token button') as HTMLButtonElement);
     expect((screen.getByRole('button', { name: 'Generate New Token' }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByLabelText('New Secret Token Generated')).toBeNull();
@@ -637,6 +700,7 @@ test.each(['displayed', 'pending'] as const)(
 
 test('HTTP token action is independent of listener draft loading and read errors', async () => {
   const config = makeConfig({ getMomHttpSettings: vi.fn().mockRejectedValue(new Error('Listener read failed')) });
+
   render(McpProxySettings, { http: true }, { wrapper: Harness, wrapperProps: { config } });
   await screen.findByText('Listener read failed');
   await fireEvent.click(screen.getByRole('button', { name: 'Rotate Secret Token…' }));

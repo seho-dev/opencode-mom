@@ -1,16 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'vite';
-
-function deferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
+import { deferred, withServer } from './vite-harness.mjs';
 
 const state = (id) => ({
   providers: [],
@@ -20,8 +10,7 @@ const state = (id) => ({
 });
 
 test('failed theme and locale persistence rolls back without rejecting fire-and-forget callers', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const store = createConfigStore(
       {
@@ -44,14 +33,11 @@ test('failed theme and locale persistence rolls back without rejecting fire-and-
     await assert.doesNotReject(localeSave);
     assert.deepEqual(store.preferences, previous);
     assert.equal(store.error?.message, 'disk is read-only');
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('token usage records store delegates without arguments or refreshing configuration', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const calls = [];
     const records = [{ time: 1791030514564, input: 100, output: 20 }];
@@ -71,14 +57,11 @@ test('token usage records store delegates without arguments or refreshing config
     await new Promise(setImmediate);
     assert.strictEqual(await store.loadTokenUsageRecords(), records);
     assert.deepEqual(calls, ['loadAppState', []]);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('startup, save, and full refresh use the correct splash and reload paths', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const states = [];
     const catalogs = [];
@@ -159,14 +142,11 @@ test('startup, save, and full refresh use the correct splash and reload paths', 
     assert.equal(store.error?.message, 'catalog unavailable');
     assert.equal(store.splashLoading, false);
     assert.deepEqual(store.catalog, catalog);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('OpenCode reload invokes the selected service before full refresh and skips refresh on failure', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
     const commands = [];
@@ -236,14 +216,11 @@ test('OpenCode reload invokes the selected service before full refresh and skips
     assert.equal(store.catalogError, null);
     assert.equal(store.splashLoading, false);
     assert.equal(store.reloading, false);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('automatic refreshes update the catalog once without failing successful mutations', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     let catalogCalls = 0;
     let stateCalls = 0;
@@ -294,14 +271,11 @@ test('automatic refreshes update the catalog once without failing successful mut
     assert.equal(stateCalls, before + 2);
     assert.equal(catalogCalls, stateCalls);
     assert.equal(store.splashLoading, false);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('startup catalog failure still closes splash without an unhandled rejection', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const store = createConfigStore({
       loadAppState: () => Promise.resolve(state('initial')),
@@ -312,14 +286,11 @@ test('startup catalog failure still closes splash without an unhandled rejection
     assert.equal(store.splashLoading, false);
     assert.equal(store.catalogError?.message, 'catalog unavailable');
     assert.equal(store.groups[0].id, 'initial');
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('conflict recovery snapshots nested drafts and keeps or discards them on refresh', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     let stateCalls = 0;
     const store = createConfigStore({
@@ -352,14 +323,11 @@ test('conflict recovery snapshots nested drafts and keeps or discards them on re
     assert.equal(store.error, null);
     assert.equal(store.formResetVersion, initialResetVersion + 1);
     assert.equal(store.groups[0].id, 'state-3');
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('selectedGroupId is independent of eligibility and switchGroup waits for refreshed state and catalog', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const groups = [
       { id: 'first', isEnabled: true },
@@ -427,14 +395,11 @@ test('selectedGroupId is independent of eligibility and switchGroup waits for re
     await nullRefresh;
     assert.equal(store.selectedGroupId, null);
     assert.deepEqual(store.groups, groups);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('switchGroup keeps a successful mutation when its catalog refresh fails', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const switchRequest = deferred();
     let selected = 'initial';
@@ -470,14 +435,11 @@ test('switchGroup keeps a successful mutation when its catalog refresh fails', a
     assert.equal(store.switching, false);
     assert.equal(store.saving, false);
     assert.equal(store.loading, false);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('latest catalog request owns catalog, loading, and errors despite stale completions', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const requests = [];
     const store = createConfigStore({
@@ -516,14 +478,11 @@ test('latest catalog request owns catalog, loading, and errors despite stale com
     assert.equal(store.catalogError?.message, 'latest failure');
     assert.equal(store.catalogLoading, false);
     assert.deepEqual(store.catalog, [{ modelId: 'newest' }]);
-  } finally {
-    await vite.close();
-  }
+  });
 });
 
 test('tray configuration skips service catalog work and latest state read wins over a hidden startup response', async () => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const requests = [];
     let catalogCalls = 0;
@@ -560,7 +519,5 @@ test('tray configuration skips service catalog work and latest state read wins o
     assert.equal(store.selectedGroupId, 'newest');
     assert.equal(store.error, null);
     assert.equal(catalogCalls, 0);
-  } finally {
-    await vite.close();
-  }
+  });
 });

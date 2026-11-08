@@ -58,6 +58,7 @@ where
                 }
                 items.push(item);
             }
+
             Ok(items)
         }
     }
@@ -188,6 +189,7 @@ impl Budget {
                 })
                 .map_err(|_| failure("metadata limit exceeded"))?;
         }
+
         Ok(())
     }
 }
@@ -211,6 +213,7 @@ fn inspect_session(session: &Session) -> Result<(&str, usize), AppError> {
     if !valid_text(&session.id, 4096) {
         return Err(failure("invalid session identifier"));
     }
+
     let mut bytes = size_of::<Session>() + 2 * session.id.len() + size_of::<String>();
     if let Some(fork) = &session.fork {
         if !valid_text(&fork.session_id, 4096) || !valid_text(&fork.boundary.message_id, 4096) {
@@ -218,6 +221,7 @@ fn inspect_session(session: &Session) -> Result<(&str, usize), AppError> {
         }
         bytes += fork.session_id.len() + fork.boundary.message_id.len();
     }
+
     Ok((&session.id, bytes))
 }
 
@@ -226,6 +230,7 @@ impl Message {
         if !matches!(self.kind.as_str(), "assistant" | "compaction") {
             return None;
         }
+
         let pending = match self.kind.as_str() {
             "compaction" => {
                 self.status.as_deref() == Some("running")
@@ -285,9 +290,11 @@ fn inspect_message(message: &Message) -> Result<(&str, usize), AppError> {
     {
         return Err(failure("invalid message metadata"));
     }
+
     if let Some(tokens) = &message.tokens {
         safe_sum(tokens.input, tokens.output)?;
     }
+
     Ok((
         &message.id,
         size_of::<Message>()
@@ -332,6 +339,7 @@ fn read_pages<T>(
         if empty {
             break;
         }
+
         let Some(next) = page.cursor.next else {
             break;
         };
@@ -344,6 +352,7 @@ fn read_pages<T>(
         }
         cursor = Some(next);
     }
+
     Ok(items)
 }
 
@@ -366,6 +375,7 @@ fn read_timelines(
                         if failed.load(Ordering::Relaxed) {
                             return Err(failure("scan cancelled after a page failure"));
                         }
+
                         let index = index.fetch_add(1, Ordering::Relaxed);
                         let Some(session) = sessions.get(index) else {
                             break;
@@ -383,6 +393,7 @@ fn read_timelines(
                         )?;
                         timelines.push((index, messages));
                     }
+
                     Ok(timelines)
                 })();
                 if result.is_err() {
@@ -391,6 +402,7 @@ fn read_timelines(
                 result
             }));
         }
+
         let mut timelines = Vec::new();
         let mut error = None;
         // Every in-flight request and body read shares the scan deadline.
@@ -400,6 +412,7 @@ fn read_timelines(
                     timelines.append(&mut result);
                     continue;
                 }
+
                 Ok(Err(error)) => error,
                 Err(_) => {
                     failed.store(true, Ordering::Relaxed);
@@ -412,11 +425,13 @@ fn read_timelines(
                 error = Some(worker_error);
             }
         }
+
         if let Some(error) = error {
             return Err(error);
         }
         remaining(deadline)?;
         timelines.sort_unstable_by_key(|(index, _)| *index);
+
         Ok(timelines
             .into_iter()
             .map(|(_, messages)| messages)
@@ -442,6 +457,7 @@ fn fork_offsets(
         let mut current = start;
         loop {
             remaining(deadline)?;
+
             match states[current] {
                 2 => break,
                 1 => return Err(failure("fork provenance unavailable: origin cycle")),
@@ -457,6 +473,7 @@ fn fork_offsets(
             };
             current = origin_idx;
         }
+
         for index in path.into_iter().rev() {
             remaining(deadline)?;
             if let Some(fork) = &sessions[index].fork {
@@ -494,6 +511,7 @@ fn fork_offsets(
             states[index] = 2;
         }
     }
+
     Ok(offsets)
 }
 
@@ -526,6 +544,7 @@ fn records(
         }
     }
     remaining(deadline)?;
+
     Ok(records)
 }
 
@@ -549,6 +568,7 @@ pub(super) fn scan(
     let timelines = read_timelines(connection, &sessions, &budget, deadline)?;
     let records = records(&sessions, &timelines, deadline)?;
     connection.ensure_current()?;
+
     Ok(records)
 }
 

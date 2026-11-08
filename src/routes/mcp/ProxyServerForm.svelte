@@ -77,6 +77,7 @@ $effect(() => {
     startupTimeout = 30;
     executionTimeout = 300;
   }
+
   error = '';
   importMode = false;
 });
@@ -87,6 +88,7 @@ onDestroy(() => {
 
 function handleCancel() {
   if (!mounted || pending) return;
+
   open = false;
   error = '';
   importMode = false;
@@ -95,11 +97,16 @@ function handleCancel() {
 
 async function loadExistingMcps() {
   if (!mounted || pending || loadingMcps) return;
+
   loadingMcps = true;
+
   try {
     const list = await config.listMcps();
+
     if (!mounted) return;
+
     availableMcps = list.data;
+
     if (availableMcps.length > 0 && !selectedImportMcp) {
       selectedImportMcp = availableMcps[0]?.name ?? '';
     }
@@ -112,17 +119,21 @@ async function loadExistingMcps() {
 
 async function performImport() {
   if (!mounted || pending || loadingMcps || !selectedImportMcp) return;
+
   const target = availableMcps.find((m) => m.name === selectedImportMcp);
+
   if (!target) return;
 
   pending = true;
   error = '';
+
   try {
     const imported = await config.importMcpProxyServer({
       scope: 'global',
       serverName: target.name,
       expectedSourcePath: target.sourcePath,
     });
+
     if (!mounted) return;
 
     id = imported.id;
@@ -146,35 +157,48 @@ async function performImport() {
 
 function parseEnv(text: string): Record<string, string> | null {
   const entries: [string, string][] = [];
+
   for (const [index, line] of text.split(/\r?\n/).entries()) {
     if (!line.trim() || line.trimStart().startsWith('#')) continue;
+
     const idx = line.indexOf('=');
     const key = line.slice(0, idx).trim();
+
     if (idx < 1 || !key) {
       error = i18n.t('mcp.proxy.form.validationEnv', { line: index + 1 });
       return null;
     }
+
     entries.push([key, line.slice(idx + 1)]);
   }
+
   return Object.fromEntries(entries);
 }
 
 async function save() {
   if (!mounted || pending) return;
+
   const trimmedId = id.trim();
+
   if (!trimmedId) {
     error = i18n.t('mcp.proxy.form.validationId');
     return;
   }
+
   const cmd = commandText.split(/\r?\n/);
+
   if (!cmd[0]?.trim()) {
     error = i18n.t('mcp.proxy.form.validationCommand');
     return;
   }
+
   const env = parseEnv(envText);
+
   if (env === null) return;
+
   const startupSeconds = Number(startupTimeout);
   const executionSeconds = Number(executionTimeout);
+
   if (
     !Number.isInteger(startupSeconds) ||
     startupSeconds < 1 ||
@@ -201,19 +225,26 @@ async function save() {
 
   pending = true;
   error = '';
+
   try {
     let rev = expectedRevision;
+
     if (server) {
       await config.updateMcpProxyServer(payload, expectedRevision);
     } else {
       if (!rev) {
         const state = await config.getMcpProxyState();
+
         if (!mounted) return;
+
         rev = state.revision;
       }
+
       await config.createMcpProxyServer(payload, rev);
     }
+
     if (!mounted) return;
+
     open = false;
     await onSaved?.();
   } catch (cause) {

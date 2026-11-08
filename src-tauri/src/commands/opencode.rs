@@ -80,11 +80,6 @@ pub async fn opencode_set_service_target(
 }
 
 #[tauri::command]
-pub fn opencode_resolve_binary() -> CommandResult<String> {
-    Ok(opencode::resolve_opencode_binary().display().to_string())
-}
-
-#[tauri::command]
 pub async fn opencode_get_installation() -> CommandResult<OpenCodeInstallation> {
     spawn_blocking_task("OpenCode installation", installation::get_installation).await
 }

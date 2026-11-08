@@ -13,16 +13,6 @@ const disabled: LidState = { enabled: false, phase: 'disabled' };
 const enabled: LidState = { enabled: true, phase: 'protected', activeSessions: 2 };
 const privateError = 'Enable lid protection again. <b>private native error</b>';
 
-function deferred() {
-  let resolve!: (value: LidState) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<LidState>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-
 function mount(overrides: Record<string, unknown> = {}, active = true) {
   const adapter = {
     savePreferences: vi.fn().mockResolvedValue(undefined),
@@ -34,6 +24,7 @@ function mount(overrides: Record<string, unknown> = {}, active = true) {
   const config = createConfigStore(adapter as unknown as CommandAdapter, false, false);
   const view = render(LidProtection, { active }, { wrapper: Harness, wrapperProps: { config } });
   const toggle = screen.getByRole('checkbox') as HTMLInputElement;
+
   return { ...view, config, adapter, toggle };
 }
 
@@ -50,12 +41,13 @@ afterEach(() => {
 });
 
 test('loads the preference once, keeps the native switch pending, and waits for authoritative toggle results', async () => {
-  const read = deferred();
-  const save = deferred();
+  const read = Promise.withResolvers<LidState>();
+  const save = Promise.withResolvers<LidState>();
   const { adapter, toggle } = mount({
     getLidProtection: vi.fn().mockReturnValue(read.promise),
     setLidProtection: vi.fn().mockReturnValue(save.promise),
   });
+
   expect(toggle.tagName).toBe('INPUT');
   expect(toggle.type).toBe('checkbox');
   expect(toggle.name).toBe('lid-closed');
@@ -68,9 +60,11 @@ test('loads the preference once, keeps the native switch pending, and waits for 
   await settle();
   expect(adapter.getLidProtection).toHaveBeenCalledExactlyOnceWith();
   expect(toggle.disabled).toBe(false);
+
   for (const id of toggle.getAttribute('aria-describedby')?.split(' ') ?? []) {
     expect(document.getElementById(id)).toBeTruthy();
   }
+
   toggle.focus();
   await fireEvent.click(toggle);
   await fireEvent.click(toggle);
@@ -93,6 +87,7 @@ test.each(['disabled', 'idle', 'checking', 'protected', 'unknown', 'error'] as c
     const { container, toggle } = mount({
       getLidProtection: vi.fn().mockResolvedValue({ ...enabled, phase, error: privateError }),
     });
+
     await settle();
     expect(toggle.checked).toBe(true);
     expect(toggle.disabled).toBe(false);
@@ -121,6 +116,7 @@ test.each(['en', 'zh'] as const)(
         .mockRejectedValueOnce({ code: 'configuration_failed', message: privateError })
         .mockResolvedValueOnce(disabled),
     });
+
     await settle();
     await config.setLocale(locale);
     await settle();
@@ -152,6 +148,7 @@ test.each([
   'failed toggle readback owns enabled=$enabled without exposing its backend payload',
   async (result) => {
     const { container, toggle } = mount({ setLidProtection: vi.fn().mockResolvedValue(result) });
+
     await settle();
     await fireEvent.click(toggle);
     await settle();
@@ -167,6 +164,7 @@ test('initial read failure is concise, keeps an unknown preference disabled, and
   const { adapter, container, rerender, toggle } = mount({
     getLidProtection: vi.fn().mockRejectedValueOnce(new Error(privateError)).mockResolvedValueOnce(enabled),
   });
+
   await settle();
   expect(screen.getByRole('alert').textContent?.trim()).toBe(en['settings.lidLoadFailed']);
   expect(container.textContent).not.toContain(privateError);
@@ -185,7 +183,9 @@ test('initial read failure is concise, keeps an unknown preference disabled, and
 
 test('never polls after load, toggles or target readback, even as fake timers advance', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
   const { adapter, config, toggle, unmount } = mount();
+
   await settle();
   await vi.advanceTimersByTimeAsync(10000);
   expect(adapter.getLidProtection).toHaveBeenCalledOnce();
@@ -205,6 +205,7 @@ test('never polls after load, toggles or target readback, even as fake timers ad
 
 test('inactive mount and target changes start no work; each active entry reads without toggling', async () => {
   const { adapter, config, rerender, toggle } = mount({}, false);
+
   await config.setOpenCodeServiceTarget(null);
   await settle();
   await fireEvent.click(toggle);
@@ -225,6 +226,7 @@ test.each([disabled, enabled])(
   'only successful target saves reread the preference without remounting (enabled=$enabled)',
   async (value) => {
     const { adapter, config, toggle } = mount({ getLidProtection: vi.fn().mockResolvedValue(value) });
+
     await settle();
     await config.setOpenCodeServiceTarget('http://127.0.0.1:5096');
     await settle();
@@ -244,8 +246,8 @@ test.each(['read', 'save'] as const)(
   'target changes during a pending %s defer one latest read and reject stale success or failure',
   async (operation) => {
     for (const completion of ['resolve', 'reject'] as const) {
-      const pending = deferred();
-      const latest = deferred();
+      const pending = Promise.withResolvers<LidState>();
+      const latest = Promise.withResolvers<LidState>();
       const getLidProtection = vi.fn();
       if (operation === 'save') getLidProtection.mockResolvedValueOnce(disabled);
       getLidProtection.mockReturnValueOnce(operation === 'read' ? pending.promise : latest.promise);
@@ -280,12 +282,16 @@ test.each(['read', 'save'] as const)(
 test.each(['read', 'save'] as const)(
   'inactive completion of a pending %s keeps the latest target read queued until re-entry',
   async (operation) => {
-    const pending = deferred();
+    const pending = Promise.withResolvers<LidState>();
     const getLidProtection = vi.fn();
+
     if (operation === 'save') getLidProtection.mockResolvedValueOnce(disabled);
     else getLidProtection.mockReturnValueOnce(pending.promise);
+
     getLidProtection.mockResolvedValue(enabled);
+
     const view = mount({ getLidProtection, setLidProtection: vi.fn().mockReturnValue(pending.promise) });
+
     await settle();
     if (operation === 'save') await fireEvent.click(view.toggle);
     await view.rerender({ active: false });
@@ -306,8 +312,9 @@ test.each(['read', 'save'] as const)(
 );
 
 test('fast active round trips retain the pending write guard and defer readback without another write', async () => {
-  const save = deferred();
+  const save = Promise.withResolvers<LidState>();
   const { adapter, rerender, toggle } = mount({ setLidProtection: vi.fn().mockReturnValue(save.promise) });
+
   await settle();
   await fireEvent.click(toggle);
   await rerender({ active: false });
@@ -323,11 +330,12 @@ test('fast active round trips retain the pending write guard and defer readback 
 });
 
 test.each(['read', 'save'] as const)('unmount drops a queued target reload behind a pending %s', async (operation) => {
-  const pending = deferred();
+  const pending = Promise.withResolvers<LidState>();
   const { adapter, config, toggle, unmount } = mount({
     getLidProtection: vi.fn().mockReturnValueOnce(operation === 'read' ? pending.promise : Promise.resolve(disabled)),
     setLidProtection: vi.fn().mockReturnValue(pending.promise),
   });
+
   await settle();
   if (operation === 'save') await fireEvent.click(toggle);
   await config.setOpenCodeServiceTarget(null);

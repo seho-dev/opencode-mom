@@ -40,6 +40,7 @@ impl FakeApi {
                 if stopping.load(Ordering::Relaxed) {
                     break;
                 }
+
                 let mut stream = incoming.unwrap();
                 let handler = handler.clone();
                 workers.push(thread::spawn(move || {
@@ -81,6 +82,7 @@ impl FakeApi {
                     handler(method, target, body, &mut stream);
                 }));
             }
+
             for worker in workers {
                 worker.join().unwrap();
             }
@@ -349,6 +351,7 @@ fn malformed_oversized_redirect_and_write_errors_are_private() {
         assert!(!error.message.contains("PRIVATE"));
         assert!(error.detail.is_none());
     }
+
     let calls = Arc::new(Mutex::new(0));
     let count = calls.clone();
     let server = FakeApi::new(move |_, _, _, stream| {
@@ -428,6 +431,7 @@ fn sse_frames_handle_fragmentation_multiline_crlf_comments_and_bounds() {
     }
     assert_eq!(result, vec![b"{\n\"type\":\"unknown\"}".to_vec()]);
     assert!(events::classify(&result[0]).unwrap().is_none());
+
     for _ in 0..65536 {
         frame.byte(b'x').unwrap();
     }
@@ -656,6 +660,7 @@ fn permission_save_is_optional_bounded_plaintext_and_errors_are_private() {
                 pending.as_object_mut().unwrap().remove("save");
             }
         }
+
         let calls = Arc::new(Mutex::new(0));
         let count = calls.clone();
         let server = FakeApi::new(move |method, target, _, stream| {
@@ -667,6 +672,7 @@ fn permission_save_is_optional_bounded_plaintext_and_errors_are_private() {
         let api = server.api();
         let result = run(api.permissions("ses_a"));
         assert_eq!(result.is_ok(), accepted);
+
         match result {
             Ok(requests) => {
                 assert_eq!(
@@ -693,6 +699,7 @@ fn always_rereads_exact_pending_identity_and_posts_only_the_decision_including_c
                 .lock()
                 .unwrap()
                 .push((method.to_owned(), target.to_owned(), body));
+
             match method {
                 "GET" => {
                     assert_eq!(target, format!("/api/session/{session_id}/permission"));
@@ -750,6 +757,7 @@ fn stale_missing_unsavable_or_invalid_always_never_posts() {
             "too-many-save" => pending["save"] = json!(vec!["PRIVATE_RULE"; MAX_OPTIONS + 1]),
             _ => {}
         }
+
         let calls = Arc::new(Mutex::new(0));
         let count = calls.clone();
         let server = FakeApi::new(move |method, target, _, stream| {
@@ -819,6 +827,7 @@ fn permission_conflicts_are_never_retried_or_downgraded() {
                 .lock()
                 .unwrap()
                 .push((method.to_owned(), target.to_owned(), body));
+
             match method {
                 "GET" => respond(stream, 200, &json!({"data":[permission("ses_child")]})),
                 "POST" => raw(stream, 409, "", b"PRIVATE_ALREADY_REPLIED"),
@@ -881,6 +890,7 @@ fn cancelling_the_always_pending_read_leaves_no_background_post() {
             std::future::poll_fn(|context| {
                 if let std::task::Poll::Ready(result) = reading.as_mut().poll(context) {
                     result.unwrap();
+
                     return std::task::Poll::Ready(());
                 }
                 assert!(pending.as_mut().poll(context).is_pending());
@@ -904,6 +914,7 @@ fn form_reply_rereads_pending_state_and_posts_values_under_original_keys() {
             .lock()
             .unwrap()
             .push((method.to_owned(), target.to_owned(), body));
+
         match (method, target) {
             ("GET", "/api/session/ses_child/form/frm_a") => {
                 let mut form = question();
@@ -934,6 +945,7 @@ fn v2_form_detail_uses_state_status_and_top_level_metadata_only() {
             "options":[{"value":"wire-value","label":"Display label"}]}],
         "state":{"status":"pending"}
     });
+
     for variant in [
         "valid",
         "type-discriminator",
@@ -1008,6 +1020,7 @@ fn inert_form_defaults_and_optional_empty_answers_preserve_required_option_guard
     let question = projection::public_question(&detail, "ses_child").unwrap();
     assert!(question.answerable);
     assert!(question.fields[3].required);
+
     for (answer, accepted) in [
         (
             json!({"required":"value","optional":"","optional-many":[],"at-least-one":["value"]}),
@@ -1050,6 +1063,7 @@ fn inert_form_defaults_and_optional_empty_answers_preserve_required_option_guard
         );
         assert_eq!(*writes.lock().unwrap(), usize::from(accepted));
     }
+
     let mut constrained = detail;
     constrained["fields"][3]["minItems"] = json!(2);
     assert!(
@@ -1149,6 +1163,7 @@ fn stale_unknown_unsupported_and_invalid_answers_never_write() {
                 .is_err()
         );
     }
+
     for change in [
         json!({"type":"number"}),
         json!({"hidden":true}),
@@ -1161,6 +1176,7 @@ fn stale_unknown_unsupported_and_invalid_answers_never_write() {
         for (key, value) in change.as_object().unwrap() {
             form["fields"][0][key] = value.clone();
         }
+
         let public = projection::public_question(&form, "ses_child").unwrap();
         assert!(!public.answerable);
         assert!(public.fields.is_empty());
@@ -1231,6 +1247,7 @@ fn sse_classification_ignores_private_and_unrelated_events_without_token_snapsho
         .unwrap(),
         Some(IslandChange::Snapshot)
     );
+
     for kind in [
         "session.text.delta",
         "session.text.started",
@@ -1251,6 +1268,7 @@ fn sse_classification_ignores_private_and_unrelated_events_without_token_snapsho
             })
         );
     }
+
     for kind in [
         "server.heartbeat",
         "provider.updated",
@@ -1412,6 +1430,7 @@ fn sse_http_fragmentation_and_eof_are_bounded_without_replay() {
             let _ = stream.write_all(piece);
             let _ = stream.write_all(b"\r\n");
         }
+
         let _ = stream.write_all(b"0\r\n\r\n");
     });
     let api = server.api();

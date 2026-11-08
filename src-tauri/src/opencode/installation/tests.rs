@@ -34,6 +34,7 @@ fn versions_and_latest_metadata_require_bounded_stable_v2_identity() {
     assert_eq!(version(" v2.0.25\n").unwrap().text, "2.0.25");
     assert!(version("2.0.25-beta.1").unwrap().unstable);
     assert!(stable_v2("2.0.10").unwrap().numbers > stable_v2("2.0.9").unwrap().numbers);
+
     for invalid in [
         "",
         "2.0",
@@ -55,10 +56,12 @@ fn versions_and_latest_metadata_require_bounded_stable_v2_identity() {
         latest_version(&latest("2.17.300")).unwrap().text,
         "2.17.300"
     );
+
     for invalid in ["1.9.9", "3.0.0", "2.0.25-beta.1", "2.0.25+build"] {
         assert!(stable_v2(invalid).is_err());
         assert!(latest_version(&latest(invalid)).is_err());
     }
+
     for (key, bad) in [
         ("channel", serde_json::json!("beta")),
         ("name", serde_json::json!("desktop")),
@@ -222,6 +225,7 @@ fn upgrade_revalidates_source_after_http_and_refuses_manual_or_missing_ownership
             3 => changed.info.can_upgrade = false,
             _ => changed.info.version = Some("2.0.26".into()),
         }
+
         let mut reads = VecDeque::from([before.clone(), changed]);
         assert!(guarded_upgrade(
             before.info.binary_path.as_deref().unwrap(),
@@ -249,6 +253,7 @@ fn upgrade_reads_back_only_the_original_logical_binary_and_exact_target() {
         if changed_path {
             after.logical = Some("/unrelated/opencode".into());
         }
+
         let mut reads = VecDeque::from([before.clone(), before.clone(), after]);
         let calls = Cell::new(0);
         let result = guarded_upgrade(
@@ -264,18 +269,21 @@ fn upgrade_reads_back_only_the_original_logical_binary_and_exact_target() {
                         None
                     }
                 );
+
                 Ok(reads.pop_front().unwrap())
             },
             || stable_v2("2.0.26"),
             |_, target| {
                 assert_eq!(target, "2.0.26");
                 calls.set(calls.get() + 1);
+
                 Ok(())
             },
         );
         assert_eq!(result.is_ok(), current == "2.0.26" && !changed_path);
         assert_eq!(calls.get(), 1);
     }
+
     let calls = Cell::new(0);
     let error = guarded_upgrade(
         before.info.binary_path.as_deref().unwrap(),
@@ -283,6 +291,7 @@ fn upgrade_reads_back_only_the_original_logical_binary_and_exact_target() {
         "2.0.26",
         |_| {
             calls.set(calls.get() + 1);
+
             Ok(before.clone())
         },
         || stable_v2("2.0.26"),
@@ -316,12 +325,14 @@ fn native_command_pins_selected_binary_target_and_method_with_sanitized_environm
                 bin: "/global/bin".into(),
             });
         }
+
         let command = upgrade_command(&value, "v2.0.26").unwrap();
         assert_eq!(command.get_program(), value.logical.as_ref().unwrap());
         assert_eq!(
             command.get_args().collect::<Vec<_>>(),
             ["upgrade", "2.0.26", "--method", method]
         );
+
         for (key, _) in command.get_envs() {
             let key = key.to_string_lossy().to_ascii_uppercase();
             assert!(
@@ -338,6 +349,7 @@ fn native_command_pins_selected_binary_target_and_method_with_sanitized_environm
                 && value == Some(OsStr::new("1"))));
         assert!(upgrade_command(&value, "2.0.26;echo secret").is_err());
     }
+
     let mut unknown = detected("2.0.25");
     unknown.source = None;
     assert!(upgrade_command(&unknown, "2.0.26").is_err());
@@ -362,12 +374,14 @@ impl Fixture {
         fs::create_dir(&path).unwrap();
         Self(path)
     }
+
     fn file(&self, relative: &str, bytes: impl AsRef<[u8]>) -> PathBuf {
         let path = self.0.join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, bytes).unwrap();
         path
     }
+
     #[cfg(unix)]
     fn executable(&self, relative: &str, script: &str) -> PathBuf {
         use std::os::unix::fs::PermissionsExt;
@@ -386,6 +400,7 @@ impl Drop for Fixture {
             FAKE_EXECUTABLES
                 .with(|paths| paths.borrow_mut().retain(|path| !path.starts_with(&root)));
         }
+
         let _ = fs::remove_dir_all(&self.0);
     }
 }
@@ -407,6 +422,7 @@ fn modern_native_package_bin_requires_exact_metadata_not_substrings_or_bundle_an
         .canonicalize()
         .unwrap();
     assert!(!package_owns(&root, &unrelated));
+
     for bad in [
         br#"{"name":"opencode-ai","bin":"bin/opencode.exe"}"#.as_slice(),
         br#"{"name":"@opencode/cli","bin":"../../../outside"}"#,
@@ -414,6 +430,7 @@ fn modern_native_package_bin_requires_exact_metadata_not_substrings_or_bundle_an
         fs::write(&metadata, bad).unwrap();
         assert!(!package_owns(&root, &binary));
     }
+
     let shim = fixture.file(
         "global/opencode.cmd",
         br#"@ECHO off
@@ -467,6 +484,7 @@ fn curl_detection_is_exact_and_only_verified_stable_native_versions_can_upgrade(
         assert_eq!(info.upgrade_reason.as_deref(), reason);
         assert_eq!(info.can_upgrade, reason.is_none());
     }
+
     let binary = fixture.0.join(".opencode/bin/opencode");
     let result = identify_source_with(
         &binary,
@@ -528,6 +546,7 @@ fn bundled_and_manual_sources_fail_closed_without_manager_queries() {
         assert_eq!((result.0.as_str(), result.2), (method, reason));
         assert!(result.1.is_none());
     }
+
     let logical = fixture.0.join("OpenCode.app/Contents/Resources/opencode");
     let canonical = fixture
         .0
@@ -546,6 +565,7 @@ fn bundled_and_manual_sources_fail_closed_without_manager_queries() {
 #[test]
 fn each_manager_requires_queried_global_root_bin_and_native_package_metadata() {
     use std::os::unix::fs::symlink;
+
     for method in ["npm", "pnpm", "yarn", "bun"] {
         let fixture = Fixture::new();
         let (root_rel, bin_rel, root_query, bin_query) = match method {
@@ -801,6 +821,7 @@ fn upgrade_timeout_cleans_its_group_without_touching_an_existing_service() {
             let _ = self.0.wait();
         }
     }
+
     let outside = Sleep(Command::new("/bin/sleep").arg("60").spawn().unwrap());
     let fixture = Fixture::new();
     let pidfile = fixture.0.join("owned.pid");
@@ -872,6 +893,7 @@ fn metadata_http_is_bounded_private_nonredirecting_and_timeout_errors_hide_bodie
     );
     let request = worker.join().unwrap().to_ascii_lowercase();
     assert!(!request.contains("authorization:") && !request.contains("cookie:"));
+
     for reply in [
         response(
             "302 Found",
@@ -886,6 +908,7 @@ fn metadata_http_is_bounded_private_nonredirecting_and_timeout_errors_hide_bodie
         assert!(!error.message.contains("private"));
         worker.join().unwrap();
     }
+
     let client = Client::builder()
         .timeout(Duration::from_millis(100))
         .no_proxy()

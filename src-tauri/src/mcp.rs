@@ -73,6 +73,7 @@ fn validate_effective_server(
             "MCP patch did not produce the requested effective configuration; check for duplicate keys",
         ));
     }
+
     Ok(())
 }
 
@@ -103,6 +104,7 @@ pub fn list(paths: &ConfigPaths) -> Result<McpList, AppError> {
                 continue;
             }
         };
+
         for (name, value) in definitions {
             if name.is_empty() {
                 result
@@ -110,11 +112,13 @@ pub fn list(paths: &ConfigPaths) -> Result<McpList, AppError> {
                     .push(format!("{}: invalid MCP server '{name}'", path.display()));
                 continue;
             }
+
             let (effective, sources) = entries.entry(name.clone()).or_default();
             *effective = value.clone();
             sources.push(path.display().to_string());
         }
     }
+
     for (name, (config, source_paths)) in entries {
         let Value::Object(config) = config else {
             result.diagnostics.push(format!(
@@ -173,6 +177,7 @@ pub fn list(paths: &ConfigPaths) -> Result<McpList, AppError> {
             config,
         });
     }
+
     Ok(result)
 }
 
@@ -198,6 +203,7 @@ fn delete_inner(
     if name.is_empty() {
         return Err(AppError::validation("MCP server name must not be empty"));
     }
+
     let mut updates = BTreeMap::<PathBuf, (Snapshot, String)>::new();
     // Validate every managed source before writing, including shadow definitions.
     for path in paths.global_config_files() {
@@ -213,6 +219,7 @@ fn delete_inner(
             existing.aliases.push(path.clone());
             continue;
         }
+
         let mut document = JsoncDoc::parse(&snapshot.content)
             .map_err(|error| AppError::validation(format!("{}: {error}", path.display())))?;
         if servers(&document)?.is_some_and(|servers| servers.contains_key(name)) {
@@ -224,6 +231,7 @@ fn delete_inner(
             (snapshot, document.content().to_owned()),
         );
     }
+
     let updates = updates
         .into_values()
         .filter(|(snapshot, replacement)| snapshot.content != *replacement)
@@ -235,6 +243,7 @@ fn delete_inner(
     }
     resource_file::replace(&updates, |path| {
         before_replace(path);
+
         Ok(())
     })
 }
@@ -245,8 +254,10 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
             "MCP name must be nonempty, at most 256 bytes, without control characters",
         ));
     }
+
     let invalid =
         || AppError::validation("Invalid MCP config: check type, target, and optional field types");
+
     match config.get("type").and_then(Value::as_str) {
         Some("local") => {
             let command = config
@@ -274,6 +285,7 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
         }
         _ => return Err(invalid()),
     }
+
     if config
         .get("disabled")
         .is_some_and(|value| !value.is_boolean())
@@ -287,6 +299,7 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
     {
         return Err(invalid());
     }
+
     if let Some(timeout) = config.get("timeout") {
         let timeout = timeout.as_object().ok_or_else(invalid)?;
         for field in ["startup", "catalog", "execution"] {
@@ -298,6 +311,7 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
             }
         }
     }
+
     for field in ["environment", "headers"] {
         if let Some(value) = config.get(field) {
             if value
@@ -308,6 +322,7 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
             }
         }
     }
+
     if let Some(oauth) = config.get("oauth") {
         if oauth != &Value::Bool(false) {
             let oauth = oauth.as_object().ok_or_else(invalid)?;
@@ -322,6 +337,7 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
                     return Err(invalid());
                 }
             }
+
             if oauth.get("callback_port").is_some_and(|value| {
                 value
                     .as_u64()
@@ -331,6 +347,7 @@ fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppErro
             }
         }
     }
+
     Ok(())
 }
 
@@ -349,6 +366,7 @@ fn managed_documents(
                 None => JsoncDoc::bootstrap(crate::document::OPENCODE_SCHEMA),
             };
             servers(&document)?;
+
             Ok((path.clone(), snapshot, document))
         })
         .collect()
@@ -410,6 +428,7 @@ pub fn create(paths: &ConfigPaths, draft: McpDraft) -> Result<McpServer, AppErro
             ));
         }
     }
+
     let index = documents
         .iter()
         .rposition(|(_, snapshot, _)| snapshot.is_some())
@@ -440,6 +459,7 @@ pub fn create(paths: &ConfigPaths, draft: McpDraft) -> Result<McpServer, AppErro
     };
     let server = saved_server(draft.name, draft.config, source_paths)?;
     persist_document(&documents, index)?;
+
     Ok(server)
 }
 
@@ -487,6 +507,7 @@ pub fn update(paths: &ConfigPaths, draft: McpUpdate) -> Result<McpServer, AppErr
         .collect();
     let server = saved_server(draft.name, draft.config, source_paths)?;
     persist_document(&documents, index)?;
+
     Ok(server)
 }
 
@@ -494,12 +515,17 @@ fn persist_document(
     documents: &[(PathBuf, Option<Snapshot>, JsoncDoc)],
     index: usize,
 ) -> Result<(), AppError> {
-    for (path, snapshot, _) in documents {
-        match snapshot {
-            Some(snapshot) => snapshot.validate()?,
-            None => resource_file::absent(path)?,
+    let validate_sources = || {
+        for (path, snapshot, _) in documents {
+            match snapshot {
+                Some(snapshot) => snapshot.validate()?,
+                None => resource_file::absent(path)?,
+            }
         }
-    }
+
+        Ok(())
+    };
+    validate_sources()?;
     let (path, snapshot, document) = documents
         .get(index)
         .ok_or_else(|| AppError::configuration("MCP configuration document is unavailable"))?;
@@ -515,13 +541,7 @@ fn persist_document(
             .map(|(path, _, _)| path.clone())
             .collect();
         resource_file::replace(&[(snapshot, document.content().to_owned())], |_| {
-            for (path, snapshot, _) in documents {
-                match snapshot {
-                    Some(snapshot) => snapshot.validate()?,
-                    None => resource_file::absent(path)?,
-                }
-            }
-            Ok(())
+            validate_sources()
         })
     } else {
         let filename = path
@@ -532,15 +552,7 @@ fn persist_document(
             path.parent()
                 .ok_or_else(|| AppError::validation("MCP config path must have a parent"))?,
         )?;
-        parent.create_file_checked(filename, document.content(), || {
-            for (path, snapshot, _) in documents {
-                match snapshot {
-                    Some(snapshot) => snapshot.validate()?,
-                    None => resource_file::absent(path)?,
-                }
-            }
-            Ok(())
-        })
+        parent.create_file_checked(filename, document.content(), validate_sources)
     }
 }
 

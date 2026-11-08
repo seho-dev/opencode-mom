@@ -28,6 +28,7 @@ const options = $derived([
   { value: 'global', label: i18n.t('scope.global'), globe: true },
   ...projects.map((project) => ({ value: project.id, label: basename(project.path), hint: project.path })),
 ]);
+
 $effect(() => {
   picker = selectedId ?? 'global';
 });
@@ -40,11 +41,14 @@ function basename(path: string) {
       .pop() || path
   );
 }
+
 async function select(value: string) {
   if (busy) return;
+
   picker = selectedId ?? 'global';
   pending = true;
   error = '';
+
   try {
     await config.selectProject(value === 'global' ? null : value);
   } catch (cause) {
@@ -54,12 +58,16 @@ async function select(value: string) {
     pending = false;
   }
 }
+
 async function add() {
   if (busy) return;
+
   pending = true;
   error = '';
+
   try {
     const path = await config.pickProjectFolder();
+
     if (path !== null) await config.addProject(path);
   } catch (cause) {
     error = readError(cause);
@@ -67,10 +75,13 @@ async function add() {
     pending = false;
   }
 }
+
 async function remove(id: string) {
   if (busy) return;
+
   pending = true;
   error = '';
+
   try {
     await config.removeProject(id);
   } catch (cause) {

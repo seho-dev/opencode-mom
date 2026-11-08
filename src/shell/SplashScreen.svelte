@@ -27,18 +27,22 @@ $effect(() => {
     clearHideTimer();
     shownAt = Date.now();
     root?.classList.remove('splash-exit');
+
     return clearHideTimer;
   }
 
   const remaining = MIN_VISIBLE_MS - (Date.now() - shownAt);
+
   if (remaining <= 0) {
     root?.classList.add('splash-exit');
     return;
   }
+
   hideTimer = setTimeout(() => {
     hideTimer = undefined;
     root?.classList.add('splash-exit');
   }, remaining);
+
   return clearHideTimer;
 });
 </script>

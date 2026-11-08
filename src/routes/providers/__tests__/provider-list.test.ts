@@ -14,7 +14,9 @@ function mount(providers: ProviderDef[] = [], loading = false, error: ConfigStor
     error,
     deleteProvider,
   } as unknown as ConfigStore;
+
   render(ProviderList, {}, { wrapper: Harness, wrapperProps: { config } });
+
   return { table: screen.getByRole('table') as HTMLTableElement, deleteProvider };
 }
 
@@ -29,6 +31,7 @@ test('provider headers and rows have five columns with working actions in the fi
     { name: 'minimal', models: {} },
   ];
   const { table, deleteProvider } = mount(providers);
+
   expect(Array.from(table.rows[0].cells, (cell) => cell.textContent?.trim())).toEqual([
     'Name',
     'NPM',
@@ -58,15 +61,36 @@ test('provider headers and rows have five columns with working actions in the fi
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 });
 
+test('provider list query filters rows by name with leading and trailing whitespace trimmed', async () => {
+  const providers: ProviderDef[] = [
+    { name: 'anthropic', models: {} },
+    { name: 'openai', models: {} },
+  ];
+  const { table } = mount(providers);
+  const searchInput = screen.getByRole('textbox', { name: 'Search providers' });
+
+  expect(table.tBodies[0].rows.length).toBe(2);
+
+  await fireEvent.input(searchInput, { target: { value: '  open  ' } });
+  expect(table.tBodies[0].rows.length).toBe(1);
+  expect(table.tBodies[0].rows[0].cells[0].textContent?.trim()).toBe('openai');
+
+  await fireEvent.input(searchInput, { target: { value: '   ' } });
+  expect(table.tBodies[0].rows.length).toBe(2);
+});
+
 test.each([
   { state: 'loading', loading: true, error: null },
   { state: 'empty', loading: false, error: null },
   { state: 'load error', loading: false, error: { code: 'ipc_error' as const, message: 'Load failed' } },
 ])('$state row spans all five provider columns', ({ loading, error }) => {
   const { table } = mount([], loading, error);
+
   expect(table.rows[0].cells.length).toBe(5);
   expect(table.tBodies[0].rows.length).toBe(1);
+
   const cells = table.tBodies[0].rows[0].cells;
+
   expect(cells.length).toBe(1);
   expect(cells[0].colSpan).toBe(5);
   expect(cells[0].textContent?.trim()).toBe(loading ? 'Loading configuration...' : 'No providers.');

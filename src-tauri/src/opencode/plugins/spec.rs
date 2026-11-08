@@ -10,6 +10,7 @@ pub(super) fn package_mutability(target: &str) -> Option<bool> {
     {
         return None;
     }
+
     let (repository, revision) = target
         .split_once('#')
         .map_or((target, None), |(repository, revision)| {
@@ -23,6 +24,7 @@ pub(super) fn package_mutability(target: &str) -> Option<bool> {
     }) {
         return None;
     }
+
     let shorthand = ["github:", "gitlab:", "bitbucket:", "gist:"]
         .into_iter()
         .find_map(|prefix| repository.strip_prefix(prefix));
@@ -50,9 +52,11 @@ pub(super) fn package_mutability(target: &str) -> Option<bool> {
                     && revision.bytes().all(|byte| byte.is_ascii_hexdigit()))
         }));
     }
+
     if shorthand.is_some() || revision.is_some() {
         return None;
     }
+
     let npm = target.strip_prefix("npm:").unwrap_or(target);
     let (name, version) = npm
         .rsplit_once('@')
@@ -74,6 +78,7 @@ pub(super) fn package_mutability(target: &str) -> Option<bool> {
     {
         return None;
     }
+
     Some(version.is_none_or(|version| !exact_version(version)))
 }
 

@@ -31,6 +31,7 @@ impl FakeApi {
                 if stopping.load(Ordering::SeqCst) {
                     break;
                 }
+
                 let handler = handler.clone();
                 workers.push(thread::spawn(move || {
                     stream
@@ -48,6 +49,7 @@ impl FakeApi {
                         bytes.push(byte[0]);
                         assert!(bytes.len() <= 8192);
                     }
+
                     let headers = String::from_utf8(bytes).unwrap();
                     let length = headers
                         .lines()
@@ -69,6 +71,7 @@ impl FakeApi {
                     handler(path, &headers, &body, &mut stream);
                 }));
             }
+
             for worker in workers {
                 worker.join().unwrap();
             }
@@ -183,6 +186,7 @@ fn presets_and_kind_have_fixed_order_and_preserve_source_material() {
             )));
         }
     }
+
     for field in ["kind", "preset"] {
         let mut value =
             json!({"kind":"agent","preset":"generate","instructions":"x","currentPrompt":""});
@@ -239,6 +243,7 @@ fn input_boundaries_are_checked_before_any_connection_or_bootstrap() {
     let mut instructions_only = request();
     instructions_only.current_prompt.clear();
     assert!(instructions_only.prepare().is_ok());
+
     for (instructions, current) in [
         (" \t\n".into(), " \r\n".into()),
         ("x".repeat(MAX_INSTRUCTIONS_BYTES + 1), "".into()),
@@ -253,6 +258,7 @@ fn input_boundaries_are_checked_before_any_connection_or_bootstrap() {
         assert_eq!(error.code, ErrorCode::ValidationFailed);
         redacted(&error);
     }
+
     for model in [
         "".into(),
         "provider".into(),
@@ -273,6 +279,7 @@ fn input_boundaries_are_checked_before_any_connection_or_bootstrap() {
         assert_eq!(error.code, ErrorCode::ValidationFailed);
         redacted(&error);
     }
+
     for variant in [
         "".into(),
         "PRIVATE\nTOKEN".into(),
@@ -289,6 +296,7 @@ fn input_boundaries_are_checked_before_any_connection_or_bootstrap() {
         assert_eq!(error.code, ErrorCode::ValidationFailed);
         redacted(&error);
     }
+
     let mut input = request();
     input.variant = Some("high".into());
     assert_eq!(
@@ -355,6 +363,7 @@ fn success_pins_selected_target_and_reserves_connect_health_and_post_without_isl
             if authenticated {
                 assert!(headers.contains("authorization: basic b3blbmnvzgu6chjpdmf0zq=="));
             }
+
             match path {
                 "/api/info" => {
                     assert!(headers.starts_with("get "));
@@ -410,6 +419,7 @@ fn shared_registration_uses_pinned_credentials_and_selected_model() {
             ErrorCode::Busy
         );
         assert!(headers.contains("Basic b3BlbmNvZGU6cHJpdmF0ZQ=="));
+
         match path {
             "/api/info" => health(stream),
             "/api/experimental/generate" => {
@@ -494,6 +504,7 @@ fn stale_snapshot_is_rejected_before_connect() {
 fn errors_are_redacted_and_http_failures_never_retry_or_redirect() {
     let destination = TcpListener::bind("127.0.0.1:0").unwrap();
     destination.set_nonblocking(true).unwrap();
+
     for status in [302, 401, 403, 404, 405, 408, 429, 500, 503] {
         let calls = Arc::new(AtomicUsize::new(0));
         let counted = calls.clone();
@@ -560,6 +571,7 @@ fn empty_non_text_malformed_and_oversized_results_are_rejected_once() {
         assert!(error.message.contains("may have executed"));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
+
     let server = FakeApi::new(|path, _, _, stream| {
         if path == "/api/info" {
             health(stream);

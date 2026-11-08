@@ -57,6 +57,7 @@ describe('model utilities', () => {
     for (const valid of ['256', '32000', '1000000', '65536']) {
       expect(isValidTokenCount(valid)).toBe(true);
     }
+
     for (const invalid of ['32K', '1M', '1.5K', '-256', 'Infinity', '9007199254740992']) {
       expect(isValidTokenCount(invalid)).toBe(false);
     }

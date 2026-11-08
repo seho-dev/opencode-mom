@@ -34,7 +34,7 @@ Source-relative paths below are relative to `src/config/`, not this docs directo
 
 ## Regression harness
 
-- **Regression harness**: Tests use `node:test`, injected adapters, and Vite `ssrLoadModule`; close each Vite server in `finally`. Pass `false` to `createConfigStore` when catalog work is intentionally excluded.
+- **Regression harness**: Tests use `node:test`, injected adapters, and Vite `ssrLoadModule`; close each Vite server in `finally`. Pass `false` to `createConfigStore` when catalog work is intentionally excluded. Shared `__tests__/vite-harness.mjs` exports `createServer(options)`, `withServer(fn, options?)`, and `deferred()`: `withServer` runs the callback with a server and closes it in `finally`, so one callback may load several modules and existing file-level shared callbacks with subtests keep their lifetime.
 
 ## Implementation references
 

@@ -35,6 +35,7 @@ impl Session {
         if let Some(parent) = &self.parent_id {
             identifier(parent, "ses_")?;
         }
+
         let title = self.title.unwrap_or_default();
         plain(&title, 4096, false)?;
         plain(&self.location.directory, 4096, false)?;
@@ -45,6 +46,7 @@ impl Session {
         {
             return Err(invalid("session outcome"));
         }
+
         if let Some(time) = self.time.archived {
             safe_time(time)?;
         }
@@ -89,6 +91,7 @@ async fn bounded<T, F: std::future::Future<Output = Result<T, AppError>>>(
             drop(pending.swap_remove(index));
         }
     }
+
     Ok(())
 }
 
@@ -112,6 +115,7 @@ impl IslandApi {
         if pending.data.len() > MAX_PENDING {
             return Err(failure("permission display limit exceeded"));
         }
+
         let mut ids = HashSet::new();
         pending
             .data
@@ -122,6 +126,7 @@ impl IslandApi {
                 if !ids.insert(id.to_owned()) || string(&request, "sessionID")? != session_id {
                     return Err(invalid("permission identity"));
                 }
+
                 let action = string(&request, "action")?;
                 plain(action, 1024, false)?;
                 if action.is_empty() {
@@ -153,6 +158,7 @@ impl IslandApi {
         if pending.data.len() > MAX_PENDING {
             return Err(failure("form display limit exceeded"));
         }
+
         let mut ids = HashSet::new();
         pending
             .data
@@ -162,6 +168,7 @@ impl IslandApi {
                 if !ids.insert(question.id.clone()) {
                     return Err(invalid("duplicate form"));
                 }
+
                 Ok(question)
             })
             .collect()
@@ -178,6 +185,7 @@ impl IslandApi {
         if answer.len() > MAX_FIELDS {
             return Err(invalid("question answer limit"));
         }
+
         let current: Data<Value> = self
             .read(&["session", session_id, "form", form_id], &[])
             .await?;
@@ -190,6 +198,7 @@ impl IslandApi {
         {
             return Err(invalid("stale question"));
         }
+
         let question = public_question(&current.data, session_id)?;
         if question.id != form_id {
             return Err(invalid("form identity"));
@@ -210,6 +219,7 @@ impl IslandApi {
             .await
             .map_err(|_| failure("snapshot timed out"))??;
         self.connection.ensure_current()?;
+
         Ok(snapshot)
     }
 
@@ -223,19 +233,23 @@ impl IslandApi {
         if recent.data.len() > 20 {
             return Err(failure("recent session limit exceeded"));
         }
+
         let active: Active = self.read(&["session", "active"], &[]).await?;
         if active.data.len() > MAX_SESSIONS {
             return Err(failure("active session display limit exceeded"));
         }
+
         for id in &active.data {
             identifier(id, "ses_")?;
         }
+
         let mut seen = HashSet::new();
         let mut sessions = Vec::new();
         for session in recent.data {
             if session.parent_id.is_some() || !seen.insert(session.id.clone()) {
                 return Err(invalid("recent root session"));
             }
+
             let archived = session.time.archived.is_some();
             let running = active.data.contains(&session.id);
             let session = session.public(running)?;
@@ -243,6 +257,7 @@ impl IslandApi {
                 sessions.push(session);
             }
         }
+
         let missing: Vec<_> = active
             .data
             .iter()
@@ -251,6 +266,7 @@ impl IslandApi {
         if sessions.len() + missing.len() > MAX_SESSIONS {
             return Err(failure("session display limit exceeded"));
         }
+
         let details: Vec<_> = missing
             .into_iter()
             .map(|id| async move {
@@ -263,6 +279,7 @@ impl IslandApi {
             .collect();
         bounded(details, |session| {
             sessions.push(session);
+
             Ok(())
         })
         .await?;
@@ -281,6 +298,7 @@ impl IslandApi {
             .map(|session| async move {
                 let permissions = self.permissions(&session.id).await?;
                 let questions = self.questions(&session.id).await?;
+
                 Ok((permissions, questions))
             })
             .collect();
@@ -299,6 +317,7 @@ impl IslandApi {
             }
             snapshot.permissions.extend(permissions);
             snapshot.questions.extend(questions);
+
             Ok(())
         })
         .await?;
@@ -328,6 +347,7 @@ impl IslandApi {
                 .then_with(|| right.updated_at.cmp(&left.updated_at))
                 .then_with(|| left.id.cmp(&right.id))
         });
+
         Ok(snapshot)
     }
 
@@ -349,6 +369,7 @@ pub(super) fn encoded_len(value: &impl Serialize) -> Result<usize, AppError> {
     impl std::io::Write for Count {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
             self.0 += bytes.len();
+
             Ok(bytes.len())
         }
 
@@ -359,6 +380,7 @@ pub(super) fn encoded_len(value: &impl Serialize) -> Result<usize, AppError> {
 
     let mut count = Count(0);
     serde_json::to_writer(&mut count, value).map_err(|_| failure("snapshot encoding failed"))?;
+
     Ok(count.0)
 }
 
@@ -368,6 +390,7 @@ pub(super) fn public_question(form: &Value, session_id: &str) -> Result<IslandQu
     if string(form, "sessionID")? != session_id {
         return Err(invalid("form owner"));
     }
+
     let title = string(form, "title")?;
     plain(title, 4096, true)?;
     let fields = form
@@ -377,6 +400,7 @@ pub(super) fn public_question(form: &Value, session_id: &str) -> Result<IslandQu
     if fields.len() > MAX_FIELDS {
         return Err(failure("form field display limit exceeded"));
     }
+
     let mut question = IslandQuestion {
         id: id.to_owned(),
         session_id: session_id.to_owned(),
@@ -396,6 +420,7 @@ pub(super) fn public_question(form: &Value, session_id: &str) -> Result<IslandQu
         if key.is_empty() || !keys.insert(key.to_owned()) {
             return Err(invalid("form field key"));
         }
+
         let kind = string(field, "type")?;
         plain(kind, 64, false)?;
         let mut required = public_flag(field, "required")?;
@@ -411,6 +436,7 @@ pub(super) fn public_question(form: &Value, session_id: &str) -> Result<IslandQu
                 required = true;
                 false
             }
+
             Some(_) => true,
         };
         // Constraints/conditions and non-question forms require the full OpenCode client.
@@ -424,6 +450,7 @@ pub(super) fn public_question(form: &Value, session_id: &str) -> Result<IslandQu
         {
             question.answerable = false;
         }
+
         let mut options = Vec::new();
         let mut values = HashSet::new();
         if let Some(list) = field.get("options").filter(|value| !value.is_null()) {
@@ -431,6 +458,7 @@ pub(super) fn public_question(form: &Value, session_id: &str) -> Result<IslandQu
             if list.len() > MAX_OPTIONS {
                 return Err(failure("form option display limit exceeded"));
             }
+
             for option in list {
                 let value = string(option, "value")?;
                 let label = string(option, "label")?;
@@ -448,6 +476,7 @@ pub(super) fn public_question(form: &Value, session_id: &str) -> Result<IslandQu
         } else if kind == "multiselect" {
             question.answerable = false;
         }
+
         let custom = match field.get("custom") {
             None | Some(Value::Null) => options.is_empty(),
             Some(Value::Bool(custom)) => *custom,
@@ -463,9 +492,11 @@ pub(super) fn public_question(form: &Value, session_id: &str) -> Result<IslandQu
             required,
         });
     }
+
     if !question.answerable {
         question.fields.clear();
     }
+
     Ok(question)
 }
 
@@ -473,6 +504,7 @@ pub(super) fn public_messages(messages: Vec<Value>) -> Result<Vec<IslandMessage>
     if messages.len() > 20 {
         return Err(failure("message display limit exceeded"));
     }
+
     let mut result = Vec::new();
     let mut ids = HashSet::new();
     for message in messages {
@@ -481,14 +513,17 @@ pub(super) fn public_messages(messages: Vec<Value>) -> Result<Vec<IslandMessage>
         if !ids.insert(id.to_owned()) {
             return Err(invalid("duplicate message"));
         }
+
         let role = string(&message, "type")?;
         plain(role, 64, false)?;
         if !matches!(role, "user" | "assistant") {
             continue;
         }
+
         if private_content(&message)? {
             continue;
         }
+
         let time = safe_time(
             message
                 .get("time")
@@ -503,6 +538,7 @@ pub(super) fn public_messages(messages: Vec<Value>) -> Result<Vec<IslandMessage>
             let (piece, cut) = trim_text(value, MAX_TEXT - text.len());
             text.push_str(piece);
             truncated |= cut;
+
             Ok(())
         };
         if role == "user" {
@@ -515,6 +551,7 @@ pub(super) fn public_messages(messages: Vec<Value>) -> Result<Vec<IslandMessage>
             if content.len() > 256 {
                 return Err(failure("message content item limit exceeded"));
             }
+
             for part in content {
                 if part.get("type").and_then(Value::as_str) == Some("text")
                     && !private_content(part)?
@@ -523,6 +560,7 @@ pub(super) fn public_messages(messages: Vec<Value>) -> Result<Vec<IslandMessage>
                 }
             }
         }
+
         if !text.is_empty() {
             result.push(IslandMessage {
                 id: id.to_owned(),
@@ -538,6 +576,7 @@ pub(super) fn public_messages(messages: Vec<Value>) -> Result<Vec<IslandMessage>
             .cmp(&right.time)
             .then_with(|| left.id.cmp(&right.id))
     });
+
     Ok(result)
 }
 
@@ -553,6 +592,7 @@ fn optional_string(value: &Value, key: &str, max: usize) -> Result<Option<String
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(text)) => {
             plain(text, max, true)?;
+
             Ok(Some(text.clone()))
         }
         _ => Err(invalid("response field")),
@@ -569,6 +609,7 @@ pub(super) fn bounded_strings(value: &Value, max_items: usize) -> Result<Vec<Str
         .map(|value| {
             let text = value.as_str().ok_or_else(|| invalid("response field"))?;
             plain(text, 4096, true)?;
+
             Ok(text.to_owned())
         })
         .collect()
@@ -597,12 +638,14 @@ fn private_content(value: &Value) -> Result<bool, AppError> {
         if !flags.is_object() {
             return Err(invalid("content metadata"));
         }
+
         for key in ["hidden", "synthetic", "internal"] {
             if public_flag(flags, key)? {
                 return Ok(true);
             }
         }
     }
+
     Ok(false)
 }
 
@@ -613,11 +656,13 @@ fn answer_valid(
     if !question.answerable || answer.len() > MAX_FIELDS {
         return Err(invalid("question answer"));
     }
+
     for key in answer.keys() {
         if !question.fields.iter().any(|field| field.key == *key) {
             return Err(invalid("question answer key"));
         }
     }
+
     for field in &question.fields {
         if !field.required
             && answer.get(&field.key).is_some_and(|value| {
@@ -628,6 +673,7 @@ fn answer_valid(
             answer.remove(&field.key);
             continue;
         }
+
         let Some(value) = answer.get(&field.key) else {
             if field.required {
                 return Err(invalid("required question answer"));
@@ -659,6 +705,7 @@ fn answer_valid(
         if field.required && (values.is_empty() || values.iter().any(|v| v.trim().is_empty())) {
             return Err(invalid("required question answer"));
         }
+
         let mut unique = HashSet::new();
         for value in values {
             plain(value, 4096, true)?;
@@ -669,5 +716,6 @@ fn answer_valid(
             }
         }
     }
+
     Ok(())
 }

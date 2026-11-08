@@ -4,6 +4,7 @@ import Button from '../button.svelte';
 
 test('mounts an interactive Svelte component in the DOM', async () => {
   let clicks = 0;
+
   render(Button, { 'aria-label': 'Smoke', onclick: () => clicks++ });
   await fireEvent.click(screen.getByRole('button', { name: 'Smoke' }));
   expect(clicks).toBe(1);
@@ -12,6 +13,7 @@ test('mounts an interactive Svelte component in the DOM', async () => {
 test('disabled links share native disabled styling and restore navigation when enabled', async () => {
   const { rerender } = render(Button, { href: '/groups', 'aria-label': 'Groups' });
   const link = screen.getByRole('link', { name: 'Groups' });
+
   expect(link.getAttribute('href')).toBe('/groups');
   expect(link.tabIndex).toBe(0);
 
@@ -21,8 +23,11 @@ test('disabled links share native disabled styling and restore navigation when e
   expect(link.tabIndex).toBe(-1);
 
   render(Button, { disabled: true, 'aria-label': 'Save' });
+
   const button = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+
   expect(button.disabled).toBe(true);
+
   for (const utility of [
     'pointer-events-none',
     'cursor-not-allowed',

@@ -58,6 +58,7 @@ impl FakeApi {
                     bytes.push(byte[0]);
                     assert!(bytes.len() <= 8192);
                 }
+
                 let request = String::from_utf8(bytes).unwrap();
                 assert!(request
                     .to_ascii_lowercase()
@@ -332,6 +333,7 @@ fn compact_is_default_and_pending_connection_updates_never_change_view() {
     assert_eq!(cache.view, IslandView::Compact);
     assert!(cache.publish(generation, 2, permission_snapshot()));
     assert_eq!(cache.view, IslandView::Compact);
+
     for (revision, view) in [(3, IslandView::Peek), (4, IslandView::Expanded)] {
         cache.set_view(generation, view).unwrap();
         assert!(cache.publish(generation, revision, permission_snapshot()));
@@ -357,6 +359,7 @@ fn explicit_views_clear_hidden_selection_but_never_reply_to_pending() {
     assert!(!cache.visible_message("ses_a"));
     assert!(cache.publish(generation, 1, permission_snapshot()));
     assert_eq!(cache.view, IslandView::Peek);
+
     for view in [IslandView::Peek, IslandView::Compact] {
         cache.set_view(generation, IslandView::Expanded).unwrap();
         cache.selected_session = Some("ses_a".into());
@@ -462,6 +465,7 @@ fn view_ipc_accepts_only_the_three_explicit_lowercase_values() {
             view
         );
     }
+
     for invalid in [
         serde_json::json!("attention"),
         serde_json::json!("Compact"),
@@ -982,6 +986,7 @@ fn disable_cancels_in_flight_future_and_drops_its_private_data() {
                 let _ = self.0.take().unwrap().send(());
             }
         }
+
         let task = tauri::async_runtime::spawn(async move {
             cancellable(&mut receiver, async move {
                 let _private = OnDrop(Some(dropped));
@@ -1029,6 +1034,7 @@ fn api_failure_wakes_and_drops_fresh_read_before_post_without_stopping_monitor()
                 let _ = self.0.take().unwrap().send(());
             }
         }
+
         let task = tauri::async_runtime::spawn(async move {
             cancellable(&mut cancel, async move {
                 let _private = OnDrop(Some(dropped));
@@ -1439,6 +1445,7 @@ fn stale_request_boundary_rejects_before_api_lookup_action_or_selection_change()
             cache.view = IslandView::Expanded;
             cache.selected_session = Some("ses_current".into());
         }
+
         let called = std::sync::atomic::AtomicUsize::new(0);
         let result = service
             .request(
@@ -1509,6 +1516,7 @@ fn all_island_data_ipcs_require_an_unsigned_expected_connection_generation() {
         cache.api = Some(api_b);
         cache.selected_session = Some("ses_current".into());
     }
+
     let initial_a = server_a.count();
     let initial_b = server_b.count();
     assert_eq!(initial_b, 1);
@@ -1531,6 +1539,7 @@ fn all_island_data_ipcs_require_an_unsigned_expected_connection_generation() {
         "sessionId": "ses_a", "text": "hello", "messageId": "msg_a",
         "requestId": "per_pending", "decision": "once", "formId": "frm_a", "answer": {}
     });
+
     for command in [
         "island_messages",
         "island_send",
@@ -1548,6 +1557,7 @@ fn all_island_data_ipcs_require_an_unsigned_expected_connection_generation() {
             if let Some(invalid) = invalid {
                 body["expectedConnectionGeneration"] = invalid;
             }
+
             let error = tauri::test::get_ipc_response(
                 &webview,
                 tauri::webview::InvokeRequest {
@@ -1569,6 +1579,7 @@ fn all_island_data_ipcs_require_an_unsigned_expected_connection_generation() {
                 "{command}: {error}"
             );
         }
+
         let mut body = payload.clone();
         body["expectedConnectionGeneration"] = serde_json::json!(7);
         let error = tauri::test::get_ipc_response(
@@ -1597,6 +1608,7 @@ fn all_island_data_ipcs_require_an_unsigned_expected_connection_generation() {
         assert_eq!(server_a.count(), initial_a, "{command}");
         assert_eq!(server_b.count(), initial_b, "{command}");
     }
+
     let mut body = payload;
     body["expectedConnectionGeneration"] = serde_json::json!(8);
     let messages = tauri::test::get_ipc_response(
@@ -1648,6 +1660,7 @@ fn actual_request_waiting_for_mutation_lock_cannot_run_after_target_refresh() {
         cache.start_actions();
         cache.api = Some(api_a);
     }
+
     let initial_a = server_a.count();
     let initial_b = server_b.count();
     tauri::async_runtime::block_on(async {

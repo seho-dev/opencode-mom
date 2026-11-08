@@ -109,6 +109,7 @@ impl Snapshot {
         if let Some(runtime) = &self.runtime {
             runtime.in_flight.fetch_add(1, Ordering::SeqCst);
         }
+
         Ok(SideEffectReservation(self.runtime.clone()))
     }
 
@@ -122,6 +123,7 @@ impl Snapshot {
                 return Err(failure("target changed; retry the operation"));
             }
         }
+
         Ok(())
     }
 
@@ -160,6 +162,7 @@ pub(super) fn transition_until(
         if std::time::Instant::now() >= deadline {
             return Err(failure("transition timed out"));
         }
+
         match TRANSITION.try_lock() {
             Ok(guard) => return Ok(guard),
             Err(std::sync::TryLockError::Poisoned(_)) => {
@@ -183,6 +186,7 @@ pub(super) fn normalize_url(value: &str) -> Result<String, AppError> {
     if value.len() > 256 || value.chars().any(char::is_control) {
         return Err(invalid());
     }
+
     let authority = value.strip_prefix("http://").ok_or_else(invalid)?;
     let authority = authority.strip_suffix('/').unwrap_or(authority);
     let (host, port) = authority.rsplit_once(':').ok_or_else(invalid)?;
@@ -192,11 +196,13 @@ pub(super) fn normalize_url(value: &str) -> Result<String, AppError> {
     {
         return Err(invalid());
     }
+
     let port = port
         .parse::<u16>()
         .ok()
         .filter(|port| *port != 0)
         .ok_or_else(invalid)?;
+
     Ok(format!(
         "http://{}:{port}",
         if host == "localhost" {
@@ -228,6 +234,7 @@ fn updated(
             "Service password must be at most 4096 bytes without control characters",
         ));
     }
+
     let password = match password {
         Some(password) => (!password.is_empty()).then_some(password),
         None => old
@@ -302,6 +309,7 @@ fn persist(path: &Path, selection: &Selection) -> Result<(), AppError> {
     if bytes.0.len() as u64 > MAX_BYTES {
         return Err(failure("configuration byte limit exceeded"));
     }
+
     match private_file::publish(path, &bytes.0).map_err(|error| {
         failure(match error {
             PublishError::DirectoryUnavailable => "configuration directory unavailable",
@@ -315,6 +323,7 @@ fn persist(path: &Path, selection: &Selection) -> Result<(), AppError> {
             eprintln!("OpenCode service target saved, but directory sync failed");
         }
     }
+
     Ok(())
 }
 
@@ -369,6 +378,7 @@ impl TargetRuntime {
                 "OpenCode service operation still in flight; wait before changing the target",
             ));
         }
+
         let selection = {
             let state = self
                 .state
@@ -392,6 +402,7 @@ impl TargetRuntime {
         drop(state);
         // Only local invalidation is allowed here; native work/readers wait until finish.
         let refresh = commit(guards);
+
         Ok((snapshot, refresh))
     }
 }
@@ -440,6 +451,7 @@ pub(crate) fn set_target<G, R>(
     finish: impl FnOnce(R),
 ) -> Result<OpenCodeServiceStatus, AppError> {
     let (snapshot, refresh) = runtime()?.set_with_refresh(url, password, prepare, commit)?;
+
     Ok(finish_target(snapshot, refresh, finish))
 }
 

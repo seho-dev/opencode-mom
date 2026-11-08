@@ -21,8 +21,11 @@ function noticeKey(operation: string): MessageKey {
 // branch-specific recovery action(s). Mounted globally in AppShell.
 $effect(() => {
   const err = config.error;
+
   if (!err) return;
+
   const base = { variant: 'error', title: err.message } as const;
+
   if (err.code === 'conflict') {
     toast({
       ...base,
@@ -57,7 +60,9 @@ $effect(() => {
 // Watch for success notices and surface them as success toasts.
 $effect(() => {
   const notice = config.notice;
+
   if (!notice) return;
+
   toast({ variant: 'success', description: i18n.t(noticeKey(notice)) });
   config.clearNotice();
 });

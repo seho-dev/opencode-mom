@@ -104,12 +104,15 @@ impl PromptGenerationRequest {
         if !plaintext(&self.instructions, MAX_INSTRUCTIONS_BYTES) {
             return Err(invalid("instructions"));
         }
+
         if !plaintext(&self.current_prompt, MAX_PROMPT_BYTES) {
             return Err(invalid("current prompt"));
         }
+
         if self.instructions.trim().is_empty() && self.current_prompt.trim().is_empty() {
             return Err(invalid("empty prompt and instructions"));
         }
+
         if self
             .variant
             .as_deref()
@@ -117,15 +120,18 @@ impl PromptGenerationRequest {
         {
             return Err(invalid("variant"));
         }
+
         let model = match self.model {
             Some(model) => {
                 if !selector(&model, MAX_MODEL_BYTES) {
                     return Err(invalid("model"));
                 }
+
                 let (provider_id, id) = model.split_once('/').ok_or_else(|| invalid("model"))?;
                 if provider_id.len() > 256 {
                     return Err(invalid("model"));
                 }
+
                 let model = crate::providers::ModelRef::new(provider_id, id)
                     .map_err(|_| invalid("model"))?;
                 Some(GenerationModel {
@@ -192,6 +198,7 @@ async fn response_body(mut response: Response) -> Result<Vec<u8>, AppError> {
     {
         return Err(oversized());
     }
+
     let mut bytes = Vec::new();
     while let Some(chunk) = response
         .chunk()
@@ -203,6 +210,7 @@ async fn response_body(mut response: Response) -> Result<Vec<u8>, AppError> {
         }
         bytes.extend_from_slice(&chunk);
     }
+
     Ok(bytes)
 }
 
@@ -239,9 +247,11 @@ async fn send(
             status.as_u16()
         )));
     }
+
     if status != StatusCode::OK {
         return Err(unknown_outcome(&format!("API HTTP {}", status.as_u16())));
     }
+
     let bytes = response_body(response).await?;
     let envelope: JsonObject<GenerationEnvelope> =
         transport::decode_json(&bytes, "generated prompt")
@@ -253,6 +263,7 @@ async fn send(
     connection
         .ensure_current()
         .map_err(|_| unknown_outcome("service target changed"))?;
+
     Ok(text)
 }
 

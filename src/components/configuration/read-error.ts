@@ -1,5 +1,6 @@
 export function readError(cause: unknown): string {
   if (cause && typeof cause === 'object' && 'message' in cause) return String(cause.message);
+
   return String(cause);
 }
 

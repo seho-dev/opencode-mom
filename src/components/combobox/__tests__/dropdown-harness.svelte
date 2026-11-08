@@ -5,6 +5,7 @@ import { createI18n } from '$src/i18n/i18n.svelte.js';
 import Combobox from '../combobox.svelte';
 
 setI18n(createI18n(() => 'en'));
+
 let {
   options = Array.from({ length: 20 }, (_, index) => ({ value: `Option ${index + 1}` })),
   onAgentChange,

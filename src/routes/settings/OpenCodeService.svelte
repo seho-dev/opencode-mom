@@ -37,16 +37,22 @@ function applyDraft(target: OpenCodeServiceTarget) {
   mode = target.mode;
   url = target.url ?? '';
 }
+
 export async function refresh() {
   if (!mounted || !active || !ready || pending) return;
+
   const seq = ++request;
+
   pending = 'read';
   busy = true;
   error = null;
   saved = false;
+
   try {
     const result = await config.getOpenCodeServiceStatus();
+
     if (!mounted || seq !== request) return;
+
     status = result;
     connectionUnknown = false;
     if (!initialized && !edited) applyDraft(result.target);
@@ -63,21 +69,27 @@ export async function refresh() {
     }
   }
 }
+
 async function save(event: SubmitEvent) {
   event.preventDefault();
   if (!mounted || !active || disabled || (mode === 'explicit' && !url.trim())) return;
+
   const seq = ++request;
+
   pending = 'save';
   busy = true;
   error = null;
   saved = false;
+
   try {
     const targetUrl = mode === 'shared' ? null : url.trim();
     const result =
       mode === 'explicit' && (password || clearPassword)
         ? await config.setOpenCodeServiceTarget(targetUrl, clearPassword ? '' : password)
         : await config.setOpenCodeServiceTarget(targetUrl);
+
     if (!mounted || seq !== request) return;
+
     status = result;
     connectionUnknown = false;
     applyDraft(result.target);
@@ -98,6 +110,7 @@ async function save(event: SubmitEvent) {
     }
   }
 }
+
 onMount(() => {
   mounted = true;
   return () => {

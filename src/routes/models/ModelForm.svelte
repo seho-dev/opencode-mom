@@ -93,27 +93,34 @@ const schema = z
   })
   .superRefine((value, ctx) => {
     const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message });
+
     if (!value.id.trim()) issue(['id'], i18n.t('validation.modelIdRequired'));
+
     if (anyFilled(value.costInput, value.costOutput, value.costCacheRead, value.costCacheWrite)) {
       if (!value.costInput.trim()) issue(['costInput'], i18n.t('validation.costRequired'));
       if (!value.costOutput.trim()) issue(['costOutput'], i18n.t('validation.costRequired'));
     }
+
     for (const key of ['costInput', 'costOutput', 'costCacheRead', 'costCacheWrite'] as const) {
       if (value[key].trim() && !Number.isFinite(Number(value[key]))) issue([key], i18n.t('validation.costInvalid'));
     }
+
     if (anyFilled(value.limitContext, value.limitOutput, value.limitInput)) {
       if (!value.limitContext.trim()) issue(['limitContext'], i18n.t('validation.limitRequired'));
       if (!value.limitOutput.trim()) issue(['limitOutput'], i18n.t('validation.limitRequired'));
     }
+
     for (const key of ['limitContext', 'limitOutput', 'limitInput'] as const) {
       if (value[key].trim() && !isValidTokenCount(value[key])) issue([key], i18n.t('validation.limitInvalid'));
     }
+
     const jsonError = (field: string) => i18n.t('modelForm.jsonObjectError', { field });
     if (parseObject(value.settings) === undefined) issue(['settings'], jsonError(i18n.t('modelForm.options')));
     const headers = parseObject(value.headers);
     if (headers === undefined) issue(['headers'], jsonError(i18n.t('modelForm.headers')));
     else if (Object.values(headers).some((header) => typeof header !== 'string'))
       issue(['headers'], i18n.t('validation.headersStrings'));
+
     value.variants.forEach((row, index) => {
       if (!row.key.trim()) return;
       const entry = parseObject(row.json);
@@ -128,6 +135,7 @@ const form = createForm(() => ({
   defaultValues: defaults(),
   validators: { onSubmit: schema },
   onSubmitInvalid: () => toast({ variant: 'error', description: i18n.t('toast.fixFields') }),
+
   onSubmit: async ({ value }) => {
     try {
       await onSave(mode === 'edit' ? defaultProviderId : value.providerId, formValuesToModel(value, draftInitial));
@@ -142,6 +150,7 @@ const selectedProvider = form.useSelector((state) => state.values.providerId);
 $effect(() => {
   const key = initial ? `${mode}:${defaultProviderId}/${initial.id}` : mode === 'new' ? 'new' : '';
   if (!key || initialized === key) return;
+
   initialized = key;
   draftInitial = initial ? structuredClone($state.snapshot(initial)) : undefined;
   form.reset(draftInitial ? modelToFormValues(draftInitial, defaultProviderId, defaults()) : defaults());
@@ -150,6 +159,7 @@ $effect(() => {
 function addVariant() {
   form.pushFieldValue('variants', emptyVariant());
 }
+
 function removeVariant(index: number) {
   form.removeFieldValue('variants', index);
 }

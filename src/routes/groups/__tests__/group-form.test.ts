@@ -8,6 +8,7 @@ import GroupForm from '../GroupForm.svelte';
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 const scrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
 });
@@ -57,6 +58,7 @@ async function select(label: string, option: string) {
 
 test('a group requires a nonblank name', async () => {
   const saveGroup = vi.fn();
+
   render(GroupForm, {}, { wrapper: Harness, wrapperProps: { config: config({ saveGroup }) } });
   await fireEvent.input(screen.getByRole('textbox', { name: 'Group name' }), { target: { value: '   ' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save group' }));
@@ -67,6 +69,7 @@ test('a group requires a nonblank name', async () => {
 
 test('a new group trims its name and saves empty mappings', async () => {
   const saveGroup = vi.fn().mockResolvedValue(undefined);
+
   render(GroupForm, {}, { wrapper: Harness, wrapperProps: { config: config({ saveGroup }) } });
   await fireEvent.input(screen.getByRole('textbox', { name: 'Group name' }), { target: { value: '  My group  ' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save group' }));
@@ -100,6 +103,7 @@ test('editing a group preserves its identity while changing native agent, model,
     isEnabled: true,
     updatedAt: '2025-01-01T00:00:00.000Z',
   };
+
   render(GroupForm, { group }, { wrapper: Harness, wrapperProps: { config: config({ saveGroup }) } });
 
   await waitFor(() =>
@@ -128,12 +132,14 @@ test('editing a group preserves its identity while changing native agent, model,
 
 test('switching type with native mappings requires confirmation and keeps mappings on cancel', async () => {
   const saveGroup = vi.fn().mockResolvedValue(undefined);
+
   render(GroupForm, {}, { wrapper: Harness, wrapperProps: { config: config({ saveGroup }) } });
   await fireEvent.input(screen.getByRole('textbox', { name: 'Group name' }), { target: { value: 'Switchable' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Add mapping' }));
   await fireEvent.click(screen.getByRole('radio', { name: 'OMO' }));
 
   const dialog = await screen.findByRole('dialog', { name: 'Switch group type' });
+
   expect((screen.getByRole('radio', { name: 'Native' }) as HTMLInputElement).checked).toBe(true);
   await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -156,6 +162,7 @@ test('switching type with native mappings requires confirmation and keeps mappin
 
 test('OMO agent and category mappings support add, remove, model and variant selection', async () => {
   const saveGroup = vi.fn().mockResolvedValue(undefined);
+
   render(GroupForm, {}, { wrapper: Harness, wrapperProps: { config: config({ saveGroup }) } });
   await fireEvent.input(screen.getByRole('textbox', { name: 'Group name' }), { target: { value: 'OMO group' } });
   await fireEvent.click(screen.getByRole('radio', { name: 'OMO' }));

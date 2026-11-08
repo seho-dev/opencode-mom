@@ -31,15 +31,19 @@ async function load(id: string, edit = false) {
   const scope = projectId;
   const key = `${scope ?? 'global'}:${id}`;
   const readOnly = readonly;
+
   loading = true;
   data = null;
   editing = false;
   saved = false;
   error = '';
   missing = false;
+
   try {
     const result = await (scope === null ? config.getSkill(id) : config.getSkill(id, scope));
+
     if (seq !== request) return;
+
     data = result;
     loadedId = key;
     editing = edit && result.kind === 'local' && !readOnly;
@@ -52,6 +56,7 @@ async function load(id: string, edit = false) {
     if (seq === request) loading = false;
   }
 }
+
 $effect(() => {
   void load(page.params.id ?? '', page.url.searchParams.get('edit') === '1');
   return () => {

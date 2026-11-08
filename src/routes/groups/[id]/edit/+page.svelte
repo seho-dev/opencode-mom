@@ -10,6 +10,7 @@ import GroupForm from '../../GroupForm.svelte';
 const catalog = getConfig();
 const i18n = getI18n();
 const group = $derived(catalog.groups.find((entry) => entry.id === page.params.id));
+
 $effect(() => {
   if (!group) goto('/groups');
 });

@@ -26,6 +26,7 @@ pub(crate) async fn set_island_enabled(
         crate::island::on_main(&app, move |app| {
             let service = app.state::<IslandService>();
             service.set_enabled(app, &paths, enabled)?;
+
             Ok(service.state())
         })
     })

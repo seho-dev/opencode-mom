@@ -11,6 +11,7 @@ use crate::projection;
 fn load(paths: &ConfigPaths) -> Result<AppConfig, AppError> {
     let config = models::load_config(&paths.config_file())?;
     config.validate()?;
+
     Ok(config)
 }
 
@@ -23,6 +24,7 @@ fn find_enabled_group(config: &AppConfig, group_id: Uuid) -> Result<&ModelGroup,
     if !group.is_enabled {
         return Err(AppError::validation("group is disabled"));
     }
+
     Ok(group)
 }
 
@@ -77,13 +79,16 @@ pub fn save_group(
     } else {
         config.groups.push(group.clone());
     }
+
     if config.state.selected_group_id == Some(group.id) {
         config.state.selected_group_name = Some(group.name.clone());
     }
+
     config.validate()?;
 
     persist_group_lifecycle(paths, previous.as_ref(), &group, config)?;
     let config = load(paths)?;
+
     Ok((group, config))
 }
 
@@ -123,6 +128,7 @@ pub fn copy_group(
     config.groups.push(copied.clone());
     config.validate()?;
     models::save_config(&paths.config_file(), &config)?;
+
     Ok((copied, config))
 }
 
@@ -141,8 +147,10 @@ pub fn delete_group(paths: &ConfigPaths, id: Uuid) -> Result<AppConfig, AppError
         config.state.selected_group_id = None;
         config.state.selected_group_name = None;
     }
+
     config.validate()?;
     models::save_config(&paths.config_file(), &config)?;
+
     Ok(config)
 }
 
@@ -175,6 +183,7 @@ fn switch_group_inner(
         document.save(&slim_file)?;
         checkpoint("group_switch_projection_complete");
     }
+
     if group.group_type == GroupType::Omo {
         let omo_file = paths.omo_file();
         let source = JsoncDoc::read(&omo_file, OMO_SCHEMA)?;
@@ -182,6 +191,7 @@ fn switch_group_inner(
         document.save(&omo_file)?;
         checkpoint("group_switch_projection_complete");
     }
+
     if group.group_type == GroupType::Native && projection::has_effective_opencode_overrides(&group)
     {
         let opencode_file = paths.opencode_file();
@@ -280,9 +290,11 @@ fn persist_group_lifecycle(
     if let Some((path, doc)) = slim_plan {
         doc.save(&path)?;
     }
+
     if let Some((path, doc)) = omo_plan {
         doc.save(&path)?;
     }
+
     if let Some((path, doc)) = opencode_plan {
         doc.save(&path)?;
     }
@@ -320,40 +332,44 @@ fn validate_group_drafts(
             )));
         }
     }
+
     Ok(())
 }
 
-fn group_model_references(group: &ModelGroup) -> Vec<(&'static str, &str, &str)> {
-    let mut references = Vec::new();
-    references.extend(group.open_code_agent_overrides.iter().map(|binding| {
+pub(crate) fn group_model_references(
+    group: &ModelGroup,
+) -> impl Iterator<Item = (&'static str, &str, &str)> {
+    [
         (
             "openCodeAgentOverrides",
-            binding.agent_name.as_str(),
-            binding.model_ref.as_str(),
-        )
-    }));
-    references.extend(group.slim_agent_overrides.iter().flatten().map(|binding| {
+            group.open_code_agent_overrides.as_slice(),
+        ),
         (
             "slimAgentOverrides",
-            binding.agent_name.as_str(),
-            binding.model_ref.as_str(),
-        )
-    }));
-    references.extend(group.omo_agent_overrides.iter().flatten().map(|binding| {
+            group.slim_agent_overrides.as_deref().unwrap_or_default(),
+        ),
         (
             "omoAgentOverrides",
-            binding.agent_name.as_str(),
-            binding.model_ref.as_str(),
-        )
-    }));
-    references.extend(group.omo_category_mappings.iter().flatten().map(|mapping| {
+            group.omo_agent_overrides.as_deref().unwrap_or_default(),
+        ),
+    ]
+    .into_iter()
+    .flat_map(|(field, bindings)| {
+        bindings.iter().map(move |binding| {
+            (
+                field,
+                binding.agent_name.as_str(),
+                binding.model_ref.as_str(),
+            )
+        })
+    })
+    .chain(group.omo_category_mappings.iter().flatten().map(|mapping| {
         (
             "omoCategoryMappings",
             mapping.category_name.as_str(),
             mapping.model_ref.as_str(),
         )
-    }));
-    references
+    }))
 }
 
 fn unique_copy_group_name(source: &str, groups: &[ModelGroup]) -> Result<String, AppError> {

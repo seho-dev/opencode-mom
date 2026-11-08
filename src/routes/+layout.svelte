@@ -16,6 +16,7 @@ import SplashScreen from '$src/shell/SplashScreen.svelte';
 let { children }: { children: Snippet } = $props();
 const isTray = $derived(page.url.pathname === '/tray');
 const isIsland = $derived(page.url.pathname === '/island');
+
 setConfig(
   createConfigStore(
     createCommandAdapter(),
@@ -23,17 +24,21 @@ setConfig(
     page.url.pathname !== '/island',
   ),
 );
+
 const config = getConfig();
+
 setI18n(createI18n(() => config.preferences.locale));
 
 $effect(() => {
   document.documentElement.classList.toggle('tray-window', isTray);
   document.documentElement.classList.toggle('island-window', isIsland);
+
   return () => document.documentElement.classList.remove('tray-window', 'island-window');
 });
 
 onMount(() => {
   if (!isTauri() || isTray || isIsland) return;
+
   let disposed = false;
   const unlisteners: UnlistenFn[] = [];
   const track = (pending: Promise<UnlistenFn>) => {
@@ -45,6 +50,7 @@ onMount(() => {
       .catch((error) => console.error('Could not listen for tray updates:', error));
   };
   const target = { target: 'main' };
+
   track(
     listen<unknown>(
       'tray:navigate',
@@ -63,6 +69,7 @@ onMount(() => {
       target,
     ),
   );
+
   return () => {
     disposed = true;
     for (const unlisten of unlisteners) unlisten();
@@ -71,11 +78,13 @@ onMount(() => {
 
 onMount(() => {
   if (!isTauri() || !isTray) return;
+
   let disposed = false;
   let unlisten: UnlistenFn | undefined;
   const reload = () => {
     if (!disposed) void config.reloadKeepingDraft().catch(console.error);
   };
+
   void listen('app:preferences-changed', reload, { target: 'tray' })
     .then((stop) => {
       if (disposed) stop();
@@ -85,6 +94,7 @@ onMount(() => {
       }
     })
     .catch((error) => console.error('Could not listen for preference updates:', error));
+
   return () => {
     disposed = true;
     unlisten?.();

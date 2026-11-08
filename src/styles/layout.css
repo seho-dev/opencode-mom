@@ -87,21 +87,11 @@
   color: var(--text-secondary);
   font-size: 11px;
 }
-.header-title {
-  font-family: var(--font-heading);
-  color: var(--text-primary);
-  font-weight: 600;
-}
 .header-main {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
-}
-.header-main .header-title {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 .header-meta {
   display: flex;

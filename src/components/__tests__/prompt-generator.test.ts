@@ -16,6 +16,7 @@ vi.mock('$app/state', async () => {
   const track = createSubscriber((update) => {
     notifyUrl = update;
   });
+
   return {
     page: {
       get url() {
@@ -41,16 +42,6 @@ afterEach(() => {
   if (originalScrollIntoView) HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
   else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
 });
-
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
 
 interface MockConfigHelper {
   config: ConfigStore;
@@ -88,6 +79,7 @@ function createMockConfig(overrides: Partial<ConfigStore> = {}): MockConfigHelpe
 
   return {
     config,
+
     setServiceTargetVersion(v: number) {
       targetVersion = v;
       notifyTarget?.();
@@ -98,7 +90,8 @@ function createMockConfig(overrides: Partial<ConfigStore> = {}): MockConfigHelpe
 test('empty input disables generate; filling requirements allows generating preview and applying replaces draft', async () => {
   const onapply = vi.fn();
   const { config } = createMockConfig();
-  const pendingGen = deferred<string>();
+  const pendingGen = Promise.withResolvers<string>();
+
   vi.mocked(config.generatePrompt).mockImplementation(() => pendingGen.promise);
 
   render(
@@ -111,14 +104,18 @@ test('empty input disables generate; filling requirements allows generating prev
   );
 
   const trigger = screen.getByRole('button', { name: en['promptGenerator.open'] });
+
   expect((trigger as HTMLButtonElement).disabled).toBe(false);
   await fireEvent.click(trigger);
 
   expect(screen.getByRole('heading', { name: en['promptGenerator.agentTitle'] })).toBeTruthy();
+
   const generateBtn = screen.getByRole('button', { name: en['promptGenerator.generate'] }) as HTMLButtonElement;
+
   expect(generateBtn.disabled).toBe(true);
 
   const instructionsInput = screen.getByLabelText(en['promptGenerator.instructions']);
+
   await fireEvent.input(instructionsInput, { target: { value: 'Create an autonomous test assistant' } });
   expect(generateBtn.disabled).toBe(false);
 
@@ -145,12 +142,14 @@ test('empty input disables generate; filling requirements allows generating prev
   });
 
   const preview = screen.getByLabelText(en['promptGenerator.preview']) as HTMLTextAreaElement;
+
   expect(preview.readOnly).toBe(true);
   expect(preview.value).toBe('New autonomous system prompt draft');
   expect(screen.getByText(en['promptGenerator.ready'])).toBeTruthy();
   expect(onapply).not.toHaveBeenCalled();
 
   const applyBtn = screen.getByRole('button', { name: en['promptGenerator.apply'] });
+
   await fireEvent.click(applyBtn);
 
   expect(onapply).toHaveBeenCalledExactlyOnceWith('New autonomous system prompt draft');
@@ -160,6 +159,7 @@ test('empty input disables generate; filling requirements allows generating prev
 test('existing draft defaults to improve preset and supports explicit model and variant selection', async () => {
   const onapply = vi.fn();
   const { config } = createMockConfig();
+
   vi.mocked(config.generatePrompt).mockResolvedValue('Improved command content');
 
   render(
@@ -175,16 +175,23 @@ test('existing draft defaults to improve preset and supports explicit model and 
   expect(screen.getByRole('heading', { name: en['promptGenerator.commandTitle'] })).toBeTruthy();
 
   const generateBtn = screen.getByRole('button', { name: en['promptGenerator.generate'] }) as HTMLButtonElement;
+
   expect(generateBtn.disabled).toBe(false);
 
   const modelTrigger = screen.getByLabelText(en['common.model']);
+
   await fireEvent.click(modelTrigger);
+
   const modelOption = screen.getByRole('option', { name: /Fast/ });
+
   await fireEvent.click(modelOption);
 
   const variantTrigger = screen.getByLabelText(en['agents.variant']);
+
   await fireEvent.click(variantTrigger);
+
   const variantOption = screen.getByRole('option', { name: 'quick' });
+
   await fireEvent.click(variantOption);
 
   await fireEvent.click(generateBtn);
@@ -220,10 +227,13 @@ test('failure preserves input without retry or apply', async () => {
   );
 
   await fireEvent.click(screen.getByRole('button', { name: en['promptGenerator.open'] }));
+
   const instructionsInput = screen.getByLabelText(en['promptGenerator.instructions']) as HTMLTextAreaElement;
+
   await fireEvent.input(instructionsInput, { target: { value: 'Draft with sensitive instructions' } });
 
   const generateBtn = screen.getByRole('button', { name: en['promptGenerator.generate'] });
+
   await fireEvent.click(generateBtn);
 
   await waitFor(() => {
@@ -239,7 +249,8 @@ test('failure preserves input without retry or apply', async () => {
 test('closing dialog discards late results and reopen is not contaminated by stale reply', async () => {
   const onapply = vi.fn();
   const { config } = createMockConfig();
-  const pendingGen = deferred<string>();
+  const pendingGen = Promise.withResolvers<string>();
+
   vi.mocked(config.generatePrompt).mockImplementation(() => pendingGen.promise);
 
   render(
@@ -297,6 +308,7 @@ test('service target change invalidates dialog and blocks apply', async () => {
   });
 
   const applyBtn = screen.getByRole('button', { name: en['promptGenerator.apply'] }) as HTMLButtonElement;
+
   expect(applyBtn.disabled).toBe(false);
 
   setServiceTargetVersion(1);
@@ -313,7 +325,8 @@ test('service target change invalidates dialog and blocks apply', async () => {
 test('unmounting while generation is in flight cleans up safely without unhandled errors or applying', async () => {
   const onapply = vi.fn();
   const { config } = createMockConfig();
-  const pendingGen = deferred<string>();
+  const pendingGen = Promise.withResolvers<string>();
+
   vi.mocked(config.generatePrompt).mockImplementation(() => pendingGen.promise);
 
   const { unmount } = render(
@@ -355,6 +368,7 @@ test('disabled prop prevents opening dialog and triggering prompt generation', a
   );
 
   const trigger = screen.getByRole('button', { name: en['promptGenerator.open'] }) as HTMLButtonElement;
+
   expect(trigger.disabled).toBe(true);
 
   await fireEvent.click(trigger);
@@ -365,6 +379,7 @@ test('disabled prop prevents opening dialog and triggering prompt generation', a
 test('behavior kind renders localized behaviorTitle and behaviorPlaceholder and passes behavior/currentPrompt draft', async () => {
   const onapply = vi.fn();
   const { config } = createMockConfig();
+
   vi.mocked(config.generatePrompt).mockResolvedValue('Global behavior prompt');
   render(
     PromptGenerator,
@@ -383,7 +398,9 @@ test('behavior kind renders localized behaviorTitle and behaviorPlaceholder and 
   await fireEvent.input(screen.getByLabelText(en['promptGenerator.instructions']), {
     target: { value: 'Make rules stricter' },
   });
+
   const generateBtn = screen.getByRole('button', { name: en['promptGenerator.generate'] }) as HTMLButtonElement;
+
   expect(generateBtn.disabled).toBe(false);
   await fireEvent.click(generateBtn);
   expect(config.generatePrompt).toHaveBeenCalledExactlyOnceWith({
@@ -400,6 +417,7 @@ test('behavior kind renders localized behaviorTitle and behaviorPlaceholder and 
   });
 
   const applyBtn = screen.getByRole('button', { name: en['promptGenerator.apply'] });
+
   await fireEvent.click(applyBtn);
   expect(onapply).toHaveBeenCalledExactlyOnceWith('Global behavior prompt');
   expect(screen.queryByRole('dialog')).toBeNull();

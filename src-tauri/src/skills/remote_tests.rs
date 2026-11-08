@@ -110,6 +110,7 @@ impl Server {
                             assert_ne!(count, 0);
                             request.extend_from_slice(&buffer[..count]);
                         }
+
                         let request = String::from_utf8(request).unwrap();
                         let path = request.split_whitespace().nth(1).unwrap().to_owned();
                         let response = {
@@ -141,6 +142,7 @@ impl Server {
                         }
                     }));
                 }
+
                 for worker in workers {
                     worker.join().unwrap();
                 }
@@ -272,6 +274,7 @@ fn create_and_update_bypass_warm_list_cache_for_new_remote_collision_or_failed_i
                     Duration::ZERO,
                 );
             }
+
             let error = if operation == "create" {
                 create(
                     &home.paths(),
@@ -317,6 +320,7 @@ fn create_final_discovery_bypasses_warm_cache_and_removes_owned_directory_on_sou
                 hook_called = true;
                 assert!(!directory.resolved.join("SKILL.md").exists());
                 assert_eq!(server.requests().len(), 2);
+
                 match change {
                     "remote collision" => {
                         server.index(json!([{"name":"Wanted","files":["Wanted.md"]}]));
@@ -331,6 +335,7 @@ fn create_final_discovery_bypasses_warm_cache_and_removes_owned_directory_on_sou
                     }
                     _ => unreachable!(),
                 }
+
                 Ok(())
             },
         )
@@ -436,6 +441,7 @@ fn cache_expiry_is_fixed_and_fifo_entry_and_byte_bounds_include_url_keys() {
     );
     cache.insert("first", "body", now + Duration::from_secs(20));
     assert!(cache.get("first", now + CACHE_TTL).is_none());
+
     for index in 0..=CACHE_ENTRIES {
         cache.insert(&format!("url-{index}"), "body", now);
     }
@@ -484,6 +490,7 @@ fn expired_list_cache_refetches_index_and_markdown() {
         "original"
     );
     server.respond("Wanted/Wanted.md", 200, "refreshed", Duration::ZERO);
+
     for entry in &mut cache.lock().unwrap().entries {
         entry.stored = Instant::now() - CACHE_TTL;
     }
@@ -547,6 +554,7 @@ fn cold_catalog_fetches_at_most_four_markdown_bodies_and_keeps_index_and_source_
     first.index(json!((0..6)
         .map(|index| json!({"name":format!("Entry{index}"),"files":["SKILL.md"]}))
         .collect::<Vec<_>>()));
+
     for index in 0..6 {
         first.respond(
             &format!("Entry{index}/SKILL.md"),
@@ -598,6 +606,7 @@ fn scan_deadline_is_shared_across_catalogs_preserves_local_list_and_never_claims
         &json!({"skills":[]}).to_string(),
         Duration::from_millis(400),
     );
+
     for only in [None, Some("Wanted"), Some("Absent")] {
         let started = Instant::now();
         let result = discover_until(
@@ -629,6 +638,7 @@ fn markdown_deadline_stops_later_chunks_without_losing_valid_local_skills_or_cac
     server.index(json!((0..6)
         .map(|index| json!({"name":format!("Entry{index}"),"files":["SKILL.md"]}))
         .collect::<Vec<_>>()));
+
     for index in 0..6 {
         server.respond(
             &format!("Entry{index}/SKILL.md"),
@@ -637,6 +647,7 @@ fn markdown_deadline_stops_later_chunks_without_losing_valid_local_skills_or_cac
             Duration::from_millis(400),
         );
     }
+
     let cache = Mutex::new(TextCache::default());
     let started = Instant::now();
     let listed = discover_until(
@@ -662,6 +673,7 @@ fn successive_catalogs_and_failed_requests_keep_the_same_shared_client() {
     let second = Server::new();
     first.index(json!([]));
     second.index(json!([]));
+
     for server in [&first, &second] {
         assert!(scan_catalog(
             &server.url,
@@ -732,6 +744,7 @@ fn scan_deadline_covers_slow_streamed_body_not_only_response_headers() {
             "HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\na"
         )
         .unwrap();
+
         for _ in 0..7 {
             thread::sleep(Duration::from_millis(40));
             if stream.write_all(b"a").is_err() {

@@ -28,46 +28,63 @@ let error = $state('');
 let syntaxError = $state('');
 let active = true;
 const kind = $derived.by(() => (safeParseJsonObject(text)?.type as string) ?? '');
+
 onDestroy(() => {
   active = false;
 });
 
 function parse(): Record<string, unknown> | null {
   const value = safeParseJsonObject(text);
+
   if (!value) {
     syntaxError = i18n.t('mcp.jsonError');
     return null;
   }
+
   syntaxError = '';
+
   return value;
 }
+
 function selectType(type: string) {
   const value = parse();
+
   if (!value) return;
+
   value.type = type;
+
   if (type === 'local' && !('command' in value)) {
     value.command = [''];
     value.environment ??= {};
   }
+
   if (type === 'remote' && !('url' in value)) {
     value.url = '';
     value.headers ??= {};
   }
+
   text = prettyJson(value);
 }
+
 async function save() {
   if (pending) return;
+
   error = '';
+
   const value = parse();
+
   if (!value) return;
+
   if (!name.trim()) {
     error = i18n.t('mcp.nameRequired');
     return;
   }
+
   if (value.type !== 'local' && value.type !== 'remote') {
     syntaxError = i18n.t('mcp.typeRequired');
     return;
   }
+
   if (
     value.type === 'local' &&
     (!Array.isArray(value.command) ||
@@ -78,17 +95,22 @@ async function save() {
     syntaxError = i18n.t('mcp.commandRequired');
     return;
   }
+
   if (value.type === 'remote' && (typeof value.url !== 'string' || !value.url.trim())) {
     syntaxError = i18n.t('mcp.urlRequired');
     return;
   }
+
   pending = true;
+
   try {
     const draft = { name: initial?.name ?? name.trim(), config: value };
     const result = initial
       ? await config.updateMcp({ ...draft, expectedConfig: initial.config, expectedSourcePath: initial.sourcePath })
       : await config.createMcp(draft);
+
     if (!active) return;
+
     if (onSaved) onSaved(result);
     else await goto(`/mcp/${encodeURIComponent(result.name)}?saved=1`);
   } catch (cause) {

@@ -64,8 +64,10 @@ const schema = $derived(
 const form = createForm(() => ({
   defaultValues,
   validators: { onSubmit: schema },
+
   onSubmit: async ({ value }) => {
     const parsed = schema.parse(value);
+
     try {
       if (source) {
         await config.updateProvider({
@@ -82,8 +84,10 @@ const form = createForm(() => ({
           headers: parsed.headers,
           models: {},
         };
+
         await config.createProvider(provider);
       }
+
       goto('/providers');
     } catch (error) {
       toast({
@@ -92,6 +96,7 @@ const form = createForm(() => ({
       });
     }
   },
+
   onSubmitInvalid: () => toast({ variant: 'error', description: i18n.t('toast.fixFields') }),
 }));
 

@@ -33,9 +33,11 @@ export function makeScopedConfig(overrides: Record<string, unknown> = {}, initia
     pickProjectFolder: vi.fn().mockResolvedValue(null),
     addProject: vi.fn(async (path: string) => {
       const project = projects.find((entry) => entry.path === path) ?? { id: 'project-new', path };
+
       if (!projects.includes(project)) projects = [...projects, project];
       selected = project.id;
       notify();
+
       return project;
     }),
     removeProject: vi.fn(async (id: string) => {
@@ -45,5 +47,6 @@ export function makeScopedConfig(overrides: Record<string, unknown> = {}, initia
     }),
     ...overrides,
   };
+
   return config as unknown as ConfigStore;
 }

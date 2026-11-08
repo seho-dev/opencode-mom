@@ -39,6 +39,7 @@ impl GlobalPaths {
                 ));
             }
         }
+
         Ok(())
     }
 
@@ -54,6 +55,7 @@ impl GlobalPaths {
             PluginConfigSource::Directory { path } => matches_path(&self.directories, path),
             _ => false,
         });
+
         for source in &mut preview.data {
             if let PluginConfigSource::Document {
                 path: Some(path),
@@ -72,6 +74,7 @@ impl GlobalPaths {
             }
         }
         self.ensure_current()?;
+
         Ok(preview)
     }
 }
@@ -95,6 +98,7 @@ pub(super) fn read_declarations(content: &str) -> Result<Vec<PluginConfigEntry>,
     if content.len() > super::MAX_BYTES as usize {
         return Err(invalid());
     }
+
     let document = JsoncDoc::parse(content)?;
     let Some(value) = document.raw().get("plugins") else {
         return Ok(Vec::new());
@@ -123,6 +127,7 @@ pub(super) fn read_declarations(content: &str) -> Result<Vec<PluginConfigEntry>,
             if !super::bounded_text(package(&entry), 4096) {
                 return Err(invalid());
             }
+
             Ok(entry)
         })
         .collect()
@@ -136,6 +141,7 @@ pub(super) fn local_declaration_matches(
     let Some(root) = declared_path(value, document)? else {
         return Ok(false);
     };
+
     Ok(resolved(Path::new(target))? == root)
 }
 
@@ -172,6 +178,7 @@ pub(super) fn filter_runtime(
             _ => {}
         }
     }
+
     let mut data = Vec::new();
     for mut item in runtime.data {
         item.can_remove = match &item.source {
@@ -212,6 +219,7 @@ pub(super) fn filter_runtime(
         }
     }
     runtime.data = data;
+
     Ok(runtime)
 }
 
@@ -254,11 +262,13 @@ fn resolved(path: &Path) -> Result<PathBuf, AppError> {
             if fs::symlink_metadata(path).is_ok() {
                 return Err(AppError::configuration("Unresolved Global plugin source"));
             }
+
             match (path.parent(), path.file_name()) {
                 (Some(parent), Some(name)) => Ok(resolved(parent)?.join(name)),
                 _ => Err(AppError::configuration("Invalid Global plugin source path")),
             }
         }
+
         Err(_) => Err(AppError::configuration(
             "Unable to resolve Global plugin source",
         )),

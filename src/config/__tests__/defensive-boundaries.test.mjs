@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createServer } from 'vite';
+import { withServer } from './vite-harness.mjs';
 
 const state = () => ({ providers: [], agents: [], groups: [], preferences: { theme: 'dark', locale: 'en' } });
 
 test('configuration boundaries reject invalid data and preserve failure ownership', async (t) => {
-  const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
-  try {
+  await withServer(async (vite) => {
     const { createConfigStore } = await vite.ssrLoadModule('/src/config/store.svelte.ts');
     const { createTauriAdapter } = await vite.ssrLoadModule('/src/config/adapter.ts');
 
@@ -121,7 +120,5 @@ test('configuration boundaries reject invalid data and preserve failure ownershi
       assert.equal(store.reloading, false);
       assert.equal(store.splashLoading, false);
     });
-  } finally {
-    await vite.close();
-  }
+  });
 });

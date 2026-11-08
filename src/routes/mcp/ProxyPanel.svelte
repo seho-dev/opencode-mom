@@ -65,17 +65,24 @@ const rows = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage *
 
 async function readState(manual = false, afterMutation = false) {
   if (!mounted) return;
+
   if (querying) {
     refreshQueued ||= afterMutation;
     return;
   }
+
   refreshQueued = false;
+
   const seq = ++request;
+
   querying = true;
   refreshing = manual;
+
   try {
     const res = await config.getMcpProxyState();
+
     if (!mounted || seq !== request) return;
+
     proxyState = res;
     error = '';
   } catch (cause) {
@@ -96,10 +103,14 @@ let togglingGateway = $state(false);
 
 async function toggleGateway(next: boolean) {
   if (!mounted || togglingGateway) return;
+
   togglingGateway = true;
+
   try {
     const current = await config.getMcpProxySettings();
+
     if (!mounted) return;
+
     await config.saveMcpProxySettings(
       {
         enabled: next,
@@ -124,11 +135,16 @@ async function toggleGateway(next: boolean) {
 
 async function openEdit(summary: McpProxyServerSummaryDto) {
   if (!mounted || !proxyState || serverPending) return;
+
   const revision = proxyState.revision;
+
   serverPending = true;
+
   try {
     const full = await config.getMcpProxyServer(summary.id);
+
     if (!mounted) return;
+
     editingServer = full;
     editingRevision = revision;
     formOpen = true;
@@ -141,15 +157,21 @@ async function openEdit(summary: McpProxyServerSummaryDto) {
 
 async function toggleEnabled(summary: McpProxyServerSummaryDto) {
   if (!mounted || !proxyState || serverPending) return;
+
   const revision = proxyState.revision;
+
   serverPending = true;
+
   try {
     const full = await config.getMcpProxyServer(summary.id);
+
     if (!mounted) return;
+
     const updated: McpProxyServerDto = {
       ...full,
       enabled: !full.enabled,
     };
+
     await config.updateMcpProxyServer(updated, revision);
     await readState(true, true);
   } catch (cause) {
@@ -161,11 +183,14 @@ async function toggleEnabled(summary: McpProxyServerSummaryDto) {
 
 async function confirmDelete() {
   if (!mounted || !deletingServer || !proxyState || deletePending) return;
+
   deletePending = true;
   deleteError = '';
+
   try {
     await config.deleteMcpProxyServer(deletingServer.id, proxyState.revision);
     if (!mounted) return;
+
     deletingServer = null;
     await readState(true, true);
   } catch (cause) {
@@ -177,14 +202,17 @@ async function confirmDelete() {
 
 async function submitCloseUnit() {
   if (!mounted || !closeUnitId.trim() || !proxyState || closeUnitPending) return;
+
   closeUnitPending = true;
   closeUnitError = '';
+
   try {
     await config.closeMcpProxyUnit({
       unitId: closeUnitId.trim(),
       expectedGeneration: proxyState.generation,
     });
     if (!mounted) return;
+
     closeUnitOpen = false;
     closeUnitId = '';
     await readState(true, true);

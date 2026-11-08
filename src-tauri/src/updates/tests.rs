@@ -23,6 +23,7 @@ fn mock_check(current: &str, status: u16, body: &str) -> (Result<UpdateCheck, Ap
             assert_ne!(count, 0);
             request.extend_from_slice(&buffer[..count]);
         }
+
         let _ = write!(
             stream,
             "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -50,6 +51,7 @@ fn stable_versions_compare_components_and_reject_malformed_tags() {
     assert!(stable_version("1.0.0").unwrap() > stable_version("0.99.99").unwrap());
     assert_eq!(stable_version("v1.2.3").unwrap(), [1, 2, 3]);
     assert_eq!(stable_version("4294967295.0.0").unwrap(), [u32::MAX, 0, 0]);
+
     for tag in [
         "",
         "v",
@@ -146,6 +148,7 @@ fn only_http_404_means_no_stable_release() {
         serde_json::to_value(result.unwrap()).unwrap(),
         json!({"currentVersion":"0.1.0", "latestVersion":null, "updateAvailable":false})
     );
+
     for status in [301, 403, 429, 500] {
         let (result, _) = mock_check("0.1.0", status, "failure");
         let error = result.unwrap_err();
@@ -206,6 +209,7 @@ fn network_failures_are_not_reported_as_no_update() {
 fn project_pages_allow_only_fixed_destinations_without_launching_them() {
     assert_eq!(project_url("repository").unwrap(), REPOSITORY_URL);
     assert_eq!(project_url("releases").unwrap(), RELEASES_URL);
+
     for page in [
         "",
         "Repository",
@@ -225,6 +229,7 @@ fn project_pages_allow_only_fixed_destinations_without_launching_them() {
             ErrorCode::ValidationFailed
         );
     }
+
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     for page in ["repository", "releases"] {
         let command = project_command(page).unwrap();

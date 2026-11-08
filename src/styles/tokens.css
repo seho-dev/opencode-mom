@@ -46,7 +46,6 @@
   --status-error: #ff5c5c;
   --radius: 4px;
   --radius-sm: 2px;
-  --radius-md: 4px;
   --focus-width: 1px;
   --focus-offset: 2px;
   --disabled-opacity: 0.45;
@@ -57,12 +56,7 @@
     "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", "PingFang SC",
     "Microsoft YaHei", "Noto Sans CJK SC", monospace;
   --font-heading: "Space Grotesk", var(--font-primary);
-  --font-caption-weight: 500;
-  --font-caption-size: 12px;
-  --font-caption-line: 16px;
   --font-body-size: 13px;
-  --font-body-line: 20px;
-  --control-height-compact: 32px;
   --control-height-small: 28px;
   --icon-md: 16px;
   --icon-sm: 12px;

@@ -52,6 +52,7 @@ fn exclusive_publication_refuses_raced_destination_symlink_and_cleans_temporary(
     assert!(directory
         .create_file_checked("SKILL.md", "private", || {
             symlink(&outside, directory.resolved.join("SKILL.md")).unwrap();
+
             Ok(())
         })
         .is_err());
@@ -131,6 +132,7 @@ fn snapshot_rejects_final_mode_and_identity_drift_keeps_private_backup_and_remov
         let (path, snapshot) = snapshot_fixture(&fixture);
         assert!(replace(&[(snapshot, "edited".to_owned())], |resolved| {
             drift_file(resolved, replace_inode, mode);
+
             Ok(())
         })
         .is_err());
@@ -169,6 +171,7 @@ fn successful_replace_removes_only_owned_backups_and_preserves_original_modes() 
         updates.push((Snapshot::read(&path).unwrap().unwrap(), "edited".to_owned()));
     }
     replace(&updates, |_| Ok(())).unwrap();
+
     for (snapshot, _) in updates {
         assert_eq!(fs::read_to_string(&snapshot.path).unwrap(), "edited");
         assert_eq!(
@@ -194,6 +197,7 @@ fn failed_multi_file_publish_retains_all_private_complete_backups() {
             fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
             updates.push((Snapshot::read(&path).unwrap().unwrap(), "edited".to_owned()));
         }
+
         let mut calls = 0;
         assert!(replace(&updates, |_| {
             let current = calls;
@@ -213,6 +217,7 @@ fn failed_multi_file_publish_retains_all_private_complete_backups() {
             fs::read_to_string(fixture.0.join("second.md")).unwrap(),
             "second.md"
         );
+
         for name in ["first.md", "second.md"] {
             assert_eq!(
                 fs::metadata(fixture.0.join(name))
@@ -223,6 +228,7 @@ fn failed_multi_file_publish_retains_all_private_complete_backups() {
                 0o644
             );
         }
+
         let mut originals = Vec::new();
         for entry in fs::read_dir(&fixture.0).unwrap() {
             let path = entry.unwrap().path();
@@ -290,6 +296,7 @@ fn backup_cleanup_error_after_commit_does_not_report_save_failure() {
             .unwrap();
         fs::remove_file(&backup).unwrap();
         fs::create_dir(backup).unwrap();
+
         Ok(())
     })
     .unwrap();

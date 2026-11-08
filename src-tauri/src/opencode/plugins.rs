@@ -234,6 +234,7 @@ fn read_config_sources(
     connection
         .verify_identity(deadline)
         .map_err(|error| transport::plugin_verification_failure(error, deadline))?;
+
     Ok(result)
 }
 
@@ -275,6 +276,7 @@ fn list_with(
     let result = global::filter_runtime(state.runtime, &state.preview)?;
     state.scope.ensure_current()?;
     connection.ensure_current()?;
+
     Ok(result)
 }
 
@@ -286,6 +288,7 @@ fn project_config_sources(
     if sources.len() > 4096 {
         return Err(invalid());
     }
+
     let mut data = Vec::with_capacity(sources.len());
     for source in sources {
         data.push(match source.0 {
@@ -295,6 +298,7 @@ fn project_config_sources(
                 {
                     return Err(invalid());
                 }
+
                 let plugins = info
                     .0
                     .plugins
@@ -314,6 +318,7 @@ fn project_config_sources(
                         if !bounded_text(value, 4096) {
                             return Err(invalid());
                         }
+
                         Ok(entry)
                     })
                     .collect::<Result<_, AppError>>()?;
@@ -356,6 +361,7 @@ fn check_with(
             })
             .collect(),
     };
+
     for target in targets {
         allowed_global_target(&target, &state, false)?;
         state.scope.ensure_current()?;
@@ -367,9 +373,11 @@ fn check_with(
             deadline,
         )?;
     }
+
     let result = global::filter_runtime(state.runtime, &state.preview)?;
     state.scope.ensure_current()?;
     connection.ensure_current()?;
+
     Ok(result)
 }
 
@@ -400,6 +408,7 @@ fn check_one(
         scope.ensure_current()?;
         let result = project_runtime(envelope.0)?;
         validate_requested_directory(Some(Path::new(directory)), &result)?;
+
         Ok(result)
     })()
     .map_err(|_: AppError| {
@@ -424,6 +433,7 @@ fn update_with(
         &json!({"targets": [target]}),
         deadline,
     )?;
+
     Ok(())
 }
 
@@ -467,6 +477,7 @@ fn runtime(
     let result = project_runtime(envelope.0)?;
     validate_requested_directory(requested_directory, &result)
         .map_err(|error| transport::plugin_verification_failure(error, deadline))?;
+
     Ok(result)
 }
 
@@ -474,6 +485,7 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
     if !absolute_path(&envelope.location.0.directory) || envelope.data.len() > 4096 {
         return Err(invalid_runtime());
     }
+
     let mut data = Vec::with_capacity(envelope.data.len());
     for item in envelope.data {
         let mut item = item.0;
@@ -482,6 +494,7 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
         {
             return Err(invalid_runtime());
         }
+
         match &item.source {
             PluginSource::Local { path } if !bounded_text(path, 4096) => {
                 return Err(invalid_runtime())
@@ -502,6 +515,7 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
             }
             _ => {}
         }
+
         if let PluginState::Failed { reference, .. } = &item.state {
             if reference
                 .as_ref()
@@ -517,6 +531,7 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
         }
         data.push(item);
     }
+
     let counts = target_counts(&data);
     let can_update: Vec<_> = data
         .iter()
@@ -534,6 +549,7 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
             _ => false,
         })
         .collect();
+
     for (item, can_update) in data.iter_mut().zip(can_update) {
         item.can_update = can_update;
     }
@@ -563,6 +579,7 @@ fn allowed_target(target: &str, runtime: &PluginRuntime, updating: bool) -> Resu
     {
         return Err(AppError::validation("Plugin target is absent, ambiguous, local, built-in, pinned, current or already updating in the selected runtime"));
     }
+
     Ok(())
 }
 
@@ -572,6 +589,7 @@ fn target_counts(data: &[PluginRuntimeItem]) -> HashMap<&str, usize> {
         if let Some(id) = &item.id {
             *counts.entry(id.as_str()).or_default() += 1;
         }
+
         if let PluginSource::Package { target, .. } = &item.source {
             if item.id.as_deref() != Some(target) {
                 *counts.entry(target.as_str()).or_default() += 1;
@@ -610,6 +628,7 @@ fn validate_requested_directory(
             "Plugin runtime location differs from the requested location",
         ));
     }
+
     Ok(())
 }
 

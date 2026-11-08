@@ -32,18 +32,23 @@ let content = $state(initial?.content ?? '');
 let pending = $state(false);
 let error = $state('');
 let active = true;
+
 onDestroy(() => {
   active = false;
 });
 
 async function save() {
   if (pending || readonly) return;
+
   error = '';
+
   if (!name.trim()) {
     error = i18n.t('commands.nameRequired');
     return;
   }
+
   pending = true;
+
   try {
     const result = initial
       ? await config.updateSlashCommand(
@@ -56,10 +61,13 @@ async function save() {
           scope,
         )
       : await config.createSlashCommand({ name: name.trim(), content }, scope);
+
     if (!active) return;
+
     if (onSaved) onSaved(result);
     else {
       const params = new URLSearchParams({ saved: '1' });
+
       if (scope !== null) params.set('project', scope);
       await goto(`/commands/${encodeURIComponent(result.id)}?${params}`);
     }

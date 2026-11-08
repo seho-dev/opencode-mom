@@ -15,4 +15,5 @@ export function createI18n(getLocale: () => LocalePreference) {
     },
   };
 }
+
 export type I18n = ReturnType<typeof createI18n>;

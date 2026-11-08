@@ -6,6 +6,7 @@ import RotateKeyDialog from '../RotateKeyDialog.svelte';
 
 function mount(rotateMomHttpKey = vi.fn().mockResolvedValue('private-rotated-token')) {
   const config = { preferences: { locale: 'en' }, rotateMomHttpKey } as unknown as ConfigStore;
+
   return render(RotateKeyDialog, { open: true }, { wrapper: Harness, wrapperProps: { config } });
 }
 
@@ -15,6 +16,7 @@ afterEach(() => {
 
 test('externally closing the token dialog clears its one-time secret before reopening', async () => {
   const { rerender } = mount();
+
   await fireEvent.click(await screen.findByRole('button', { name: 'Generate New Token' }));
   expect(((await screen.findByLabelText('New Secret Token Generated')) as HTMLInputElement).value).toBe(
     'private-rotated-token',
@@ -35,6 +37,7 @@ test.each(['close', 'inactive'] as const)('%s discards late one-time token resul
   );
   const { rerender } = mount(rotateMomHttpKey);
   const confirm = (await screen.findByRole('button', { name: 'Generate New Token' })) as HTMLButtonElement;
+
   await fireEvent.click(confirm);
   expect(confirm.disabled).toBe(true);
   expect(screen.getByRole('dialog').getAttribute('aria-busy')).toBe('true');
@@ -43,7 +46,9 @@ test.each(['close', 'inactive'] as const)('%s discards late one-time token resul
 
   await rerender(action === 'close' ? { open: false } : { open: true, active: false });
   await rerender({ open: true, active: true });
+
   const pendingConfirm = screen.getByRole('button', { name: 'Updating…' }) as HTMLButtonElement;
+
   expect(pendingConfirm.disabled).toBe(true);
   await fireEvent.click(pendingConfirm);
   expect(rotateMomHttpKey).toHaveBeenCalledOnce();
@@ -58,8 +63,11 @@ test.each(['close', 'inactive'] as const)('%s discards late one-time token resul
 
 test('leaving General clears the displayed token and copied state before returning', async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
+
   vi.stubGlobal('navigator', { clipboard: { writeText } });
+
   const { rerender } = mount();
+
   await fireEvent.click(await screen.findByRole('button', { name: 'Generate New Token' }));
   await fireEvent.click(await screen.findByRole('button', { name: 'Copy Token' }));
   expect(writeText).toHaveBeenCalledExactlyOnceWith('private-rotated-token');
@@ -79,8 +87,11 @@ test('late clipboard completion cannot restore copied state after close and reop
       finishCopy = resolve;
     }),
   );
+
   vi.stubGlobal('navigator', { clipboard: { writeText } });
+
   const { rerender } = mount();
+
   await fireEvent.click(await screen.findByRole('button', { name: 'Generate New Token' }));
   await fireEvent.click(await screen.findByRole('button', { name: 'Copy Token' }));
   await rerender({ open: false });
@@ -99,6 +110,7 @@ test('unmount discards a pending HTTP rotation without feedback or readback', as
   const rotateMomHttpKey = vi.fn().mockReturnValue(pending);
   const onRotated = vi.fn();
   const view = mount(rotateMomHttpKey);
+
   await view.rerender({ open: true, onRotated });
   await fireEvent.click(await screen.findByRole('button', { name: 'Generate New Token' }));
   view.unmount();

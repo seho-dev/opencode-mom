@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, test, vi } from 'vitest';
 import type { CommandAdapter } from '$src/config/adapter.js';
 import { type ConfigStore, createConfigStore } from '$src/config/store.svelte.js';
+import { getToasts } from '$src/shell/toast.svelte.js';
 import Harness from '$src/test-utils/harness.svelte';
 import type { AppState } from '$src/types/app.js';
 import type { ModelRef } from '$src/types/models.js';
@@ -27,14 +28,16 @@ const builtinModel = {
 };
 
 function createMockConfig(overrides: Record<string, unknown> = {}) {
-  const catalog = overrides['catalog']
-    ? (overrides['catalog'] as unknown as (typeof customModel)[])
+  const catalog = overrides.catalog
+    ? (overrides.catalog as unknown as (typeof customModel)[])
     : [customModel, builtinModel];
   return {
     preferences: { locale: 'en' },
     catalog,
     catalogLoading: false,
+    catalogError: null,
     loading: false,
+    error: null,
     saving: false,
     models: () => catalog.filter((m) => m.isCustom),
     deleteModel: vi.fn().mockResolvedValue(undefined),
@@ -44,6 +47,22 @@ function createMockConfig(overrides: Record<string, unknown> = {}) {
 }
 
 describe('/models actions and copy contract', () => {
+  test('model list query trims leading and trailing whitespace', async () => {
+    const mockConfig = createMockConfig({
+      models: () => [customModel, { ...customModel, id: 'beta', ref: 'openai/beta', name: 'Beta Model' }],
+    });
+    render(ModelsPage, {}, { wrapper: Harness, wrapperProps: { config: mockConfig } });
+    const table = screen.getByRole('table') as HTMLTableElement;
+
+    expect(table.tBodies[0].rows.length).toBe(2);
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Search models' }), {
+      target: { value: '   custom-gpt   ' },
+    });
+    expect(table.tBodies[0].rows.length).toBe(1);
+    expect(table.tBodies[0].rows[0].cells[1]?.textContent?.trim()).toBe('Custom GPT');
+  });
+
   test('custom model renders copy button linking to /models/new?copyFrom=<ref>', async () => {
     const mockConfig = createMockConfig();
     render(ModelsPage, {}, { wrapper: Harness, wrapperProps: { config: mockConfig } });
@@ -145,7 +164,14 @@ describe('/models actions and copy contract', () => {
     const confirmBtn = screen.getByRole('button', { name: 'Delete' });
     await fireEvent.click(confirmBtn);
 
-    expect(deleteModel).toHaveBeenCalledWith('openai/custom-gpt');
+    await waitFor(() => expect(deleteModel).toHaveBeenCalledExactlyOnceWith('openai/custom-gpt'));
+    await waitFor(() =>
+      expect(
+        getToasts().some(
+          (entry) => entry.variant === 'error' && entry.description === 'Deletion blocked by references',
+        ),
+      ).toBe(true),
+    );
     expect(screen.getByText('Custom GPT')).toBeDefined();
   });
 

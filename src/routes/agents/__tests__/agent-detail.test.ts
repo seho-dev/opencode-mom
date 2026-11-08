@@ -17,6 +17,7 @@ vi.mock('$app/state', async () => {
   });
   let params = { id: 'helper' };
   let url = new URL('http://localhost/agents/helper?project=project-a');
+
   return {
     page: {
       get params() {
@@ -38,6 +39,7 @@ vi.mock('$app/state', async () => {
     },
   };
 });
+
 const agent: AgentDefinition = {
   id: 'helper',
   source: 'markdown',
@@ -53,6 +55,7 @@ const agent: AgentDefinition = {
     },
   ],
 };
+
 beforeEach(() => {
   page.params = { id: 'helper' };
   page.url = new URL('http://localhost/agents/helper?project=project-a&edit=1');
@@ -62,13 +65,16 @@ test('agent detail loads explicit project, shows source and safe text, and offer
   const getAgent = vi.fn().mockResolvedValue(agent);
   const config = makeScopedConfig({ getAgent }, 'project-b');
   const { container } = render(AgentDetail, {}, { wrapper: Harness, wrapperProps: { config } });
+
   await screen.findByRole('heading', { name: agent.id });
   expect(getAgent).toHaveBeenCalledExactlyOnceWith('helper', 'project-a');
   expect(screen.getByText('/work/alpha/.opencode/agents/helper.md')).toBeTruthy();
   expect(container.querySelector('pre')?.textContent).toContain('<script>unsafe()</script>');
+
   const preview = screen.getByRole('region', {
     name: `${en['agents.sourcePreview']}: /work/alpha/.opencode/agents/helper.md`,
   });
+
   expect(preview.tabIndex).toBe(0);
   preview.focus();
   expect(document.activeElement).toBe(preview);
@@ -92,6 +98,7 @@ test('same resource ID with another scope ignores late detail and Global compari
         }),
     )
     .mockResolvedValueOnce({ ...agent, description: 'Global comparison' });
+
   render(AgentDetail, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig({ getAgent }) } });
   await waitFor(() => expect(getAgent).toHaveBeenCalledTimes(1));
   page.url = new URL('http://localhost/agents/helper');
@@ -112,13 +119,16 @@ test('source and prompt previews expose separate named keyboard entries without 
     sources: [{ storage: 'inline', path, raw, fields: raw, prompt }],
   };
   const getAgent = vi.fn().mockResolvedValue(entry);
+
   render(AgentDetail, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig({ getAgent }) } });
   await screen.findByRole('heading', { name: agent.id });
+
   for (const [label, content] of [
     [en['agents.sourcePreview'], JSON.stringify(raw, null, 2)],
     [en['agents.prompt'], prompt],
   ]) {
     const preview = screen.getByRole('region', { name: `${label}: ${path}` });
+
     expect(preview.textContent).toBe(content);
     expect(preview.tabIndex).toBe(0);
     preview.focus();
@@ -128,8 +138,11 @@ test('source and prompt previews expose separate named keyboard entries without 
 
 test('legacy source preview keeps a named keyboard entry', async () => {
   const getAgent = vi.fn().mockResolvedValue({ ...agent, sources: [] });
+
   render(AgentDetail, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig({ getAgent }) } });
+
   const preview = await screen.findByRole('region', { name: `${en['agents.sourcePreview']}: ${agent.id}` });
+
   expect(preview.tabIndex).toBe(0);
   preview.focus();
   expect(document.activeElement).toBe(preview);

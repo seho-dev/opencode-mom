@@ -61,6 +61,7 @@ impl HoverObserver {
         if !ivars.active.get() {
             return;
         }
+
         let Some(cache) = ivars.cache.upgrade() else {
             return;
         };
@@ -72,6 +73,7 @@ impl HoverObserver {
         if !should_notify(enabled, view, edge, moved) {
             return;
         }
+
         let Some(notifications) = ivars.notifications.upgrade() else {
             return;
         };
@@ -111,6 +113,7 @@ impl HoverObserver {
                 native.isKeyWindow(),
             );
         }
+
         let event = if entered {
             "island:pointer-enter"
         } else {
@@ -196,6 +199,7 @@ pub(super) fn install(app: &AppHandle) -> Result<(), AppError> {
         view.bounds(),
     );
     TRACKING.with(|slot| *slot.borrow_mut() = Some(Tracking { view, area, owner }));
+
     Ok(())
 }
 

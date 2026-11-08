@@ -65,6 +65,7 @@ pub(crate) fn verify_token(token: &str, verifier: &str) -> bool {
     if !valid_verifier(verifier) {
         return false;
     }
+
     let mut expected = [0; 32];
     for (index, byte) in expected.iter_mut().enumerate() {
         *byte = u8::from_str_radix(&verifier[index * 2..index * 2 + 2], 16)
@@ -77,6 +78,7 @@ fn valid_host(headers: &HeaderMap, settings: MomHttpSettings) -> bool {
     if headers.get_all("host").iter().count() != 1 {
         return false;
     }
+
     let Some(authority) = headers
         .get("host")
         .and_then(|value| value.to_str().ok())
@@ -87,6 +89,7 @@ fn valid_host(headers: &HeaderMap, settings: MomHttpSettings) -> bool {
     if authority.as_str().contains('@') || authority.port_u16().unwrap_or(80) != settings.port {
         return false;
     }
+
     match authority.host() {
         "localhost" | "127.0.0.1" | "[::1]" => true,
         host => settings.allow_lan && host.parse::<std::net::Ipv4Addr>().is_ok(),
@@ -114,14 +117,17 @@ pub(super) async fn enforce(
     if !valid_host(request.headers(), auth.settings) {
         return StatusCode::BAD_REQUEST.into_response();
     }
+
     if !valid_origin(request.headers(), auth.settings.port) {
         return StatusCode::FORBIDDEN.into_response();
     }
+
     let epoch = {
         let state = auth.state.read().unwrap_or_else(|error| error.into_inner());
         if auth.listener_token.is_cancelled() || state.epoch.is_cancelled() {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
+
         let Some(verifier) = &state.config.token_verifier else {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         };
@@ -169,6 +175,7 @@ mod tests {
             headers.insert("host", host.parse().unwrap());
             assert!(valid_host(&headers, settings));
         }
+
         for host in [
             "localhost",
             "localhost:no",

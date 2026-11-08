@@ -39,15 +39,22 @@ const firstDay = $derived(calendar.cells.findIndex((cell) => cell.count !== null
 const lastDay = $derived(calendar.cells.findLastIndex((cell) => cell.count !== null));
 const inspectedCell = $derived(inspected === null ? null : calendar.cells[inspected]);
 const locale = $derived(i18n.locale === 'zh' ? 'zh-CN' : 'en-US');
+const formatters = new Map<string, Intl.DateTimeFormat>();
 const number = (value: number) => value.toLocaleString(locale);
 const dateLabel = (
   date: string,
   options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' },
-) =>
-  new Intl.DateTimeFormat(locale, {
-    timeZone: 'UTC',
-    ...options,
-  }).format(new Date(`${date}T00:00:00Z`));
+) => {
+  const key = `${locale}:${options.weekday ?? ''}:${options.month ?? ''}:${options.day ?? ''}:${options.year ?? ''}`;
+  let formatter = formatters.get(key);
+
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, { timeZone: 'UTC', ...options });
+    formatters.set(key, formatter);
+  }
+
+  return formatter.format(new Date(`${date}T00:00:00Z`));
+};
 const rangeLabel = $derived(
   period === 'year'
     ? String(year)
@@ -55,12 +62,15 @@ const rangeLabel = $derived(
       ? dateLabel(calendar.from)
       : `${dateLabel(calendar.from)} – ${dateLabel(calendar.to)}`,
 );
+
 $effect(() => {
   focused = calendar.cells.findIndex((cell) => cell.count !== null);
   inspected = null;
 });
+
 function navigate(event: KeyboardEvent, index: number) {
   let next = index;
+
   if (event.key === 'ArrowRight') next += period === 'year' ? 7 : 1;
   else if (event.key === 'ArrowLeft') next -= period === 'year' ? 7 : 1;
   else if (event.key === 'ArrowDown') next += period === 'month' ? 7 : 1;
@@ -68,6 +78,7 @@ function navigate(event: KeyboardEvent, index: number) {
   else if (event.key === 'Home') next = firstDay;
   else if (event.key === 'End') next = lastDay;
   else return;
+
   event.preventDefault();
   next = Math.max(firstDay, Math.min(lastDay, next));
   focused = next;
@@ -228,7 +239,7 @@ function navigate(event: KeyboardEvent, index: number) {
           class="day-grid m-0 grid gap-[3px] border-0"
           aria-label={i18n.t('dashboard.heatmapLabel', { range: rangeLabel })}
         >
-          {#each calendar.cells as cell, index (`${period}-${calendar.from}-${index}`)}
+          {#each calendar.cells as cell, index (index)}
             {#if !shortRange || cell.date}
               {#if cell.date && cell.count !== null}
                 {@const label = i18n.t('dashboard.dayCount', { date: dateLabel(cell.date), count: formatTokensM(cell.count) })}

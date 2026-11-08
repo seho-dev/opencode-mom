@@ -4,6 +4,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { onMount } from 'svelte';
 import { Button } from '$src/components/button/index.js';
+import { readError } from '$src/components/configuration/read-error.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { Group } from '$src/types/groups.js';
@@ -49,20 +50,26 @@ const healthDetail = $derived(
 );
 
 function errorMessage(cause: unknown) {
-  if (cause && typeof cause === 'object' && 'message' in cause) return String(cause.message);
-  return typeof cause === 'string' ? cause : i18n.t('tray.operationFailed');
+  return typeof cause === 'string' || (cause && typeof cause === 'object' && 'message' in cause)
+    ? readError(cause)
+    : i18n.t('tray.operationFailed');
 }
 
 async function checkHealth() {
   const request = ++healthRequest;
+
   health = 'checking';
+
   try {
     const sessions = await invoke<number>('opencode_active_sessions');
+
     if (disposed || request !== healthRequest || !visible) return;
+
     health = 'online';
     healthSessions = sessions;
   } catch (cause) {
     if (disposed || request !== healthRequest || !visible) return;
+
     health = 'unavailable';
     healthError = cause;
   }
@@ -70,6 +77,7 @@ async function checkHealth() {
 
 function shown() {
   if (disposed || visible) return;
+
   visible = true;
   actionError = null;
   notice = false;
@@ -87,9 +95,11 @@ function hidden() {
 
 async function runAction(kind: NonNullable<typeof action>, perform: () => Promise<unknown>) {
   if (!desktop || busy) return;
+
   action = kind;
   actionError = null;
   notice = false;
+
   try {
     await perform();
   } catch (cause) {
@@ -101,6 +111,7 @@ async function runAction(kind: NonNullable<typeof action>, perform: () => Promis
 
 function switchGroup(group: Group) {
   if (!group.isEnabled || group.id === config.selectedGroupId) return;
+
   return runAction('switch', async () => {
     await config.switchGroup(group.id);
     if (group.type !== 'native') notice = true;
@@ -118,7 +129,9 @@ function reload() {
 
 async function dismiss(event: KeyboardEvent) {
   if (event.key !== 'Escape' || !desktop) return;
+
   event.preventDefault();
+
   try {
     await invoke('hide_tray_window');
     hidden();
@@ -129,17 +142,21 @@ async function dismiss(event: KeyboardEvent) {
 
 onMount(() => {
   desktop = isTauri();
+
   if (!desktop) {
     health = 'unavailable';
     return;
   }
+
   const unlisteners: UnlistenFn[] = [];
   const target = { target: { kind: 'WebviewWindow' as const, label: 'tray' } };
   const track = async (pending: Promise<UnlistenFn>) => {
     const unlisten = await pending;
+
     if (disposed) unlisten();
     else unlisteners.push(unlisten);
   };
+
   void Promise.all([
     track(
       listen<unknown>(
@@ -160,6 +177,7 @@ onMount(() => {
     .catch((cause: unknown) => {
       if (!disposed) actionError = { cause, updates: true };
     });
+
   return () => {
     disposed = true;
     healthRequest += 1;

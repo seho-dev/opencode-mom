@@ -12,6 +12,7 @@ export const LOG_TYPES = [
 ] as const;
 
 export type LogType = (typeof LOG_TYPES)[number];
+
 export type LogStatus = 'success' | 'error';
 
 export interface LoggingState {
@@ -34,6 +35,7 @@ export interface LogRecord {
   message: string;
   durationMs?: number | null;
   errorCode?: string | null;
+
   context?: {
     step?: string;
     count?: number;

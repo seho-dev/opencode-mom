@@ -16,7 +16,6 @@ components/                       # Shared UI library; no top-level barrel
 ├── dialog/                        # Bits UI Dialog wrappers plus native header/footer
 ├── input/                         # Native input with separate file-input binding branch
 ├── switch/                        # Native checkbox styled as a switch
-├── tooltip/                       # Bits UI Tooltip root/provider/trigger/content/portal wrappers
 ├── DataTable.svelte               # Table snippet container and conditional Pagination
 ├── FormActions.svelte             # Shared form-actions snippet container
 ├── FormPage.svelte                # Opt-in available-height page frame; inactive details scroll normally

@@ -20,7 +20,7 @@ redundant_clone = "warn"
 name = "opencode-mom"
 path = "src/main.rs"
 
-[[bin]]
+[[example]]
 name = "mcp-test-peer"
 path = "src/mcp_proxy/test_peer.rs"
 

@@ -594,6 +594,9 @@ fn delete_inline(paths: &crate::paths::ConfigPaths, id: &str) -> Result<(), AppE
 }
 
 fn read_inline(path: &Path) -> Result<(Option<Snapshot>, JsoncDoc), AppError> {
+    if path.file_name().and_then(|name| name.to_str()).is_none() {
+        return Err(invalid("invalid config filename"));
+    }
     let snapshot = Snapshot::read(path)?;
     let document = match &snapshot {
         Some(snapshot) => JsoncDoc::parse(&snapshot.content)?,

@@ -1374,7 +1374,7 @@ async fn cancelled_shared_rotation_waiter_still_commits_and_revokes_sessions() {
             ) {
                 break;
             }
-            tokio::task::yield_now().await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await

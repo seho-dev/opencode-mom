@@ -105,6 +105,7 @@ fn stable_v2(text: &str) -> Result<Version, AppError> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Source {
+    #[cfg(any(unix, test))]
     Curl {
         bash: PathBuf,
         curl: PathBuf,
@@ -462,7 +463,7 @@ fn identify_source_with(
         return ("bundled".to_owned(), None, "bundled");
     }
 
-    if let Some(home) = home.filter(|home| official_curl_path(logical, canonical, home)) {
+    if let Some(_home) = home.filter(|home| official_curl_path(logical, canonical, home)) {
         #[cfg(unix)]
         if let (Some(bash), Some(curl)) = (resolve(Path::new("bash")), resolve(Path::new("curl"))) {
             return (
@@ -470,7 +471,7 @@ fn identify_source_with(
                 Some(Source::Curl {
                     bash,
                     curl,
-                    home: home.to_path_buf(),
+                    home: _home.to_path_buf(),
                 }),
                 "",
             );
@@ -742,6 +743,7 @@ fn upgrade_command(detected: &Detected, target: &str) -> Result<Command, AppErro
         .as_ref()
         .ok_or_else(|| AppError::validation("OpenCode binary is unavailable"))?;
     let method = match source {
+        #[cfg(any(unix, test))]
         Source::Curl { .. } => "curl",
         Source::Manager { method, .. } => *method,
     };
@@ -749,6 +751,7 @@ fn upgrade_command(detected: &Detected, target: &str) -> Result<Command, AppErro
     command.args(["upgrade", &target, "--method", method]);
     sanitized(&mut command);
     command.stdout(Stdio::null());
+    #[cfg(any(unix, test))]
     if let Source::Curl { home, .. } = source {
         command.env("HOME", home);
     }

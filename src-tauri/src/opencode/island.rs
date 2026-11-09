@@ -101,6 +101,7 @@ pub(crate) struct IslandApi {
     connection: Arc<ManagedAsyncConnection>,
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) async fn connect() -> Result<IslandApi, AppError> {
     let snapshot = super::target::snapshot()?;
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -125,6 +126,7 @@ pub(crate) async fn connect_notifications() -> Result<IslandApi, AppError> {
     })
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub(super) async fn connect_snapshot(
     snapshot: super::target::Snapshot,
     deadline: Instant,

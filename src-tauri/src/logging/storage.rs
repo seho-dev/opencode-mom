@@ -85,7 +85,7 @@ pub(super) fn ensure_directory(path: &Path) -> Result<(), AppError> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             fs::create_dir_all(path.parent().ok_or_else(unavailable)?)
                 .map_err(|_| unavailable())?;
-            let mut builder = fs::DirBuilder::new();
+            let builder = &mut fs::DirBuilder::new();
             #[cfg(unix)]
             {
                 use std::os::unix::fs::DirBuilderExt;

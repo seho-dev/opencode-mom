@@ -496,20 +496,21 @@ fn ipc_crud_and_conflict_rejection() {
     let opencode_json = config_dir.join("opencode.jsonc");
     fs::write(
         &opencode_json,
-        r#"{
+        json!({
             "mcp": {
                 "servers": {
                     "my-mcp-tool": {
                         "type": "local",
                         "command": ["python3", "-m", "server"],
-                        "cwd": "/tmp",
+                        "cwd": home.path(),
                         "environment": {
                             "API_KEY": "secret-123"
                         }
                     }
                 }
             }
-        }"#,
+        })
+        .to_string(),
     )
     .unwrap();
 
@@ -529,7 +530,7 @@ fn ipc_crud_and_conflict_rejection() {
     assert_eq!(imported.id, "my-mcp-tool");
     assert_eq!(imported.name, "my-mcp-tool");
     assert_eq!(imported.command, vec!["python3", "-m", "server"]);
-    assert_eq!(imported.cwd, "/tmp");
+    assert_eq!(imported.cwd, home.path().to_str().unwrap());
     assert_eq!(imported.env.get("API_KEY").unwrap(), "secret-123");
     assert_eq!(imported.protocol, "auto");
     assert_eq!(imported.startup_timeout, 30);

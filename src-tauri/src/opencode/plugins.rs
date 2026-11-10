@@ -492,12 +492,12 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
         if item.id.as_ref().is_some_and(|id| !bounded_text(id, 4096))
             || [item.features.server, item.features.tui, item.features.rpc].contains(&Some(false))
         {
-            return Err(invalid_runtime_at("second"));
+            return Err(invalid_runtime_at("id-or-features"));
         }
 
         match &item.source {
             PluginSource::Local { path } if !bounded_text(path, 4096) => {
-                return Err(invalid_runtime())
+                return Err(invalid_runtime_at(&format!("local-path={path:?}")))
             }
             PluginSource::Package {
                 target,
@@ -521,7 +521,7 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
                 .as_ref()
                 .is_some_and(|reference| !bounded_text(reference, 4096))
             {
-                return Err(invalid_runtime_at(&format!("package target={target:?} outdated={outdated:?} updating={updating:?}")));
+                return Err(invalid_runtime_at("failed-reference"));
             }
             // Native failure messages can contain credentials and plugin-owned output.
             item.state = PluginState::Failed {

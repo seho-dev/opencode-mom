@@ -200,21 +200,22 @@ function readChangelog(root) {
 }
 
 function historySection(git, version, target) {
-  const tags = git('tag', '--list', '--merged', target)
+  const eligible = (tag) =>
+    releaseTag(tag) &&
+    (parseVersion(version).length === 4 || STABLE_TAG.test(tag)) &&
+    compareVersions(tag.slice(1), version) < 0;
+  // Union of all candidate tags; ancestors of the target are preferred because a range against
+  // them is exact. A tag cut from another branch (or orphaned by a history rewrite) is still a
+  // better baseline than reaching back to a much older release.
+  const reachable = git('tag', '--list', '--merged', target).split('\n').filter(eligible);
+  const candidates = reachable.length ? reachable : git('tag', '--list').split('\n').filter(eligible);
+  const previous = candidates.reduce(
+    (best, tag) => (best && compareVersions(best.slice(1), tag.slice(1)) >= 0 ? best : tag),
+    '',
+  );
+  const subjects = git('log', '--format=%s', '--no-merges', previous ? `${previous}..${target}` : target)
     .split('\n')
-    .filter(
-      (tag) =>
-        releaseTag(tag) &&
-        (parseVersion(version).length === 4 || STABLE_TAG.test(tag)) &&
-        compareVersions(tag.slice(1), version) < 0,
-    );
-  // An empty ancestor list is the only first-release fallback; Git failures must surface.
-  const previous = tags.length
-    ? git('describe', '--tags', '--abbrev=0', ...tags.map((tag) => `--match=${tag}`), target)
-    : '';
-  const subjects = git('log', '--format=%s', previous ? `${previous}..${target}` : target)
-    .split('\n')
-    .filter((subject) => subject && !subject.startsWith('chore(release):'));
+    .filter((subject) => subject && !subject.startsWith('chore(release):') && !subject.startsWith('Merge '));
   let dateTarget = target;
   if (git('show', '-s', '--format=%s', target) === `chore(release): v${version}`) {
     dateTarget = git('rev-list', '--parents', '-n', '1', target).split(' ')[1] ?? target;

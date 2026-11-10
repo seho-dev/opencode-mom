@@ -8,7 +8,7 @@ permissions:
 jobs:
   probe:
     runs-on: windows-2022
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,8 +18,11 @@ jobs:
         with:
           workspaces: src-tauri -> target
           shared-key: debug-win
-      - name: Probe IPC origin and plugin envelope
+      - name: Full suite, parallel (baseline)
         shell: bash
         run: |
-          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib -- --nocapture --test-threads=1 win_probe_origin_matrix 2>&1 | tail -40
-          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib -- --nocapture --test-threads=1 declaration_removal_preserves 2>&1 | tail -30
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib 2>&1 | grep -E "^(test result|failures:)|^    [a-z_]+::" | head -45
+      - name: Full suite, serial
+        shell: bash
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib -- --test-threads=1 2>&1 | grep -E "^(test result|failures:)|^    [a-z_]+::" | head -45

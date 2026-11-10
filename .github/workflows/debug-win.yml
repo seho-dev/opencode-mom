@@ -1,5 +1,7 @@
 name: Debug Windows
 on:
+  push:
+    branches: ["debug/**"]
   workflow_dispatch:
 permissions:
   contents: read

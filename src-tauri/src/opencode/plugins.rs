@@ -482,8 +482,8 @@ fn runtime(
 }
 
 fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError> {
-    if !absolute_path(&envelope.location.0.directory) || envelope.data.len() > 4096 {
-        return Err(invalid_runtime());
+    if !absolute_path(&envelope.location.0.directory) {
+        return Err(invalid_runtime_at(&format!("location={:?} absolute={}", envelope.location.0.directory, absolute_path(&envelope.location.0.directory))));
     }
 
     let mut data = Vec::with_capacity(envelope.data.len());
@@ -492,7 +492,7 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
         if item.id.as_ref().is_some_and(|id| !bounded_text(id, 4096))
             || [item.features.server, item.features.tui, item.features.rpc].contains(&Some(false))
         {
-            return Err(invalid_runtime());
+            return Err(invalid_runtime_at("second"));
         }
 
         match &item.source {
@@ -511,7 +511,7 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
                 || *outdated == Some(false)
                 || *updating == Some(false) =>
             {
-                return Err(invalid_runtime());
+                return Err(invalid_runtime_at(&format!("package target={target:?} outdated={outdated:?} updating={updating:?}")));
             }
             _ => {}
         }
@@ -521,7 +521,7 @@ fn project_runtime(envelope: RuntimeEnvelope) -> Result<PluginRuntime, AppError>
                 .as_ref()
                 .is_some_and(|reference| !bounded_text(reference, 4096))
             {
-                return Err(invalid_runtime());
+                return Err(invalid_runtime_at(&format!("package target={target:?} outdated={outdated:?} updating={updating:?}")));
             }
             // Native failure messages can contain credentials and plugin-owned output.
             item.state = PluginState::Failed {
@@ -638,6 +638,10 @@ fn bounded_text(value: &str, max: usize) -> bool {
 
 fn invalid_runtime() -> AppError {
     AppError::configuration("Invalid OpenCode plugin runtime response")
+}
+
+fn invalid_runtime_at(site: &str) -> AppError {
+    AppError::configuration(format!("Invalid OpenCode plugin runtime response [{site}]"))
 }
 
 #[cfg(test)]

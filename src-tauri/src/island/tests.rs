@@ -1718,3 +1718,46 @@ fn actual_request_waiting_for_mutation_lock_cannot_run_after_target_refresh() {
     assert_eq!(server_a.count(), initial_a);
     assert_eq!(server_b.count(), initial_b);
 }
+
+#[tauri::command]
+fn win_probe_ping() -> &'static str {
+    "pong"
+}
+
+#[test]
+fn win_probe_origin_matrix() {
+    let app = tauri::test::mock_builder()
+        .invoke_handler(tauri::generate_handler![win_probe_ping])
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    println!(
+        "PROBE tauri={} dev_url={:?} frontend_dist={:?}",
+        tauri::VERSION,
+        app.config().build.dev_url,
+        app.config().build.frontend_dist
+    );
+    for url in [
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
+        "http://localhost",
+        "http://tauri.localhost/",
+    ] {
+        let result = tauri::test::get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "win_probe_ping".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: url.parse().unwrap(),
+                body: tauri::ipc::InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.into(),
+            },
+        );
+        println!("PROBE url={url} -> {result:?}");
+    }
+}

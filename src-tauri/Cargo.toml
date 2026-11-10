@@ -1,6 +1,6 @@
 [package]
 name = "opencode-mom"
-version = "2.0.1"
+version = "2.0.0"
 description = "Cross-platform desktop model group switcher"
 authors = ["opencode-mom contributors"]
 license = "MIT"
@@ -20,7 +20,7 @@ redundant_clone = "warn"
 name = "opencode-mom"
 path = "src/main.rs"
 
-[[bin]]
+[[example]]
 name = "mcp-test-peer"
 path = "src/mcp_proxy/test_peer.rs"
 

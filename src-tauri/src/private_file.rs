@@ -10,6 +10,10 @@ pub(crate) enum ReadError {
     NotRegular,
     MetadataTooLarge,
     TooLarge,
+    #[cfg_attr(
+        not(unix),
+        expect(dead_code, reason = "Only Unix permission checks construct this error")
+    )]
     UnsafePermissions,
     #[cfg(windows)]
     ReparsePoint,
@@ -104,9 +108,10 @@ fn read_bounded(reader: impl Read, max_bytes: u64) -> Result<Vec<u8>, ReadError>
 }
 
 pub(crate) fn publish(path: &Path, bytes: &[u8]) -> Result<PublishOutcome, PublishError> {
-    let directory = path.parent().ok_or(PublishError::DirectoryUnavailable)?;
+    let _directory = path.parent().ok_or(PublishError::DirectoryUnavailable)?;
     #[cfg(unix)]
-    let directory_handle = File::open(directory).map_err(|_| PublishError::DirectoryUnavailable)?;
+    let directory_handle =
+        File::open(_directory).map_err(|_| PublishError::DirectoryUnavailable)?;
     publish_inner(path, bytes, atomic_replace, move || {
         #[cfg(unix)]
         return directory_handle.sync_all();

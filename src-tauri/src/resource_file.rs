@@ -280,7 +280,7 @@ impl Directory {
         Ok(())
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub fn create_file(&self, name: &str, content: &str) -> Result<(), AppError> {
         self.create_file_checked(name, content, || Ok(()))
     }

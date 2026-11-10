@@ -680,11 +680,11 @@ mod tests {
         owner.activate().unwrap();
         assert_eq!(owner.state(), ProcessState::Active);
 
-        let pid = owner.pid().unwrap();
+        let _pid = owner.pid().unwrap();
         #[cfg(unix)]
         {
             let ps_before = Command::new("/bin/ps")
-                .args(["-p", &pid.to_string(), "-o", "pid="])
+                .args(["-p", &_pid.to_string(), "-o", "pid="])
                 .output()
                 .await
                 .unwrap();
@@ -700,7 +700,7 @@ mod tests {
         #[cfg(unix)]
         {
             let ps_after = Command::new("/bin/ps")
-                .args(["-p", &pid.to_string(), "-o", "pid="])
+                .args(["-p", &_pid.to_string(), "-o", "pid="])
                 .output()
                 .await
                 .unwrap();
@@ -721,7 +721,7 @@ mod tests {
         cmd.args(["-c", "sleep 60"]);
 
         let owner = ProcessOwner::spawn(cmd, permit, config).unwrap();
-        let pid = owner.pid().unwrap();
+        let _pid = owner.pid().unwrap();
         owner.activate().unwrap();
 
         let task_ran = Arc::new(AtomicBool::new(false));
@@ -748,7 +748,7 @@ mod tests {
         #[cfg(unix)]
         {
             let ps = Command::new("/bin/ps")
-                .args(["-p", &pid.to_string(), "-o", "pid="])
+                .args(["-p", &_pid.to_string(), "-o", "pid="])
                 .output()
                 .await
                 .unwrap();
@@ -957,7 +957,7 @@ mod tests {
         let mut cmd = Command::new("powershell");
         cmd.args(["-Command", "Start-Sleep -Seconds 60"]);
         let owner = ProcessOwner::spawn(cmd, permit, ProcessConfig::default()).unwrap();
-        let outcome = owner.close(CloseReason::Timeout).await.unwrap();
+        owner.close(CloseReason::Timeout).await.unwrap();
         assert_eq!(owner.state(), ProcessState::Closed);
         assert_eq!(budget.available_permits(), 2);
     }

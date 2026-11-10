@@ -397,7 +397,15 @@ fn update_final_discovery_also_bypasses_warm_cache_and_retains_recovery_on_new_o
         let path = home.write(".config/opencode/skills/Wanted.md", "local original");
         server.index(json!([]));
         assert!(list(&home.paths()).unwrap().diagnostics.is_empty());
-        let error = update_inner(&home.paths(), update_draft(&path, "draft secret"), || {
+        let mut draft = update_draft(&path, "draft secret");
+        draft.expected_path = list(&home.paths())
+            .unwrap()
+            .data
+            .into_iter()
+            .find(|entry| entry.id == "Wanted")
+            .unwrap()
+            .path;
+        let error = update_inner(&home.paths(), draft, || {
             if failed_index {
                 server.respond("index.json", 503, "unavailable", Duration::ZERO);
             } else {

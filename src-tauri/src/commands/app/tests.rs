@@ -74,7 +74,13 @@ fn add_project_ipc_rejects_global_overlaps_before_persistence_without_opening_pi
                 cmd: "add_project".into(),
                 callback: tauri::ipc::CallbackFn(0),
                 error: tauri::ipc::CallbackFn(1),
-                url: "tauri://localhost".parse().unwrap(),
+                url: (if cfg!(windows) {
+                    "http://tauri.localhost"
+                } else {
+                    "tauri://localhost"
+                })
+                .parse()
+                .unwrap(),
                 body: tauri::ipc::InvokeBody::Json(serde_json::json!({"path": path})),
                 headers: Default::default(),
                 invoke_key: tauri::test::INVOKE_KEY.into(),

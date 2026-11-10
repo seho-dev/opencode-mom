@@ -19,15 +19,12 @@ use crate::mcp_proxy::session::{LegacySessionManager, Observation};
 use crate::mcp_proxy::ProxyService;
 
 fn test_peer_binary() -> String {
-    if let Ok(bin) = std::env::var("CARGO_BIN_EXE_mcp-test-peer") {
-        return bin;
-    }
-
     let mut path = std::env::current_exe().expect("current test exe");
     path.pop();
     if path.ends_with("deps") {
         path.pop();
     }
+    path.push("examples");
     path.push(format!("mcp-test-peer{}", std::env::consts::EXE_SUFFIX));
     path.to_string_lossy().to_string()
 }
@@ -1377,7 +1374,7 @@ async fn cancelled_shared_rotation_waiter_still_commits_and_revokes_sessions() {
             ) {
                 break;
             }
-            tokio::task::yield_now().await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await

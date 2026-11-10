@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, expect, test, vi } from 'vitest';
 import type { ConfigStore } from '$src/config/store.svelte.js';
 import Harness from '$src/test-utils/harness.svelte';
 import RotateKeyDialog from '../RotateKeyDialog.svelte';
@@ -12,6 +12,11 @@ function mount(rotateMomHttpKey = vi.fn().mockResolvedValue('private-rotated-tok
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+afterAll(async () => {
+  // Await pending bits-ui body-scroll-lock cleanup timer (24ms) before jsdom environment teardown
+  await new Promise((resolve) => setTimeout(resolve, 50));
 });
 
 test('externally closing the token dialog clears its one-time secret before reopening', async () => {

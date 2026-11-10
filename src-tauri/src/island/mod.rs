@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
+#[cfg(any(target_os = "macos", test))]
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -10,9 +11,12 @@ use tokio::sync::watch;
 use crate::error::AppError;
 use crate::logging::{record, LogStatus, LogType};
 use crate::models::{self, AppPreferences};
-use crate::opencode::island::{self as api, IslandApi, IslandChange, IslandSnapshot};
+#[cfg(any(target_os = "macos", test))]
+use crate::opencode::island::IslandChange;
+use crate::opencode::island::{self as api, IslandApi, IslandSnapshot};
 use crate::paths::ConfigPaths;
 
+#[cfg(any(target_os = "macos", test))]
 const MAX_COMPLETIONS: usize = 256;
 
 #[cfg(any(target_os = "macos", test))]
@@ -121,6 +125,7 @@ impl Cache {
         }
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn start_actions(&mut self) {
         self.invalidate_api();
         self.action_cancel = Some(watch::channel(false).0);
@@ -171,6 +176,7 @@ impl Cache {
         true
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn window_failed(&mut self, generation: u64) -> bool {
         if !self.current(generation) {
             return false;
@@ -182,6 +188,7 @@ impl Cache {
         true
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn visible_message(&self, session_id: &str) -> bool {
         self.enabled
             && self.view == IslandView::Expanded
@@ -207,6 +214,7 @@ impl Cache {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Default)]
 struct Coalescer {
     snapshot: bool,
@@ -215,12 +223,14 @@ struct Coalescer {
     deadline: Option<tokio::time::Instant>,
 }
 
+#[cfg(any(target_os = "macos", test))]
 struct Completion {
     event_id: String,
     session_id: String,
     root: bool,
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl Coalescer {
     fn record(&mut self, event: IslandChange, cache: &Cache, now: tokio::time::Instant) {
         match event {

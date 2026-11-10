@@ -123,9 +123,11 @@ fn create_inner(
 ) -> Result<SlashCommandEntry, AppError> {
     validate_name(&draft.name)?;
     validate_content(&draft.content)?;
-    let path = paths
+    let path: PathBuf = paths
         .commands_write_dir()
-        .join(format!("{}.md", draft.name));
+        .join(format!("{}.md", draft.name))
+        .components()
+        .collect();
     paths.validate_managed_write(&path)?;
     resource_file::absent(&path)?;
     let parent = Directory::ensure(path.parent().ok_or_else(changed)?)?;
@@ -243,7 +245,11 @@ fn command_name(paths: &ConfigPaths, path: &Path) -> Result<String, AppError> {
 }
 
 fn source_id(path: &Path) -> String {
-    format!("{:x}", Sha256::digest(path.as_os_str().as_encoded_bytes()))
+    let normalized: PathBuf = path.components().collect();
+    format!(
+        "{:x}",
+        Sha256::digest(normalized.as_os_str().as_encoded_bytes())
+    )
 }
 
 fn validate_name(name: &str) -> Result<(), AppError> {

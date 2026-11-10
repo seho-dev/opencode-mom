@@ -6,6 +6,7 @@ use std::net::TcpListener;
 use std::thread;
 
 use super::*;
+#[cfg(unix)]
 use crate::opencode::binary::resolve_path_command_in;
 
 #[cfg(unix)]

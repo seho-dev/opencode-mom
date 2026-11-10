@@ -374,7 +374,7 @@ test('preparation inserts the newest section after the header and logs commits s
   );
   assert.deepEqual(
     state.calls.find((args) => args[0] === 'log'),
-    ['log', '--format=%s', 'v0.1.0..HEAD'],
+    ['log', '--format=%s', '--no-merges', 'v0.1.0..HEAD'],
   );
   assert.ok(state.calls.some((args) => args.join(' ') === 'show -s --format=%cs HEAD'));
 });
@@ -391,7 +391,7 @@ test('preparation creates a missing changelog, falls back to full history and st
   );
   assert.deepEqual(
     state.calls.find((args) => args[0] === 'log'),
-    ['log', '--format=%s', 'HEAD'],
+    ['log', '--format=%s', '--no-merges', 'HEAD'],
   );
   assert.deepEqual(
     state.calls.find((args) => args[0] === 'add'),
@@ -554,7 +554,7 @@ test('beta dry runs do not write, reject non-monotonic tags and use earlier beta
   assert.equal(result.release, 'false');
   assert.equal(result.prerelease, 'true');
   assert.equal(verifyVersions(root), '0.1.0');
-  assert.ok(state.calls.some((args) => args.join(' ') === 'log --format=%s v2.0.1-beta.9..HEAD'));
+  assert.ok(state.calls.some((args) => args.join(' ') === 'log --format=%s --no-merges v2.0.1-beta.9..HEAD'));
   assert.ok(!state.calls.some((args) => args[0] === 'push' || args[0] === '-c'));
   state.tags['v2.0.1-beta.11'] = {};
   assert.throws(() => prepareRelease(dispatch), /not newer than v2.0.1-beta.11/);
@@ -566,9 +566,8 @@ test('beta dry runs do not write, reject non-monotonic tags and use earlier beta
   state.lastStableTag = 'v2.0.0';
   const stable = prepareRelease({ ...dispatch, event: { inputs: { version: '2.0.1', dry_run: true } } });
   assert.equal(stable.prerelease, 'false');
-  const describe = state.calls.find((args) => args[0] === 'describe');
-  assert.ok(describe.includes('--match=v2.0.0'));
-  assert.ok(!describe.includes('--match=v2.0.1-beta.9'));
+  const stableLog = state.calls.filter((args) => args[0] === 'log').at(-1);
+  assert.deepEqual(stableLog, ['log', '--format=%s', '--no-merges', 'v2.0.0..HEAD']);
 });
 
 test('beta release notes select the exact beta section', (t) => {
@@ -683,7 +682,7 @@ test('releaseNotes extracts exact version section without bleeding into adjacent
 test('releaseNotes falls back to git commit history excluding target and newer tags when section is missing', (t) => {
   const { root } = fixture(t);
   const headSha = 'a'.repeat(40);
-  const describeCalls = [];
+  const logCalls = [];
   const runGit = (...args) => {
     const [command, ...rest] = args;
     if (command === 'status') return '';
@@ -692,13 +691,10 @@ test('releaseNotes falls back to git commit history excluding target and newer t
       // Returns older tag v0.0.9, target tag v0.1.0, and newer tag v0.2.0
       return 'v0.0.9\nv0.1.0\nv0.2.0\n';
     }
-    if (command === 'describe') {
-      describeCalls.push(args);
-      assert.ok(args.includes('--match=v0.0.9'));
-      assert.ok(!args.some((a) => a === '--match=v0.1.0' || a === '--match=v0.2.0'));
-      return 'v0.0.9';
+    if (command === 'log') {
+      logCalls.push(args);
+      return 'feat: unreleased change\nchore(release): v0.1.0\nfix: something\n';
     }
-    if (command === 'log') return 'feat: unreleased change\nchore(release): v0.1.0\nfix: something\n';
     if (command === 'show') {
       if (rest.includes('--format=%cs')) return '2026-10-15';
       if (rest[0] === '-s') return 'feat: commit';
@@ -709,12 +705,43 @@ test('releaseNotes falls back to git commit history excluding target and newer t
   // Missing CHANGELOG.md
   const fallbackNotes = releaseNotes({ root, tag: 'v0.1.0', runGit });
   assert.equal(fallbackNotes, '## 0.1.0 - 2026-10-15\n\n- feat: unreleased change\n- fix: something\n');
-  assert.deepEqual(describeCalls.length, 1);
+  assert.deepEqual(logCalls[0], ['log', '--format=%s', '--no-merges', 'v0.0.9..HEAD']);
+  assert.deepEqual(logCalls.length, 1);
 
   // Existing CHANGELOG.md but missing requested tag
   writeFileSync(join(root, 'CHANGELOG.md'), '# Changelog\n\n## 0.0.9 - 2026-09-01\n\n- old\n');
   const fallbackNotes2 = releaseNotes({ root, tag: 'v0.1.0', runGit });
   assert.equal(fallbackNotes2, '## 0.1.0 - 2026-10-15\n\n- feat: unreleased change\n- fix: something\n');
+});
+
+test('release notes baseline uses the newest release tag even when it is not an ancestor', (t) => {
+  const { root } = fixture(t);
+  const headSha = 'a'.repeat(40);
+  const logCalls = [];
+  const runGit = (...args) => {
+    const [command, ...rest] = args;
+    if (command === 'status') return '';
+    if (command === 'rev-parse') return headSha;
+    // A history rewrite orphans v2.0.0: no tag is an ancestor of HEAD any more.
+    if (command === 'tag') return args.includes('--merged') ? '' : 'v0.0.6\nv2.0.0\nv2.0.2\n';
+    if (command === 'log') {
+      logCalls.push(args);
+      return 'feat: reload on tray group switch\nfix(release): repair CI gates\n';
+    }
+    if (command === 'show') {
+      if (rest.includes('--format=%cs')) return '2026-11-10';
+      if (rest[0] === '-s') return 'chore(release): v2.0.1';
+    }
+    if (command === 'rev-list') return `${headSha} ${'b'.repeat(40)}`;
+    throw new Error(`Unexpected git call: ${args.join(' ')}`);
+  };
+  syncVersions(root, '2.0.1');
+  assert.equal(
+    releaseNotes({ root, tag: 'v2.0.1', runGit }),
+    '## 2.0.1 - 2026-11-10\n\n- feat: reload on tray group switch\n- fix(release): repair CI gates\n',
+  );
+  // v2.0.0 is the newest tag below 2.0.1 even though it lives on another branch; v2.0.2 is newer and skipped.
+  assert.deepEqual(logCalls[0], ['log', '--format=%s', '--no-merges', 'v2.0.0..HEAD']);
 });
 
 test('releaseNotes propagates git errors and non-ENOENT filesystem errors', (t) => {

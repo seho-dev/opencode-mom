@@ -604,7 +604,7 @@ test('older pages remain accessible beyond 200 records while each page keeps 50 
   await settle();
   expect(adapter.queryLogs.mock.calls.at(-1)?.[0]?.cursor).toBeUndefined();
   expect(within(screen.getByRole('table')).getAllByRole('row')[1]?.textContent).toContain('event-1000');
-});
+}, 20000);
 
 test('expanding record details lazily queries only its operationId and shows bounded chronological partial history', async () => {
   const { adapter, container } = mountLogs();

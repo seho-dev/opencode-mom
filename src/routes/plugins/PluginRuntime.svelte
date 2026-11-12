@@ -6,6 +6,7 @@ import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import { createPagination } from '$src/components/pagination.svelte.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { PluginRemovalPlan, PluginRuntime, PluginRuntimeItem } from '$src/types/plugins.js';
@@ -13,6 +14,7 @@ import type { PluginRemovalPlan, PluginRuntime, PluginRuntimeItem } from '$src/t
 const config = getConfig();
 const i18n = getI18n();
 let runtime = $state<PluginRuntime | null>(null);
+let loadedIdentity = $state<number | null>(null);
 let pending = $state<'' | 'read' | 'update' | 'prepare' | 'remove'>('');
 let error = $state<'read' | 'update' | 'prepare' | 'remove' | ''>('');
 let updateDiagnostic = $state<'timeout' | 'connection' | 'verification' | number | null>(null);
@@ -21,10 +23,16 @@ let uncertain = $state(false);
 let updateTarget = $state<string | null>(null);
 let removalPlan = $state.raw<PluginRemovalPlan | null>(null);
 let query = $state('');
-let page = $state(1);
 let request = 0;
 let mounted = true;
-const pageSize = 10;
+const pageSize = 5;
+const pagination = createPagination(config, {
+  key: () => JSON.stringify(['plugins', identity]),
+  query: () => query,
+  total: () => filtered.length,
+  ready: () => loadedIdentity === identity && runtime !== null && !pending && !error && !uncertain,
+  pageSize,
+});
 const sourceLabels = {
   builtin: 'plugins.runtimeBuiltin',
   package: 'plugins.runtimePackage',
@@ -39,7 +47,7 @@ const filtered = $derived(
       .includes(query.trim().toLowerCase()),
   ),
 );
-const currentPage = $derived(Math.max(1, Math.min(page, Math.ceil(filtered.length / pageSize))));
+const currentPage = $derived(Math.max(1, Math.min(pagination.page, Math.ceil(filtered.length / pageSize))));
 const visible = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
 
 $effect(() => {
@@ -53,7 +61,6 @@ $effect(() => {
   updateTarget = null;
   removalPlan = null;
   query = '';
-  page = 1;
   untrack(() => {
     void refresh();
   });
@@ -61,10 +68,6 @@ $effect(() => {
   return () => {
     request += 1;
   };
-});
-$effect(() => {
-  void query;
-  page = 1;
 });
 onDestroy(() => {
   mounted = false;
@@ -121,6 +124,7 @@ async function refresh(keepSuccess = false) {
     if (!mounted || seq !== request || key !== identity) return;
 
     runtime = result;
+    loadedIdentity = key;
     uncertain = false;
   } catch {
     if (mounted && seq === request && key === identity) {
@@ -281,7 +285,7 @@ async function removeDeclaration() {
     >
   </div>
   {#if runtime || pending === 'read'}
-    <DataTable label={i18n.t('plugins.runtimeTitle')} total={filtered.length} bind:page {pageSize}>
+    <DataTable label={i18n.t('plugins.runtimeTitle')} total={filtered.length} bind:page={pagination.page} {pageSize}>
       <thead>
         <tr>
           <th>{i18n.t('plugins.runtimeSource')}</th>

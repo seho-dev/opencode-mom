@@ -9,6 +9,7 @@ import { readError } from '$src/components/configuration/read-error.js';
 import DataTable from '$src/components/DataTable.svelte';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import { createPagination } from '$src/components/pagination.svelte.js';
 import ResourceScope from '$src/components/ResourceScope.svelte';
 import { Switch } from '$src/components/switch/index.js';
 import { getConfig } from '$src/config/context.js';
@@ -33,6 +34,7 @@ let activeTab = $state<McpTab>(route.url.searchParams.get('tab') === 'proxy' ? '
 let servers = $state<McpServer[]>([]);
 let loadedProjectId = $state<string | null | undefined>(undefined);
 let globalServers = $state<McpServer[]>([]);
+let globalReady = $state(false);
 let globalDiagnostics = $state<string[]>([]);
 let globalError = $state('');
 let globalLoading = $state(false);
@@ -47,8 +49,18 @@ let removed = $state(false);
 let toggling = $state<McpServer | null>(null);
 let toggleError = $state('');
 let toggled = $state(false);
-let page = $state(1);
-const pageSize = 10;
+const pageSize = 5;
+const pagination = createPagination(config, {
+  key: () => JSON.stringify(['mcp', projectId, projectId !== null && showGlobal]),
+  query: () => query,
+  total: () => filtered.length,
+  ready: () =>
+    loadedProjectId === projectId &&
+    !loading &&
+    !error &&
+    (projectId === null || !showGlobal || (globalReady && !globalLoading && !globalError)),
+  pageSize,
+});
 let request = 0;
 let globalRequest = 0;
 let mutation = 0;
@@ -65,17 +77,11 @@ const filtered = $derived(
   ),
 );
 
-const currentPage = $derived(Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize))));
+const currentPage = $derived(Math.min(pagination.page, Math.max(1, Math.ceil(filtered.length / pageSize))));
 const rows = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
 
 onDestroy(() => {
   mutation += 1;
-});
-
-$effect(() => {
-  query;
-  servers.length;
-  page = 1;
 });
 
 function selectTab(tab: McpTab) {
@@ -142,10 +148,10 @@ async function load() {
 
 $effect(() => {
   projectId;
-  servers = [];
-  diagnostics = [];
   query = '';
-  page = 1;
+  servers = [];
+  loadedProjectId = undefined;
+  diagnostics = [];
   deleting = null;
   removed = false;
   toggling = null;
@@ -162,6 +168,8 @@ $effect(() => {
 });
 
 $effect(() => {
+  globalReady = false;
+
   if (projectId === null || !showGlobal) {
     globalServers = [];
     globalDiagnostics = [];
@@ -194,6 +202,7 @@ async function loadGlobal() {
     if (id !== globalRequest) return;
 
     globalServers = result.data;
+    globalReady = true;
     globalDiagnostics = result.diagnostics;
   } catch (cause) {
     if (id === globalRequest) globalError = readError(cause);
@@ -349,7 +358,12 @@ async function toggle(server: McpServer, scope: string | null) {
     <div class="search-toolbar">
       <input aria-label={i18n.t('mcp.search')} placeholder={i18n.t('mcp.searchPlaceholder')} bind:value={query}>
     </div>
-    <DataTable label={i18n.t('mcp.title')} total={loading || error ? 0 : filtered.length} bind:page {pageSize}>
+    <DataTable
+      label={i18n.t('mcp.title')}
+      total={loading || error ? 0 : filtered.length}
+      bind:page={pagination.page}
+      {pageSize}
+    >
       <thead>
         <tr>
           <th>{i18n.t('common.name')}</th>

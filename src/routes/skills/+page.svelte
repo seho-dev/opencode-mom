@@ -1,12 +1,14 @@
 <script lang="ts">
 import { Eye, Pencil, Plus, RefreshCw } from '@lucide/svelte';
 import { untrack } from 'svelte';
+import { page as route } from '$app/state';
 import { Button } from '$src/components/button/index.js';
 import Diagnostics from '$src/components/configuration/Diagnostics.svelte';
 import { readError } from '$src/components/configuration/read-error.js';
 import DataTable from '$src/components/DataTable.svelte';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import { createPagination } from '$src/components/pagination.svelte.js';
 import ResourceScope from '$src/components/ResourceScope.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
@@ -15,7 +17,9 @@ import type { SkillEntry } from '$src/types/skills.js';
 const config = getConfig();
 const i18n = getI18n();
 let skills = $state<SkillEntry[]>([]);
+let loadedProjectId = $state<string | null | undefined>(undefined);
 let globalSkills = $state<SkillEntry[]>([]);
+let globalReady = $state(false);
 let globalDiagnostics = $state<string[]>([]);
 let globalError = $state('');
 let globalLoading = $state(false);
@@ -25,8 +29,18 @@ let diagnostics = $state<string[]>([]);
 let loading = $state(true);
 let error = $state('');
 let query = $state('');
-let page = $state(1);
-const pageSize = 10;
+const pageSize = 5;
+const pagination = createPagination(config, {
+  key: () => JSON.stringify(['skills', projectId, projectId !== null && showGlobal]),
+  query: () => query,
+  total: () => filtered.length,
+  ready: () =>
+    loadedProjectId === projectId &&
+    !loading &&
+    !error &&
+    (projectId === null || !showGlobal || (globalReady && !globalLoading && !globalError)),
+  pageSize,
+});
 let request = 0;
 let globalRequest = 0;
 const entries = $derived([
@@ -40,14 +54,8 @@ const filtered = $derived(
       .includes(query.trim().toLowerCase()),
   ),
 );
-const currentPage = $derived(Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize))));
+const currentPage = $derived(Math.min(pagination.page, Math.max(1, Math.ceil(filtered.length / pageSize))));
 const rows = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
-
-$effect(() => {
-  void query;
-  void skills.length;
-  page = 1;
-});
 
 async function load() {
   const seq = ++request;
@@ -63,6 +71,7 @@ async function load() {
     if (seq !== request) return;
 
     skills = result.data;
+    loadedProjectId = scope;
     diagnostics = result.diagnostics;
   } catch (cause) {
     if (seq === request) {
@@ -76,9 +85,9 @@ async function load() {
 
 $effect(() => {
   void projectId;
-  skills = [];
   query = '';
-  page = 1;
+  skills = [];
+  loadedProjectId = undefined;
   untrack(() => {
     void load();
   });
@@ -91,6 +100,7 @@ $effect(() => {
   const compare = projectId !== null && showGlobal;
 
   globalSkills = [];
+  globalReady = false;
   globalDiagnostics = [];
   globalError = '';
 
@@ -119,6 +129,7 @@ async function loadGlobal() {
     if (id !== globalRequest) return;
 
     globalSkills = result.data;
+    globalReady = true;
     globalDiagnostics = result.diagnostics;
   } catch (cause) {
     if (id === globalRequest) globalError = readError(cause);
@@ -159,6 +170,9 @@ function href(id: string, scope: string | null) {
   </div>
 </PageHead>
 <ResourceScope disabled={config.saving} bind:showGlobal />
+{#if route.url.searchParams.get('saved') === '1' && route.url.searchParams.get('project') === projectId}
+  <div class="state-banner success" role="status">{i18n.t('configuration.saved')}</div>
+{/if}
 <Diagnostics messages={diagnostics} />
 {#if projectId && showGlobal}
   <Diagnostics messages={globalDiagnostics} />
@@ -182,7 +196,12 @@ function href(id: string, scope: string | null) {
 <div class="search-toolbar">
   <input aria-label={i18n.t('skills.search')} placeholder={i18n.t('skills.searchPlaceholder')} bind:value={query}>
 </div>
-<DataTable label={i18n.t('skills.title')} total={loading || error ? 0 : filtered.length} bind:page {pageSize}>
+<DataTable
+  label={i18n.t('skills.title')}
+  total={loading || error ? 0 : filtered.length}
+  bind:page={pagination.page}
+  {pageSize}
+>
   <thead>
     <tr>
       <th>{i18n.t('common.name')}</th>

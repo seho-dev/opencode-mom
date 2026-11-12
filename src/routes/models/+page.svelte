@@ -7,6 +7,7 @@ import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import { createPagination } from '$src/components/pagination.svelte.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import { toast } from '$src/shell/toast.svelte.js';
@@ -18,7 +19,13 @@ let deleting = $state<string | null>(null);
 let refreshing = $state(false);
 let activeTab = $state<'custom' | 'builtin'>('custom');
 const pageSize = 5;
-let page = $state(1);
+const pagination = createPagination(config, {
+  key: () => JSON.stringify(['models', activeTab, activeTab === 'builtin' ? config.serviceTargetVersion : null]),
+  query: () => query,
+  total: () => visibleModels.length,
+  ready: () => (activeTab === 'custom' ? !config.loading : !config.catalogLoading && !config.catalogError),
+  pageSize,
+});
 
 // Surface catalog load failures as error toasts with a Retry action.
 $effect(() => {
@@ -48,14 +55,8 @@ const customModels = $derived(
 );
 const visibleModels = $derived(activeTab === 'custom' ? customModels : builtinModels);
 const maxPage = $derived(Math.max(1, Math.ceil(visibleModels.length / pageSize)));
-const currentPage = $derived(Math.min(page, maxPage));
+const currentPage = $derived(Math.min(pagination.page, maxPage));
 const pagedModels = $derived(visibleModels.slice((currentPage - 1) * pageSize, currentPage * pageSize));
-
-$effect(() => {
-  // Reset to the first page whenever the visible row count changes (search, tab switch, or delete).
-  void visibleModels.length;
-  page = 1;
-});
 
 type ModelTab = 'custom' | 'builtin';
 
@@ -169,7 +170,7 @@ async function remove() {
   </Button>
 </div>
 <div id={`models-tabpanel-${activeTab}`} role="tabpanel" aria-labelledby={`models-tab-${activeTab}`}>
-  <DataTable label={i18n.t('models.tableLabel')} total={visibleModels.length} bind:page {pageSize}
+  <DataTable label={i18n.t('models.tableLabel')} total={visibleModels.length} bind:page={pagination.page} {pageSize}
     ><thead>
       <tr>
         <th>{i18n.t('models.colProvider')}</th>

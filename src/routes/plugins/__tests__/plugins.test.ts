@@ -355,7 +355,12 @@ test('runtime search and pagination keep the displayed list bounded', async () =
 
   show(store);
   await screen.findByText('pkg-0');
-  expect(screen.getAllByRole('row')).toHaveLength(11);
+  expect(screen.getAllByRole('row')).toHaveLength(6);
+  expect(screen.getByText('pkg-4')).toBeTruthy();
+  expect(screen.queryByText('pkg-5')).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: en['common.nextPage'] }));
+  await screen.findByText('pkg-5');
+  expect(screen.getAllByRole('row')).toHaveLength(6);
   expect(screen.queryByText('pkg-11')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: en['common.nextPage'] }));
   await screen.findByText('pkg-11');
@@ -519,26 +524,24 @@ test('each row keeps an Update action and refresh consumes fresh eligibility fro
   show(store);
   await screen.findByText('current-package');
 
-  const buttons = screen.getAllByRole('button', { name: en['plugins.updatePackage'] }) as HTMLButtonElement[];
+  async function expectUnavailableUpdates(targets: string[], expectedButtons: number, expectedEnabled: number) {
+    const buttons = screen.getAllByRole('button', { name: en['plugins.updatePackage'] }) as HTMLButtonElement[];
 
-  expect(buttons).toHaveLength(items.length);
-  expect(buttons.filter((button) => !button.disabled)).toHaveLength(1);
+    expect(buttons).toHaveLength(expectedButtons);
+    expect(buttons.filter((button) => !button.disabled)).toHaveLength(expectedEnabled);
 
-  for (const target of [
-    'pinned@1.2.3',
-    'current-package',
-    'ambiguous-package',
-    'updating-package',
-    'unknown-status-package',
-    '/local/plugin.ts',
-  ]) {
-    const row = within(screen.getByText(target).closest('tr') as HTMLTableRowElement);
-    const button = row.getByRole('button', { name: en['plugins.updatePackage'] }) as HTMLButtonElement;
+    for (const target of targets) {
+      const row = within(screen.getByText(target).closest('tr') as HTMLTableRowElement);
+      const button = row.getByRole('button', { name: en['plugins.updatePackage'] }) as HTMLButtonElement;
 
-    expect(button.disabled).toBe(true);
-    expect(button.title).toBe(en['plugins.updateUnavailable']);
-    await fireEvent.click(button);
+      expect(button.disabled).toBe(true);
+      expect(button.title).toBe(en['plugins.updateUnavailable']);
+      await fireEvent.click(button);
+    }
   }
+
+  // First page holds 5 rows; the remaining 2 rows carry the same action on page 2.
+  await expectUnavailableUpdates(['pinned@1.2.3', 'current-package', 'ambiguous-package', 'updating-package'], 5, 1);
 
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(store.updatePluginPackage).not.toHaveBeenCalled();
@@ -550,6 +553,10 @@ test('each row keeps an Update action and refresh consumes fresh eligibility fro
   expect(
     within(screen.getByText('pinned@1.2.3').closest('tr') as HTMLTableRowElement).getByText(en['plugins.outdated']),
   ).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: en['common.nextPage'] }));
+  await screen.findByText('unknown-status-package');
+  await expectUnavailableUpdates(['unknown-status-package', '/local/plugin.ts'], 2, 0);
+
   await fireEvent.click(screen.getByRole('button', { name: en['plugins.runtimeRefresh'] }));
   await screen.findByText('2.0.0');
   expect(store.listPluginRuntime).toHaveBeenCalledTimes(2);

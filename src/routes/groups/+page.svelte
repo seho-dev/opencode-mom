@@ -5,6 +5,7 @@ import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import { createPagination } from '$src/components/pagination.svelte.js';
 import { Switch } from '$src/components/switch/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
@@ -38,7 +39,13 @@ $effect(() => {
 const tabLabels = { native: 'groups.tabNative', slim: 'groups.tabSlim', omo: 'groups.tabOmo' } as const;
 let tabElements = $state<Record<GroupType, HTMLButtonElement | null>>({ native: null, slim: null, omo: null });
 const pageSize = 5;
-let page = $state(1);
+const pagination = createPagination(config, {
+  key: () => JSON.stringify(['groups', activeTab]),
+  query: () => query,
+  total: () => groups.length,
+  ready: () => !config.loading,
+  pageSize,
+});
 const nativeCount = $derived(config.groups.filter((group) => group.type === GROUP_TYPE_NATIVE).length);
 const slimCount = $derived(config.groups.filter((group) => group.type === GROUP_TYPE_SLIM).length);
 const omoCount = $derived(config.groups.filter((group) => group.type === GROUP_TYPE_OMO).length);
@@ -48,22 +55,15 @@ const groups = $derived(
   ),
 );
 const maxPage = $derived(Math.max(1, Math.ceil(groups.length / pageSize)));
-const currentPage = $derived(Math.min(page, maxPage));
+const currentPage = $derived(Math.min(pagination.page, maxPage));
 const pagedGroups = $derived(groups.slice((currentPage - 1) * pageSize, currentPage * pageSize));
 const busy = $derived(
   refreshing || changingGroup !== null || config.loading || config.saving || config.switching || config.reloading,
 );
 
-$effect(() => {
-  // Reset to the first page whenever the filtered row count changes (search or delete).
-  void groups.length;
-  page = 1;
-});
-
 function selectTab(tab: GroupType) {
   userSelectedTab = true;
   activeTab = tab;
-  page = 1;
 }
 
 function onTabKeys(event: KeyboardEvent) {
@@ -193,7 +193,7 @@ async function reloadNow() {
   {/each}
 </div>
 <div id={`groups-tabpanel-${activeTab}`} role="tabpanel" aria-labelledby={`groups-tab-${activeTab}`}>
-  <DataTable label={i18n.t('groups.tableLabel')} total={groups.length} bind:page {pageSize}
+  <DataTable label={i18n.t('groups.tableLabel')} total={groups.length} bind:page={pagination.page} {pageSize}
     ><thead>
       <tr>
         <th>{i18n.t('groups.colName')}</th>

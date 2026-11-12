@@ -220,7 +220,7 @@ test('creates Local skill with exact full Markdown document and ID payload; erro
   expect(config.reloadOpencode).not.toHaveBeenCalled();
 });
 
-test('Local edit keeps expected snapshot and draft after conflict; cancel restores saved document', async () => {
+test('Local edit keeps expected snapshot and draft after conflict; cancel returns to the list', async () => {
   const updateSkill = vi.fn().mockRejectedValue({ code: 'configuration_failed', message: 'File changed externally' });
 
   render(SkillDetail, {}, { wrapper: Harness, wrapperProps: { config: makeConfig({ updateSkill }) } });
@@ -245,12 +245,12 @@ test('Local edit keeps expected snapshot and draft after conflict; cancel restor
     expectedPath: skill.path,
   });
   await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-  expect(document.querySelector('pre')?.textContent).toBe(skill.content);
-  await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-  expect((screen.getByLabelText('Full Markdown document') as HTMLTextAreaElement).value).toBe(skill.content);
+  await waitFor(() => expect(goto).toHaveBeenCalledExactlyOnceWith('/skills'));
+  expect((screen.getByLabelText('Full Markdown document') as HTMLTextAreaElement).value).toBe(content);
+  expect(updateSkill).toHaveBeenCalledTimes(1);
 });
 
-test('Local save disables pending controls and returns successful full document to safe read-only view', async () => {
+test('Local save disables pending controls and returns to the list with saved feedback', async () => {
   let resolve: (result: SkillEntry) => void = () => {};
   const updateSkill = vi.fn().mockImplementation(
     () =>
@@ -267,11 +267,26 @@ test('Local save disables pending controls and returns successful full document 
   expect((screen.getByRole('button', { name: 'Saving…' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true);
   resolve({ ...skill, name: 'Saved name' });
-  await screen.findByRole('heading', { name: 'Saved name' });
-  expect(screen.queryByRole('textbox')).toBeNull();
-  expect(document.querySelector('pre')?.textContent).toBe(skill.content);
-  expect(screen.getByText('Saved to global configuration. Reload OpenCode manually to apply.')).toBeTruthy();
+  await waitFor(() => expect(goto).toHaveBeenCalledExactlyOnceWith('/skills?saved=1'));
   expect(config.reloadOpencode).not.toHaveBeenCalled();
+});
+
+test('skill list shows the saved banner only for the matching active scope', async () => {
+  const listSkills = vi.fn().mockResolvedValue({ data: [skill], diagnostics: [] });
+  const project = makeScopedConfig({ listSkills });
+
+  page.url = new URL('http://localhost/skills?saved=1&project=project-a');
+  const mounted = render(SkillList, {}, { wrapper: Harness, wrapperProps: { config: project } });
+  await screen.findByRole('link', { name: skill.name });
+  expect(screen.getByText(en['configuration.saved'])).toBeTruthy();
+  page.url = new URL('http://localhost/skills?saved=1&project=project-b');
+  await waitFor(() => expect(screen.queryByText(en['configuration.saved'])).toBeNull());
+  mounted.unmount();
+
+  page.url = new URL('http://localhost/skills?saved=1');
+  render(SkillList, {}, { wrapper: Harness, wrapperProps: { config: makeScopedConfig({ listSkills }, null) } });
+  await screen.findByRole('link', { name: skill.name });
+  expect(screen.getByText(en['configuration.saved'])).toBeTruthy();
 });
 
 test('Remote detail rejects edit query and forged form entry without update IPC', async () => {

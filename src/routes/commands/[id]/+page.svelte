@@ -17,6 +17,7 @@ import CommandForm from '../CommandForm.svelte';
 const config = getConfig();
 const i18n = getI18n();
 const projectId = $derived(page.url.searchParams.get('project'));
+const listHref = $derived(`/commands${projectId !== null ? `?project=${encodeURIComponent(projectId)}` : ''}`);
 const readonly = $derived(page.url.searchParams.get('readonly') === '1');
 const identity = $derived(JSON.stringify([projectId, page.params.id ?? '', readonly]));
 let data = $state<SlashCommandEntry | null>(null);
@@ -26,7 +27,6 @@ let loading = $state(true);
 let error = $state('');
 let missing = $state(false);
 let editing = $state(false);
-let saved = $state(false);
 let deleting = $state(false);
 let deleteTarget = $state<{ entry: SlashCommandEntry; scope: string | null; identity: string } | null>(null);
 let deleteError = $state('');
@@ -44,7 +44,6 @@ async function load(edit = false) {
   error = '';
   missing = false;
   editing = false;
-  saved = false;
   data = null;
 
   try {
@@ -109,7 +108,7 @@ async function remove() {
     if (!mounted || seq !== deleteRequest || target.identity !== identity) return;
 
     deleteTarget = null;
-    await goto('/commands');
+    await goto(`/commands?removed=1${target.scope !== null ? `&project=${encodeURIComponent(target.scope)}` : ''}`);
   } catch (cause) {
     if (mounted && seq === deleteRequest && target.identity === identity) deleteError = readError(cause);
   } finally {
@@ -127,9 +126,7 @@ async function remove() {
     >
       {#if !editing}
         <div class="flex flex-wrap justify-end gap-2">
-          <Button href="/commands" variant="outline" size="sm"
-            ><ArrowLeft size={14} />{i18n.t('commands.title')}</Button
-          >
+          <Button href={listHref} variant="outline" size="sm"><ArrowLeft size={14} />{i18n.t('commands.title')}</Button>
           <Button
             variant="outline"
             size="icon-sm"
@@ -139,9 +136,9 @@ async function remove() {
             ><RefreshCw size={14} class={loading ? 'animate-spin motion-reduce:animate-none' : ''} /></Button
           >
           {#if command && !readonly}
-            <Button variant="outline" size="sm" disabled={deleting} onclick={() => { editing = true; saved = false; }}
+            <Button variant="outline" size="sm" disabled={deleting} onclick={() => { editing = true; }}
               ><Pencil size={14} aria-hidden="true" />
-              {i18n.t(command.parseError ? 'commands.repair' : 'configuration.edit')}</Button
+              {i18n.t('configuration.edit')}</Button
             >
             <Button
               variant="destructive"
@@ -158,7 +155,7 @@ async function remove() {
   {#if !editing}
     <ResourceScopeNotice {projectId} {readonly} writable />
   {/if}
-  {#if !readonly && (saved || page.url.searchParams.get('saved') === '1')}
+  {#if !readonly && page.url.searchParams.get('saved') === '1'}
     <div class="state-banner success" role="status">{i18n.t('commands.saved')}</div>
   {/if}
   {#if loading}
@@ -175,8 +172,8 @@ async function remove() {
         <CommandForm
           source={command}
           {projectId}
-          onCancel={() => { editing = false; }}
-          onSaved={(result) => { data = result; editing = false; saved = true; }}
+          onCancel={() => goto(listHref)}
+          onSaved={() => goto(`/commands?saved=1${projectId !== null ? `&project=${encodeURIComponent(projectId)}` : ''}`)}
         />
       {/key}
     {:else}

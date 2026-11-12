@@ -5,6 +5,7 @@ import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import { createPagination } from '$src/components/pagination.svelte.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 
@@ -14,19 +15,19 @@ let query = $state('');
 let deleting = $state<string | null>(null);
 let refreshing = $state(false);
 const pageSize = 5;
-let page = $state(1);
+const pagination = createPagination(config, {
+  key: () => 'providers',
+  query: () => query,
+  total: () => filtered.length,
+  ready: () => !config.loading,
+  pageSize,
+});
 const filtered = $derived(
   config.providers.filter((provider) => provider.name.toLowerCase().includes(query.trim().toLowerCase())),
 );
 const maxPage = $derived(Math.max(1, Math.ceil(filtered.length / pageSize)));
-const currentPage = $derived(Math.min(page, maxPage));
+const currentPage = $derived(Math.min(pagination.page, maxPage));
 const pagedProviders = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
-
-$effect(() => {
-  // Reset to the first page whenever the filtered row count changes (search or delete).
-  void filtered.length;
-  page = 1;
-});
 
 async function refresh() {
   if (config.loading || config.saving || refreshing) return;
@@ -77,7 +78,7 @@ async function remove() {
     placeholder={i18n.t('providers.searchPlaceholder')}
   >
 </div>
-<DataTable label={i18n.t('providers.tableLabel')} total={filtered.length} bind:page {pageSize}
+<DataTable label={i18n.t('providers.tableLabel')} total={filtered.length} bind:page={pagination.page} {pageSize}
   ><thead>
     <tr>
       <th>{i18n.t('providers.colName')}</th>

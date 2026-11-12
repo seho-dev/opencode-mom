@@ -1,5 +1,6 @@
 <script lang="ts">
 import { ArrowLeft, Pencil, RefreshCw } from '@lucide/svelte';
+import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { Button } from '$src/components/button/index.js';
 import { isNotFound, readError } from '$src/components/configuration/read-error.js';
@@ -19,9 +20,9 @@ let loading = $state(true);
 let error = $state('');
 let missing = $state(false);
 let editing = $state(false);
-let saved = $state(false);
 let request = 0;
 const projectId = $derived(page.url.searchParams.get('project'));
+const listHref = $derived(`/skills${projectId !== null ? `?project=${encodeURIComponent(projectId)}` : ''}`);
 const readonly = $derived(projectId !== null || page.url.searchParams.get('readonly') === '1');
 const identity = $derived(`${projectId ?? 'global'}:${page.params.id ?? ''}`);
 const skill = $derived(loadedId === identity ? data : null);
@@ -35,7 +36,6 @@ async function load(id: string, edit = false) {
   loading = true;
   data = null;
   editing = false;
-  saved = false;
   error = '';
   missing = false;
 
@@ -71,7 +71,7 @@ $effect(() => {
     <PageHead eyebrow={i18n.t('skills.eyebrow')} title={skill?.name ?? i18n.t('skills.detailTitle')}>
       {#if !editing}
         <div class="flex flex-wrap justify-end gap-2">
-          <Button href="/skills" variant="outline" size="sm"><ArrowLeft size={14} />{i18n.t('skills.title')}</Button>
+          <Button href={listHref} variant="outline" size="sm"><ArrowLeft size={14} />{i18n.t('skills.title')}</Button>
           <Button
             variant="outline"
             size="sm"
@@ -86,7 +86,7 @@ $effect(() => {
             /></Button
           >
           {#if skill?.kind === 'local' && !readonly}
-            <Button variant="outline" size="sm" onclick={() => { editing = true; saved = false; }}
+            <Button variant="outline" size="sm" onclick={() => { editing = true; }}
               ><Pencil size={14} />{i18n.t('configuration.edit')}</Button
             >
           {/if}
@@ -95,7 +95,7 @@ $effect(() => {
     </PageHead>
   </div>
   <ResourceScopeNotice {projectId} {readonly} />
-  {#if !readonly && (saved || page.url.searchParams.get('saved') === '1')}
+  {#if !readonly && page.url.searchParams.get('saved') === '1'}
     <div class="state-banner success" role="status">{i18n.t('configuration.saved')}</div>
   {/if}
   {#if loading}
@@ -115,8 +115,8 @@ $effect(() => {
       {#key identity}
         <SkillForm
           source={skill}
-          onCancel={() => { editing = false; }}
-          onSaved={(result) => { data = result; editing = false; saved = true; }}
+          onCancel={() => goto(listHref)}
+          onSaved={() => goto(`/skills?saved=1${projectId !== null ? `&project=${encodeURIComponent(projectId)}` : ''}`)}
         />
       {/key}
     {:else}

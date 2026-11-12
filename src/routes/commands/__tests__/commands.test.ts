@@ -142,6 +142,96 @@ test('new routes write explicit Global null even when the shared selector points
   expect(store.reloadOpencode).not.toHaveBeenCalled();
 });
 
+test('list shows saved and removed feedback only for the matching active scope', async () => {
+  const listSlashCommands = vi.fn().mockResolvedValue({ data: [command], diagnostics: [] });
+  const project = config({ listSlashCommands });
+
+  page.url = new URL('http://localhost/commands?saved=1&project=project-a');
+  const mounted = render(Commands, {}, { wrapper: Harness, wrapperProps: { config: project } });
+  await screen.findByRole('link', { name: `/${command.name}` });
+  expect(screen.getByText(en['commands.saved'])).toBeTruthy();
+
+  page.url = new URL('http://localhost/commands?removed=1&project=project-b');
+  await waitFor(() => expect(screen.queryByText(en['toast.deleted'])).toBeNull());
+
+  page.url = new URL('http://localhost/commands?removed=1&project=project-a');
+  await waitFor(() => expect(screen.getByText(en['toast.deleted'])).toBeTruthy());
+  expect(screen.queryByText(en['commands.saved'])).toBeNull();
+  mounted.unmount();
+
+  page.url = new URL('http://localhost/commands?saved=1');
+  render(Commands, {}, { wrapper: Harness, wrapperProps: { config: config({ listSlashCommands }, null) } });
+  await screen.findByRole('link', { name: `/${command.name}` });
+  expect(screen.getByText(en['commands.saved'])).toBeTruthy();
+  expect(screen.queryByText(en['toast.deleted'])).toBeNull();
+});
+
+test('Global command edit cancel returns to list, save returns with saved and delete with removed', async () => {
+  const updateSlashCommand = vi.fn().mockResolvedValue(command);
+  const deleteSlashCommand = vi.fn().mockResolvedValue(undefined);
+  const store = config({ updateSlashCommand, deleteSlashCommand }, null);
+
+  page.url = new URL(`http://localhost/commands/${command.id}?edit=1`);
+  const mounted = render(Detail, {}, { wrapper: Harness, wrapperProps: { config: store } });
+  await screen.findByLabelText('Full Markdown document');
+  await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(goto).toHaveBeenLastCalledWith('/commands'));
+  expect(updateSlashCommand).not.toHaveBeenCalled();
+
+  mounted.unmount();
+  page.url = new URL(`http://localhost/commands/${command.id}?edit=1`);
+  const saving = render(Detail, {}, { wrapper: Harness, wrapperProps: { config: store } });
+  await screen.findByLabelText('Full Markdown document');
+  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() =>
+    expect(updateSlashCommand).toHaveBeenCalledExactlyOnceWith(
+      {
+        id: command.id,
+        content: command.content,
+        expectedPath: command.resolvedPath,
+        expectedContent: command.content,
+      },
+      null,
+    ),
+  );
+  await waitFor(() => expect(goto).toHaveBeenLastCalledWith('/commands?saved=1'));
+
+  saving.unmount();
+  page.url = new URL(`http://localhost/commands/${command.id}`);
+  render(Detail, {}, { wrapper: Harness, wrapperProps: { config: store } });
+  await screen.findByRole('heading', { name: `/${command.name}` });
+  await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+  await fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+  await waitFor(() =>
+    expect(deleteSlashCommand).toHaveBeenCalledExactlyOnceWith(
+      { id: command.id, expectedPath: command.resolvedPath, expectedContent: command.content },
+      null,
+    ),
+  );
+  await waitFor(() => expect(goto).toHaveBeenLastCalledWith('/commands?removed=1'));
+});
+
+test('project edit cancel and save return to the list with the scope preserved', async () => {
+  const updateSlashCommand = vi.fn().mockResolvedValue(command);
+  const store = config({ updateSlashCommand });
+
+  page.url = new URL(`http://localhost/commands/${command.id}?project=project-b`);
+  const mounted = render(Detail, {}, { wrapper: Harness, wrapperProps: { config: store } });
+  await screen.findByRole('heading', { name: `/${command.name}` });
+  await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(goto).toHaveBeenLastCalledWith('/commands?project=project-b'));
+  expect(updateSlashCommand).not.toHaveBeenCalled();
+
+  mounted.unmount();
+  page.url = new URL(`http://localhost/commands/${command.id}?project=project-b`);
+  render(Detail, {}, { wrapper: Harness, wrapperProps: { config: store } });
+  await screen.findByRole('heading', { name: `/${command.name}` });
+  await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(goto).toHaveBeenLastCalledWith('/commands?saved=1&project=project-b'));
+});
+
 test('detail previews raw Markdown safely, edit freezes snapshot and conflict keeps the complete draft', async () => {
   page.url = new URL('http://localhost/commands/team%2Freview?project=project-b');
 
@@ -192,6 +282,7 @@ test('readonly comparison ignores edit query; delete uses the untouched expected
       'project-b',
     ),
   );
+  await waitFor(() => expect(goto).toHaveBeenCalledExactlyOnceWith('/commands?removed=1&project=project-b'));
 });
 
 test('same ID scope changes ignore stale source completion', async () => {
@@ -270,7 +361,7 @@ const broken: SlashCommandEntry = {
   content: '---\nponytail: debt: x\n---\nbody',
 };
 
-test('unreadable command stays listed with its error and a repair link', async () => {
+test('unreadable command keeps its error and uses the same icon-only edit action as other rows', async () => {
   const store = config({
     listSlashCommands: vi.fn().mockResolvedValue({
       data: [command, broken],
@@ -284,11 +375,19 @@ test('unreadable command stays listed with its error and a repair link', async (
   expect(screen.getByRole('link', { name: `/${command.name}` })).toBeTruthy();
   expect(screen.getByText(en['commands.parseError'])).toBeTruthy();
   expect(screen.getByText(broken.parseError as string)).toBeTruthy();
-  expect(
-    screen
-      .getByRole('link', { name: `${en['commands.repairAria'].replace('{name}', broken.name)}` })
-      .getAttribute('href'),
-  ).toBe('/commands/ponytail-debt?project=project-a&edit=1');
+  const edit = screen.getByRole('link', { name: `Edit ${broken.name}` });
+  const normalEdit = screen.getByRole('link', { name: `Edit ${command.name}` });
+
+  expect(edit.getAttribute('href')).toBe('/commands/ponytail-debt?project=project-a&edit=1');
+  expect(edit.textContent?.trim()).toBe('');
+  expect(edit.className).toBe(normalEdit.className);
+  expect(edit.closest('td')?.classList.contains('row-actions')).toBe(true);
+  expect(screen.getByRole('columnheader', { name: 'Actions' }).classList.contains('th-actions')).toBe(true);
+  expect(screen.queryByText('Edit source')).toBeNull();
+
+  await fireEvent.click(screen.getByRole('checkbox', { name: 'Show global configuration' }));
+  await waitFor(() => expect(screen.getAllByRole('link', { name: `/${broken.name}` })).toHaveLength(2));
+  expect(screen.getAllByRole('link', { name: `Edit ${broken.name}` })).toHaveLength(1);
 });
 
 test('unreadable command detail keeps the raw document deletable and repair opens the original', async () => {
@@ -306,13 +405,16 @@ test('unreadable command detail keeps the raw document deletable and repair open
   expect(screen.getByRole('alert').textContent).toContain(broken.parseError as string);
   expect(container.querySelector('pre')?.textContent).toBe(broken.content);
 
-  await fireEvent.click(screen.getByRole('button', { name: en['commands.repair'] }));
+  expect(screen.queryByRole('button', { name: 'Edit source' })).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+  await fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => expect(goto).toHaveBeenLastCalledWith('/commands?removed=1&project=project-a'));
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   const input = screen.getByLabelText('Full Markdown document') as HTMLTextAreaElement;
   expect(input.value).toBe(broken.content);
   await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-  await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-  await fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => expect(goto).toHaveBeenLastCalledWith('/commands?project=project-a'));
   await waitFor(() =>
     expect(deleteSlashCommand).toHaveBeenCalledExactlyOnceWith(
       { id: broken.id, expectedPath: broken.resolvedPath, expectedContent: broken.content },
@@ -331,7 +433,7 @@ test('repairing an unreadable command submits the original snapshot', async () =
   render(Detail, {}, { wrapper: Harness, wrapperProps: { config: store } });
 
   await screen.findByRole('heading', { name: `/${broken.name}` });
-  await fireEvent.click(screen.getByRole('button', { name: en['commands.repair'] }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   await fireEvent.input(screen.getByLabelText('Full Markdown document'), { target: { value: repaired.content } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -346,5 +448,5 @@ test('repairing an unreadable command submits the original snapshot', async () =
       'project-a',
     ),
   );
-  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  await waitFor(() => expect(goto).toHaveBeenCalledExactlyOnceWith('/commands?saved=1&project=project-a'));
 });

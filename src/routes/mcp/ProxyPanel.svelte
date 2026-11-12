@@ -7,6 +7,7 @@ import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import { Input } from '$src/components/input/index.js';
+import { createPagination } from '$src/components/pagination.svelte.js';
 import { Switch } from '$src/components/switch/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
@@ -23,9 +24,15 @@ let querying = $state(false);
 let refreshing = $state(false);
 let error = $state('');
 
-let page = $state(1);
-const pageSize = 10;
+const pageSize = 5;
 let query = $state('');
+const pagination = createPagination(config, {
+  key: () => 'mcp-proxy',
+  query: () => query,
+  total: () => filtered.length,
+  ready: () => proxyState !== null && !loading && !querying && !error,
+  pageSize,
+});
 
 // Form dialog state
 let formOpen = $state(false);
@@ -94,7 +101,7 @@ const filtered = $derived(
   ),
 );
 
-const currentPage = $derived(Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize))));
+const currentPage = $derived(Math.min(pagination.page, Math.max(1, Math.ceil(filtered.length / pageSize))));
 const rows = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
 
 async function readState(manual = false, afterMutation = false) {
@@ -369,7 +376,7 @@ export function refresh() {
   <DataTable
     label={i18n.t('mcp.proxy.serversTitle')}
     total={loading || error ? 0 : filtered.length}
-    bind:page
+    bind:page={pagination.page}
     {pageSize}
   >
     <thead>

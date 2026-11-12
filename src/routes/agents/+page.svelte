@@ -7,6 +7,7 @@ import DataTable from '$src/components/DataTable.svelte';
 import * as Dialog from '$src/components/dialog/index.js';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
+import { createPagination } from '$src/components/pagination.svelte.js';
 import ResourceScope from '$src/components/ResourceScope.svelte';
 import Select from '$src/components/Select.svelte';
 import { getConfig } from '$src/config/context.js';
@@ -33,9 +34,11 @@ let query = $state('');
 let deleting = $state<string | null>(null);
 let refreshing = $state(false);
 let projectAgents = $state<AgentDefinition[]>([]);
+let loadedProjectId = $state<string | null | undefined>(undefined);
 let projectLoading = $state(false);
 let projectError = $state('');
 let comparisonAgents = $state<AgentDefinition[]>([]);
+let comparisonReady = $state(false);
 let comparisonLoading = $state(false);
 let comparisonError = $state('');
 let showGlobal = $state(false);
@@ -48,7 +51,19 @@ let customTabEl = $state<HTMLButtonElement | null>(null);
 const tabLabels = { native: 'agents.tabNative', slim: 'agents.tabSlim', omo: 'agents.tabOmo' } as const;
 let tabElements = $state<Record<GroupType, HTMLButtonElement | null>>({ native: null, slim: null, omo: null });
 const pageSize = 5;
-let page = $state(1);
+const pagination = createPagination(config, {
+  key: () => JSON.stringify(['agents', projectId, projectId !== null && showGlobal]),
+  query: () => query,
+  total: () => agents.length,
+  ready: () =>
+    projectId === null
+      ? !config.loading
+      : loadedProjectId === projectId &&
+        !projectLoading &&
+        !projectError &&
+        (!showGlobal || (comparisonReady && !comparisonLoading && !comparisonError)),
+  pageSize,
+});
 // Only truly custom agents (not catalog ids) are editable or deletable.
 const globalAgents = $derived(config.agents.filter((agent) => !isBuiltinAgentId(agent.id)));
 const customAgents = $derived(projectId === null ? globalAgents : projectAgents);
@@ -65,19 +80,12 @@ const nativeAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === 
 const slimAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === GROUP_TYPE_SLIM));
 const omoAgents = $derived(BUILTIN_AGENTS.filter((agent) => agent.system === GROUP_TYPE_OMO));
 const maxPage = $derived(Math.max(1, Math.ceil(agents.length / pageSize)));
-const currentPage = $derived(Math.min(page, maxPage));
+const currentPage = $derived(Math.min(pagination.page, maxPage));
 const pagedAgents = $derived(agents.slice((currentPage - 1) * pageSize, currentPage * pageSize));
-
-$effect(() => {
-  // Reset to the first page whenever the filtered row count changes (search or delete).
-  void agents.length;
-  page = 1;
-});
 
 function selectTab(tab: AgentTab) {
   activeTab = tab;
   query = '';
-  page = 1;
 }
 
 function tabElement(tab: AgentTab) {
@@ -105,9 +113,9 @@ $effect(() => {
   const scope = projectId;
 
   query = '';
-  page = 1;
   deleting = null;
   projectAgents = [];
+  loadedProjectId = undefined;
   projectError = '';
 
   if (scope !== null)
@@ -130,7 +138,10 @@ async function loadProject(scope: string) {
   try {
     const result = await config.listAgents(scope);
 
-    if (id === request) projectAgents = result;
+    if (id === request) {
+      projectAgents = result;
+      loadedProjectId = scope;
+    }
   } catch (cause) {
     if (id === request) {
       projectAgents = [];
@@ -145,6 +156,7 @@ $effect(() => {
   const compare = projectId !== null && showGlobal;
 
   comparisonAgents = [];
+  comparisonReady = false;
   comparisonError = '';
 
   if (compare)
@@ -168,7 +180,10 @@ async function loadComparison() {
   try {
     const result = await config.listAgents();
 
-    if (id === comparisonRequest) comparisonAgents = result.filter((agent) => !isBuiltinAgentId(agent.id));
+    if (id === comparisonRequest) {
+      comparisonAgents = result.filter((agent) => !isBuiltinAgentId(agent.id));
+      comparisonReady = true;
+    }
   } catch (cause) {
     if (id === comparisonRequest) comparisonError = readError(cause);
   } finally {
@@ -325,7 +340,7 @@ async function remove() {
     <DataTable
       label={i18n.t('agents.tableLabel')}
       total={projectLoading || projectError ? 0 : agents.length}
-      bind:page
+      bind:page={pagination.page}
       {pageSize}
       ><thead>
         <tr>

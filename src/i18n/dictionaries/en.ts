@@ -918,6 +918,15 @@ export const en = {
   'mcp.deleteHint': 'Reload OpenCode manually after deletion; this may cancel pending requests.',
   'mcp.deleteFailed': 'Deletion did not complete. Review the error, refresh the list and retry.',
   'mcp.removed': 'Removed from global configuration. Reload OpenCode to apply.',
+  'mcp.projectRemoved': 'Removed from this project configuration source. Reload OpenCode to apply.',
+  'mcp.projectDeleteConfirm':
+    'Delete {name} from this project configuration source? Global configuration is unchanged. This cannot be undone.',
+  'mcp.projectSaved': 'Saved to project configuration. Reload OpenCode manually to apply.',
+  'mcp.projectEditOnly':
+    'Project MCP entries support editing, enabling/disabling, and deleting their own configuration source. Creation is available in Global only.',
+  'mcp.enableAria': 'Enable {name} in {scope}',
+  'mcp.disableAria': 'Disable {name} in {scope}',
+  'mcp.toggleFailed': 'Configuration status was not updated. Refresh the list and retry.',
   'mcp.nativeConfig': 'Native configuration',
   'mcp.credentialHint':
     'Headers, environment values, known credential fields, URL credentials, and explicit credential arguments are masked. Custom formats may still contain sensitive values.',

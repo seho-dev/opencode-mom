@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 
-use crate::document::{read_text, JsoncDoc};
+use crate::document::JsoncDoc;
 use crate::error::AppError;
 use crate::paths::ConfigPaths;
 use crate::resource_file::{self, Directory, Snapshot};
@@ -18,6 +19,7 @@ pub struct McpServer {
     pub target: String,
     pub source_path: String,
     pub source_paths: Vec<String>,
+    pub source_snapshot: String,
     pub config: Map<String, Value>,
 }
 
@@ -40,6 +42,53 @@ pub struct McpUpdate {
     pub config: Map<String, Value>,
     pub expected_config: Map<String, Value>,
     pub expected_source_path: String,
+    pub expected_source_snapshot: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct McpDisabledUpdate {
+    pub name: String,
+    pub disabled: bool,
+    pub expected_disabled: bool,
+    pub expected_source_path: String,
+    pub expected_source_snapshot: String,
+}
+
+fn source_snapshot<'a>(
+    paths: &ConfigPaths,
+    sources: impl IntoIterator<Item = (&'a Path, Option<(&'a Path, &'a str)>)>,
+) -> String {
+    let mut hash = Sha256::new();
+    let mut part = |bytes: &[u8]| {
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+    };
+    part(b"opencode-mom-mcp-source-v1");
+    part(if paths.is_project() {
+        b"project"
+    } else {
+        b"global"
+    });
+    part(
+        paths
+            .project_directory()
+            .map(|root| root.as_os_str().as_encoded_bytes())
+            .unwrap_or_default(),
+    );
+    for (logical, source) in sources {
+        part(logical.as_os_str().as_encoded_bytes());
+        match source {
+            Some((resolved, content)) => {
+                part(b"present");
+                part(resolved.as_os_str().as_encoded_bytes());
+                part(content.as_bytes());
+            }
+            None => part(b"missing"),
+        }
+    }
+
+    format!("{:x}", hash.finalize())
 }
 
 fn servers(document: &JsoncDoc) -> Result<Option<&Map<String, Value>>, AppError> {
@@ -81,12 +130,25 @@ pub fn list(paths: &ConfigPaths) -> Result<McpList, AppError> {
     paths.validate_resource_root()?;
     let mut result = McpList::default();
     let mut entries = BTreeMap::<String, (Value, Vec<String>)>::new();
+    let mut sources = Vec::new();
+    let mut complete = true;
     for path in paths.global_config_files() {
-        let document = match read_text(path)
-            .and_then(|content| content.map(|content| JsoncDoc::parse(&content)).transpose())
-        {
-            Ok(Some(document)) => document,
-            Ok(None) => continue,
+        let snapshot = match Snapshot::read(path) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                complete = false;
+                result
+                    .diagnostics
+                    .push(format!("{}: {error}", path.display()));
+                continue;
+            }
+        };
+        sources.push((path, snapshot));
+        let Some(snapshot) = sources.last().and_then(|(_, snapshot)| snapshot.as_ref()) else {
+            continue;
+        };
+        let document = match JsoncDoc::parse(&snapshot.content) {
+            Ok(document) => document,
             Err(error) => {
                 result
                     .diagnostics
@@ -118,6 +180,30 @@ pub fn list(paths: &ConfigPaths) -> Result<McpList, AppError> {
             sources.push(path.display().to_string());
         }
     }
+
+    for (_, snapshot) in &sources {
+        if let Some(snapshot) = snapshot {
+            if let Err(error) = snapshot.validate() {
+                complete = false;
+                result.diagnostics.push(error.to_string());
+            }
+        }
+    }
+    let source_snapshot = if complete {
+        source_snapshot(
+            paths,
+            sources.iter().map(|(path, snapshot)| {
+                (
+                    path.as_path(),
+                    snapshot
+                        .as_ref()
+                        .map(|snapshot| (snapshot.path.as_path(), snapshot.content.as_str())),
+                )
+            }),
+        )
+    } else {
+        String::new()
+    };
 
     for (name, (config, source_paths)) in entries {
         let Value::Object(config) = config else {
@@ -174,6 +260,7 @@ pub fn list(paths: &ConfigPaths) -> Result<McpList, AppError> {
             target,
             source_path: source_paths.last().cloned().unwrap_or_default(),
             source_paths,
+            source_snapshot: source_snapshot.clone(),
             config,
         });
     }
@@ -192,6 +279,53 @@ pub fn get(paths: &ConfigPaths, name: &str) -> Result<McpServer, AppError> {
 pub fn delete(paths: &ConfigPaths, name: &str) -> Result<(), AppError> {
     paths.ensure_global_write()?;
     delete_inner(paths, name, |_| {}, |_| {})
+}
+
+pub fn delete_project(
+    paths: &ConfigPaths,
+    name: &str,
+    expected_source_path: &str,
+    expected_source_snapshot: &str,
+) -> Result<(), AppError> {
+    delete_project_inner(
+        paths,
+        name,
+        expected_source_path,
+        expected_source_snapshot,
+        || {},
+    )
+}
+
+fn delete_project_inner(
+    paths: &ConfigPaths,
+    name: &str,
+    expected_source_path: &str,
+    expected_source_snapshot: &str,
+    before_persist: impl FnOnce(),
+) -> Result<(), AppError> {
+    if !paths.is_project() {
+        return Err(AppError::validation(
+            "Project scope is required for project MCP deletion",
+        ));
+    }
+    validate_name(name)?;
+    let mut documents = managed_documents(paths)?;
+    let index = update_source(
+        paths,
+        &documents,
+        name,
+        None,
+        expected_source_path,
+        expected_source_snapshot,
+        true,
+    )?;
+    let (_, _, document) = documents
+        .get_mut(index)
+        .ok_or_else(|| AppError::not_found("MCP server no longer exists"))?;
+    document.patch(&["mcp", "servers", name], None)?;
+    validate_effective_server(document, name, None)?;
+    before_persist();
+    persist_document(paths, &documents, index)
 }
 
 fn delete_inner(
@@ -248,12 +382,18 @@ fn delete_inner(
     })
 }
 
-fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppError> {
+fn validate_name(name: &str) -> Result<(), AppError> {
     if name.trim().is_empty() || name.len() > 256 || name.chars().any(char::is_control) {
         return Err(AppError::validation(
             "MCP name must be nonempty, at most 256 bytes, without control characters",
         ));
     }
+
+    Ok(())
+}
+
+fn validate_draft(name: &str, config: &Map<String, Value>) -> Result<(), AppError> {
+    validate_name(name)?;
 
     let invalid =
         || AppError::validation("Invalid MCP config: check type, target, and optional field types");
@@ -358,7 +498,14 @@ fn managed_documents(
         .global_config_files()
         .iter()
         .map(|path| {
+            let target = paths.mcp_config_target(path)?;
             let snapshot = Snapshot::read(path)?;
+            if snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.path != target)
+            {
+                return Err(AppError::configuration("MCP source changed; reload"));
+            }
             let document = match &snapshot {
                 Some(snapshot) => JsoncDoc::parse(&snapshot.content).map_err(|error| {
                     AppError::validation(format!("{}: {error}", path.display()))
@@ -413,6 +560,7 @@ fn saved_server(
         target,
         source_path: source_paths.last().cloned().unwrap_or_default(),
         source_paths,
+        source_snapshot: String::new(),
         config,
     })
 }
@@ -457,39 +605,28 @@ pub fn create(paths: &ConfigPaths, draft: McpDraft) -> Result<McpServer, AppErro
             .collect(),
         None => vec![path.display().to_string()],
     };
-    let server = saved_server(draft.name, draft.config, source_paths)?;
-    persist_document(&documents, index)?;
+    let mut server = saved_server(draft.name, draft.config, source_paths)?;
+    server.source_snapshot = saved_source_snapshot(paths, &documents, index)?;
+    persist_document(paths, &documents, index)?;
 
     Ok(server)
 }
 
 pub fn update(paths: &ConfigPaths, draft: McpUpdate) -> Result<McpServer, AppError> {
-    paths.ensure_global_write()?;
     validate_draft(&draft.name, &draft.config)?;
     let mut documents = managed_documents(paths)?;
-    let index = documents
-        .iter()
-        .rposition(|(_, _, document)| {
-            servers(document)
-                .ok()
-                .flatten()
-                .is_some_and(|definitions| definitions.contains_key(&draft.name))
-        })
-        .ok_or_else(|| AppError::not_found("MCP server no longer exists"))?;
-    let (path, _, document) = documents
+    let index = update_source(
+        paths,
+        &documents,
+        &draft.name,
+        Some(&draft.expected_config),
+        &draft.expected_source_path,
+        &draft.expected_source_snapshot,
+        paths.is_project(),
+    )?;
+    let (_, _, document) = documents
         .get_mut(index)
         .ok_or_else(|| AppError::not_found("MCP server no longer exists"))?;
-    let current = servers(document)?
-        .and_then(|definitions| definitions.get(&draft.name))
-        .ok_or_else(|| AppError::not_found("MCP server no longer exists"))?
-        .as_object();
-    if current != Some(&draft.expected_config)
-        || path.display().to_string() != draft.expected_source_path
-    {
-        return Err(AppError::configuration(
-            "MCP server changed; reload before saving",
-        ));
-    }
     document.patch(
         &["mcp", "servers", &draft.name],
         Some(Value::Object(draft.config.clone())),
@@ -505,30 +642,186 @@ pub fn update(paths: &ConfigPaths, draft: McpUpdate) -> Result<McpServer, AppErr
         })
         .map(|(path, _, _)| path.display().to_string())
         .collect();
-    let server = saved_server(draft.name, draft.config, source_paths)?;
-    persist_document(&documents, index)?;
+    let mut server = saved_server(draft.name, draft.config, source_paths)?;
+    server.source_snapshot = saved_source_snapshot(paths, &documents, index)?;
+    persist_document(paths, &documents, index)?;
 
     Ok(server)
 }
 
-fn persist_document(
+fn update_source(
+    paths: &ConfigPaths,
+    documents: &[(PathBuf, Option<Snapshot>, JsoncDoc)],
+    name: &str,
+    expected_config: Option<&Map<String, Value>>,
+    expected_source_path: &str,
+    expected_source_snapshot: &str,
+    reject_shadows: bool,
+) -> Result<usize, AppError> {
+    let definitions = documents
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, _, document))| {
+            servers(document)
+                .ok()
+                .flatten()
+                .is_some_and(|definitions| definitions.contains_key(name))
+        })
+        .collect::<Vec<_>>();
+    let &(index, (path, snapshot, document)) = definitions
+        .last()
+        .ok_or_else(|| AppError::not_found("MCP server no longer exists"))?;
+    let current = servers(document)?
+        .and_then(|definitions| definitions.get(name))
+        .and_then(Value::as_object);
+    let token = source_snapshot(
+        paths,
+        documents.iter().map(|(path, snapshot, _)| {
+            (
+                path.as_path(),
+                snapshot
+                    .as_ref()
+                    .map(|snapshot| (snapshot.path.as_path(), snapshot.content.as_str())),
+            )
+        }),
+    );
+    if expected_config.is_some_and(|expected| current != Some(expected))
+        || path.display().to_string() != expected_source_path
+        || token != expected_source_snapshot
+    {
+        return Err(AppError::configuration(
+            "MCP server changed; reload before saving",
+        ));
+    }
+    if reject_shadows
+        && definitions.iter().any(|(_, (_, other, _))| {
+            other.as_ref().map(|source| &source.path)
+                != snapshot.as_ref().map(|source| &source.path)
+        })
+    {
+        return Err(AppError::validation(
+            "MCP server has multiple sources; resolve duplicate definitions before editing",
+        ));
+    }
+
+    Ok(index)
+}
+
+pub fn set_disabled(paths: &ConfigPaths, draft: McpDisabledUpdate) -> Result<McpServer, AppError> {
+    validate_name(&draft.name)?;
+    let mut documents = managed_documents(paths)?;
+    let index = update_source(
+        paths,
+        &documents,
+        &draft.name,
+        None,
+        &draft.expected_source_path,
+        &draft.expected_source_snapshot,
+        true,
+    )?;
+    let mut config = documents
+        .get(index)
+        .and_then(|(_, _, document)| servers(document).ok().flatten())
+        .and_then(|definitions| definitions.get(&draft.name))
+        .and_then(Value::as_object)
+        .cloned()
+        .ok_or_else(|| AppError::validation("MCP configuration must be an object"))?;
+    let current_disabled = match config.get("disabled") {
+        None => false,
+        Some(Value::Bool(disabled)) => *disabled,
+        Some(_) => return Err(AppError::validation("MCP disabled must be a boolean")),
+    };
+    if current_disabled != draft.expected_disabled {
+        return Err(AppError::configuration(
+            "MCP server changed; reload before saving",
+        ));
+    }
+    let sources = documents
+        .iter()
+        .filter(|(_, _, document)| {
+            servers(document)
+                .ok()
+                .flatten()
+                .is_some_and(|servers| servers.contains_key(&draft.name))
+        })
+        .map(|(path, _, _)| path.display().to_string())
+        .collect();
+    if current_disabled == draft.disabled {
+        let mut server = saved_server(draft.name, config, sources)?;
+        server.source_snapshot = draft.expected_source_snapshot;
+        validate_documents(paths, &documents)?;
+        return Ok(server);
+    }
+    config.insert("disabled".to_owned(), Value::Bool(draft.disabled));
+    let (_, _, document) = documents
+        .get_mut(index)
+        .ok_or_else(|| AppError::not_found("MCP server no longer exists"))?;
+    document.patch(
+        &["mcp", "servers", &draft.name, "disabled"],
+        Some(Value::Bool(draft.disabled)),
+    )?;
+    validate_effective_server(document, &draft.name, Some(&config))?;
+    let mut server = saved_server(draft.name, config, sources)?;
+    server.source_snapshot = saved_source_snapshot(paths, &documents, index)?;
+    persist_document(paths, &documents, index)?;
+
+    Ok(server)
+}
+
+fn saved_source_snapshot(
+    paths: &ConfigPaths,
     documents: &[(PathBuf, Option<Snapshot>, JsoncDoc)],
     index: usize,
-) -> Result<(), AppError> {
-    let validate_sources = || {
-        for (path, snapshot, _) in documents {
-            match snapshot {
-                Some(snapshot) => snapshot.validate()?,
-                None => resource_file::absent(path)?,
-            }
-        }
-
-        Ok(())
-    };
-    validate_sources()?;
+) -> Result<String, AppError> {
     let (path, snapshot, document) = documents
         .get(index)
         .ok_or_else(|| AppError::configuration("MCP configuration document is unavailable"))?;
+    let target = match snapshot {
+        Some(snapshot) => snapshot.path.clone(),
+        None => paths.mcp_config_target(path)?,
+    };
+    Ok(source_snapshot(
+        paths,
+        documents.iter().map(|(path, snapshot, _)| {
+            let source = match snapshot {
+                Some(snapshot) if snapshot.path == target => {
+                    Some((target.as_path(), document.content()))
+                }
+                Some(snapshot) => Some((snapshot.path.as_path(), snapshot.content.as_str())),
+                None if path == &documents[index].0 => Some((target.as_path(), document.content())),
+                None => None,
+            };
+            (path.as_path(), source)
+        }),
+    ))
+}
+
+fn validate_documents(
+    paths: &ConfigPaths,
+    documents: &[(PathBuf, Option<Snapshot>, JsoncDoc)],
+) -> Result<(), AppError> {
+    for (path, snapshot, _) in documents {
+        let target = paths.mcp_config_target(path)?;
+        match snapshot {
+            Some(snapshot) if target == snapshot.path => snapshot.validate()?,
+            Some(_) => return Err(AppError::configuration("MCP source changed; reload")),
+            None => resource_file::absent(path)?,
+        }
+    }
+
+    Ok(())
+}
+
+fn persist_document(
+    paths: &ConfigPaths,
+    documents: &[(PathBuf, Option<Snapshot>, JsoncDoc)],
+    index: usize,
+) -> Result<(), AppError> {
+    let (path, snapshot, document) = documents
+        .get(index)
+        .ok_or_else(|| AppError::configuration("MCP configuration document is unavailable"))?;
+    let validate_sources = || validate_documents(paths, documents);
+    validate_sources()?;
     if let Some(snapshot) = snapshot {
         let mut snapshot = snapshot.clone();
         snapshot.aliases = documents
@@ -540,7 +833,7 @@ fn persist_document(
             })
             .map(|(path, _, _)| path.clone())
             .collect();
-        resource_file::replace(&[(snapshot, document.content().to_owned())], |_| {
+        resource_file::replace_checked(&[(snapshot, document.content().to_owned())], |_| {
             validate_sources()
         })
     } else {
@@ -559,3 +852,7 @@ fn persist_document(
 #[cfg(all(test, unix))]
 #[path = "mcp/tests.rs"]
 mod safety_tests;
+
+#[cfg(all(test, unix))]
+#[path = "mcp/scoped_tests.rs"]
+mod scoped_tests;

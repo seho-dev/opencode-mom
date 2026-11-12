@@ -159,6 +159,7 @@ pub fn run() {
             commands::get_mcp,
             commands::create_mcp,
             commands::update_mcp,
+            commands::set_mcp_disabled,
             commands::delete_mcp,
             commands::list_skills,
             commands::get_skill,

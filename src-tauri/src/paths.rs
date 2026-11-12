@@ -470,6 +470,48 @@ impl ConfigPaths {
         Ok(())
     }
 
+    pub(crate) fn mcp_config_target(&self, path: &Path) -> Result<PathBuf, AppError> {
+        let invalid = || AppError::validation("MCP source is outside managed configuration");
+        if !path.is_absolute() || !self.global_config_files.iter().any(|file| file == path) {
+            return Err(invalid());
+        }
+        self.validate_resource_root()?;
+        let resolved = checked_resource_path(path)?;
+        if let Some(root) = &self.project_root {
+            let parent = checked_resource_path(path.parent().ok_or_else(invalid)?)?;
+            if !resolved.starts_with(root)
+                || !parent.starts_with(root)
+                || self
+                    .agent_dirs
+                    .iter()
+                    .chain(&self.global_skill_dirs)
+                    .chain(&self.command_dirs)
+                    .chain(&self.plugin_dirs)
+                    .chain(&self.global_resource_dirs)
+                    .any(|dir| is_within_boundary(dir, &resolved))
+                || self
+                    .global_write_files
+                    .iter()
+                    .any(|(file, _)| resolved_resource_path(file) == resolved)
+                || resolved_resource_path(&self.config_file()) == resolved
+            {
+                return Err(invalid());
+            }
+        } else {
+            self.validate_override_paths()?;
+            let (_, captured) = self
+                .global_write_files
+                .iter()
+                .find(|(logical, _)| logical == path)
+                .ok_or_else(invalid)?;
+            if &resolved != captured {
+                return Err(AppError::configuration("MCP source changed; reload"));
+            }
+        }
+
+        Ok(resolved)
+    }
+
     pub fn for_project(&self, project_id: Option<Uuid>) -> Result<Self, AppError> {
         let Some(id) = project_id else {
             return Ok(self.clone());

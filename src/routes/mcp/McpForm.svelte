@@ -4,7 +4,7 @@ import { goto } from '$app/navigation';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import FormActions from '$src/components/FormActions.svelte';
-import GlobalDestination from '$src/components/GlobalDestination.svelte';
+import ResourceScopeNotice from '$src/components/ResourceScopeNotice.svelte';
 import Select from '$src/components/Select.svelte';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
@@ -13,14 +13,24 @@ import { prettyJson, safeParseJsonObject } from '$src/utils/index.js';
 
 let {
   source,
+  projectId = null,
+  readonly = false,
   onSaved,
   onCancel,
-}: { source?: McpServer; onSaved?: (server: McpServer) => void; onCancel?: () => void } = $props();
+}: {
+  source?: McpServer;
+  projectId?: string | null;
+  readonly?: boolean;
+  onSaved?: (server: McpServer) => void;
+  onCancel?: () => void;
+} = $props();
 const config = getConfig();
 const i18n = getI18n();
 const initial = untrack(() =>
   source ? { ...source, config: JSON.parse(JSON.stringify(source.config)) as Record<string, unknown> } : undefined,
 );
+const scope = untrack(() => projectId);
+const blocked = $derived(readonly || (!initial && scope !== null));
 let name = $state(initial?.name ?? '');
 let text = $state(prettyJson(initial?.config ?? { type: 'local', command: [''], environment: {}, disabled: false }));
 let pending = $state(false);
@@ -67,7 +77,7 @@ function selectType(type: string) {
 }
 
 async function save() {
-  if (pending) return;
+  if (pending || blocked) return;
 
   error = '';
 
@@ -105,14 +115,30 @@ async function save() {
 
   try {
     const draft = { name: initial?.name ?? name.trim(), config: value };
-    const result = initial
-      ? await config.updateMcp({ ...draft, expectedConfig: initial.config, expectedSourcePath: initial.sourcePath })
-      : await config.createMcp(draft);
+    let result: McpServer;
+
+    if (initial) {
+      const update = {
+        ...draft,
+        expectedConfig: initial.config,
+        expectedSourcePath: initial.sourcePath,
+        expectedSourceSnapshot: initial.sourceSnapshot,
+      };
+
+      result = await (scope === null ? config.updateMcp(update) : config.updateMcp(update, scope));
+    } else {
+      result = await config.createMcp(draft);
+    }
 
     if (!active) return;
 
     if (onSaved) onSaved(result);
-    else await goto(`/mcp/${encodeURIComponent(result.name)}?saved=1`);
+    else {
+      const params = new URLSearchParams({ saved: '1' });
+
+      if (scope !== null) params.set('project', scope);
+      await goto(`/mcp/${encodeURIComponent(result.name)}?${params}`);
+    }
   } catch (cause) {
     if (active) error = readError(cause);
   } finally {
@@ -128,9 +154,9 @@ async function save() {
   onsubmit={(event) => { event.preventDefault(); void save(); }}
 >
   <div class="form-body form-grid">
-    <GlobalDestination />
+    <div class="col-span-full"><ResourceScopeNotice projectId={scope} {readonly} writable /></div>
     {#if !initial}
-      <p class="form-hint">{i18n.t('mcp.newDescription')}</p>
+      <p class="form-hint">{i18n.t(scope === null ? 'mcp.newDescription' : 'mcp.projectEditOnly')}</p>
     {/if}
     {#if syntaxError || error}
       <p id="mcp-config-error" class="field-error break-words [overflow-wrap:anywhere]" role="alert">
@@ -142,7 +168,7 @@ async function save() {
       <input
         id="mcp-name"
         bind:value={name}
-        disabled={!!initial || pending}
+        disabled={!!initial || pending || blocked}
         required
         autocomplete="off"
         aria-describedby="mcp-name-hint"
@@ -154,7 +180,7 @@ async function save() {
       <Select
         id="mcp-type"
         value={kind}
-        disabled={pending}
+        disabled={pending || blocked}
         onchange={selectType}
         options={[{ value: 'local', label: i18n.t('mcp.local') }, { value: 'remote', label: i18n.t('mcp.remote') }]}
       />
@@ -172,7 +198,7 @@ async function save() {
         id="mcp-config"
         class="!min-h-72 resize-y font-[var(--font-primary)] text-xs leading-6"
         bind:value={text}
-        disabled={pending}
+        disabled={pending || blocked}
         spellcheck="false"
         autocomplete="off"
         aria-invalid={!!syntaxError}
@@ -189,6 +215,8 @@ async function save() {
     {:else}
       <Button href="/mcp" variant="outline" disabled={pending}>{i18n.t('common.cancel')}</Button>
     {/if}
-    <Button type="submit" disabled={pending}>{i18n.t(pending ? 'configuration.saving' : 'configuration.save')}</Button>
+    <Button type="submit" disabled={pending || blocked}
+      >{i18n.t(pending ? 'configuration.saving' : 'configuration.save')}</Button
+    >
   </FormActions>
 </form>

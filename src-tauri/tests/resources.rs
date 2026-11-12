@@ -358,16 +358,6 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
                 Some(id),
             ))
             .unwrap_err(),
-            block_on(commands::update_mcp(
-                state(),
-                mcp_update(
-                    &mcp::get(&paths, "server").unwrap(),
-                    json!({"type":"local","command":["changed"]}),
-                ),
-                Some(id),
-            ))
-            .unwrap_err(),
-            block_on(commands::delete_mcp(state(), "server".to_owned(), Some(id))).unwrap_err(),
             block_on(commands::create_skill(
                 state(),
                 skills::SkillDraft {
@@ -393,6 +383,31 @@ fn project_resource_ipc_mutations_are_refused_before_any_write() {
             .iter()
             .all(|error| error.code == ErrorCode::ValidationFailed
                 && error.message.contains("read-only")));
+        assert_eq!(
+            block_on(commands::update_mcp(
+                state(),
+                mcp_update(
+                    &mcp::get(&paths, "server").unwrap(),
+                    json!({"type":"local","command":["changed"]}),
+                ),
+                Some(id),
+            ))
+            .unwrap_err()
+            .code,
+            ErrorCode::NotFound,
+        );
+        assert_eq!(
+            block_on(commands::delete_mcp(
+                state(),
+                "server".to_owned(),
+                Some(id),
+                None,
+                None
+            ))
+            .unwrap_err()
+            .code,
+            ErrorCode::ValidationFailed,
+        );
     }
     assert!(agents::create(
         &scoped,
@@ -552,7 +567,14 @@ fn explicit_global_resource_ipc_remains_writable_while_a_project_is_selected() {
         block_on(commands::get_mcp(state(), "global".to_owned(), None)).unwrap(),
         updated
     );
-    block_on(commands::delete_mcp(state(), "global".to_owned(), None)).unwrap();
+    block_on(commands::delete_mcp(
+        state(),
+        "global".to_owned(),
+        None,
+        None,
+        None,
+    ))
+    .unwrap();
     assert!(block_on(commands::list_mcps(state(), None))
         .unwrap()
         .data
@@ -1619,6 +1641,7 @@ fn mcp_update(server: &mcp::McpServer, config: serde_json::Value) -> mcp::McpUpd
         config: config.as_object().unwrap().clone(),
         expected_config: server.config.clone(),
         expected_source_path: server.source_path.clone(),
+        expected_source_snapshot: server.source_snapshot.clone(),
     }
 }
 
@@ -2387,9 +2410,10 @@ fn absent_explicit_config_is_a_create_target_and_arbitrary_source_supports_round
     let current = skills::get(&paths, "Selected").unwrap();
     skills::update(&paths, skill_update(&current, "edited selected skill")).unwrap();
     assert_eq!(fs::read_to_string(skill).unwrap(), "edited selected skill");
+    let current = mcp::get(&paths, "selected").unwrap();
     let saved = mcp::update(
         &paths,
-        mcp_update(&created, json!({"type":"local","command":["edit"]})),
+        mcp_update(&current, json!({"type":"local","command":["edit"]})),
     )
     .unwrap();
     assert_eq!(mcp::get(&paths, "selected").unwrap(), saved);

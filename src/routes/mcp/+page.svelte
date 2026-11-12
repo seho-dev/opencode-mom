@@ -1,6 +1,6 @@
 <script lang="ts">
 import { Eye, Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
-import { untrack } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
 import { goto } from '$app/navigation';
 import { page as route } from '$app/state';
 import { Button } from '$src/components/button/index.js';
@@ -10,6 +10,7 @@ import DataTable from '$src/components/DataTable.svelte';
 import EmptyTableRow from '$src/components/EmptyTableRow.svelte';
 import PageHead from '$src/components/PageHead.svelte';
 import ResourceScope from '$src/components/ResourceScope.svelte';
+import { Switch } from '$src/components/switch/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { McpServer } from '$src/types/mcp.js';
@@ -30,6 +31,7 @@ let proxyPanelRef = $state<ReturnType<typeof ProxyPanel> | null>(null);
 let activeTab = $state<McpTab>(route.url.searchParams.get('tab') === 'proxy' ? 'proxy' : 'config');
 
 let servers = $state<McpServer[]>([]);
+let loadedProjectId = $state<string | null | undefined>(undefined);
 let globalServers = $state<McpServer[]>([]);
 let globalDiagnostics = $state<string[]>([]);
 let globalError = $state('');
@@ -42,13 +44,18 @@ let error = $state('');
 let query = $state('');
 let deleting = $state<McpServer | null>(null);
 let removed = $state(false);
+let toggling = $state<McpServer | null>(null);
+let toggleError = $state('');
+let toggled = $state(false);
 let page = $state(1);
 const pageSize = 10;
 let request = 0;
 let globalRequest = 0;
+let mutation = 0;
+const busy = $derived(config.saving || config.projectSaving || toggling !== null || deleting !== null);
 
 const allServers = $derived([
-  ...servers.map((entry) => ({ entry, projectId })),
+  ...(loadedProjectId === projectId ? servers.map((entry) => ({ entry, projectId })) : []),
   ...(projectId && showGlobal ? globalServers.map((entry) => ({ entry, projectId: null })) : []),
 ]);
 
@@ -60,6 +67,10 @@ const filtered = $derived(
 
 const currentPage = $derived(Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize))));
 const rows = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+
+onDestroy(() => {
+  mutation += 1;
+});
 
 $effect(() => {
   query;
@@ -107,6 +118,8 @@ async function load() {
 
   loading = true;
   error = '';
+  toggleError = '';
+  toggled = false;
 
   try {
     const result = await (scope === null ? config.listMcps() : config.listMcps(scope));
@@ -114,6 +127,7 @@ async function load() {
     if (id !== request) return;
 
     servers = result.data;
+    loadedProjectId = scope;
     diagnostics = result.diagnostics;
   } catch (cause) {
     if (id !== request) return;
@@ -134,6 +148,10 @@ $effect(() => {
   page = 1;
   deleting = null;
   removed = false;
+  toggling = null;
+  toggleError = '';
+  toggled = false;
+  mutation += 1;
   untrack(() => {
     void load();
   });
@@ -192,6 +210,40 @@ function refresh() {
 function href(name: string, scope: string | null) {
   return `/mcp/${encodeURIComponent(name)}${scope !== null ? `?project=${encodeURIComponent(scope)}` : projectId ? '?readonly=1' : ''}`;
 }
+
+async function toggle(server: McpServer, scope: string | null) {
+  if (scope !== projectId || loadedProjectId !== scope || !servers.includes(server) || busy || loading) return;
+
+  const id = ++mutation;
+  const read = request;
+  const { name, disabled, sourcePath, sourceSnapshot } = server;
+  const draft = {
+    name,
+    disabled: !disabled,
+    expectedSourcePath: sourcePath,
+    expectedDisabled: disabled,
+    expectedSourceSnapshot: sourceSnapshot,
+  };
+
+  toggling = server;
+  toggleError = '';
+  toggled = false;
+
+  try {
+    const result = await (scope === null ? config.setMcpDisabled(draft) : config.setMcpDisabled(draft, scope));
+
+    if (id !== mutation || scope !== projectId || read !== request) return;
+
+    servers = servers.map((entry) => (entry === server ? result : entry));
+    await load();
+    if (id === mutation && scope === projectId && activeTab === 'config') toggled = true;
+  } catch {
+    if (id === mutation && scope === projectId && read === request && activeTab === 'config')
+      toggleError = i18n.t('mcp.toggleFailed');
+  } finally {
+    if (id === mutation) toggling = null;
+  }
+}
 </script>
 
 <svelte:head><title>{i18n.t('mcp.metaTitle')}</title></svelte:head>
@@ -200,7 +252,7 @@ function href(name: string, scope: string | null) {
     <Button
       variant="outline"
       size="sm"
-      disabled={activeTab === 'config' ? (loading || globalLoading || config.saving) : false}
+      disabled={activeTab === 'config' ? (loading || globalLoading || busy) : false}
       aria-busy={activeTab === 'config' ? (loading || globalLoading) : false}
       onclick={() => {
         if (activeTab === 'config') {
@@ -218,7 +270,7 @@ function href(name: string, scope: string | null) {
       {i18n.t('configuration.refresh')}
     </Button>
     {#if activeTab === 'config' && projectId === null}
-      <Button size="sm" href="/mcp/new"><Plus size={14} />{i18n.t('mcp.newTitle')}</Button>
+      <Button size="sm" disabled={busy} href="/mcp/new"><Plus size={14} />{i18n.t('mcp.newTitle')}</Button>
     {/if}
   </div>
 </PageHead>
@@ -257,9 +309,22 @@ function href(name: string, scope: string | null) {
 
 {#if activeTab === 'config'}
   <div id="mcp-tabpanel-config" role="tabpanel" aria-labelledby="mcp-tab-config">
-    <ResourceScope disabled={!!deleting || config.saving} bind:showGlobal />
-    {#if projectId === null && (removed || route.url.searchParams.get('removed') === '1')}
-      <div class="state-banner success" role="status">{i18n.t('mcp.removed')}</div>
+    <ResourceScope disabled={busy} writable bind:showGlobal />
+    {#if projectId !== null}
+      <p class="form-hint">{i18n.t('mcp.projectEditOnly')}</p>
+    {/if}
+    {#if removed || (route.url.searchParams.get('removed') === '1' && route.url.searchParams.get('project') === projectId)}
+      <div class="state-banner success" role="status">
+        {i18n.t(projectId === null ? 'mcp.removed' : 'mcp.projectRemoved')}
+      </div>
+    {/if}
+    {#if toggled || (route.url.searchParams.get('saved') === '1' && route.url.searchParams.get('project') === projectId)}
+      <div class="state-banner success" role="status">
+        {i18n.t(projectId === null ? 'configuration.saved' : 'mcp.projectSaved')}
+      </div>
+    {/if}
+    {#if toggleError}
+      <div class="state-banner error" role="alert">{toggleError}</div>
     {/if}
     <Diagnostics messages={diagnostics} />
     {#if projectId && showGlobal}
@@ -290,7 +355,7 @@ function href(name: string, scope: string | null) {
           <th>{i18n.t('common.name')}</th>
           <th>{i18n.t('common.type')}</th>
           <th>{i18n.t('mcp.target')}</th>
-          <th>{i18n.t('mcp.configuration')}</th>
+          <th>{i18n.t('common.status')}</th>
           <th>{i18n.t('configuration.source')}</th>
           <th class="th-actions">{i18n.t('common.actions')}</th>
         </tr>
@@ -320,12 +385,16 @@ function href(name: string, scope: string | null) {
                 <span class="block max-w-80 break-words [overflow-wrap:anywhere]">{maskTarget(server) || '—'}</span>
               </td>
               <td>
-                <span class="inline-flex items-center gap-2 whitespace-nowrap"
-                  ><span
-                    aria-hidden="true"
-                    class={`size-1.5 rounded-full ${server.disabled ? 'bg-[var(--text-muted)]' : 'bg-[var(--accent-primary)]'}`}
-                  ></span>{i18n.t(server.disabled ? 'common.disabled' : 'common.enabled')}</span
-                >
+                <div class="flex items-center gap-2 whitespace-nowrap">
+                  <Switch
+                    checked={!server.disabled}
+                    disabled={rowProjectId !== projectId || busy || loading}
+                    aria-label={i18n.t(server.disabled ? 'mcp.enableAria' : 'mcp.disableAria', { name: server.name, scope: i18n.t(rowProjectId === null ? 'scope.global' : 'scope.project') })}
+                    aria-busy={toggling === server}
+                    title={rowProjectId !== projectId ? i18n.t('scope.globalReadOnly') : undefined}
+                    onclick={(event) => { event.preventDefault(); void toggle(server, rowProjectId); }}
+                  />
+                </div>
               </td>
               <td>
                 {#if projectId}
@@ -346,19 +415,26 @@ function href(name: string, scope: string | null) {
                   aria-label={i18n.t('configuration.viewAria', { name: server.name })}
                   ><Eye size={14} /></Button
                 >
-                {#if projectId === null}
+                {#if rowProjectId === projectId}
                   <Button
-                    href={`/mcp/${encodeURIComponent(server.name)}?edit=1`}
+                    href={`${href(server.name, rowProjectId)}${rowProjectId === null ? '?' : '&'}edit=1`}
                     variant="ghost"
                     size="icon-sm"
+                    disabled={busy}
                     aria-label={i18n.t('configuration.editAria', { name: server.name })}
                     ><Pencil size={14} /></Button
                   >
+                {/if}
+                {#if rowProjectId === projectId}
                   <Button
                     variant="ghost"
                     size="icon-sm"
+                    disabled={busy}
                     aria-label={i18n.t('mcp.deleteAria', { name: server.name })}
-                    onclick={() => (deleting = server)}
+                    onclick={() => {
+                      if (rowProjectId === projectId && loadedProjectId === projectId && !busy && !loading)
+                        deleting = server;
+                    }}
                     ><Trash2 size={14} /></Button
                   >
                 {/if}
@@ -368,7 +444,9 @@ function href(name: string, scope: string | null) {
         {/if}
       </tbody>
     </DataTable>
-    <DeleteMcpDialog bind:server={deleting} onDeleted={async () => { removed = true; await load(); }} />
+    {#key projectId}
+      <DeleteMcpDialog bind:server={deleting} {projectId} onDeleted={async () => { removed = true; await load(); }} />
+    {/key}
   </div>
 {:else if activeTab === 'proxy'}
   <div id="mcp-tabpanel-proxy" role="tabpanel" aria-labelledby="mcp-tab-proxy">

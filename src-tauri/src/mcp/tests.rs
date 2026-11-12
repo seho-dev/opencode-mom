@@ -50,7 +50,9 @@ fn saved_server_rejects_malformed_ipc_targets_without_panicking() {
 #[test]
 fn persist_document_rejects_invalid_indices_without_panicking() {
     assert_eq!(
-        persist_document(&[], 0).unwrap_err().code,
+        persist_document(&ConfigPaths::for_home(Path::new("/missing")), &[], 0)
+            .unwrap_err()
+            .code,
         ErrorCode::ConfigurationFailed,
     );
     let home = tempfile::tempdir().unwrap();
@@ -61,7 +63,9 @@ fn persist_document_rejects_invalid_indices_without_panicking() {
         JsoncDoc::bootstrap(crate::document::OPENCODE_SCHEMA),
     )];
     assert_eq!(
-        persist_document(&documents, 1).unwrap_err().code,
+        persist_document(&ConfigPaths::for_home(home.path()), &documents, 1)
+            .unwrap_err()
+            .code,
         ErrorCode::ConfigurationFailed,
     );
     assert!(!path.exists());
@@ -284,6 +288,6 @@ fn update_rejects_duplicate_alias_retarget_after_document_snapshot() {
         )
         .unwrap();
     fixture.retarget(&fixture.aliases[0]);
-    assert!(persist_document(&documents, index).is_err());
+    assert!(persist_document(&paths, &documents, index).is_err());
     fixture.assert_unchanged();
 }

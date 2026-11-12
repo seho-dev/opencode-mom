@@ -28,7 +28,7 @@ import type {
   IslandView,
 } from '$src/types/island.js';
 import type { LoggingState, LogPage, LogQuery } from '$src/types/logging.js';
-import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
+import type { McpDisabledUpdate, McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
 import type {
   CloseMcpProxyUnitRequest,
   ImportMcpProxyServerRequest,
@@ -112,7 +112,13 @@ export interface CommandAdapter {
   getMcp(name: string, projectId?: string | null): Result<McpServer>;
   createMcp(draft: McpDraft, projectId?: string | null): Result<McpServer>;
   updateMcp(draft: McpUpdate, projectId?: string | null): Result<McpServer>;
-  deleteMcp(name: string, projectId?: string | null): Result<void>;
+  setMcpDisabled(draft: McpDisabledUpdate, projectId?: string | null): Result<McpServer>;
+  deleteMcp(
+    name: string,
+    projectId?: string | null,
+    expectedSourcePath?: string,
+    expectedSourceSnapshot?: string,
+  ): Result<void>;
   listSkills(projectId?: string | null): Result<SkillList>;
   getSkill(id: string, projectId?: string | null): Result<SkillEntry>;
   createSkill(draft: SkillDraft, projectId?: string | null): Result<SkillEntry>;
@@ -275,7 +281,14 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     getMcp: (name, projectId) => invoke('get_mcp', { name, ...projectScope(projectId) }),
     createMcp: (draft, projectId) => invoke('create_mcp', { draft, ...projectScope(projectId) }),
     updateMcp: (draft, projectId) => invoke('update_mcp', { draft, ...projectScope(projectId) }),
-    deleteMcp: (name, projectId) => invoke('delete_mcp', { name, ...projectScope(projectId) }),
+    setMcpDisabled: (draft, projectId) => invoke('set_mcp_disabled', { draft, ...projectScope(projectId) }),
+    deleteMcp: (name, projectId, expectedSourcePath, expectedSourceSnapshot) =>
+      invoke('delete_mcp', {
+        name,
+        ...projectScope(projectId),
+        ...(expectedSourcePath === undefined ? {} : { expectedSourcePath }),
+        ...(expectedSourceSnapshot === undefined ? {} : { expectedSourceSnapshot }),
+      }),
     listSkills: (projectId) => (projectId == null ? invoke('list_skills') : invoke('list_skills', { projectId })),
     getSkill: (id, projectId) => invoke('get_skill', { id, ...projectScope(projectId) }),
     createSkill: (draft, projectId) => invoke('create_skill', { draft, ...projectScope(projectId) }),

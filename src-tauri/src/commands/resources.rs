@@ -2,7 +2,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::mcp::{self, McpDraft, McpList, McpServer, McpUpdate};
+use crate::mcp::{self, McpDisabledUpdate, McpDraft, McpList, McpServer, McpUpdate};
 use crate::paths::{reject_project_write, ConfigPaths};
 use crate::skills::{self, SkillDraft, SkillEntry, SkillList, SkillUpdate};
 
@@ -53,8 +53,20 @@ pub async fn update_mcp(
 ) -> Result<McpServer, AppError> {
     let paths = state.inner().clone();
     super::spawn_blocking_task("Update MCP", move || {
-        reject_project_write(project_id)?;
-        mcp::update(&paths, draft)
+        mcp::update(&paths.for_project(project_id)?, draft)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_mcp_disabled(
+    state: tauri::State<'_, ConfigPaths>,
+    draft: McpDisabledUpdate,
+    project_id: Option<Uuid>,
+) -> Result<McpServer, AppError> {
+    let paths = state.inner().clone();
+    super::spawn_blocking_task("Update MCP", move || {
+        mcp::set_disabled(&paths.for_project(project_id)?, draft)
     })
     .await
 }
@@ -64,11 +76,31 @@ pub async fn delete_mcp(
     state: State<'_, ConfigPaths>,
     name: String,
     project_id: Option<Uuid>,
+    expected_source_path: Option<String>,
+    expected_source_snapshot: Option<String>,
 ) -> Result<(), AppError> {
     let paths = state.inner().clone();
     super::spawn_blocking_task("Delete MCP", move || {
-        reject_project_write(project_id)?;
-        mcp::delete(&paths, &name)
+        if project_id.is_some() {
+            let expected_source_path = expected_source_path.ok_or_else(|| {
+                AppError::validation("Project MCP deletion requires a source snapshot")
+            })?;
+            let expected_source_snapshot = expected_source_snapshot.ok_or_else(|| {
+                AppError::validation("Project MCP deletion requires a source snapshot")
+            })?;
+            mcp::delete_project(
+                &paths.for_project(project_id)?,
+                &name,
+                &expected_source_path,
+                &expected_source_snapshot,
+            )
+        } else if expected_source_path.is_some() || expected_source_snapshot.is_some() {
+            Err(AppError::validation(
+                "MCP source guards require project scope for deletion",
+            ))
+        } else {
+            mcp::delete(&paths, &name)
+        }
     })
     .await
 }

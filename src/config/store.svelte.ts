@@ -30,7 +30,7 @@ import type {
   IslandView,
 } from '$src/types/island.js';
 import type { LoggingState, LogPage, LogQuery } from '$src/types/logging.js';
-import type { McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
+import type { McpDisabledUpdate, McpDraft, McpList, McpServer, McpUpdate } from '$src/types/mcp.js';
 import type {
   CloseMcpProxyUnitRequest,
   ImportMcpProxyServerRequest,
@@ -214,6 +214,7 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       const secretDraft = [
         'createMcp',
         'updateMcp',
+        'setMcpDisabled',
         'createSkill',
         'updateSkill',
         'createSlashCommand',
@@ -658,8 +659,21 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       return run('updateMcp', draft, () => adapter.updateMcp(draft, projectId));
     },
 
-    async deleteMcp(name: string, projectId?: string | null): Promise<void> {
-      await run('deleteMcp', { name }, () => adapter.deleteMcp(name, projectId));
+    setMcpDisabled(draft: McpDisabledUpdate, projectId?: string | null): Promise<McpServer> {
+      return run('setMcpDisabled', null, () => adapter.setMcpDisabled(draft, projectId));
+    },
+
+    async deleteMcp(
+      name: string,
+      projectId?: string | null,
+      expectedSourcePath?: string,
+      expectedSourceSnapshot?: string,
+    ): Promise<void> {
+      await run('deleteMcp', { name }, () =>
+        expectedSourcePath === undefined && expectedSourceSnapshot === undefined
+          ? adapter.deleteMcp(name, projectId)
+          : adapter.deleteMcp(name, projectId, expectedSourcePath, expectedSourceSnapshot),
+      );
     },
 
     listSkills: (projectId?: string | null): Promise<SkillList> => adapter.listSkills(projectId),

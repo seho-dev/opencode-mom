@@ -5,6 +5,7 @@ export type McpServer = {
   target: string;
   sourcePath: string;
   sourcePaths: string[];
+  sourceSnapshot: string;
   config: Record<string, unknown>;
 };
 
@@ -15,4 +16,13 @@ export type McpDraft = { name: string; config: Record<string, unknown> };
 export type McpUpdate = McpDraft & {
   expectedConfig: Record<string, unknown>;
   expectedSourcePath: string;
+  expectedSourceSnapshot: string;
+};
+
+export type McpDisabledUpdate = {
+  name: string;
+  disabled: boolean;
+  expectedDisabled: boolean;
+  expectedSourcePath: string;
+  expectedSourceSnapshot: string;
 };

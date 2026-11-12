@@ -1,18 +1,46 @@
 <script lang="ts">
-import { onDestroy } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
 import { Button } from '$src/components/button/index.js';
 import * as Dialog from '$src/components/dialog/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import type { McpServer } from '$src/types/mcp.js';
 
-let { server = $bindable(null), onDeleted }: { server: McpServer | null; onDeleted: () => void | Promise<void> } =
-  $props();
+let {
+  server = $bindable(null),
+  projectId = null,
+  onDeleted,
+}: { server: McpServer | null; projectId?: string | null; onDeleted: () => void | Promise<void> } = $props();
 const config = getConfig();
 const i18n = getI18n();
 let pending = $state(false);
 let failed = $state(false);
 let active = true;
+let target = $state<{
+  name: string;
+  sourcePath: string;
+  sourcePaths: string[];
+  sourceSnapshot: string;
+  scope: string | null;
+} | null>(null);
+
+$effect(() => {
+  const source = server;
+  const scope = projectId;
+
+  untrack(() => {
+    target = source
+      ? {
+          name: source.name,
+          sourcePath: source.sourcePath,
+          sourcePaths: [...source.sourcePaths],
+          sourceSnapshot: source.sourceSnapshot,
+          scope,
+        }
+      : null;
+    failed = false;
+  });
+});
 
 onDestroy(() => {
   active = false;
@@ -26,24 +54,26 @@ function close() {
 }
 
 async function remove() {
-  if (!server || pending) return;
+  if (!target || pending) return;
 
-  const name = server.name;
+  const source = target;
 
   pending = true;
   failed = false;
 
   try {
-    await config.deleteMcp(name);
+    await (source.scope === null
+      ? config.deleteMcp(source.name)
+      : config.deleteMcp(source.name, source.scope, source.sourcePath, source.sourceSnapshot));
   } catch {
-    if (active && server?.name === name) failed = true;
+    if (active && target === source) failed = true;
     pending = false;
 
     return;
   }
 
   pending = false;
-  if (!active || server?.name !== name) return;
+  if (!active || target !== source) return;
 
   close();
   await onDeleted();
@@ -60,13 +90,13 @@ async function remove() {
     <Dialog.Header>
       <Dialog.Title>{i18n.t('mcp.deleteTitle')}</Dialog.Title>
       <Dialog.Description class="break-words [overflow-wrap:anywhere]">
-        {i18n.t('mcp.deleteConfirm', { name: server?.name ?? '' })}
+        {i18n.t(target?.scope != null ? 'mcp.projectDeleteConfirm' : 'mcp.deleteConfirm', { name: target?.name ?? '' })}
       </Dialog.Description>
     </Dialog.Header>
     <div class="min-w-0 text-xs text-[var(--text-secondary)]">
-      <p class="mt-0 mb-2">{i18n.t('configuration.globalSources')}</p>
+      <p class="mt-0 mb-2">{i18n.t(target?.scope != null ? 'configuration.source' : 'configuration.globalSources')}</p>
       <ul class="m-0 pl-4 space-y-1 break-words [overflow-wrap:anywhere]">
-        {#each server?.sourcePaths.length ? server.sourcePaths : [server?.sourcePath ?? '—'] as path}
+        {#each target?.scope != null ? [target.sourcePath] : target?.sourcePaths.length ? target.sourcePaths : [target?.sourcePath ?? '—'] as path}
           <li>{path}</li>
         {/each}
       </ul>

@@ -24,25 +24,24 @@ let error = $state('');
 let missing = $state(false);
 let deleting = $state<McpServer | null>(null);
 let editing = $state(false);
-let saved = $state(false);
 let request = 0;
 const projectId = $derived(page.url.searchParams.get('project'));
-const readonly = $derived(projectId !== null || page.url.searchParams.get('readonly') === '1');
-const identity = $derived(`${projectId ?? 'global'}:${page.params.id ?? ''}`);
+const listHref = $derived(`/mcp${projectId !== null ? `?project=${encodeURIComponent(projectId)}` : ''}`);
+const readonly = $derived(page.url.searchParams.get('readonly') === '1');
+const identity = $derived(JSON.stringify([projectId, page.params.id ?? '', readonly]));
 const server = $derived(loadedId === identity ? data : null);
 const fields = $derived(Object.entries((maskConfig(server?.config ?? {}) ?? {}) as Record<string, unknown>));
 
 async function load(id: string, edit = false) {
   const seq = ++request;
   const scope = projectId;
-  const key = `${scope ?? 'global'}:${id}`;
+  const key = JSON.stringify([scope, id, readonly]);
   const readOnly = readonly;
 
   loading = true;
   data = null;
   deleting = null;
   editing = false;
-  saved = false;
   error = '';
   missing = false;
 
@@ -82,7 +81,7 @@ $effect(() => {
           <Button
             variant="outline"
             size="sm"
-            disabled={loading}
+            disabled={loading || deleting !== null}
             aria-busy={loading}
             onclick={() => load(page.params.id ?? '')}
             aria-label={i18n.t('configuration.refresh')}
@@ -93,10 +92,12 @@ $effect(() => {
             /></Button
           >
           {#if server && !readonly}
-            <Button variant="outline" size="sm" onclick={() => { editing = true; saved = false; }}
+            <Button variant="outline" size="sm" disabled={deleting !== null} onclick={() => { editing = true; }}
               ><Pencil size={14} />{i18n.t('configuration.edit')}</Button
             >
-            <Button variant="destructive" size="sm" onclick={() => (deleting = server)}
+          {/if}
+          {#if server && !readonly}
+            <Button variant="destructive" size="sm" disabled={deleting !== null} onclick={() => (deleting = server)}
               ><Trash2 size={14} />{i18n.t('common.delete')}</Button
             >
           {/if}
@@ -104,9 +105,16 @@ $effect(() => {
       {/if}
     </PageHead>
   </div>
-  <ResourceScopeNotice {projectId} {readonly} />
-  {#if !readonly && (saved || page.url.searchParams.get('saved') === '1')}
-    <div class="state-banner success" role="status">{i18n.t('configuration.saved')}</div>
+  {#if !editing}
+    <ResourceScopeNotice {projectId} {readonly} writable={projectId !== null} />
+    {#if projectId !== null && !readonly}
+      <p class="form-hint">{i18n.t('mcp.projectEditOnly')}</p>
+    {/if}
+  {/if}
+  {#if !readonly && page.url.searchParams.get('saved') === '1'}
+    <div class="state-banner success" role="status">
+      {i18n.t(projectId === null ? 'configuration.saved' : 'mcp.projectSaved')}
+    </div>
   {/if}
   {#if loading}
     <div class="state-banner" role="status">{i18n.t('common.loadingConfiguration')}</div>
@@ -124,8 +132,10 @@ $effect(() => {
       {#key identity}
         <McpForm
           source={server}
-          onCancel={() => { editing = false; }}
-          onSaved={(result) => { data = result; editing = false; saved = true; }}
+          {projectId}
+          {readonly}
+          onCancel={() => goto(listHref)}
+          onSaved={() => goto(`/mcp?saved=1${projectId !== null ? `&project=${encodeURIComponent(projectId)}` : ''}`)}
         />
       {/key}
     {:else}
@@ -187,5 +197,13 @@ $effect(() => {
       </section>
     {/if}
   {/if}
-  <DeleteMcpDialog bind:server={deleting} onDeleted={() => goto('/mcp?removed=1')} />
+  {#key identity}
+    {#if !readonly}
+      <DeleteMcpDialog
+        bind:server={deleting}
+        {projectId}
+        onDeleted={() => goto(`/mcp?removed=1${projectId !== null ? `&project=${encodeURIComponent(projectId)}` : ''}`)}
+      />
+    {/if}
+  {/key}
 </FormPage>

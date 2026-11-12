@@ -1,5 +1,6 @@
 <script lang="ts">
 import { Copy, Pencil, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
+import { untrack } from 'svelte';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import DataTable from '$src/components/DataTable.svelte';
@@ -25,11 +26,13 @@ $effect(() => {
 
   if (!catalogError) return;
 
-  toast({
-    variant: 'error',
-    description: i18n.t('models.catalogFailed', { message: catalogError.message }),
-    action: { label: i18n.t('models.retry'), onclick: () => retryCatalog() },
-  });
+  untrack(() =>
+    toast({
+      variant: 'error',
+      description: i18n.t('models.catalogFailed', { message: catalogError.message }),
+      action: { label: i18n.t('models.retry'), onclick: () => retryCatalog() },
+    }),
+  );
 });
 
 const filteredCatalog = $derived(

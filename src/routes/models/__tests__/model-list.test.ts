@@ -206,4 +206,62 @@ describe('/models actions and copy contract', () => {
     expect(screen.getByRole('tab', { name: 'Custom (1)' })).toBeDefined();
     expect(screen.getByText('Custom GPT')).toBeDefined();
   });
+
+  // Regression: non-null catalogError must surface one toast, not loop (effect_update_depth_exceeded).
+  test('failed catalog load surfaces one error toast without looping', async () => {
+    const { flushSync } = await import('svelte');
+    const adapter = {
+      loadAppState: vi.fn(async () => ({
+        preferences: { locale: 'en', theme: 'light' },
+        providers: [],
+        agents: [],
+        groups: [],
+        selectedGroupId: null,
+      })),
+      opencodeListModels: vi.fn(async () => {
+        throw new Error('catalog unavailable');
+      }),
+    };
+    const config = createConfigStore(adapter as unknown as CommandAdapter, true, false);
+    await config.refresh(true).catch(() => {});
+    expect(config.catalogError?.message).toBe('catalog unavailable');
+
+    const before = getToasts().filter((t) => t.variant === 'error').length;
+    expect(() => {
+      render(ModelsPage, {}, { wrapper: Harness, wrapperProps: { config } });
+      flushSync();
+    }).not.toThrow();
+
+    const added = getToasts().filter((t) => t.variant === 'error').length - before;
+    expect(added).toBe(1);
+    expect(getToasts().at(-1)?.description).toContain('catalog unavailable');
+  });
+
+  // Regression: a still-failing retry must add exactly one toast (anti-storm), not 1001.
+  test('post-mount catalog failure surfaces exactly one new toast', async () => {
+    let fail = false;
+    const adapter = {
+      loadAppState: vi.fn(async () => ({
+        preferences: { locale: 'en', theme: 'light' },
+        providers: [],
+        agents: [],
+        groups: [],
+        selectedGroupId: null,
+      })),
+      opencodeListModels: vi.fn(async () => {
+        if (fail) throw new Error('catalog unavailable');
+        return [customModel, builtinModel];
+      }),
+    };
+    const config = createConfigStore(adapter as unknown as CommandAdapter, true, false);
+    await config.refresh(true).catch(() => {});
+    render(ModelsPage, {}, { wrapper: Harness, wrapperProps: { config } });
+
+    const before = getToasts().filter((t) => t.variant === 'error').length;
+    fail = true;
+    await config.loadCatalog().catch(() => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(getToasts().filter((t) => t.variant === 'error').length - before).toBe(1);
+  });
 });

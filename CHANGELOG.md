@@ -4,11 +4,11 @@
 
 - Preserve malformed commands for repair. (#16)
 - Improve MCP Proxy diagnostics, forwarding, cleanup and process management. (#12, #13, #14, #15, #17)
-- Support MCP enable toggles and project-scoped editing and deletion. (#11, #20)
+- Support MCP enable toggles and project-scoped editing and deletion. (#11)
 - Stream and cache large token usage histories. (#18)
-- Check for updates automatically, refresh the Dashboard and confirm OpenCode restarts. (#19, #22)
-- Prevent model catalog error notification loops. (#21)
-- Streamline notification documentation. (#23)
+- Check for updates automatically, refresh the Dashboard and confirm OpenCode restarts. (#19)
+- Prevent model catalog error notification loops.
+- Streamline notification documentation.
 
 ## 2.0.1 - 2026-11-10
 

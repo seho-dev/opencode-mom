@@ -176,6 +176,10 @@ export interface CommandAdapter {
   deleteMcpProxyServer(id: string, expectedRevision: number): Result<void>;
   importMcpProxyServer(request: ImportMcpProxyServerRequest): Result<McpProxyServerDto>;
   closeMcpProxyUnit(request: CloseMcpProxyUnitRequest): Result<void>;
+  listMcpProxyProcesses(): Result<{
+    generation: number;
+    processes: { id: string; serviceId: string; pid: number | null; uptime: number }[];
+  }>;
   saveGroup(value: Group): Result<Group>;
   deleteGroup(id: string): Result<void>;
   switchGroup(id: string): Result<void>;
@@ -330,6 +334,7 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     deleteMcpProxyServer: (id, expectedRevision) => invoke('delete_mcp_proxy_server', { id, expectedRevision }),
     importMcpProxyServer: (request) => invoke('import_mcp_proxy_server', { request }),
     closeMcpProxyUnit: (request) => invoke('close_mcp_proxy_unit', { request }),
+    listMcpProxyProcesses: () => invoke('list_mcp_proxy_processes'),
     saveGroup: async (value) => readGroup(await invoke<Group>('save_group', { group: writeGroup(value) })),
     deleteGroup: (id) => invoke('delete_group', { id }),
     switchGroup: (id) => invoke('switch_group', { id }),

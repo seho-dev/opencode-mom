@@ -129,7 +129,7 @@ async function performImport() {
 
   try {
     const imported = await config.importMcpProxyServer({
-      scope: 'global',
+      sourceScope: 'global',
       serverName: target.name,
       expectedSourcePath: target.sourcePath,
     });

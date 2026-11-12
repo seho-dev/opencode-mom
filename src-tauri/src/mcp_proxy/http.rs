@@ -12,6 +12,7 @@ use rmcp::RoleServer;
 use tokio_util::sync::CancellationToken;
 
 use crate::http_server::HttpContext;
+use crate::logging::{operation, record, LogStatus, LogType};
 use crate::mcp_proxy::config::{ProxyProtocol, ProxyServiceConfig};
 use crate::mcp_proxy::process::OwnerBudget;
 use crate::mcp_proxy::session::{LegacySessionManager, LowLevelBridge, ModernBridge, Observation};
@@ -100,10 +101,41 @@ async fn handle_mcp(
     Extension(http): Extension<HttpContext>,
     req: Request,
 ) -> Response {
+    let request = operation(LogType::McpProxy, "mcp_proxy_http_request");
+    record(
+        LogType::McpProxy,
+        LogStatus::Success,
+        "mcp_proxy_request_received",
+    );
+    let response = dispatch_mcp(proxy, http, req).await;
+    let result = if response.status().is_success() {
+        Ok(())
+    } else {
+        record(
+            LogType::McpProxy,
+            LogStatus::Error,
+            match response.status() {
+                StatusCode::BAD_REQUEST => "mcp_proxy_request_invalid",
+                StatusCode::NOT_FOUND => "mcp_proxy_route_unavailable",
+                StatusCode::METHOD_NOT_ALLOWED => "mcp_proxy_method_rejected",
+                StatusCode::TOO_MANY_REQUESTS => "mcp_proxy_capacity_exhausted",
+                StatusCode::SERVICE_UNAVAILABLE => "mcp_proxy_admission_closed",
+                _ => "mcp_proxy_request_failed",
+            },
+        );
+        Err(crate::error::AppError::configuration(
+            "MCP HTTP request failed",
+        ))
+    };
+    request.finish(&result);
+    response
+}
+
+async fn dispatch_mcp(proxy: ProxyService, http: HttpContext, req: Request) -> Response {
     let config_guard = proxy.config.read().await;
     let gateway = &config_guard.gateway;
     let proxy_token = proxy.request_token().await;
-    let state = HttpState {
+    let mut state = HttpState {
         budget: proxy.budget().clone(),
         legacy_sessions: proxy.legacy_sessions().clone(),
         shutdown_token: http.shutdown_token,
@@ -134,6 +166,7 @@ async fn handle_mcp(
         Some(s) if s.enabled => s.clone(),
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
+    state.proxy_token = proxy.service_token(&service.id).await;
     let idle_timeout_secs = gateway.idle_timeout_secs;
     drop(config_guard);
 
@@ -155,8 +188,22 @@ async fn handle_mcp(
     };
 
     match protocol {
-        ProxyProtocol::Legacy => handle_legacy(state, service, idle_timeout_secs, req).await,
-        ProxyProtocol::Modern | ProxyProtocol::Auto => handle_modern(state, service, req).await,
+        ProxyProtocol::Legacy => {
+            record(
+                LogType::McpProxy,
+                LogStatus::Success,
+                "mcp_proxy_route_legacy",
+            );
+            handle_legacy(state, service, idle_timeout_secs, req).await
+        }
+        ProxyProtocol::Modern | ProxyProtocol::Auto => {
+            record(
+                LogType::McpProxy,
+                LogStatus::Success,
+                "mcp_proxy_route_modern",
+            );
+            handle_modern(state, service, req).await
+        }
     }
 }
 
@@ -229,6 +276,11 @@ async fn handle_legacy(
             let result = match initialized {
                 Ok(res) => res,
                 Err(_) => {
+                    record(
+                        LogType::McpProxy,
+                        LogStatus::Error,
+                        "mcp_proxy_initialize_failed",
+                    );
                     let _ = state.legacy_sessions.close_session(&session.id).await;
 
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -247,6 +299,11 @@ async fn handle_legacy(
             return match response {
                 Ok(response) => {
                     pending.into_session();
+                    record(
+                        LogType::McpProxy,
+                        LogStatus::Success,
+                        "mcp_proxy_initialized",
+                    );
                     response
                 }
 
@@ -276,6 +333,11 @@ async fn handle_legacy(
                 };
 
                 let event_stream = sse_stream.map(legacy_sse_event);
+                record(
+                    LogType::McpProxy,
+                    LogStatus::Success,
+                    "mcp_proxy_legacy_forwarded",
+                );
                 sse_response(event_stream, state.shutdown_token, state.proxy_token)
             }
             JsonRpcMessage::Notification(_) | JsonRpcMessage::Response(_) => {
@@ -387,29 +449,37 @@ async fn handle_modern(state: HttpState, service: ProxyServiceConfig, req: Reque
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
 
+    let request_ct = state.shutdown_token.child_token();
     let bridge = ModernBridge::new(
         service,
         state.budget,
         state.events,
         state.admission,
-        state.shutdown_token.clone(),
+        request_ct.clone(),
         state.proxy_token.clone(),
     );
     let low_bridge = LowLevelBridge(bridge);
 
     let (transport, receiver) = OneshotTransport::<RoleServer>::new(message);
-    let request_ct = state.shutdown_token.child_token();
     let worker_ct = request_ct.clone();
 
     tokio::spawn(async move {
         match rmcp::service::serve_server_with_ct(low_bridge, transport, worker_ct).await {
             Ok(service) => {
-                if let Err(error) = service.waiting().await {
-                    eprintln!("warning: MCP SDK service task failed: {error}");
+                if service.waiting().await.is_err() {
+                    record(
+                        LogType::McpProxy,
+                        LogStatus::Error,
+                        "mcp_proxy_sdk_task_failed",
+                    );
                 }
             }
-            Err(error) => {
-                eprintln!("warning: MCP SDK service setup failed: {error}");
+            Err(_) => {
+                record(
+                    LogType::McpProxy,
+                    LogStatus::Error,
+                    "mcp_proxy_sdk_setup_failed",
+                );
             }
         }
     });

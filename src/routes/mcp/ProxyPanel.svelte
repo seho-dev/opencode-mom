@@ -40,6 +40,40 @@ let deleteError = $state('');
 
 // Close unit dialog state
 let closeUnitOpen = $state(false);
+let processes = $state<{ id: string; serviceId: string; pid: number | null; uptime: number }[]>([]);
+let processesLoading = $state(false);
+let processGeneration = $state(0);
+let processQuery = $state('');
+const normalizedProcessQuery = $derived(processQuery.trim().toLowerCase());
+const filteredProcesses = $derived(
+  processes.filter(
+    (process) =>
+      process.serviceId.toLowerCase().includes(normalizedProcessQuery) ||
+      process.id.toLowerCase().includes(normalizedProcessQuery) ||
+      (process.pid !== null && String(process.pid).includes(normalizedProcessQuery)),
+  ),
+);
+
+async function openProcesses() {
+  if (processesLoading || closeUnitPending) return;
+  closeUnitId = '';
+  processQuery = '';
+  processes = [];
+  closeUnitOpen = true;
+  processesLoading = true;
+  closeUnitError = '';
+  try {
+    const result = await config.listMcpProxyProcesses();
+    if (mounted && closeUnitOpen) {
+      processGeneration = result.generation;
+      processes = result.processes;
+    }
+  } catch (cause) {
+    if (mounted && closeUnitOpen) closeUnitError = readError(cause);
+  } finally {
+    if (mounted) processesLoading = false;
+  }
+}
 let closeUnitId = $state('');
 let closeUnitPending = $state(false);
 let closeUnitError = $state('');
@@ -209,7 +243,7 @@ async function submitCloseUnit() {
   try {
     await config.closeMcpProxyUnit({
       unitId: closeUnitId.trim(),
-      expectedGeneration: proxyState.generation,
+      expectedGeneration: processGeneration,
     });
     if (!mounted) return;
 
@@ -282,7 +316,7 @@ export function refresh() {
           }}
         />
       </div>
-      <Button variant="outline" size="sm" disabled={loading || querying} onclick={() => (closeUnitOpen = true)}>
+      <Button variant="outline" size="sm" disabled={loading || querying} onclick={openProcesses}>
         <XCircle size={14} />
         {i18n.t('mcp.proxy.closeUnit')}
       </Button>
@@ -455,27 +489,80 @@ export function refresh() {
 <!-- Close Unit Dialog -->
 <Dialog.Root
   open={closeUnitOpen}
-  onOpenChange={(open) => { if (!open) { closeUnitOpen = false; closeUnitError = ''; } }}
+  onOpenChange={(open) => { if (!open && !closeUnitPending) { closeUnitOpen = false; closeUnitError = ''; } }}
 >
-  <Dialog.Content aria-busy={closeUnitPending}>
-    <Dialog.Header>
+  <Dialog.Content
+    class="flex h-[640px] max-h-[calc(100dvh-32px)] max-w-[720px] flex-col overflow-y-auto"
+    aria-busy={closeUnitPending}
+  >
+    <Dialog.Header class="shrink-0">
       <Dialog.Title>{i18n.t('mcp.proxy.closeUnit')}</Dialog.Title>
       <Dialog.Description>
         {i18n.t('mcp.proxy.closeUnitPrompt')}
       </Dialog.Description>
     </Dialog.Header>
-    <div class="py-2">
-      <Input
-        bind:value={closeUnitId}
-        aria-label={i18n.t('mcp.proxy.closeUnitPrompt')}
-        placeholder="unit-12345"
-        disabled={closeUnitPending}
-      />
-      {#if closeUnitError}
-        <p class="mt-2 text-xs text-[var(--status-error)]" role="alert">{closeUnitError}</p>
-      {/if}
+    <div class="flex min-h-0 flex-1 flex-col gap-3">
+      <div class="shrink-0 space-y-2">
+        <Input
+          type="search"
+          aria-label={i18n.t('mcp.proxy.searchProcesses')}
+          aria-controls="proxy-process-results"
+          placeholder={i18n.t('mcp.proxy.searchProcessesPlaceholder')}
+          bind:value={processQuery}
+          oninput={() => (closeUnitId = '')}
+          disabled={closeUnitPending}
+          autocomplete="off"
+          spellcheck={false}
+        />
+        <p class="m-0 text-xs text-[var(--text-secondary)]" role="status" aria-atomic="true">
+          {processesLoading
+            ? i18n.t('common.loadingConfiguration')
+            : i18n.t('mcp.proxy.processesCount', { count: filteredProcesses.length, total: processes.length })}
+        </p>
+      </div>
+      <div id="proxy-process-results" class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {#if !processesLoading}
+          {#if filteredProcesses.length === 0}
+            <p class="m-0 py-6 text-center text-[var(--text-secondary)]">
+              {i18n.t(processes.length ? 'common.noMatches' : 'mcp.proxy.noProcesses')}
+            </p>
+          {:else}
+            <div class="space-y-2" role="radiogroup" aria-label={i18n.t('mcp.proxy.closeUnit')}>
+              {#each filteredProcesses as process (process.id)}
+                <label
+                  class="flex items-start gap-3 rounded-[2px] border border-[var(--border-default)] p-3 hover:bg-[var(--surface-hover)] has-checked:border-[var(--accent-primary)]"
+                >
+                  <input
+                    class="mt-1 shrink-0 accent-[var(--accent-primary)]"
+                    type="radio"
+                    name="proxy-process"
+                    value={process.id}
+                    bind:group={closeUnitId}
+                    disabled={closeUnitPending}
+                  >
+                  <span class="min-w-0 break-words [overflow-wrap:anywhere]">
+                    <span class="block font-medium">{process.serviceId}</span>
+                    <span class="block text-xs text-[var(--text-secondary)]"
+                      >PID {process.pid ?? '—'} · {process.uptime}s</span
+                    >
+                    <small class="block font-mono text-[var(--text-muted)]">{process.id}</small>
+                  </span>
+                </label>
+              {/each}
+            </div>
+          {/if}
+        {/if}
+      </div>
     </div>
-    <Dialog.Footer>
+    {#if closeUnitError}
+      <p
+        class="m-0 max-h-20 shrink-0 overflow-y-auto break-words text-xs text-[var(--status-error)] [overflow-wrap:anywhere]"
+        role="alert"
+      >
+        {closeUnitError}
+      </p>
+    {/if}
+    <Dialog.Footer class="shrink-0">
       <Button
         variant="outline"
         disabled={closeUnitPending}
@@ -484,7 +571,7 @@ export function refresh() {
         {i18n.t('common.cancel')}
       </Button>
       <Button variant="destructive" disabled={!closeUnitId.trim() || closeUnitPending} onclick={submitCloseUnit}>
-        {closeUnitPending ? i18n.t('settings.saving') : i18n.t('mcp.proxy.closeUnit')}
+        {closeUnitPending ? i18n.t('settings.saving') : i18n.t('mcp.proxy.terminate')}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

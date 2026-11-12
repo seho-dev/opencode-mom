@@ -187,6 +187,7 @@ pub fn run() {
             commands::update_mcp_proxy_server,
             commands::delete_mcp_proxy_server,
             commands::import_mcp_proxy_server,
+            commands::list_mcp_proxy_processes,
             commands::close_mcp_proxy_unit
         ])
         .build(tauri::generate_context!())

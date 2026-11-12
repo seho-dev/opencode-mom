@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use rmcp::model::*;
+use rmcp::transport::streamable_http_server::SessionManager;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -807,6 +808,161 @@ async fn duplicate_or_missing_server_query_rejected_400_zero_spawns() {
 // -----------------------------------------------------------------------------
 
 #[tokio::test]
+async fn closing_legacy_process_id_cleans_session_bridge_sdk_and_budget() {
+    let server = TestServer::start(2).await;
+    let session = server.legacy_session().await;
+    let unrelated = server.legacy_session().await;
+    let (generation, processes) = server.proxy.process_snapshot().await;
+    let process_id = session.owner.summary().0;
+    assert_eq!(generation, server.proxy.generation());
+    assert_eq!(processes.len(), 2);
+    assert!(processes
+        .iter()
+        .any(|owner| owner.summary().0 == process_id));
+
+    server
+        .proxy
+        .close_unit(&process_id, generation)
+        .await
+        .unwrap();
+
+    assert!(session.owner.is_closed());
+    assert!(session.task.lock().await.is_none());
+    assert!(server
+        .legacy_sessions
+        .get_session(&session.id)
+        .await
+        .is_none());
+    assert!(session
+        .manager
+        .create_standalone_stream(&session.id)
+        .await
+        .is_err());
+    assert_eq!(server.legacy_sessions.active_count().await, 1);
+    assert!(!unrelated.owner.is_closed());
+    assert_eq!(server.budget.available_permits(), 1);
+    let (next_generation, remaining) = server.proxy.process_snapshot().await;
+    assert_eq!(next_generation, generation);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].summary().0, unrelated.owner.summary().0);
+    server.close().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn queued_unit_close_rechecks_generation_before_selecting_target() {
+    let server = TestServer::start(1).await;
+    let session = server.legacy_session().await;
+    let generation = server.proxy.generation();
+    let process_id = session.owner.summary().0;
+    let update = server.proxy.updates.lock().await;
+    let mut closing = Box::pin(server.proxy.close_unit(&process_id, generation));
+    assert!(futures::poll!(&mut closing).is_pending());
+    tokio::task::yield_now().await;
+    server
+        .proxy
+        .generation
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let mut snapshot = Box::pin(server.proxy.process_snapshot());
+    assert!(futures::poll!(&mut snapshot).is_pending());
+    drop(update);
+
+    assert_eq!(
+        closing.await.unwrap_err().code,
+        crate::error::ErrorCode::ValidationFailed
+    );
+    let (next_generation, processes) = snapshot.await;
+    assert_eq!(next_generation, generation + 1);
+    assert_eq!(processes.len(), 1);
+    assert_eq!(processes[0].summary().0, process_id);
+    assert!(!session.owner.is_closed());
+    assert_eq!(server.legacy_sessions.active_count().await, 1);
+    assert_eq!(server.budget.available_permits(), 0);
+    server.close().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn cancelled_process_close_waiter_still_cleans_the_legacy_session() {
+    let server = TestServer::start(1).await;
+    let session = server.legacy_session().await;
+    let process_id = session.owner.summary().0;
+    let update = server.proxy.updates.lock().await;
+    let mut closing = Box::pin(
+        server
+            .proxy
+            .close_unit(&process_id, server.proxy.generation()),
+    );
+    assert!(futures::poll!(&mut closing).is_pending());
+    drop(closing);
+    drop(update);
+    tokio::time::timeout(DEADLINE, async {
+        while server.legacy_sessions.active_count().await != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("unit teardown must outlive its caller");
+    assert!(session.owner.is_closed());
+    assert!(session.task.lock().await.is_none());
+    assert!(session
+        .manager
+        .create_standalone_stream(&session.id)
+        .await
+        .is_err());
+    assert_eq!(server.budget.available_permits(), 1);
+    server.close().await;
+}
+
+#[tokio::test]
+async fn auto_protocol_forwards_standard_handshake_without_draft_metadata() {
+    let server = TestServer::start(4).await;
+    let mut configuration = server.proxy.config().await;
+    configuration
+        .services
+        .iter_mut()
+        .find(|service| service.id == "legacy-svc")
+        .unwrap()
+        .protocol = ProxyProtocol::Auto;
+    let revision = configuration.revision;
+    server
+        .proxy
+        .save_config(configuration, revision)
+        .await
+        .unwrap();
+    let client = http_client();
+    let response = client
+        .post(format!("{}?server=legacy-svc", server.url))
+        .bearer_auth(&server.raw_token)
+        .json(&initialize(LEGACY))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let session = response
+        .headers()
+        .get("Mcp-Session-Id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let response = client
+        .post(format!("{}?server=legacy-svc", server.url))
+        .bearer_auth(&server.raw_token)
+        .header("Mcp-Session-Id", &session)
+        .json(&call(7, "echo", None))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let mut stream: SseReader = Box::pin(sse_stream::SseStream::from_bytes_stream(
+        response.bytes_stream(),
+    ));
+    let result = until_result(&mut stream).await;
+    assert_eq!(result["result"]["structuredContent"]["tag"], "leg-tag");
+    drop(stream);
+    server.close().await;
+}
+
+#[tokio::test]
 async fn legacy_lifecycle_initialize_sessions_no_crosstalk_and_delete_closes() {
     let server = TestServer::start(4).await;
     let client = http_client();
@@ -1012,7 +1168,14 @@ async fn modern_fresh_process_per_request_and_cancellation_reaps_child() {
 
 #[tokio::test]
 async fn modern_unread_stdin_cancellation_and_timeout_reap_owner_and_release_admission() {
-    for action in ["disconnect", "rotate", "shutdown", "timeout"] {
+    for action in [
+        "disconnect",
+        "rotate",
+        "disable",
+        "service-disable",
+        "shutdown",
+        "timeout",
+    ] {
         let mut server = TestServer::start(1).await;
         let mut config = server.proxy.config().await;
         let revision = config.revision;
@@ -1071,6 +1234,28 @@ async fn modern_unread_stdin_cancellation_and_timeout_reap_owner_and_release_adm
                 proxy.unwrap();
                 drop(response);
             }
+            "disable" | "service-disable" => {
+                let mut config = server.proxy.config().await;
+                let revision = config.revision;
+                if action == "disable" {
+                    config.gateway.enabled = false;
+                } else {
+                    config
+                        .services
+                        .iter_mut()
+                        .find(|service| service.id == "modern-svc")
+                        .unwrap()
+                        .enabled = false;
+                }
+                tokio::time::timeout(
+                    Duration::from_secs(4),
+                    server.proxy.save_config(config, revision),
+                )
+                .await
+                .expect("disable must not wait for a blocked stdin write")
+                .unwrap();
+                drop(response);
+            }
             "timeout" => {
                 let mut reader: SseReader = Box::pin(sse_stream::SseStream::from_bytes_stream(
                     response.bytes_stream(),
@@ -1098,6 +1283,144 @@ async fn modern_unread_stdin_cancellation_and_timeout_reap_owner_and_release_adm
         }
         server.close().await;
     }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn committed_disable_releases_config_lock_and_bounds_stalled_cleanup() {
+    let server = TestServer::start(1).await;
+    let session = server.legacy_session().await;
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let stalled = tokio::spawn(async move {
+        entered_tx.send(()).unwrap();
+        release_rx.await.unwrap();
+        Ok(())
+    });
+    entered_rx.await.unwrap();
+    let previous = session.task.lock().await.replace(stalled).unwrap();
+    previous.abort();
+    let _ = previous.await;
+
+    let mut config = server.proxy.config().await;
+    let revision = config.revision;
+    let epoch = server.proxy.request_token().await;
+    config.gateway.enabled = false;
+    let proxy = server.proxy.clone();
+    let mut save = tokio::spawn(async move { proxy.save_config(config, revision).await });
+    tokio::time::timeout(Duration::from_secs(2), epoch.cancelled())
+        .await
+        .unwrap();
+    let committed = tokio::time::timeout(Duration::from_secs(1), server.proxy.config())
+        .await
+        .expect("committed config must be readable during stalled cleanup");
+    assert!(!committed.gateway.enabled);
+    assert_eq!(committed.revision, revision + 1);
+    assert_eq!(
+        crate::mcp_proxy::config::load_config(&server.proxy.config_path).unwrap(),
+        committed
+    );
+    assert!(futures::poll!(&mut save).is_pending());
+    let closing = session.clone();
+    let close = tokio::spawn(async move { closing.close().await });
+    assert_eq!(
+        http_client()
+            .post(format!("{}?server=legacy-svc", server.url))
+            .bearer_auth(&server.raw_token)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::SERVICE_UNAVAILABLE
+    );
+    tokio::time::timeout(super::CLEANUP_TIMEOUT + Duration::from_secs(2), save)
+        .await
+        .expect("post-commit cleanup must be bounded")
+        .unwrap()
+        .expect("cleanup failure must not report committed config as a failed save");
+    assert!(server.proxy.cleanup_failed());
+    assert!(tokio::time::timeout(Duration::from_secs(2), close)
+        .await
+        .expect("closing an active unit must also be bounded")
+        .unwrap()
+        .is_err());
+    release_tx.send(()).unwrap();
+    session.close().await.unwrap();
+    server.http.shutdown(DEADLINE).await.unwrap();
+    assert!(server.proxy.shutdown(DEADLINE).await.is_err());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn changed_service_cleanup_preserves_sessions_from_the_committed_revision() {
+    let server = TestServer::start(2).await;
+    let session = server.legacy_session().await;
+    let token = server.proxy.service_token("legacy-svc").await;
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let stalled = tokio::spawn(async move {
+        release_rx.await.unwrap();
+        Ok(())
+    });
+    let previous = session.task.lock().await.replace(stalled).unwrap();
+    previous.abort();
+    let _ = previous.await;
+    let mut config = server.proxy.config().await;
+    let revision = config.revision;
+    config.services[0].name = "Updated service".into();
+    let proxy = server.proxy.clone();
+    let save = tokio::spawn(async move { proxy.save_config(config, revision).await });
+    tokio::time::timeout(DEADLINE, token.cancelled())
+        .await
+        .unwrap();
+    assert_eq!(server.proxy.config().await.revision, revision + 1);
+    let fresh = server.legacy_session().await;
+    release_tx.send(()).unwrap();
+    save.await.unwrap().unwrap();
+    assert!(session.owner.is_closed());
+    assert!(!fresh.owner.is_closed());
+    assert_eq!(server.legacy_sessions.active_count().await, 1);
+    assert!(!server.proxy.cleanup_failed());
+    server.close().await;
+}
+
+#[tokio::test]
+async fn modern_service_change_cancels_only_its_inflight_requests() {
+    let mut server = TestServer::start(2).await;
+    let legacy = server.legacy_session().await;
+    let epoch = server.proxy.request_token().await;
+    let response = http_client()
+        .post(format!("{}?server=modern-svc", server.url))
+        .bearer_auth(&server.raw_token)
+        .header("MCP-Protocol-Version", MODERN)
+        .json(&call(23, "wait", Some(metadata("service-change"))))
+        .send()
+        .await
+        .unwrap();
+    let mut reader: SseReader = Box::pin(sse_stream::SseStream::from_bytes_stream(
+        response.bytes_stream(),
+    ));
+    next_sse(&mut reader).await;
+    let pid = match server.event().await {
+        Observation::Started(pid) => pid,
+        other => panic!("expected Started, got {other:?}"),
+    };
+    let mut config = server.proxy.config().await;
+    let revision = config.revision;
+    config
+        .services
+        .iter_mut()
+        .find(|service| service.id == "modern-svc")
+        .unwrap()
+        .enabled = false;
+    server.proxy.save_config(config, revision).await.unwrap();
+    assert!(matches!(
+        server.event().await,
+        Observation::Cancelled(RequestId::Number(23))
+    ));
+    assert!(matches!(server.event().await, Observation::Closed(closed) if closed == pid));
+    assert!(!epoch.is_cancelled());
+    assert!(!legacy.owner.is_closed());
+    assert_eq!(server.legacy_sessions.active_count().await, 1);
+    assert_eq!(server.budget.available_permits(), 1);
+    server.close().await;
 }
 
 #[tokio::test]

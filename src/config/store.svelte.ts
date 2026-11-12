@@ -771,6 +771,7 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       adapter.importMcpProxyServer(request),
 
     closeMcpProxyUnit: (request: CloseMcpProxyUnitRequest): Promise<void> => adapter.closeMcpProxyUnit(request),
+    listMcpProxyProcesses: () => adapter.listMcpProxyProcesses(),
 
     async saveGroup(value: Group) {
       await run('saveGroup', value, () => adapter.saveGroup(value));

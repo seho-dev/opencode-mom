@@ -190,6 +190,7 @@ fn ipc_crud_and_conflict_rejection() {
             update_mcp_proxy_server,
             delete_mcp_proxy_server,
             import_mcp_proxy_server,
+            list_mcp_proxy_processes,
             close_mcp_proxy_unit
         ])
         .build(tauri::test::mock_context(tauri::test::noop_assets()))
@@ -229,6 +230,11 @@ fn ipc_crud_and_conflict_rejection() {
     assert_eq!(state.active_units, 0);
     assert_eq!(state.total_services, 0);
     assert_eq!(state.revision, 1);
+    let snapshot: serde_json::Value = invoke("list_mcp_proxy_processes", json!({}))
+        .unwrap()
+        .deserialize()
+        .unwrap();
+    assert_eq!(snapshot, json!({ "generation": 1, "processes": [] }));
 
     let http_settings: crate::http_server::MomHttpSettings =
         invoke("get_mom_http_settings", json!({}))
@@ -320,6 +326,12 @@ fn ipc_crud_and_conflict_rejection() {
         config_before_rotate
     );
     assert_eq!(service.generation(), generation_before_rotate + 1);
+    let snapshot: serde_json::Value = invoke("list_mcp_proxy_processes", json!({}))
+        .unwrap()
+        .deserialize()
+        .unwrap();
+    assert_eq!(snapshot["generation"], service.generation());
+    assert_eq!(snapshot["processes"], json!([]));
     assert!(invoke("rotate_mcp_proxy_key", json!({})).is_err());
     let persisted: serde_json::Value =
         serde_json::from_slice(&fs::read(home.path().join("mom-http.json")).unwrap()).unwrap();
@@ -478,7 +490,7 @@ fn ipc_crud_and_conflict_rejection() {
     .unwrap_err();
     assert_eq!(err["code"], "validation_failed");
 
-    // Matching generation -> ok
+    // Matching generation still rejects a missing unit.
     let ok = invoke(
         "close_mcp_proxy_unit",
         json!({
@@ -488,7 +500,7 @@ fn ipc_crud_and_conflict_rejection() {
             }
         }),
     );
-    assert!(ok.is_ok());
+    assert_eq!(ok.unwrap_err()["code"], "not_found");
 
     // 6. Import MCP server
     let config_dir = home.path().join(".config/opencode");

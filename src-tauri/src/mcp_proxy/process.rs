@@ -15,6 +15,8 @@ use tokio::{
     task::JoinHandle,
 };
 
+use crate::logging::{record, LogStatus, LogType};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProcessState {
     Starting,
@@ -102,6 +104,7 @@ pub struct OwnerBudget {
     semaphore: Arc<Semaphore>,
     limits: Arc<StdMutex<(usize, usize)>>,
     cleanup_failed: Arc<AtomicBool>,
+    owners: Arc<StdMutex<Vec<std::sync::Weak<ProcessOwnerInner>>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,11 +119,33 @@ impl std::fmt::Display for BudgetExhausted {
 impl std::error::Error for BudgetExhausted {}
 
 impl OwnerBudget {
+    pub fn active_processes(&self) -> Vec<ProcessOwner> {
+        let mut owners = self
+            .owners
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        owners.retain(|owner| owner.strong_count() > 0);
+        owners
+            .iter()
+            .filter_map(std::sync::Weak::upgrade)
+            .filter(|inner| {
+                !matches!(
+                    *inner
+                        .state
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner()),
+                    ProcessState::Closed
+                )
+            })
+            .map(|inner| ProcessOwner { inner })
+            .collect()
+    }
     pub fn new(permits: usize) -> Self {
         Self {
             semaphore: Arc::new(Semaphore::new(permits)),
             limits: Arc::new(StdMutex::new((permits, 0))),
             cleanup_failed: Arc::new(AtomicBool::new(false)),
+            owners: Arc::new(StdMutex::new(Vec::new())),
         }
     }
 
@@ -238,6 +263,9 @@ impl Drop for OwnerPermit {
 type CloseReceiver = watch::Receiver<Option<Result<CloseOutcome, ProcessError>>>;
 
 struct ProcessOwnerInner {
+    id: String,
+    started: std::time::Instant,
+    service: StdMutex<String>,
     budget: OwnerBudget,
     state: StdMutex<ProcessState>,
     config: ProcessConfig,
@@ -257,6 +285,25 @@ pub struct ProcessOwner {
 }
 
 impl ProcessOwner {
+    pub fn identify(&self, service: &str) {
+        *self
+            .inner
+            .service
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = service.to_string();
+    }
+
+    pub fn summary(&self) -> (String, String, u64) {
+        (
+            self.inner.id.clone(),
+            self.inner
+                .service
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone(),
+            self.inner.started.elapsed().as_secs(),
+        )
+    }
     pub fn spawn(
         mut command: Command,
         permit: OwnerPermit,
@@ -264,6 +311,7 @@ impl ProcessOwner {
     ) -> Result<Self, ProcessError> {
         command.stdin(std::process::Stdio::piped());
         command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::null());
 
         let mut wrap = CommandWrap::from(command);
         wrap.wrap(KillOnDrop);
@@ -272,14 +320,22 @@ impl ProcessOwner {
         #[cfg(windows)]
         wrap.wrap(process_wrap::tokio::JobObject);
 
-        let mut child = wrap
-            .spawn()
-            .map_err(|e| ProcessError::SpawnFailed(e.to_string()))?;
+        let mut child = wrap.spawn().map_err(|e| {
+            record(
+                LogType::McpProxy,
+                LogStatus::Error,
+                "mcp_proxy_process_spawn_failed",
+            );
+            ProcessError::SpawnFailed(e.to_string())
+        })?;
         let pid = child.id();
         let stdin = child.stdin().take();
         let stdout = child.stdout().take();
 
         let inner = Arc::new(ProcessOwnerInner {
+            id: uuid::Uuid::new_v4().to_string(),
+            started: std::time::Instant::now(),
+            service: StdMutex::new(String::new()),
             budget: permit.budget().clone(),
             state: StdMutex::new(ProcessState::Starting),
             config,
@@ -293,6 +349,19 @@ impl ProcessOwner {
             cached_outcome: StdMutex::new(None),
         });
 
+        record(
+            LogType::McpProxy,
+            LogStatus::Success,
+            "mcp_proxy_process_started",
+        );
+        let mut owners = inner
+            .budget
+            .owners
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        owners.retain(|owner| owner.strong_count() > 0);
+        owners.push(Arc::downgrade(&inner));
+        drop(owners);
         Ok(Self { inner })
     }
 
@@ -415,9 +484,19 @@ impl ProcessOwner {
                         }
                     };
 
-                    if let Err(error) = &outcome {
+                    if outcome.is_err() {
                         inner.budget.record_cleanup_failure();
-                        eprintln!("warning: MCP process cleanup failed: {error}");
+                        record(
+                            LogType::McpProxy,
+                            LogStatus::Error,
+                            "mcp_proxy_process_cleanup_failed",
+                        );
+                    } else {
+                        record(
+                            LogType::McpProxy,
+                            LogStatus::Success,
+                            "mcp_proxy_process_closed",
+                        );
                     }
 
                     let _ = tx.send(Some(outcome));
@@ -646,6 +725,13 @@ impl ProcessOwner {
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = ProcessState::Closed;
 
+        inner
+            .budget
+            .owners
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .retain(|owner| owner.as_ptr() != Arc::as_ptr(inner) && owner.strong_count() > 0);
+
         if let Some(mut permit) = inner
             .permit
             .lock()
@@ -663,6 +749,55 @@ impl ProcessOwner {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn registry_lists_only_live_owned_processes() {
+        let budget = OwnerBudget::new(2);
+        let mut command = Command::new("/bin/cat");
+        command.arg("-u");
+        let owner = ProcessOwner::spawn(
+            command,
+            budget.try_acquire().unwrap(),
+            ProcessConfig::default(),
+        )
+        .unwrap();
+        owner.identify("test-service");
+        assert_eq!(budget.active_processes().len(), 1);
+        assert_eq!(budget.active_processes()[0].summary().1, "test-service");
+        let id = owner.summary().0;
+        owner.close(CloseReason::Normal).await.unwrap();
+        assert!(budget.active_processes().is_empty());
+        let command = Command::new("/bin/cat");
+        let next = ProcessOwner::spawn(
+            command,
+            budget.try_acquire().unwrap(),
+            ProcessConfig::default(),
+        )
+        .unwrap();
+        assert_ne!(next.summary().0, id);
+        next.close(CloseReason::Normal).await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn registry_stays_bounded_without_listing_or_dropping_closed_owners() {
+        let budget = OwnerBudget::new(1);
+        let mut closed = Vec::new();
+        for _ in 0..16 {
+            let owner = ProcessOwner::spawn(
+                Command::new("/bin/cat"),
+                budget.try_acquire().unwrap(),
+                ProcessConfig::default(),
+            )
+            .unwrap();
+            assert_eq!(budget.owners.lock().unwrap().len(), 1);
+            owner.close(CloseReason::Normal).await.unwrap();
+            closed.push(owner);
+            assert!(budget.owners.lock().unwrap().is_empty());
+        }
+        assert_eq!(budget.available_permits(), 1);
+    }
 
     #[tokio::test]
     async fn normal_clean_exit_on_stdin_close() {

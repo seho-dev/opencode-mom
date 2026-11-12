@@ -17,10 +17,12 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::AppError;
+use crate::logging::{operation, record, LogStatus, LogType};
 use crate::mcp_proxy::config::ProxyServiceConfig;
 use crate::mcp_proxy::process::{
     CloseReason, OwnerBudget, OwnerPermit, ProcessConfig, ProcessOwner,
 };
+use crate::mcp_proxy::CLEANUP_TIMEOUT;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(not(test), allow(dead_code))]
@@ -41,6 +43,7 @@ pub struct LegacySession {
     pub idle_timeout: Duration,
     pub task: Mutex<Option<JoinHandle<Result<(), AppError>>>>,
     bridge_cancel: CancellationToken,
+    proxy_token: CancellationToken,
     close_coordinator: StdMutex<Option<CloseReceiver>>,
 }
 
@@ -68,9 +71,13 @@ impl LegacySession {
                 let session = self.clone();
                 tokio::spawn(async move {
                     let result = session.close_owned().await;
-                    if let Err(error) = &result {
+                    if result.is_err() {
                         session.owner.budget().record_cleanup_failure();
-                        eprintln!("warning: MCP legacy session cleanup failed: {error}");
+                        record(
+                            LogType::McpProxy,
+                            LogStatus::Error,
+                            "mcp_proxy_session_cleanup_failed",
+                        );
                     }
 
                     let _ = tx.send(Some(result));
@@ -78,22 +85,37 @@ impl LegacySession {
                 rx
             }
         };
-        loop {
-            if let Some(result) = &*rx.borrow() {
-                return result.clone();
-            }
+        let result = tokio::time::timeout(CLEANUP_TIMEOUT, async {
+            loop {
+                if let Some(result) = &*rx.borrow() {
+                    return result.clone();
+                }
 
-            if rx.changed().await.is_err() {
-                self.owner.budget().record_cleanup_failure();
-
-                return Err(AppError::configuration(
-                    "MCP session close coordinator terminated unexpectedly",
-                ));
+                if rx.changed().await.is_err() {
+                    return Err(AppError::configuration(
+                        "MCP session close coordinator terminated unexpectedly",
+                    ));
+                }
             }
+        })
+        .await
+        .map_err(|_| {
+            record(
+                LogType::McpProxy,
+                LogStatus::Error,
+                "mcp_proxy_session_cleanup_timeout",
+            );
+            AppError::configuration("timed out closing MCP session; cleanup continues")
+        })
+        .and_then(|result| result);
+        if result.is_err() {
+            self.owner.budget().record_cleanup_failure();
         }
+        result
     }
 
     async fn close_owned(&self) -> Result<(), AppError> {
+        let cleanup = operation(LogType::McpProxy, "mcp_proxy_session_cleanup");
         self.bridge_cancel.cancel();
         let bridge = async {
             let task = self.task.lock().await.take();
@@ -116,13 +138,15 @@ impl LegacySession {
             self.manager.close_session(&self.id),
             self.owner.close(CloseReason::Normal),
         );
-        finish_cleanup([
+        let result = finish_cleanup([
             bridge,
             sdk.map_err(|error| AppError::configuration(format!("close MCP SDK session: {error}"))),
             owner.map(|_| ()).map_err(|error| {
                 AppError::configuration(format!("close MCP process owner: {error}"))
             }),
-        ])
+        ]);
+        cleanup.finish(&result);
+        result
     }
 }
 
@@ -160,9 +184,13 @@ impl Drop for PendingSession {
             let manager = self.manager.clone();
             let session = self.session.clone();
             tokio::spawn(async move {
-                if let Err(error) = manager.close_session(&session.id).await {
+                if manager.close_session(&session.id).await.is_err() {
                     session.owner.budget().record_cleanup_failure();
-                    eprintln!("warning: MCP abandoned session cleanup failed: {error}");
+                    record(
+                        LogType::McpProxy,
+                        LogStatus::Error,
+                        "mcp_proxy_session_cleanup_failed",
+                    );
                 }
             });
         }
@@ -203,7 +231,7 @@ impl LegacySessionManager {
             }
 
             let session = manager
-                .create_session_owned(&service, permit, idle_timeout_secs)
+                .create_session_owned(&service, permit, idle_timeout_secs, proxy_token.clone())
                 .await?;
             if http_token.is_cancelled() || proxy_token.is_cancelled() {
                 manager.close_session(&session.id).await?;
@@ -232,6 +260,7 @@ impl LegacySessionManager {
         service: &ProxyServiceConfig,
         permit: OwnerPermit,
         idle_timeout_secs: u64,
+        proxy_token: CancellationToken,
     ) -> Result<Arc<LegacySession>, AppError> {
         let (executable, args) = service
             .command
@@ -254,15 +283,20 @@ impl LegacySessionManager {
             kill_timeout: Duration::from_secs(service.timeouts.startup_secs.max(2)),
         };
 
+        // Publish the session before a registered owner can be selected for teardown.
+        let mut sessions = self.sessions.write().await;
         let owner = match ProcessOwner::spawn(cmd, permit, process_config) {
             Ok(owner) => owner,
             Err(e) => {
+                drop(sessions);
                 let error =
                     AppError::configuration(format!("failed to spawn service process: {e}"));
 
                 if let Err(cleanup) = self.manager.close_session(&id).await {
-                    eprintln!(
-                        "warning: failed to close MCP SDK session after spawn failure: {cleanup}"
+                    record(
+                        LogType::McpProxy,
+                        LogStatus::Error,
+                        "mcp_proxy_session_cleanup_failed",
                     );
 
                     return Err(AppError::configuration(format!(
@@ -274,6 +308,7 @@ impl LegacySessionManager {
             }
         };
         let pipes = (|| {
+            owner.identify(&service.id);
             owner.activate().map_err(|error| {
                 AppError::configuration(format!("failed to activate process: {error}"))
             })?;
@@ -288,6 +323,7 @@ impl LegacySessionManager {
         let (stdin, stdout) = match pipes {
             Ok(pipes) => pipes,
             Err(error) => {
+                drop(sessions);
                 let (sdk, owner) = tokio::join!(
                     self.manager.close_session(&id),
                     owner.close(CloseReason::Normal)
@@ -313,15 +349,18 @@ impl LegacySessionManager {
         let owner_clone = owner.clone();
         let bridge_cancel = CancellationToken::new();
         let worker_cancel = bridge_cancel.clone();
+        let worker_proxy = proxy_token.clone();
         let task = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     biased;
                     _ = worker_cancel.cancelled() => break,
+                    _ = worker_proxy.cancelled() => break,
                     incoming = http.receive() => match incoming {
                         Some(message) => {
                             let sent = tokio::select! {
                                 _ = worker_cancel.cancelled() => break,
+                                _ = worker_proxy.cancelled() => break,
                                 sent = process_transport.send(message) => sent,
                             };
                             if sent.is_err() {
@@ -334,6 +373,7 @@ impl LegacySessionManager {
                         Some(message) => {
                             let sent = tokio::select! {
                                 _ = worker_cancel.cancelled() => break,
+                                _ = worker_proxy.cancelled() => break,
                                 sent = http.send(message) => sent,
                             };
                             if sent.is_err() {
@@ -362,9 +402,13 @@ impl LegacySessionManager {
                 }),
             ]);
 
-            if let Err(error) = &result {
+            if result.is_err() {
                 owner_clone.budget().record_cleanup_failure();
-                eprintln!("warning: MCP legacy bridge cleanup failed: {error}");
+                record(
+                    LogType::McpProxy,
+                    LogStatus::Error,
+                    "mcp_proxy_bridge_cleanup_failed",
+                );
             }
             result
         });
@@ -378,14 +422,18 @@ impl LegacySessionManager {
             idle_timeout: Duration::from_secs(idle_timeout_secs),
             task: Mutex::new(Some(task)),
             bridge_cancel,
+            proxy_token,
             close_coordinator: StdMutex::new(None),
         });
 
-        self.sessions
-            .write()
-            .await
-            .insert(id.to_string(), session.clone());
+        sessions.insert(id.to_string(), session.clone());
+        drop(sessions);
 
+        record(
+            LogType::McpProxy,
+            LogStatus::Success,
+            "mcp_proxy_session_created",
+        );
         Ok(session)
     }
 
@@ -395,21 +443,45 @@ impl LegacySessionManager {
         guard.get(session_id).cloned()
     }
 
+    pub async fn close_process_session(&self, process_id: &str) -> Result<bool, AppError> {
+        let session = self
+            .sessions
+            .read()
+            .await
+            .values()
+            .find(|session| session.owner.summary().0 == process_id)
+            .cloned();
+        if let Some(session) = session {
+            self.close_registered_session(session).await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     pub async fn close_session(
         &self,
         session_id: &str,
     ) -> Result<Option<Arc<LegacySession>>, AppError> {
-        let manager = self.clone();
-        let session_id = session_id.to_string();
-        tokio::spawn(async move {
-            let session = manager.sessions.read().await.get(&session_id).cloned();
-            if let Some(session) = &session {
-                let result = session.close().await;
-                manager.sessions.write().await.remove(&session_id);
-                result?;
-            }
+        let session = self.sessions.read().await.get(session_id).cloned();
+        if let Some(session) = &session {
+            self.close_registered_session(session.clone()).await?;
+        }
+        Ok(session)
+    }
 
-            Ok(session)
+    async fn close_registered_session(&self, session: Arc<LegacySession>) -> Result<(), AppError> {
+        let manager = self.clone();
+        tokio::spawn(async move {
+            let result = session.close().await;
+            let mut sessions = manager.sessions.write().await;
+            if sessions
+                .get(session.id.as_ref())
+                .is_some_and(|current| Arc::ptr_eq(current, &session))
+            {
+                sessions.remove(session.id.as_ref());
+            }
+            result
         })
         .await
         .map_err(|error| {
@@ -429,8 +501,12 @@ impl LegacySessionManager {
         }
 
         for id in expired {
-            if let Err(error) = self.close_session(&id).await {
-                eprintln!("warning: MCP idle session cleanup failed: {error}");
+            if self.close_session(&id).await.is_err() {
+                record(
+                    LogType::McpProxy,
+                    LogStatus::Error,
+                    "mcp_proxy_session_cleanup_failed",
+                );
             }
         }
     }
@@ -460,8 +536,12 @@ impl LegacySessionManager {
                             .await,
                     );
 
-                    if let Err(error) = &result {
-                        eprintln!("warning: MCP session bulk cleanup failed: {error}");
+                    if result.is_err() {
+                        record(
+                            LogType::McpProxy,
+                            LogStatus::Error,
+                            "mcp_proxy_session_cleanup_failed",
+                        );
                     }
 
                     let _ = tx.send(Some(result));
@@ -495,7 +575,7 @@ impl LegacySessionManager {
         counts
     }
 
-    pub async fn close_service_sessions(&self, service_id: &str) -> Result<(), AppError> {
+    pub async fn close_revoked_service_sessions(&self, service_id: &str) -> Result<(), AppError> {
         let manager = self.clone();
         let service_id = service_id.to_string();
         tokio::spawn(async move {
@@ -503,7 +583,9 @@ impl LegacySessionManager {
                 let mut guard = manager.sessions.write().await;
                 let ids: Vec<_> = guard
                     .iter()
-                    .filter(|(_, session)| session.service_id == service_id)
+                    .filter(|(_, session)| {
+                        session.service_id == service_id && session.proxy_token.is_cancelled()
+                    })
                     .map(|(id, _)| id.clone())
                     .collect();
                 ids.into_iter().filter_map(|id| guard.remove(&id)).collect()
@@ -560,19 +642,41 @@ impl ModernBridge {
         context: RequestContext<RoleServer>,
     ) -> Result<ServerResult, ErrorData> {
         let owner = self.clone();
-        let handle = tokio::spawn(async move { owner.forward_owned(request, context).await });
-        handle
+        let request_token = context.ct.child_token();
+        // The owned worker must also stop when the SDK drops its forwarding future.
+        let guard = request_token.clone().drop_guard();
+        let handle = tokio::spawn(async move {
+            let forward = operation(LogType::McpProxy, "mcp_proxy_forward");
+            let result = owner.forward_owned(request, context, request_token).await;
+            forward.finish(
+                &result
+                    .as_ref()
+                    .map(|_| ())
+                    .map_err(|_| AppError::configuration("MCP forwarding failed")),
+            );
+            result
+        });
+        let result = handle
             .await
-            .map_err(|e| ErrorData::internal_error(format!("task join error: {e}"), None))?
+            .map_err(|_| ErrorData::internal_error("MCP forwarding task failed", None))?;
+        guard.disarm();
+        result
     }
 
     async fn forward_owned(
         &self,
         request: ClientJsonRpcMessage,
         context: RequestContext<RoleServer>,
+        request_token: CancellationToken,
     ) -> Result<ServerResult, ErrorData> {
-        let _admission = self.admission.read().await;
-        if context.ct.is_cancelled()
+        let _admission = tokio::select! {
+            biased;
+            _ = request_token.cancelled() => return Err(ErrorData::internal_error("request cancelled", None)),
+            _ = self.http_token.cancelled() => return Err(ErrorData::internal_error("request cancelled", None)),
+            _ = self.proxy_token.cancelled() => return Err(ErrorData::internal_error("request cancelled", None)),
+            admission = self.admission.read() => admission,
+        };
+        if request_token.is_cancelled()
             || self.http_token.is_cancelled()
             || self.proxy_token.is_cancelled()
         {
@@ -606,6 +710,7 @@ impl ModernBridge {
             ErrorData::internal_error(format!("failed to spawn process: {e}"), None)
         })?;
         let pipes = (|| {
+            owner.identify(&self.service.id);
             owner.activate().map_err(|error| {
                 ErrorData::internal_error(format!("failed to activate process: {error}"), None)
             })?;
@@ -621,7 +726,11 @@ impl ModernBridge {
             Ok(pipes) => pipes,
             Err(error) => {
                 if let Err(cleanup) = owner.close(CloseReason::Normal).await {
-                    eprintln!("warning: MCP process setup cleanup failed: {cleanup}");
+                    record(
+                        LogType::McpProxy,
+                        LogStatus::Error,
+                        "mcp_proxy_bridge_cleanup_failed",
+                    );
 
                     return Err(ErrorData::internal_error(
                         format!("{error}; {cleanup}"),
@@ -643,7 +752,7 @@ impl ModernBridge {
 
         let cancelled = async {
             tokio::select! {
-                _ = context.ct.cancelled() => {},
+                _ = request_token.cancelled() => {},
                 _ = self.http_token.cancelled() => {},
                 _ = self.proxy_token.cancelled() => {},
             }
@@ -651,81 +760,106 @@ impl ModernBridge {
         tokio::pin!(cancelled);
         let sent = tokio::select! {
             biased;
-            _ = &mut cancelled => Err(ErrorData::internal_error("request cancelled; outcome uncertain", None)),
+            _ = &mut cancelled => {
+                record(LogType::McpProxy, LogStatus::Success, "mcp_proxy_forward_cancelled");
+                Err(ErrorData::internal_error("request cancelled; outcome uncertain", None))
+            },
             sent = tokio::time::timeout(
                 Duration::from_secs(self.service.timeouts.execution_secs),
                 process_transport.send(request),
             ) => match sent {
-                Ok(result) => result.map_err(|error| ErrorData::internal_error(
-                    format!("failed to send request to process: {error}"),
-                    None,
-                )),
-                Err(_) => Err(ErrorData::internal_error("timed out sending request to process; outcome uncertain", None)),
+                Ok(result) => result.map_err(|error| {
+                    record(LogType::McpProxy, LogStatus::Error, "mcp_proxy_backend_send_failed");
+                    ErrorData::internal_error(format!("failed to send request to process: {error}"), None)
+                }),
+                Err(_) => {
+                    record(LogType::McpProxy, LogStatus::Error, "mcp_proxy_forward_timeout");
+                    Err(ErrorData::internal_error("timed out sending request to process; outcome uncertain", None))
+                },
             },
         };
         let result = match sent {
             Err(error) => Err(error),
-            Ok(()) => loop {
-                tokio::select! {
-                    biased;
-                    _ = &mut cancelled => {
-                        let cancel_msg = ClientJsonRpcMessage::notification(
-                            ClientNotification::CancelledNotification(CancelledNotification::new(
-                                CancelledNotificationParam::new(Some(context.id.clone()), None),
-                            )),
-                        );
-                        let seen = tokio::time::timeout(Duration::from_secs(1), async {
-                            if process_transport.send(cancel_msg).await.is_err() {
-                                return false;
-                            }
-                            loop {
-                                let reply = process_transport.receive().await;
-                                let Some(msg) = reply else { break false; };
-                                if matches!(&msg,
-                                    JsonRpcMessage::Notification(reply)
-                                        if matches!(&reply.notification,
-                                            ServerNotification::ProgressNotification(progress)
-                                                if matches!(&progress.params.progress_token.0,
-                                                    NumberOrString::String(token) if token.as_ref() == "cancel-seen"
-                                                )
-                                        )
-                                ) {
-                                    break true;
+            Ok(()) => {
+                record(
+                    LogType::McpProxy,
+                    LogStatus::Success,
+                    "mcp_proxy_backend_sent",
+                );
+                loop {
+                    tokio::select! {
+                        biased;
+                        _ = &mut cancelled => {
+                            record(LogType::McpProxy, LogStatus::Success, "mcp_proxy_forward_cancelled");
+                            let cancel_msg = ClientJsonRpcMessage::notification(
+                                ClientNotification::CancelledNotification(CancelledNotification::new(
+                                    CancelledNotificationParam::new(Some(context.id.clone()), None),
+                                )),
+                            );
+                            let seen = tokio::time::timeout(Duration::from_secs(1), async {
+                                if process_transport.send(cancel_msg).await.is_err() {
+                                    return false;
+                                }
+                                loop {
+                                    let reply = process_transport.receive().await;
+                                    let Some(msg) = reply else { break false; };
+                                    if matches!(&msg,
+                                        JsonRpcMessage::Notification(reply)
+                                            if matches!(&reply.notification,
+                                                ServerNotification::ProgressNotification(progress)
+                                                    if matches!(&progress.params.progress_token.0,
+                                                        NumberOrString::String(token) if token.as_ref() == "cancel-seen"
+                                                    )
+                                            )
+                                    ) {
+                                        break true;
+                                    }
+                                }
+                            }).await.unwrap_or(false);
+                            if seen {
+                                if let Some(ref tx) = self.events {
+                                    let _ = tx.send(Observation::Cancelled(context.id.clone()));
                                 }
                             }
-                        }).await.unwrap_or(false);
-                        if seen {
-                            if let Some(ref tx) = self.events {
-                                let _ = tx.send(Observation::Cancelled(context.id.clone()));
+                            break Err(ErrorData::internal_error("HTTP stream cancelled; outcome uncertain", None));
+                        }
+                        reply = process_transport.receive() => match reply {
+                            Some(JsonRpcMessage::Response(reply)) => {
+                                if reply.id != context.id {
+                                    record(LogType::McpProxy, LogStatus::Error, "mcp_proxy_backend_response_mismatch");
+                                    break Err(ErrorData::internal_error("backend response ID mismatch", None));
+                                }
+                                break Ok(reply.result);
                             }
-                        }
-                        break Err(ErrorData::internal_error("HTTP stream cancelled; outcome uncertain", None));
-                    }
-                    reply = process_transport.receive() => match reply {
-                        Some(JsonRpcMessage::Response(reply)) => {
-                            if reply.id != context.id {
-                                break Err(ErrorData::internal_error("backend response ID mismatch", None));
+                            Some(JsonRpcMessage::Error(reply)) => {
+                                if reply.id.as_ref() != Some(&context.id) {
+                                    record(LogType::McpProxy, LogStatus::Error, "mcp_proxy_backend_response_mismatch");
+                                    break Err(ErrorData::internal_error("backend response ID mismatch", None));
+                                }
+                                break Err(reply.error);
                             }
-                            break Ok(reply.result);
-                        }
-                        Some(JsonRpcMessage::Error(reply)) => {
-                            if reply.id.as_ref() != Some(&context.id) {
-                                break Err(ErrorData::internal_error("backend response ID mismatch", None));
+                            Some(JsonRpcMessage::Notification(reply)) => {
+                                tokio::select! {
+                                    biased;
+                                    _ = &mut cancelled => {
+                                        record(LogType::McpProxy, LogStatus::Success, "mcp_proxy_forward_cancelled");
+                                        break Err(ErrorData::internal_error("HTTP stream cancelled; outcome uncertain", None));
+                                    },
+                                    _ = context.peer.send_notification(reply.notification) => {},
+                                }
                             }
-                            break Err(reply.error);
-                        }
-                        Some(JsonRpcMessage::Notification(reply)) => {
-                            let _ = context.peer.send_notification(reply.notification).await;
-                        }
-                        Some(JsonRpcMessage::Request(_)) => {
-                            break Err(ErrorData::internal_error("modern backend emitted active request", None));
-                        }
-                        None => {
-                            break Err(ErrorData::internal_error("backend closed", None));
+                            Some(JsonRpcMessage::Request(_)) => {
+                                record(LogType::McpProxy, LogStatus::Error, "mcp_proxy_backend_request_unsupported");
+                                break Err(ErrorData::internal_error("modern backend emitted active request", None));
+                            }
+                            None => {
+                                record(LogType::McpProxy, LogStatus::Error, "mcp_proxy_backend_closed");
+                                break Err(ErrorData::internal_error("backend closed", None));
+                            }
                         }
                     }
                 }
-            },
+            }
         };
 
         let (transport, cleanup) =
@@ -741,7 +875,11 @@ impl ModernBridge {
 
         if let Err(error) = cleanup {
             owner.budget().record_cleanup_failure();
-            eprintln!("warning: MCP modern bridge cleanup failed: {error}");
+            record(
+                LogType::McpProxy,
+                LogStatus::Error,
+                "mcp_proxy_bridge_cleanup_failed",
+            );
 
             return Err(ErrorData::internal_error(
                 format!("MCP process cleanup failed; outcome uncertain: {error}"),

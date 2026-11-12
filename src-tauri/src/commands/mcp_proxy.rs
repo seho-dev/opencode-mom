@@ -485,24 +485,54 @@ fn import_server(
     })
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveProxyProcess {
+    id: String,
+    service_id: String,
+    pid: Option<u32>,
+    uptime: u64,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveProxyProcesses {
+    generation: u64,
+    processes: Vec<ActiveProxyProcess>,
+}
+
+#[tauri::command]
+pub async fn list_mcp_proxy_processes(
+    proxy: tauri::State<'_, Arc<ProxyService>>,
+) -> Result<ActiveProxyProcesses, AppError> {
+    let (generation, owners) = proxy.process_snapshot().await;
+    let processes = owners
+        .iter()
+        .map(|owner| {
+            let (id, service_id, uptime) = owner.summary();
+            ActiveProxyProcess {
+                id,
+                service_id,
+                pid: owner.pid(),
+                uptime,
+            }
+        })
+        .collect();
+    Ok(ActiveProxyProcesses {
+        generation,
+        processes,
+    })
+}
+
 #[tauri::command]
 pub async fn close_mcp_proxy_unit(
     proxy: tauri::State<'_, Arc<ProxyService>>,
     request: CloseMcpProxyUnitRequest,
 ) -> Result<(), AppError> {
     let operation = operation(LogType::McpProxy, "mcp_proxy_unit_close");
-    let result = async {
-        if request.expected_generation != proxy.generation() {
-            return Err(AppError::validation("proxy runtime generation conflict"));
-        }
-        proxy
-            .legacy_sessions()
-            .close_session(&request.unit_id)
-            .await?;
-
-        Ok(())
-    }
-    .await;
+    let result = proxy
+        .close_unit(&request.unit_id, request.expected_generation)
+        .await;
     operation.finish(&result);
     result
 }

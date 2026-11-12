@@ -6,9 +6,10 @@ pub(crate) mod session;
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use tokio::sync::{Mutex, RwLock};
@@ -17,9 +18,11 @@ use tokio_util::sync::CancellationToken;
 use crate::error::AppError;
 use crate::logging::{operation, record, LogStatus, LogType};
 use crate::mcp_proxy::config::{GatewaySettings, ProxyConfig};
-use crate::mcp_proxy::process::OwnerBudget;
+use crate::mcp_proxy::process::{CloseReason, OwnerBudget, ProcessOwner};
 use crate::mcp_proxy::session::{LegacySessionManager, Observation};
 use crate::paths::ConfigPaths;
+
+const CLEANUP_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -29,6 +32,8 @@ pub struct ProxyService {
     budget: OwnerBudget,
     legacy_sessions: LegacySessionManager,
     shutdown_token: Arc<Mutex<CancellationToken>>,
+    service_tokens: Arc<StdMutex<HashMap<String, CancellationToken>>>,
+    updates: Arc<Mutex<()>>,
     stopped: CancellationToken,
     admission: Arc<RwLock<()>>,
     generation: Arc<AtomicU64>,
@@ -66,6 +71,8 @@ impl ProxyService {
             budget: OwnerBudget::new(max_units),
             legacy_sessions: LegacySessionManager::new(),
             shutdown_token: Arc::new(Mutex::new(stopped.child_token())),
+            service_tokens: Arc::new(StdMutex::new(HashMap::new())),
+            updates: Arc::new(Mutex::new(())),
             stopped,
             admission: Arc::new(RwLock::new(())),
             generation: Arc::new(AtomicU64::new(1)),
@@ -99,35 +106,92 @@ impl ProxyService {
         self.generation.load(Ordering::SeqCst)
     }
 
+    pub(crate) async fn process_snapshot(&self) -> (u64, Vec<ProcessOwner>) {
+        let _update = self.updates.lock().await;
+        (self.generation(), self.budget.active_processes())
+    }
+
+    pub(crate) async fn close_unit(
+        &self,
+        unit_id: &str,
+        expected_generation: u64,
+    ) -> Result<(), AppError> {
+        let service = self.clone();
+        let unit_id = unit_id.to_string();
+        tokio::spawn(async move {
+            let _update = service.updates.lock().await;
+            if expected_generation != service.generation() {
+                return Err(AppError::validation("proxy runtime generation conflict"));
+            }
+            if service
+                .legacy_sessions
+                .close_process_session(&unit_id)
+                .await?
+                || service
+                    .legacy_sessions
+                    .close_session(&unit_id)
+                    .await?
+                    .is_some()
+            {
+                return Ok(());
+            }
+            let owner = service
+                .budget
+                .active_processes()
+                .into_iter()
+                .find(|owner| owner.summary().0 == unit_id)
+                .ok_or_else(|| AppError::not_found("MCP process no longer active"))?;
+            let result = tokio::time::timeout(CLEANUP_TIMEOUT, owner.close(CloseReason::Normal))
+                .await
+                .map_err(|_| cleanup_timeout("MCP process cleanup timed out; cleanup continues"))
+                .and_then(|result| {
+                    result.map(|_| ()).map_err(|_| {
+                        AppError::configuration("MCP process cleanup failed; outcome uncertain")
+                    })
+                });
+            if result.is_err() {
+                service.budget.record_cleanup_failure();
+            }
+            result
+        })
+        .await
+        .map_err(|error| {
+            self.budget.record_cleanup_failure();
+            AppError::configuration(format!("MCP unit cleanup task failed: {error}"))
+        })?
+    }
+
     pub(crate) async fn request_token(&self) -> CancellationToken {
         self.shutdown_token.lock().await.clone()
     }
 
+    pub(crate) async fn service_token(&self, service_id: &str) -> CancellationToken {
+        let token = self.shutdown_token.lock().await;
+        self.service_tokens
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .entry(service_id.to_owned())
+            .or_insert_with(|| token.child_token())
+            .clone()
+    }
+
     pub(crate) async fn revoke_http_requests(&self) -> Result<(), AppError> {
+        let _update = self.updates.lock().await;
         let config = self.config.write().await;
         let mut token = self.shutdown_token.lock().await;
         token.cancel();
+        self.service_tokens
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
         self.generation.fetch_add(1, Ordering::SeqCst);
         drop(config);
 
         // Keep fresh request snapshots blocked until previous owners and queued permits drain.
-        let result = tokio::time::timeout(Duration::from_secs(8), async {
-            let admission = self.admission.write().await;
-            let cleanup = self.legacy_sessions.close_all().await;
-            drop(admission);
-            cleanup?;
-            if self.budget.cleanup_failed() {
-                return Err(AppError::configuration(
-                    "MCP process cleanup failed; outcome uncertain",
-                ));
-            }
-            self.budget.wait_idle().await;
-
-            Ok(())
-        })
-        .await
-        .map_err(|_| AppError::configuration("timed out revoking MCP HTTP requests"))
-        .and_then(|result| result);
+        let result = tokio::time::timeout(CLEANUP_TIMEOUT, self.drain_requests())
+            .await
+            .map_err(|_| cleanup_timeout("timed out revoking MCP HTTP requests"))
+            .and_then(|result| result);
         if result.is_err() {
             self.stopped.cancel();
             self.budget.record_cleanup_failure();
@@ -169,6 +233,7 @@ impl ProxyService {
         mut new_config: ProxyConfig,
         expected_revision: u64,
     ) -> Result<(), AppError> {
+        let _update = self.updates.lock().await;
         let mut config_guard = self.config.write().await;
         if config_guard.revision != expected_revision {
             return Err(AppError::validation(
@@ -211,36 +276,56 @@ impl ProxyService {
             token.cancel();
             *token = self.stopped.child_token();
         }
+        {
+            let mut tokens = self
+                .service_tokens
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if disabling {
+                tokens.clear();
+            } else {
+                for id in &changed_services {
+                    if let Some(token) = tokens.remove(id) {
+                        token.cancel();
+                    }
+                }
+            }
+        }
         *config_guard = new_config;
         self.generation.fetch_add(1, Ordering::SeqCst);
+        // Readers observe the committed revision even if cancellation-safe cleanup stalls.
+        drop(config_guard);
         record(
             LogType::McpProxy,
             LogStatus::Success,
             "mcp_proxy_config_committed",
         );
-        if disabling {
-            if self.legacy_sessions.close_all().await.is_err() {
-                record(
-                    LogType::McpProxy,
-                    LogStatus::Error,
-                    "mcp_proxy_config_committed_cleanup_failed",
-                );
+        let cleanup = operation(LogType::McpProxy, "mcp_proxy_config_cleanup");
+        let result = tokio::time::timeout(CLEANUP_TIMEOUT, async {
+            if disabling {
+                self.drain_requests().await
+            } else {
+                session::finish_cleanup(
+                    futures::future::join_all(
+                        changed_services
+                            .iter()
+                            .map(|id| self.legacy_sessions.close_revoked_service_sessions(id)),
+                    )
+                    .await,
+                )
             }
-        } else {
-            for id in changed_services {
-                if self
-                    .legacy_sessions
-                    .close_service_sessions(&id)
-                    .await
-                    .is_err()
-                {
-                    record(
-                        LogType::McpProxy,
-                        LogStatus::Error,
-                        "mcp_proxy_config_committed_cleanup_failed",
-                    );
-                }
-            }
+        })
+        .await
+        .map_err(|_| cleanup_timeout("timed out cleaning up committed MCP configuration"))
+        .and_then(|result| result);
+        cleanup.finish(&result);
+        if result.is_err() {
+            self.budget.record_cleanup_failure();
+            record(
+                LogType::McpProxy,
+                LogStatus::Error,
+                "mcp_proxy_config_committed_cleanup_failed",
+            );
         }
 
         Ok(())
@@ -265,22 +350,42 @@ impl ProxyService {
     }
 
     async fn shutdown_owned(&self, deadline: Duration) -> Result<(), AppError> {
-        let mut cleanup = None;
-        let wait = tokio::time::timeout(deadline, async {
-            let admission = self.admission.write().await;
-            cleanup = Some(self.legacy_sessions.close_all().await);
-            drop(admission);
-            self.budget.wait_idle().await;
+        let result = tokio::time::timeout(deadline, async {
+            let _update = self.updates.lock().await;
+            self.drain_requests().await?;
+            self.generation.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         })
         .await
-        .map_err(|_| AppError::configuration("timed out waiting for MCP proxy shutdown"));
-        let result = session::finish_cleanup(cleanup.into_iter().chain([wait]));
+        .map_err(|_| cleanup_timeout("timed out waiting for MCP proxy shutdown"))
+        .and_then(|result| result);
         if result.is_err() {
             self.budget.record_cleanup_failure();
         }
         result?;
-        self.generation.fetch_add(1, Ordering::SeqCst);
-
         Ok(())
     }
+
+    async fn drain_requests(&self) -> Result<(), AppError> {
+        let admission = self.admission.write().await;
+        let cleanup = self.legacy_sessions.close_all().await;
+        drop(admission);
+        cleanup?;
+        if self.budget.cleanup_failed() {
+            return Err(AppError::configuration(
+                "MCP process cleanup failed; outcome uncertain",
+            ));
+        }
+        self.budget.wait_idle().await;
+        Ok(())
+    }
+}
+
+fn cleanup_timeout(message: &'static str) -> AppError {
+    record(
+        LogType::McpProxy,
+        LogStatus::Error,
+        "mcp_proxy_cleanup_timeout",
+    );
+    AppError::configuration(message)
 }

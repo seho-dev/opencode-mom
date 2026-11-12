@@ -110,6 +110,10 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
     updateMcpProxyServer: vi.fn().mockResolvedValue(fullServer),
     deleteMcpProxyServer: vi.fn().mockResolvedValue(undefined),
     importMcpProxyServer: vi.fn().mockResolvedValue(fullServer),
+    listMcpProxyProcesses: vi.fn().mockResolvedValue({
+      generation: 1,
+      processes: [{ id: 'unit-abc', serviceId: 'fs-server', pid: 123, uptime: 10 }],
+    }),
     closeMcpProxyUnit: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   } as unknown as ConfigStore;
@@ -207,13 +211,13 @@ async function startMutation(action: (typeof mutations)[number][0]) {
     await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Save Server' }));
   } else {
-    const name = action === 'delete' ? 'Delete' : 'Close Unit';
+    const name = action === 'delete' ? 'Delete' : 'Active Processes';
     await fireEvent.click(screen.getByRole('button', { name }));
     const dialog = within(screen.getByRole('dialog'));
     if (action === 'close') {
-      await fireEvent.input(dialog.getByRole('textbox'), { target: { value: '  unit-abc  ' } });
+      await fireEvent.click(await dialog.findByRole('radio'));
     }
-    await fireEvent.click(dialog.getByRole('button', { name }));
+    await fireEvent.click(dialog.getByRole('button', { name: action === 'close' ? 'Terminate Process' : name }));
   }
 }
 
@@ -556,7 +560,7 @@ test('import ignores duplicate submissions and late completion after unmount', a
   await fireEvent.submit(screen.getByRole('form'));
   await fireEvent.submit(screen.getByRole('form'));
   expect(config.importMcpProxyServer).toHaveBeenCalledExactlyOnceWith({
-    scope: 'global',
+    sourceScope: 'global',
     serverName: 'local-fs',
     expectedSourcePath: '/tmp/opencode.json',
   });
@@ -729,7 +733,7 @@ test('ProxyPanel renders running status, server list and supports close unit', a
   expect(screen.getByText('fs-server')).toBeDefined();
 
   // Click Close Unit button
-  const buttons = screen.getAllByRole('button', { name: /Close Unit/i });
+  const buttons = screen.getAllByRole('button', { name: /Active Processes/i });
   const triggerBtn = buttons[0];
 
   if (!triggerBtn) throw new Error('Trigger button not found');
@@ -737,12 +741,9 @@ test('ProxyPanel renders running status, server list and supports close unit', a
   await fireEvent.click(triggerBtn);
 
   // Modal appears with input
-  const input = screen.getByRole('textbox', { name: 'Enter unit or session ID to close:' });
+  await fireEvent.click(await screen.findByRole('radio'));
 
-  await fireEvent.input(input, { target: { value: 'unit-abc' } });
-
-  const modalButtons = screen.getAllByRole('button', { name: /Close Unit/i });
-  const confirmBtn = modalButtons[1];
+  const confirmBtn = screen.getByRole('button', { name: 'Terminate Process' });
 
   if (!confirmBtn) throw new Error('Confirm button not found');
 
@@ -754,6 +755,80 @@ test('ProxyPanel renders running status, server list and supports close unit', a
       expectedGeneration: 1,
     });
   });
+});
+
+test('process search matches service IDs, process IDs and PIDs without retaining a hidden selection', async () => {
+  const config = makeConfig({
+    listMcpProxyProcesses: vi.fn().mockResolvedValue({
+      generation: 1,
+      processes: [
+        { id: 'unit-abc', serviceId: 'fs-server', pid: 123, uptime: 10 },
+        { id: 'unit-other', serviceId: 'db-server', pid: null, uptime: 20 },
+      ],
+    }),
+  });
+
+  render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+  await screen.findByText('Filesystem Server');
+  await fireEvent.click(screen.getByRole('button', { name: 'Active Processes' }));
+
+  let dialog = within(screen.getByRole('dialog'));
+  const search = dialog.getByRole('searchbox', { name: 'Search processes' });
+
+  expect(await dialog.findAllByRole('radio')).toHaveLength(2);
+  expect(dialog.getByRole('status').textContent).toBe('2 of 2 processes');
+
+  for (const value of [' FS-SERVER ', ' UNIT-ABC ', ' 123 ']) {
+    await fireEvent.input(search, { target: { value } });
+    expect(dialog.getAllByRole('radio')).toHaveLength(1);
+    expect(dialog.getByRole('radio').getAttribute('value')).toBe('unit-abc');
+    expect(dialog.getByRole('status').textContent).toBe('1 of 2 processes');
+  }
+
+  await fireEvent.click(dialog.getByRole('radio'));
+  expect((dialog.getByRole('button', { name: 'Terminate Process' }) as HTMLButtonElement).disabled).toBe(false);
+  await fireEvent.input(search, { target: { value: 'null' } });
+  expect(dialog.queryByRole('radio')).toBeNull();
+  expect(dialog.getByText('No matches')).toBeDefined();
+  expect(dialog.getByRole('status').textContent).toBe('0 of 2 processes');
+  expect((dialog.getByRole('button', { name: 'Terminate Process' }) as HTMLButtonElement).disabled).toBe(true);
+
+  await fireEvent.input(search, { target: { value: '' } });
+  expect(dialog.getAllByRole('radio')).toHaveLength(2);
+  expect(dialog.getAllByRole('radio').every((radio) => !(radio as HTMLInputElement).checked)).toBe(true);
+  expect(config.listMcpProxyProcesses).toHaveBeenCalledOnce();
+  expect(config.closeMcpProxyUnit).not.toHaveBeenCalled();
+
+  await fireEvent.input(search, { target: { value: 'not-found' } });
+  await fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Active Processes' }));
+  dialog = within(screen.getByRole('dialog'));
+  expect((dialog.getByRole('searchbox', { name: 'Search processes' }) as HTMLInputElement).value).toBe('');
+  expect(await dialog.findAllByRole('radio')).toHaveLength(2);
+  await fireEvent.input(dialog.getByRole('searchbox', { name: 'Search processes' }), {
+    target: { value: 'unit-other' },
+  });
+  await fireEvent.click(dialog.getByRole('radio'));
+  await fireEvent.click(dialog.getByRole('button', { name: 'Terminate Process' }));
+  expect(config.closeMcpProxyUnit).toHaveBeenCalledExactlyOnceWith({ unitId: 'unit-other', expectedGeneration: 1 });
+});
+
+test('process search keeps the empty-process state and translated labels', async () => {
+  const config = makeConfig({
+    preferences: { locale: 'zh', theme: 'dark' },
+    listMcpProxyProcesses: vi.fn().mockResolvedValue({ generation: 1, processes: [] }),
+  });
+
+  render(ProxyPanel, {}, { wrapper: Harness, wrapperProps: { config } });
+  await screen.findByText('Filesystem Server');
+  await fireEvent.click(screen.getByRole('button', { name: '活动进程' }));
+
+  const dialog = within(screen.getByRole('dialog'));
+
+  expect(dialog.getByRole('searchbox', { name: '搜索进程' })).toBeDefined();
+  expect(await dialog.findByText('没有活动代理进程。')).toBeDefined();
+  expect(dialog.getByRole('status').textContent).toBe('显示 0 / 0 个进程');
+  expect((dialog.getByRole('button', { name: '终止进程' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 test('ProxyPanel master switch toggles gateway enablement', async () => {

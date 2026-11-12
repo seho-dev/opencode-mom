@@ -892,6 +892,84 @@ fn every_declared_type_roundtrips_through_the_instance_writer_and_query() {
 }
 
 #[test]
+fn mcp_proxy_diagnostics_roundtrip_without_private_errors_or_context() {
+    let (_directory, _paths, service) = setup();
+    service.set_enabled(true).unwrap();
+    let events = [
+        "mcp_proxy_http_request",
+        "mcp_proxy_request_received",
+        "mcp_proxy_request_invalid",
+        "mcp_proxy_route_unavailable",
+        "mcp_proxy_method_rejected",
+        "mcp_proxy_capacity_exhausted",
+        "mcp_proxy_admission_closed",
+        "mcp_proxy_request_failed",
+        "mcp_proxy_route_legacy",
+        "mcp_proxy_route_modern",
+        "mcp_proxy_config_cleanup",
+        "mcp_proxy_cleanup_timeout",
+        "mcp_proxy_session_created",
+        "mcp_proxy_session_cleanup",
+        "mcp_proxy_session_cleanup_failed",
+        "mcp_proxy_session_cleanup_timeout",
+        "mcp_proxy_initialize_failed",
+        "mcp_proxy_initialized",
+        "mcp_proxy_legacy_forwarded",
+        "mcp_proxy_forward",
+        "mcp_proxy_forward_cancelled",
+        "mcp_proxy_forward_timeout",
+        "mcp_proxy_backend_send_failed",
+        "mcp_proxy_backend_sent",
+        "mcp_proxy_backend_response_mismatch",
+        "mcp_proxy_backend_request_unsupported",
+        "mcp_proxy_backend_closed",
+        "mcp_proxy_bridge_cleanup_failed",
+        "mcp_proxy_sdk_task_failed",
+        "mcp_proxy_sdk_setup_failed",
+        "mcp_proxy_process_spawn_failed",
+        "mcp_proxy_process_started",
+        "mcp_proxy_process_closed",
+        "mcp_proxy_process_cleanup_failed",
+    ];
+    for event in events {
+        service
+            .operation(LogType::McpProxy, event)
+            .finish::<()>(&Err(AppError::configuration(
+                "Bearer private-token /private/cwd command-argv environment-secret tool-payload",
+            )));
+    }
+    service.record(
+        LogType::McpProxy,
+        LogStatus::Error,
+        "mcp_proxy_private-token",
+    );
+    let page = service
+        .query(LogQuery {
+            kind: Some(LogType::McpProxy),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(page.records.len(), events.len());
+    for (record, event) in page.records.iter().zip(events.into_iter().rev()) {
+        assert_eq!(record.event, event);
+        assert_eq!(record.status, LogStatus::Error);
+        assert_eq!(record.error_code, Some(ErrorCode::ConfigurationFailed));
+        assert!(record.context.is_none());
+    }
+    let json = serde_json::to_string(&page).unwrap();
+    for private in [
+        "private-token",
+        "/private/cwd",
+        "command-argv",
+        "environment-secret",
+        "tool-payload",
+    ] {
+        assert!(!json.contains(private));
+    }
+    service.shutdown(Duration::from_secs(1));
+}
+
+#[test]
 fn invalid_queries_do_not_stop_healthy_recording() {
     let (_directory, _paths, service) = setup();
     service.set_enabled(true).unwrap();

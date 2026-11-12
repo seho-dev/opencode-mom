@@ -141,15 +141,6 @@ function navigate(event: KeyboardEvent, index: number) {
           />
         </div>
       {/if}
-      <Button
-        variant="secondary"
-        size="icon-sm"
-        disabled={loading}
-        onclick={onrefresh}
-        aria-label={i18n.t('dashboard.refreshActivity')}
-        title={i18n.t('dashboard.refreshActivity')}
-        ><RefreshCw size={13} class={loading ? 'animate-spin motion-reduce:animate-none' : ''} /></Button
-      >
     </div>
   </header>
   {#if loading}

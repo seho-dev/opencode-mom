@@ -4,7 +4,7 @@ Source-relative paths below are relative to `src/routes/`, not this docs directo
 
 ## Dashboard and refresh ownership
 
-- **Dashboard status**: Keep runtime browsing/switch dialogs separate from automatic config writes. Translate MCP Proxy status with `mcp.proxy.running`/`mcp.proxy.stopped` in compact wrap-safe text, not numeric-metric typography; failed reads stay unknown. Scope Heatmap assertions to its labelled region because Token Usage may share period captions.
+- **Dashboard refresh**: Entering the Dashboard requests a config refresh and a forced Token Usage snapshot (`refreshActivity(true)`, then polls every 1000 ms only while `refreshing`). `config.serviceTargetVersion` resets activity state and forces a fresh snapshot; no manual refresh exists in the normal state. Failed reads keep the last snapshot and expose `dashboard.retryTokenUsage` (plus Heatmap `onrefresh`) with `refreshing` disabled, and `usageStale`/`usageRefreshFailed` copy; stale responses are dropped via `usageGeneration`. Keep runtime browsing/switch dialogs separate from automatic config writes. Translate MCP Proxy status with `mcp.proxy.running`/`mcp.proxy.stopped` in compact wrap-safe text, not numeric-metric typography; failed reads stay unknown. Scope Heatmap assertions to its labelled region because Token Usage may share period captions.
 
 - **List refresh**: Provider/model/agent/group lists call `config.refresh(true)` and guard loading/saving/local refresh; MCP/skill lists reload only their own data and diagnostics. Pagination uses five rows for the former and ten for the latter.
 
@@ -25,7 +25,7 @@ Source-relative paths below are relative to `src/routes/`, not this docs directo
 | Responsibility | File | Description |
 | --- | --- | --- |
 | Bootstrap | `+layout.svelte` | Creates config/i18n contexts; disables global initialization for `/island`; registers main/tray listeners and disposes subscriptions. |
-| Dashboard | `+page.svelte` | Composes runtime selectors, Quick Actions, System Status, Heatmap, and Token Usage while sharing one activity read between independent periods. |
+| Dashboard | `+page.svelte` | Composes runtime selectors, Quick Actions, System Status, Heatmap, and Token Usage; refreshes config on entry and shares one forced activity snapshot between independent periods. |
 | Resource scope | `agents/+page.svelte`, `mcp/+page.svelte`, `skills/+page.svelte` | Local ResourceScope uses saved project roots; Global retains CRUD while project and Global comparison entries are read-only. |
 | Tray lifecycle | `tray/+page.svelte` | Coalesces focus/show events; refreshes config and health when shown. |
 | Cross-route tests | `__tests__/list-refresh.test.ts`, `__tests__/layout-preferences.test.ts` | Cover draft-preserving refresh and window-specific listener cleanup. |
@@ -33,3 +33,7 @@ Source-relative paths below are relative to `src/routes/`, not this docs directo
 ## Independent native windows
 
 Island lifecycle contracts belong to [the Island guide](../island/AGENTS.md), not the main route refresh lifecycle. Settings lifecycle contracts belong to [the settings guide](../settings/AGENTS.md); MCP configuration and Proxy behavior belong to [the MCP guide](../mcp/AGENTS.md).
+
+### Cached usage refresh
+
+Dashboard initially reads the backend usage snapshot without forcing a scan. Cached statistics remain visible during background refresh and on refresh failure, with last-update/stale status. Polling runs only while a refresh is active, requests only changed records, and stops on unmount. Service-target changes clear displayed usage and invalidate late responses. Manual refresh bypasses the backend TTL.

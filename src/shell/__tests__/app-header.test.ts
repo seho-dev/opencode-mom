@@ -18,6 +18,10 @@ function mount(overrides: Record<string, unknown> = {}, props: { macos?: boolean
     loading: false,
     splashLoading: false,
     openProjectPage: vi.fn().mockResolvedValue(undefined),
+    saving: false,
+    switching: false,
+    reloading: false,
+    reloadOpencode: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
   const view = render(AppHeader, props, {

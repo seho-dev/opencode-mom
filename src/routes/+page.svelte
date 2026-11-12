@@ -1,6 +1,6 @@
 <script lang="ts">
 import { Activity, Bot, Boxes, Cloud, Layers3, RefreshCw, Server } from '@lucide/svelte';
-import { onMount, untrack } from 'svelte';
+import { onMount, tick, untrack } from 'svelte';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import ActivityHeatmap from '$src/components/dashboard/ActivityHeatmap.svelte';
@@ -37,6 +37,7 @@ let usageGeneration = 0;
 let error = $state<string | null>(null);
 let proxyState = $state<McpProxyStateDto | null>(null);
 let proxyLoading = $state(true);
+let configRefreshPending = true;
 let request = false;
 let mounted = false;
 usageGeneration += 1;
@@ -97,6 +98,23 @@ const quickActions = [
   { href: '/models/new', labelKey: 'dashboard.quickActionModel' as const, Icon: Boxes },
   { href: '/agents/new', labelKey: 'dashboard.quickActionAgent' as const, Icon: Bot },
 ];
+
+$effect(() => {
+  if (!configRefreshPending || busy || config.catalogLoading) return;
+
+  let cancelled = false;
+
+  void tick().then(() => {
+    if (cancelled || busy || config.catalogLoading) return;
+
+    configRefreshPending = false;
+    void config.refresh(true).catch(() => {});
+  });
+
+  return () => {
+    cancelled = true;
+  };
+});
 
 function changeUsagePeriod(value: string) {
   if (usagePeriod !== value) {

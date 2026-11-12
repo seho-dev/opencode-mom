@@ -1,10 +1,18 @@
 <script lang="ts">
 import { Moon, RefreshCw, Sun } from '@lucide/svelte';
+import { Button } from '$src/components/button/index.js';
+import * as Dialog from '$src/components/dialog/index.js';
 import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 
 const config = getConfig();
 const i18n = getI18n();
+let confirmingReload = $state(false);
+let submitting = $state(false);
+const busy = $derived(
+  submitting || config.splashLoading || config.loading || config.saving || config.switching || config.reloading,
+);
+const reloadLabel = $derived(i18n.t(submitting || config.reloading ? 'header.reloading' : 'header.reloadOpencode'));
 const theme = $derived(config.preferences.theme);
 const locale = $derived(config.preferences.locale);
 const themeLabel = $derived(theme === 'dark' ? i18n.t('appearance.switchToLight') : i18n.t('appearance.switchToDark'));
@@ -12,20 +20,65 @@ const themeLabel = $derived(theme === 'dark' ? i18n.t('appearance.switchToLight'
 function toggleTheme() {
   config.setTheme(theme === 'dark' ? 'light' : 'dark');
 }
+
+async function reloadNow() {
+  if (busy) return;
+
+  submitting = true;
+
+  try {
+    await config.reloadOpencode();
+    confirmingReload = false;
+  } catch {
+    /* Global feedback retains the error; keep the dialog open for retry. */
+  } finally {
+    submitting = false;
+  }
+}
 </script>
 
 <!-- biome-ignore lint/a11y/useSemanticElements: labeled button group; a fieldset's default border/margin/padding would alter the layout -->
 <div class="appearance" role="group" aria-label={i18n.t('appearance.group')}>
-  <button
-    type="button"
-    class="appearance-button"
-    aria-label={i18n.t('appearance.refreshAll')}
-    title={i18n.t('appearance.refreshAll')}
-    disabled={config.splashLoading || config.loading}
-    onclick={() => void config.refreshAll().catch(() => {})}
-  >
-    <RefreshCw size={14} aria-hidden="true" />
-  </button>
+  <Dialog.Root open={confirmingReload} onOpenChange={(open) => { if (!busy) confirmingReload = open; }}>
+    <Dialog.Trigger disabled={busy}>
+      {#snippet child({ props })}
+        <button
+          {...props}
+          type="button"
+          class="appearance-button"
+          aria-label={reloadLabel}
+          title={reloadLabel}
+          aria-busy={submitting || config.reloading}
+          disabled={busy}
+        >
+          <RefreshCw
+            size={14}
+            class={submitting || config.reloading ? 'animate-spin motion-reduce:animate-none' : ''}
+            aria-hidden="true"
+          />
+        </button>
+      {/snippet}
+    </Dialog.Trigger>
+    <Dialog.Content
+      aria-busy={busy}
+      onEscapeKeydown={(event) => { if (busy) event.preventDefault(); }}
+      onInteractOutside={(event) => { if (busy) event.preventDefault(); }}
+    >
+      <Dialog.Header>
+        <Dialog.Title>{i18n.t('header.reloadTitle')}</Dialog.Title>
+        <Dialog.Description>{i18n.t('header.reloadDescription')}</Dialog.Description>
+        {#if submitting || config.reloading}
+          <span class="sr-only" role="status">{i18n.t('header.reloading')}</span>
+        {/if}
+      </Dialog.Header>
+      <Dialog.Footer>
+        <Button variant="outline" disabled={busy} onclick={() => (confirmingReload = false)}
+          >{i18n.t('common.cancel')}</Button
+        >
+        <Button disabled={busy} onclick={reloadNow}>{reloadLabel}</Button>
+      </Dialog.Footer>
+    </Dialog.Content>
+  </Dialog.Root>
   <button type="button" class="appearance-button" aria-label={themeLabel} title={themeLabel} onclick={toggleTheme}>
     {#if theme === 'dark'}
       <Sun size={14} aria-hidden="true" />

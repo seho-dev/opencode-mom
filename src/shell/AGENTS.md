@@ -15,7 +15,7 @@ shell/
 ├── AppSidebar.svelte          # Desktop links, version, new-version hint
 ├── MobileNavigation.svelte    # Focus-managed navigation drawer
 ├── navigation.ts              # Shared routes and active matching
-├── AppearanceControls.svelte  # Refresh, theme, locale
+├── AppearanceControls.svelte  # OpenCode restart, theme, locale
 ├── ConfigFeedback.svelte      # Errors and notices to toasts
 ├── toast.svelte.ts            # Reactive queue and dismissal
 ├── Toaster.svelte             # Keyed rendering and exit state
@@ -29,7 +29,7 @@ shell/
 | :--- | :--- | :--- |
 | Composition | `AppShell.svelte` | Owns route-content framing and shared feedback mounting. |
 | Routing | `navigation.ts`, `MobileNavigation.svelte` | Change route definitions and drawer behavior together. |
-| Preferences | `AppearanceControls.svelte` | Changes theme/locale and requests refresh through config. |
+| Preferences | `AppearanceControls.svelte` | Restarts OpenCode after confirmation, and changes theme/locale. |
 | Feedback | `ConfigFeedback.svelte`, `toast.svelte.ts`, `Toaster.svelte` | Connects command recovery and notices to the shared toast queue. |
 
 ## Conventions
@@ -41,10 +41,13 @@ shell/
 - **Update hint**: `AppShell` checks updates once ~5 seconds after mount and then every 2 hours, storing the
   result in `config.updateCheck`; failures are silent. The sidebar shows a hint only when
   `updateCheck.updateAvailable` is true, and it opens the release page — nothing is downloaded or installed.
+  Reload OpenCode lives in the header via the leading `AppearanceControls` icon (`config.reloadOpencode`),
+  which confirms first because it can cancel pending requests; the Dashboard has no reload action.
 - **Shell composition**: Keep `ConfigFeedback` and `Toaster` at shell scope, not inside individual pages;
   the route layout owns the separate `SplashScreen` instance.
-- **Control guards**: Disable reload and refresh during their corresponding busy states; change theme
-  and locale through config methods. See the linked interaction contracts for exact guards.
+- **Control guards**: Disable the header restart during `reloading`, `switching`, or an open confirmation;
+  disable the update hint while its open request is in flight; change theme and locale through config methods.
+  See the linked interaction contracts for exact guards.
 - **Accessible interactions**: Preserve drawer focus restoration, keyboard trapping, and navigation
   completion; guard duplicate GitHub opens, toast failures, and invalidate late responses on teardown.
 - **Feedback ownership**: Preserve conflict-specific recovery actions and consume success notices once;

@@ -12,6 +12,7 @@ import type { McpProxyStateDto } from '$src/types/mcp-proxy.js';
 import type { TokenUsageRecord } from '$src/types/stats.js';
 import { formatTokensM } from '$src/utils/dashboard.js';
 import Dashboard from '../+page.svelte';
+import { createDashboardConfig } from './dashboard-config.svelte.js';
 
 const scrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
 
@@ -69,9 +70,11 @@ function mount(overrides: Record<string, unknown> = {}) {
     saving: false,
     switching: false,
     reloading: false,
+    catalogLoading: false,
     error: null,
     switchGroup: vi.fn().mockResolvedValue(undefined),
     reloadOpencode: vi.fn().mockResolvedValue(undefined),
+    refresh: vi.fn().mockResolvedValue(undefined),
     loadTokenUsageRecords: vi.fn().mockResolvedValue(records),
     ...overrides,
   } as unknown as ConfigStore;
@@ -348,9 +351,10 @@ test('record loading and failure hide both token views without blocking groups; 
   expectTokens(null, null);
   expect(tokenCard().getAttribute('aria-busy')).toBe('true');
 
-  for (const name of ['Usage period', 'Heatmap period', 'Year', 'Refresh activity']) {
+  for (const name of ['Usage period', 'Heatmap period', 'Year']) {
     expect(labeledButton(name).disabled).toBe(true);
   }
+  expect(screen.queryByRole('button', { name: 'Refresh activity' })).toBeNull();
 
   const switchTrigger = labeledButton('Switch Native group');
 
@@ -773,4 +777,114 @@ test('prioritizes featured runtime and tile ordering matching default plugin pre
   const tileButtons = screen.getAllByRole('button', { name: /Switch .* group/i });
 
   expect(tileButtons[0].getAttribute('aria-label')).toContain('Slim');
+});
+
+test('Dashboard exposes no reload action or manual refresh entry; the shell owns OpenCode restart', async () => {
+  const { config } = mount();
+  await screen.findByText('2024 total');
+
+  const quickActions = screen.getByRole('region', { name: 'Quick actions' });
+
+  expect(within(quickActions).queryByRole('button')).toBeNull();
+  expect(screen.queryByRole('button', { name: /Reload OpenCode|Reloading/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Refresh activity' })).toBeNull();
+  expect(config.reloadOpencode).not.toHaveBeenCalled();
+});
+
+test('Dashboard refreshes the catalog on entry exactly once and exposes no manual refresh control', async () => {
+  const { config } = mount({ refresh: vi.fn().mockResolvedValue(undefined) });
+  await screen.findByText('2024 total');
+
+  await waitFor(() => expect(config.refresh).toHaveBeenCalledOnce());
+  expect(config.reloadOpencode).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText(/refresh/i, { selector: 'button' })).toBeNull();
+});
+
+// Entry readiness is observable through the usage read, not localized copy.
+const entryRead = (snapshot: { mock: { calls: unknown[] } }) =>
+  waitFor(() => expect(snapshot.mock.calls.length).toBeGreaterThan(0));
+
+function mountReactive(overrides: Parameters<typeof createDashboardConfig>[0] = {}) {
+  const config = createDashboardConfig(overrides);
+  const view = render(Dashboard, {}, { wrapper: Harness, wrapperProps: { config } });
+
+  return { config, ...view };
+}
+
+test('entry refresh waits out a busy state instead of skipping the refresh', async () => {
+  const refresh = vi.fn().mockResolvedValue(undefined);
+  const snapshot = vi.fn().mockResolvedValue({
+    records: [],
+    updatedAt: Date.now(),
+    refreshing: false,
+    stale: false,
+    error: null,
+    resultRevision: 1,
+    targetRevision: 1,
+    cacheScope: 'process',
+  });
+  const { config } = mountReactive({ refresh, switching: true, loadTokenUsageSnapshot: snapshot } as never);
+
+  await entryRead(snapshot);
+  expect(refresh).not.toHaveBeenCalled();
+
+  config.switching = false;
+  await waitFor(() => expect(refresh).toHaveBeenCalledExactlyOnceWith(true));
+  expect(refresh).toHaveBeenCalledOnce();
+});
+
+test('entry refresh stays single-shot when several busy states clear in sequence', async () => {
+  const refresh = vi.fn().mockResolvedValue(undefined);
+  const snapshot = vi.fn().mockResolvedValue({
+    records: [],
+    updatedAt: Date.now(),
+    refreshing: false,
+    stale: false,
+    error: null,
+    resultRevision: 1,
+    targetRevision: 1,
+    cacheScope: 'process',
+  });
+  const { config } = mountReactive({
+    refresh,
+    switching: true,
+    catalogLoading: true,
+    loadTokenUsageSnapshot: snapshot,
+  } as never);
+
+  await entryRead(snapshot);
+  expect(refresh).not.toHaveBeenCalled();
+
+  config.switching = false;
+  await Promise.resolve();
+  expect(refresh).not.toHaveBeenCalled();
+
+  config.catalogLoading = false;
+  await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+
+  config.switching = true;
+  config.switching = false;
+  await Promise.resolve();
+  expect(refresh).toHaveBeenCalledOnce();
+});
+
+test('failed entry read keeps the error visible and the retry path available', async () => {
+  const loadTokenUsageSnapshot = vi.fn().mockRejectedValueOnce(new Error('CLI unavailable')).mockResolvedValueOnce({
+    records,
+    updatedAt: Date.now(),
+    refreshing: false,
+    stale: false,
+    error: null,
+    resultRevision: 1,
+    targetRevision: 1,
+    cacheScope: 'process',
+  });
+
+  mount({ loadTokenUsageSnapshot });
+  await screen.findByText('CLI unavailable');
+  expect(screen.queryByRole('button', { name: 'Refresh activity' })).toBeNull();
+
+  await fireEvent.click(labeledButton('Retry token usage'));
+  await screen.findByText('2024 total');
+  expect(loadTokenUsageSnapshot).toHaveBeenCalledTimes(2);
 });

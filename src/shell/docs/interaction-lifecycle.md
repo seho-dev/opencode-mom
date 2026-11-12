@@ -4,12 +4,14 @@
 
 `AppShell.svelte` renders the `children` snippet inside `main.content` and mounts feedback and toaster
 once. `AppHeader.svelte` and `AppSidebar.svelte` compose header controls, the default-browser GitHub
-opener, and desktop navigation/reload. `navigation.ts` defines `href`, `labelKey`, and icon entries.
+opener, and desktop navigation. `AppearanceControls.svelte`'s leading icon restarts OpenCode (not a
+config refresh); Reload OpenCode as a Dashboard action and manual dashboard refresh are gone —
+the Dashboard refreshes on entry. `navigation.ts` defines `href`, `labelKey`, and icon entries.
 
 - **Shared navigation**: Change links in `navigationItems`; both navigation components use `isNavigationItemActive` for `aria-current`. `/` matches exactly; other entries match the route or a slash-delimited descendant.
-- **Drawer focus**: Opening focuses the close button after `tick`; explicit closing restores menu-button focus. Escape closes and Tab/Shift+Tab cycle the close button, links, and enabled reload button.
-- **Navigation completion**: Drawer links await `goto(href)` before closing; drawer reload closes only after `reloadOpencode` succeeds.
-- **Control guards**: Disable OpenCode reload during `reloading` or `switching`; disable refresh-all during `splashLoading` or `loading`. Theme and locale changes go through config methods.
+- **Drawer focus**: Opening focuses the close button after `tick`; explicit closing restores menu-button focus. Escape closes and Tab/Shift+Tab cycle the close button and links.
+- **Navigation completion**: Drawer links await `goto(href)` before closing.
+- **Control guards**: The header restart button confirms first (it can cancel pending requests) and is disabled during `reloading`, `switching`, or while its confirmation is open; the sidebar update hint is disabled while its open request is in flight. Theme and locale changes go through config methods.
 - **GitHub opener**: Use `config.openProjectPage('repository')` in the header with translated accessible name/title and an appearance-sized icon control; guard pending opens, toast failures through the shared error toast, and invalidate late responses on teardown.
 
 `AppearanceControls.svelte` reads preferences and calls `setTheme`, `setLocale`, and `refreshAll`.

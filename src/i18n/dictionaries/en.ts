@@ -392,8 +392,11 @@ export const en = {
   'header.version': '{version}',
   'header.updateAvailable': 'Update {version}',
   'header.openRelease': 'Version {version} available — open the release page in your browser',
-  'header.reloadOpencode': 'Reload OpenCode',
-  'header.reloading': 'Reloading…',
+  'header.reloadOpencode': 'Restart OpenCode service',
+  'header.reloading': 'Restarting…',
+  'header.reloadTitle': 'Restart OpenCode service?',
+  'header.reloadDescription':
+    'The selected OpenCode service will reload its configuration. This may cancel pending permission or form requests.',
   'header.openMenu': 'Open navigation menu',
   'header.closeMenu': 'Close navigation menu',
   'header.mobileNav': 'Mobile navigation',
@@ -793,7 +796,7 @@ export const en = {
   'groups.reloadTitle': 'Reload opencode now?',
   'groups.reloadDescription':
     '{name} is saved and active. Reload OpenCode to apply; Later or Cancel does not undo the switch.',
-  'groups.reloadWarning': 'May cancel pending permission or form requests. Reload later from the sidebar.',
+  'groups.reloadWarning': 'May cancel pending permission or form requests. Restart later from the header.',
   'groups.reloadLater': 'Later',
   'groups.reloadNow': 'Reload now',
   'groups.reloading': 'Reloading…',

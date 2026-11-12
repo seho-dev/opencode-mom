@@ -28,6 +28,8 @@ pub struct SlashCommandEntry {
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subagent: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parse_error: Option<String>,
     pub source_path: PathBuf,
     pub resolved_path: PathBuf,
     pub content: String,
@@ -90,7 +92,14 @@ fn discover(paths: &ConfigPaths, only: Option<&str>) -> Result<SlashCommandList,
             }
 
             match read_entry(paths, &path) {
-                Ok(entry) => result.data.push(entry),
+                Ok(entry) => {
+                    if let Some(error) = &entry.parse_error {
+                        result
+                            .diagnostics
+                            .push(format!("{}: {error}", path.display()));
+                    }
+                    result.data.push(entry);
+                }
                 Err(error) => result
                     .diagnostics
                     .push(format!("{}: {error}", path.display())),
@@ -199,30 +208,31 @@ fn read_entry(paths: &ConfigPaths, path: &Path) -> Result<SlashCommandEntry, App
         }
     }
 
-    let document = validate_content(&snapshot.content)?;
+    validate_content_limits(&snapshot.content)?;
+    let (frontmatter, parse_error) = match validate_document(&snapshot.content) {
+        Ok(document) => (document.frontmatter, None),
+        Err(error) => (Default::default(), Some(error.to_string())),
+    };
     Ok(SlashCommandEntry {
         id: source_id(path),
         name,
         source_path: path.to_owned(),
         resolved_path: snapshot.path,
         content: snapshot.content,
-        description: document
-            .frontmatter
+        parse_error,
+        description: frontmatter
             .get("description")
             .and_then(|value| value.as_str())
             .map(str::to_owned),
-        agent: document
-            .frontmatter
+        agent: frontmatter
             .get("agent")
             .and_then(|value| value.as_str())
             .map(str::to_owned),
-        model: document
-            .frontmatter
+        model: frontmatter
             .get("model")
             .and_then(|value| value.as_str())
             .map(str::to_owned),
-        subagent: document
-            .frontmatter
+        subagent: frontmatter
             .get("subagent")
             .and_then(|value| value.as_bool()),
     })
@@ -280,12 +290,21 @@ fn validate_name(name: &str) -> Result<(), AppError> {
 }
 
 fn validate_content(content: &str) -> Result<MarkdownAgentDocument, AppError> {
+    validate_content_limits(content)?;
+    validate_document(content)
+}
+
+fn validate_content_limits(content: &str) -> Result<(), AppError> {
     if content.len() > MAX_CONTENT_BYTES || content.contains('\0') {
         return Err(AppError::validation(
             "Slash-command content must be at most 2 MiB without NUL",
         ));
     }
 
+    Ok(())
+}
+
+fn validate_document(content: &str) -> Result<MarkdownAgentDocument, AppError> {
     let input = content.strip_prefix('\u{feff}').unwrap_or(content);
     if let Some(frontmatter) = input
         .strip_prefix("---\n")

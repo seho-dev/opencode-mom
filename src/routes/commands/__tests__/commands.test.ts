@@ -260,3 +260,91 @@ test('route change destroys a pending editor so a late saved source cannot repla
   await waitFor(() => expect(screen.queryByRole('heading', { name: `/${command.name}` })).toBeNull());
   expect(goto).not.toHaveBeenCalled();
 });
+
+const broken: SlashCommandEntry = {
+  id: 'ponytail-debt',
+  name: 'ponytail-debt',
+  parseError: 'invalid YAML frontmatter: mapping values are not allowed in this context at line 1 column 30',
+  sourcePath: '/global/commands/ponytail-debt.md',
+  resolvedPath: '/resolved/commands/ponytail-debt.md',
+  content: '---\nponytail: debt: x\n---\nbody',
+};
+
+test('unreadable command stays listed with its error and a repair link', async () => {
+  const store = config({
+    listSlashCommands: vi.fn().mockResolvedValue({
+      data: [command, broken],
+      diagnostics: [`${broken.sourcePath}: ${broken.parseError}`],
+    }),
+  });
+
+  render(Commands, {}, { wrapper: Harness, wrapperProps: { config: store } });
+
+  await screen.findByRole('link', { name: `/${broken.name}` });
+  expect(screen.getByRole('link', { name: `/${command.name}` })).toBeTruthy();
+  expect(screen.getByText(en['commands.parseError'])).toBeTruthy();
+  expect(screen.getByText(broken.parseError as string)).toBeTruthy();
+  expect(
+    screen
+      .getByRole('link', { name: `${en['commands.repairAria'].replace('{name}', broken.name)}` })
+      .getAttribute('href'),
+  ).toBe('/commands/ponytail-debt?project=project-a&edit=1');
+});
+
+test('unreadable command detail keeps the raw document deletable and repair opens the original', async () => {
+  const deleteSlashCommand = vi.fn().mockResolvedValue(undefined);
+  const store = config({
+    getSlashCommand: vi.fn().mockResolvedValue(broken),
+    deleteSlashCommand,
+  });
+
+  page.params = { id: broken.id };
+  page.url = new URL(`http://localhost/commands/${broken.id}?project=project-a`);
+  const { container } = render(Detail, {}, { wrapper: Harness, wrapperProps: { config: store } });
+
+  await screen.findByRole('heading', { name: `/${broken.name}` });
+  expect(screen.getByRole('alert').textContent).toContain(broken.parseError as string);
+  expect(container.querySelector('pre')?.textContent).toBe(broken.content);
+
+  await fireEvent.click(screen.getByRole('button', { name: en['commands.repair'] }));
+  const input = screen.getByLabelText('Full Markdown document') as HTMLTextAreaElement;
+  expect(input.value).toBe(broken.content);
+  await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+  await fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+  await waitFor(() =>
+    expect(deleteSlashCommand).toHaveBeenCalledExactlyOnceWith(
+      { id: broken.id, expectedPath: broken.resolvedPath, expectedContent: broken.content },
+      'project-a',
+    ),
+  );
+});
+
+test('repairing an unreadable command submits the original snapshot', async () => {
+  const repaired = { ...broken, parseError: undefined, content: '---\ndescription: fixed\n---\nfixed' };
+  const updateSlashCommand = vi.fn().mockResolvedValue(repaired);
+  const store = config({ getSlashCommand: vi.fn().mockResolvedValue(broken), updateSlashCommand });
+
+  page.params = { id: broken.id };
+  page.url = new URL(`http://localhost/commands/${broken.id}?project=project-a`);
+  render(Detail, {}, { wrapper: Harness, wrapperProps: { config: store } });
+
+  await screen.findByRole('heading', { name: `/${broken.name}` });
+  await fireEvent.click(screen.getByRole('button', { name: en['commands.repair'] }));
+  await fireEvent.input(screen.getByLabelText('Full Markdown document'), { target: { value: repaired.content } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  await waitFor(() =>
+    expect(updateSlashCommand).toHaveBeenCalledExactlyOnceWith(
+      {
+        id: broken.id,
+        content: repaired.content,
+        expectedPath: broken.resolvedPath,
+        expectedContent: broken.content,
+      },
+      'project-a',
+    ),
+  );
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+});

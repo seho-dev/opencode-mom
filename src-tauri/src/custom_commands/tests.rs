@@ -101,10 +101,34 @@ fn scans_singular_plural_override_and_diagnostics_without_cascading_get_failure(
     }
 
     let list = list(&paths).unwrap();
-    assert_eq!(list.data.len(), 4);
+    // Each of the four scanned roots keeps both its readable and its unreadable command.
+    assert_eq!(list.data.len(), 8);
     assert_eq!(list.diagnostics.len(), 4);
-    assert!(list.data.iter().all(|entry| entry.name == "team/review.v2"));
-    let entry = &list.data[3];
+    assert_eq!(
+        list.data
+            .iter()
+            .filter(|entry| entry.parse_error.is_none())
+            .count(),
+        4
+    );
+    assert!(list
+        .data
+        .iter()
+        .filter(|entry| entry.parse_error.is_none())
+        .all(|entry| entry.name == "team/review.v2"));
+    assert_eq!(
+        list.data
+            .iter()
+            .filter(|entry| entry.parse_error.is_some())
+            .count(),
+        4
+    );
+    assert!(list
+        .data
+        .iter()
+        .filter(|entry| entry.parse_error.is_some())
+        .all(|entry| entry.name == "broken"));
+    let entry = list.data.last().unwrap();
     assert_eq!(get(&paths, &entry.id).unwrap(), *entry);
     let created = create(&paths, draft("review.v2.md", "literal suffix")).unwrap();
     assert!(created.source_path.ends_with("commands/review.v2.md.md"));
@@ -490,6 +514,122 @@ fn checked_create_rejects_competing_file_without_clobber() {
         fs::read_to_string(paths.commands_write_dir().join("review.md")).unwrap(),
         "theirs"
     );
+}
+
+const BROKEN: &str = "---\nbroken: [\n---\nbody";
+
+#[test]
+fn unreadable_frontmatter_stays_listed_with_raw_content_and_can_be_repaired_or_deleted() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = ConfigPaths::for_home(home.path());
+    let dir = paths.command_dirs()[0].clone();
+    write(&dir.join("ponytail-debt.md"), BROKEN);
+    write(&dir.join("healthy.md"), "---\ndescription: ok\n---\nbody");
+
+    let listed = list(&paths).unwrap();
+    assert_eq!(listed.data.len(), 2);
+    let broken = listed
+        .data
+        .iter()
+        .find(|entry| entry.name == "ponytail-debt")
+        .expect("unreadable command stays in data");
+    assert!(broken.parse_error.is_some());
+    assert_eq!(broken.content, BROKEN);
+    assert_eq!(broken.description, None);
+    assert_eq!(broken.agent, None);
+    assert_eq!(broken.model, None);
+    assert_eq!(broken.subagent, None);
+    assert!(listed
+        .data
+        .iter()
+        .find(|entry| entry.name == "healthy")
+        .is_some_and(|entry| entry.parse_error.is_none()));
+    // Diagnostics still name the file so the warning banner keeps its path detail.
+    assert_eq!(listed.diagnostics.len(), 1);
+    assert!(listed.diagnostics[0].starts_with(&format!("{}: ", broken.source_path.display())));
+    assert_eq!(get(&paths, &broken.id).unwrap(), *broken);
+
+    let repaired = update(
+        &paths,
+        edit(broken, "---\ndescription: fixed\n---\nfixed body"),
+    )
+    .unwrap();
+    assert_eq!(repaired.parse_error, None);
+    assert_eq!(repaired.description.as_deref(), Some("fixed"));
+    assert_eq!(
+        fs::read_to_string(&broken.source_path).unwrap(),
+        repaired.content
+    );
+
+    write(&dir.join("doomed.md"), BROKEN);
+    let doomed = list(&paths)
+        .unwrap()
+        .data
+        .into_iter()
+        .find(|entry| entry.name == "doomed")
+        .unwrap();
+    delete(&paths, deletion(&doomed)).unwrap();
+    assert!(!doomed.source_path.exists());
+}
+
+#[test]
+fn stale_snapshots_of_unreadable_commands_cannot_be_overwritten() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = ConfigPaths::for_home(home.path());
+    let dir = paths.command_dirs()[0].clone();
+    write(&dir.join("review.md"), BROKEN);
+    let entry = list(&paths).unwrap().data.remove(0);
+    let changed_content = "---\nbroken: [\n---\ntheirs";
+
+    fs::write(&entry.source_path, changed_content).unwrap();
+    assert!(update(&paths, edit(&entry, "ours")).is_err());
+    assert!(delete(&paths, deletion(&entry)).is_err());
+    assert_eq!(
+        fs::read_to_string(&entry.source_path).unwrap(),
+        changed_content
+    );
+
+    let fresh = get(&paths, &entry.id).unwrap();
+    let updated = update(&paths, edit(&fresh, "---\n---\nours")).unwrap();
+    assert_eq!(updated.parse_error, None);
+    delete(&paths, deletion(&updated)).unwrap();
+    assert!(!updated.source_path.exists());
+}
+
+#[test]
+fn unreadable_documents_stay_listed_but_cannot_be_written_back() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = ConfigPaths::for_home(home.path());
+    let dir = paths.command_dirs()[0].clone();
+    let unreadable = [
+        "---\ndescription: [1]\n---\nbody",
+        "---\ndescription: unclosed\n---\n\n",
+        "---\ndescription: 1\n---\nbody",
+    ];
+    for (index, content) in unreadable.iter().enumerate() {
+        write(&dir.join(format!("cmd-{index}.md")), content);
+    }
+
+    let listed = list(&paths).unwrap();
+    assert_eq!(listed.data.len(), unreadable.len());
+    assert!(listed.data.iter().all(|entry| entry.parse_error.is_some()));
+    let entry = listed
+        .data
+        .iter()
+        .find(|entry| entry.content == unreadable[0])
+        .unwrap();
+    for content in unreadable {
+        assert!(
+            create(&paths, draft("new", content)).is_err(),
+            "{content:?}"
+        );
+        assert!(update(&paths, edit(entry, content)).is_err(), "{content:?}");
+    }
+    assert_eq!(
+        fs::read_to_string(&entry.source_path).unwrap(),
+        unreadable[0]
+    );
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), unreadable.len());
 }
 
 #[test]

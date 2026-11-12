@@ -140,7 +140,8 @@ async function remove() {
           >
           {#if command && !readonly}
             <Button variant="outline" size="sm" disabled={deleting} onclick={() => { editing = true; saved = false; }}
-              ><Pencil size={14} />{i18n.t('configuration.edit')}</Button
+              ><Pencil size={14} aria-hidden="true" />
+              {i18n.t(command.parseError ? 'commands.repair' : 'configuration.edit')}</Button
             >
             <Button
               variant="destructive"
@@ -179,28 +180,39 @@ async function remove() {
         />
       {/key}
     {:else}
+      {#if command.parseError}
+        <div class="state-banner error" role="alert">
+          <div class="min-w-0 break-words [overflow-wrap:anywhere]">
+            <strong>{i18n.t('commands.parseError')}</strong>
+            <p class="my-2">{i18n.t('commands.parseErrorHint')}</p>
+            <p class="m-0 whitespace-pre-wrap">{command.parseError}</p>
+          </div>
+        </div>
+      {/if}
       <section class="panel min-w-0 p-4 sm:p-5" aria-label={i18n.t('commands.detailTitle')}>
         <dl class="m-0 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-          <div class="min-w-0 sm:col-span-2">
-            <dt class="text-xs text-[var(--text-muted)]">{i18n.t('common.description')}</dt>
-            <dd class="mt-2 ml-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-              {command.description || '—'}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-xs text-[var(--text-muted)]">{i18n.t('commands.agent')}</dt>
-            <dd class="mt-2 ml-0 break-words [overflow-wrap:anywhere]">{command.agent || '—'}</dd>
-          </div>
-          <div>
-            <dt class="text-xs text-[var(--text-muted)]">{i18n.t('common.model')}</dt>
-            <dd class="mt-2 ml-0 break-words [overflow-wrap:anywhere]">{command.model || '—'}</dd>
-          </div>
-          <div>
-            <dt class="text-xs text-[var(--text-muted)]">{i18n.t('commands.subagent')}</dt>
-            <dd class="mt-2 ml-0">
-              {command.subagent === undefined ? '—' : i18n.t(command.subagent ? 'common.enabled' : 'common.disabled')}
-            </dd>
-          </div>
+          {#if !command.parseError}
+            <div class="min-w-0 sm:col-span-2">
+              <dt class="text-xs text-[var(--text-muted)]">{i18n.t('common.description')}</dt>
+              <dd class="mt-2 ml-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                {command.description || '—'}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-[var(--text-muted)]">{i18n.t('commands.agent')}</dt>
+              <dd class="mt-2 ml-0 break-words [overflow-wrap:anywhere]">{command.agent || '—'}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-[var(--text-muted)]">{i18n.t('common.model')}</dt>
+              <dd class="mt-2 ml-0 break-words [overflow-wrap:anywhere]">{command.model || '—'}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-[var(--text-muted)]">{i18n.t('commands.subagent')}</dt>
+              <dd class="mt-2 ml-0">
+                {command.subagent === undefined ? '—' : i18n.t(command.subagent ? 'common.enabled' : 'common.disabled')}
+              </dd>
+            </div>
+          {/if}
           <div class="min-w-0 sm:col-span-2">
             <dt class="text-xs text-[var(--text-muted)]">{i18n.t('configuration.source')}</dt>
             <dd class="mt-2 ml-0 break-words [overflow-wrap:anywhere]">{command.sourcePath}</dd>

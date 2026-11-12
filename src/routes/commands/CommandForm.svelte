@@ -92,6 +92,13 @@ async function save() {
         {i18n.t('configuration.draftKept')} {error}
       </p>
     {/if}
+    {#if initial?.parseError}
+      <div id="command-parse-error" class="type-note col-span-full !border-l-[var(--status-error)]" role="alert">
+        <strong class="text-[var(--status-error)]">{i18n.t('commands.parseError')}</strong>
+        <p class="my-2">{i18n.t('commands.repairHint')}</p>
+        <p class="m-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{initial.parseError}</p>
+      </div>
+    {/if}
     <div class="field full">
       <label for="command-name">{i18n.t('commands.name')}</label>
       <input
@@ -120,7 +127,7 @@ async function save() {
         disabled={pending || readonly}
         spellcheck="false"
         autocomplete="off"
-        aria-describedby="command-document-hint"
+        aria-describedby={initial?.parseError ? 'command-document-hint command-parse-error' : 'command-document-hint'}
       ></textarea>
       <small id="command-document-hint" class="field-hint"
         >{i18n.t('commands.contentHint')} <code>$ARGUMENTS</code> · <code>$1</code> · <code>$2</code></small

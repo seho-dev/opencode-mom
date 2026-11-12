@@ -5,6 +5,7 @@ export type SlashCommandEntry = {
   agent?: string;
   model?: string;
   subagent?: boolean;
+  parseError?: string | null;
   sourcePath: string;
   resolvedPath: string;
   content: string;

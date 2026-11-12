@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Eye, Pencil, Plus, RefreshCw } from '@lucide/svelte';
+import { Eye, Pencil, Plus, RefreshCw, TriangleAlert } from '@lucide/svelte';
 import { untrack } from 'svelte';
 import { Button } from '$src/components/button/index.js';
 import Diagnostics from '$src/components/configuration/Diagnostics.svelte';
@@ -231,6 +231,11 @@ function href(id: string, scope: string | null, compare = false, edit = false) {
               href={href(entry.id, scope, compare)}
               >/{entry.name}</a
             >
+            {#if entry.parseError}
+              <small class="mt-1 flex items-center gap-1 text-[var(--status-error)]">
+                <TriangleAlert size={12} class="shrink-0" aria-hidden="true" />{i18n.t('commands.parseError')}
+              </small>
+            {/if}
             {#if compare && commands.some((command) => command.name === entry.name)}
               <small class="mt-1 block text-[var(--text-muted)]">{i18n.t('commands.sameName')}</small>
             {/if}
@@ -238,7 +243,7 @@ function href(id: string, scope: string | null, compare = false, edit = false) {
           <td>
             <span
               class="block max-w-md whitespace-pre-wrap break-words text-[var(--text-secondary)] [overflow-wrap:anywhere]"
-              >{entry.description || '—'}</span
+              >{entry.parseError || entry.description || '—'}</span
             >
           </td>
           <td>
@@ -258,9 +263,12 @@ function href(id: string, scope: string | null, compare = false, edit = false) {
               <Button
                 href={href(entry.id, scope, false, true)}
                 variant="ghost"
-                size="icon-sm"
-                aria-label={i18n.t('configuration.editAria', { name: entry.name })}
-                ><Pencil size={14} /></Button
+                size={entry.parseError ? 'sm' : 'icon-sm'}
+                aria-label={i18n.t(entry.parseError ? 'commands.repairAria' : 'configuration.editAria', { name: entry.name })}
+                ><Pencil size={14} aria-hidden="true" />
+                {#if entry.parseError}
+                  {i18n.t('commands.repair')}
+                {/if}</Button
               >
             {/if}
           </td>

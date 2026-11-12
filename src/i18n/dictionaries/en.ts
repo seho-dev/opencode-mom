@@ -205,6 +205,12 @@ export const en = {
   'commands.subagent': 'Run as subagent',
   'commands.content': 'Full Markdown document',
   'commands.contentHint': 'Markdown + YAML frontmatter; no HTML rendering.',
+  'commands.parseError': 'YAML frontmatter error',
+  'commands.parseErrorHint': 'Metadata could not be read. The original document is preserved below.',
+  'commands.repair': 'Edit source',
+  'commands.repairAria': 'Edit source for {name}',
+  'commands.repairHint':
+    'Repair the YAML frontmatter in the original document below. Nothing is saved until you choose Save.',
   'commands.sameName': 'A project command has the same name.',
   'commands.previewHint': 'Read-only plain Markdown; no HTML is rendered.',
   'commands.emptyContent': 'This command document is empty.',

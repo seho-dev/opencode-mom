@@ -119,6 +119,8 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
   let saving = $state(false);
   let switching = $state(false);
   let reloading = $state(false);
+  let updateCheck = $state<UpdateCheck | null>(null);
+  let updateRequest: Promise<UpdateCheck> | null = null;
   let error = $state<CommandError | null>(null);
   let notice = $state<string | null>(null);
   let draftRecovery = $state<DraftRecovery | null>(null);
@@ -314,6 +316,22 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     await refresh(false, true);
   }
 
+  function checkForUpdates(): Promise<UpdateCheck> {
+    if (!updateRequest) {
+      updateRequest = adapter
+        .checkForUpdates()
+        .then((result) => {
+          updateCheck = result;
+          return result;
+        })
+        .finally(() => {
+          updateRequest = null;
+        });
+    }
+
+    return updateRequest;
+  }
+
   async function reloadOpencode() {
     if (reloading) return;
 
@@ -447,6 +465,10 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
       return reloading;
     },
 
+    get updateCheck() {
+      return updateCheck;
+    },
+
     get error() {
       return error;
     },
@@ -507,7 +529,7 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
     discardDraftAndRefresh,
     continueEditing,
     getAppInfo: (): Promise<AppInfo> => adapter.getAppInfo(),
-    checkForUpdates: (): Promise<UpdateCheck> => adapter.checkForUpdates(),
+    checkForUpdates,
     getOpenCodeInstallation: (): Promise<OpenCodeInstallation> => adapter.getOpenCodeInstallation(),
     getOpenCodeServiceStatus: (): Promise<OpenCodeServiceStatus> => adapter.getOpenCodeServiceStatus(),
 

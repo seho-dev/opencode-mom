@@ -10,9 +10,9 @@ config/i18n contexts and mounts shell and splash only outside `/tray`.
 
 ```text
 shell/
-├── AppShell.svelte            # Chrome and route composition
+├── AppShell.svelte            # Chrome, route composition, update polling
 ├── AppHeader.svelte           # Mobile menu, appearance, GitHub
-├── AppSidebar.svelte          # Desktop links, version, reload
+├── AppSidebar.svelte          # Desktop links, version, new-version hint
 ├── MobileNavigation.svelte    # Focus-managed navigation drawer
 ├── navigation.ts              # Shared routes and active matching
 ├── AppearanceControls.svelte  # Refresh, theme, locale
@@ -36,8 +36,11 @@ shell/
 
 - **Shared navigation**: Change routes through `navigationItems`; both navigation components use
   `isNavigationItemActive` for `aria-current`. Preserve exact-root and slash-delimited descendant matching.
-- **Build version**: Sidebar and mobile drawer import `version` from root `package.json` and interpolate
-  `header.version`; no native request is needed.
+- **Build version**: Sidebar and mobile drawer import `version` from root `package.json` and render it bare via
+  `header.version` (no `VERSION` prefix); no native request is needed.
+- **Update hint**: `AppShell` checks updates once ~5 seconds after mount and then every 2 hours, storing the
+  result in `config.updateCheck`; failures are silent. The sidebar shows a hint only when
+  `updateCheck.updateAvailable` is true, and it opens the release page — nothing is downloaded or installed.
 - **Shell composition**: Keep `ConfigFeedback` and `Toaster` at shell scope, not inside individual pages;
   the route layout owns the separate `SplashScreen` instance.
 - **Control guards**: Disable reload and refresh during their corresponding busy states; change theme

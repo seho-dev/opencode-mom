@@ -14,6 +14,18 @@ let macos = $state(false);
 onMount(() => {
   if (!isTauri()) return;
   let mounted = true;
+  let updateTimer = setTimeout(() => void checkUpdates(), 5_000);
+
+  async function checkUpdates() {
+    try {
+      await config.checkForUpdates();
+    } catch {
+      // Background checks stay silent; manual checks report their own errors.
+    } finally {
+      if (mounted) updateTimer = setTimeout(() => void checkUpdates(), 2 * 60 * 60 * 1_000);
+    }
+  }
+
   void config
     .getAppInfo()
     .then((info) => {
@@ -22,6 +34,7 @@ onMount(() => {
     .catch(() => {});
   return () => {
     mounted = false;
+    clearTimeout(updateTimer);
   };
 });
 </script>

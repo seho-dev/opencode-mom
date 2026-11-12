@@ -4,19 +4,16 @@ import { tick } from 'svelte';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { Button } from '$src/components/button/index.js';
-import { getConfig } from '$src/config/context.js';
 import { getI18n } from '$src/i18n/context.js';
 import { version } from '../../package.json';
 import { isNavigationItemActive, navigationItems } from './navigation.js';
 
-const config = getConfig();
 const i18n = getI18n();
 const brand = i18n.t('header.brand');
 let open = $state(false);
 let menuButton: HTMLButtonElement | null = $state(null);
 let closeButton: HTMLButtonElement | null = $state(null);
 let navigationLinks: HTMLAnchorElement[] = $state([]);
-let reloadButton: HTMLButtonElement | null = $state(null);
 
 async function openDrawer() {
   open = true;
@@ -36,15 +33,6 @@ async function navigateFromDrawer(event: MouseEvent, href: string) {
   open = false;
 }
 
-async function reloadFromDrawer() {
-  try {
-    await config.reloadOpencode();
-    await closeDrawer();
-  } catch {
-    /* global feedback */
-  }
-}
-
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     closeDrawer();
@@ -53,11 +41,7 @@ function handleKeydown(event: KeyboardEvent) {
 
   if (event.key !== 'Tab') return;
 
-  const focusable = [
-    closeButton,
-    ...navigationLinks,
-    ...(!config.reloading && !config.switching && reloadButton ? [reloadButton] : []),
-  ];
+  const focusable = [closeButton, ...navigationLinks];
   const currentIndex = focusable.indexOf(document.activeElement as HTMLButtonElement | HTMLAnchorElement);
   const nextIndex = event.shiftKey
     ? currentIndex <= 0
@@ -118,18 +102,7 @@ function handleKeydown(event: KeyboardEvent) {
           >
         {/each}
       </nav>
-      <div class="system-status flex items-center justify-between gap-2">
-        <span>{i18n.t('header.version', { version })}</span>
-        <Button
-          bind:ref={reloadButton}
-          variant="outline"
-          size="sm"
-          class="shrink-0 px-2 text-[var(--text-secondary)] hover:text-[var(--accent-primary)]"
-          disabled={config.reloading || config.switching}
-          onclick={reloadFromDrawer}
-          >{i18n.t(config.reloading ? 'header.reloading' : 'header.reloadOpencode')}</Button
-        >
-      </div>
+      <div class="system-status"><span>{i18n.t('header.version', { version })}</span></div>
     </aside>
   </div>
 {/if}

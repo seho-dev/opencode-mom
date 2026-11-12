@@ -389,7 +389,9 @@ export const en = {
 
   // header
   'header.brand': 'OPENCODE-MOM',
-  'header.version': 'VERSION {version}',
+  'header.version': '{version}',
+  'header.updateAvailable': 'Update {version}',
+  'header.openRelease': 'Version {version} available — open the release page in your browser',
   'header.reloadOpencode': 'Reload OpenCode',
   'header.reloading': 'Reloading…',
   'header.openMenu': 'Open navigation menu',
@@ -1022,7 +1024,8 @@ export const en = {
   'settings.updates': 'App updates',
   'settings.installedVersion': 'Installed version: {version}',
   'settings.versionUnavailable': 'unavailable',
-  'settings.updatesHint': 'Check GitHub on click; downloads open in your browser, never auto-install.',
+  'settings.updatesHint':
+    'Stable releases are checked automatically. Downloads open in your browser; nothing is installed automatically.',
   'settings.appInfoFailed': 'Could not read app details.',
   'settings.retryAppInfo': 'Retry app details',
   'settings.checkUpdates': 'Check for updates',

@@ -364,7 +364,9 @@ export const zh: Record<MessageKey, string> = {
 
   // header
   'header.brand': 'OPENCODE-MOM',
-  'header.version': '版本 {version}',
+  'header.version': '{version}',
+  'header.updateAvailable': '新版本 {version}',
+  'header.openRelease': '发现新版本 {version}，在浏览器中打开发布页面',
   'header.reloadOpencode': '重新加载 OpenCode',
   'header.reloading': '正在重新加载…',
   'header.openMenu': '打开导航菜单',
@@ -988,7 +990,7 @@ export const zh: Record<MessageKey, string> = {
   'settings.updates': '应用更新',
   'settings.installedVersion': '已安装版本：{version}',
   'settings.versionUnavailable': '无法读取',
-  'settings.updatesHint': '点击检查 GitHub；下载在浏览器打开，不自动安装。',
+  'settings.updatesHint': '自动检查最新稳定版。下载在浏览器中打开，不会自动安装。',
   'settings.appInfoFailed': '无法读取应用信息。',
   'settings.retryAppInfo': '重试读取应用信息',
   'settings.checkUpdates': '检查更新',

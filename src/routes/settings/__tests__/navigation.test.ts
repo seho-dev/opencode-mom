@@ -52,7 +52,7 @@ test('sidebar and mobile menu expose all new routes and detail active state', as
 
   expect(document.activeElement).toBe(close);
   await fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
-  expect(document.activeElement).toBe(within(menu).getByRole('button', { name: 'Reload OpenCode' }));
+  expect(document.activeElement).toBe(within(menu).getAllByRole('link').at(-1));
   await fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' });
   expect(document.activeElement).toBe(close);
   await fireEvent.keyDown(close, { key: 'Escape' });

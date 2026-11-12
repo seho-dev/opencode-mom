@@ -47,6 +47,7 @@
 - **💤 合盖守护（macOS / Windows）**：**仅在 OpenCode 会话处于实际工作中时**阻止笔记本休眠，任务完成后自动恢复原系统电源策略。
 - **🔔 系统原生通知（macOS / Windows）**：在**设置 → 通用**中开启**系统通知**（默认关闭），再独立选择主 Agent 完成、审批请求与 Agent 错误三类提醒。macOS 首次开启时请求系统授权；Windows 检查已安装应用的通知状态，并在需要时打开系统设置。修改系统权限后，在 MOM 中点击**刷新通知设置**。保存的通知偏好与系统授权相互独立。MOM 运行期间（包括驻留托盘时）生效，不依赖 Mini Island；专注或勿扰模式仍可能阻止展示。请使用打包后的 macOS 应用或已安装的 Windows 应用。
 - **📊 实时仪表盘与系统托盘**：实时查看服务健康状态、工作会话数、Token 消耗统计、活动热力图，通过托盘菜单常驻后台便捷操作。
+- **🔄 自动更新检查**：启动时及运行期间定期查询 GitHub 最新 stable 发布。版本落后时，左下角版本号会显示提示，点击在浏览器中打开 release 页面；不会自动下载或安装，失败静默处理，**设置**中的手动检查仍然可用。
 
 ### 🪵 本地诊断日志
 
@@ -116,7 +117,7 @@ cargo test --manifest-path src-tauri/Cargo.toml    # Rust 后端测试
 - **自动触发**：向默认分支提交标题为 `release` 或 `release: 描述` 的 commit（自动提升下一补丁版本，如 `2.0.1`；若当前处于 beta 则递增下一 beta，如 `2.0.1-beta.2`），或使用 `release: X.Y.Z` / `release: X.Y.Z-beta.N` 显式发布指定版本。
 - **手动触发**：在 GitHub Actions 中手动 dispatch 执行 `Release` 工作流，支持可选的 `version`（`X.Y.Z` 或 `X.Y.Z-beta.N`，留空默认提升下一补丁版本或下一 beta）。
 - **Beta 发布与转为 Stable**：开启 beta 发布时指定 `X.Y.Z-beta.N`；beta 期间自动触发将递增 beta 序号（`-beta.N+1`）。从 beta 转为 stable 必须显式指定目标版本 `X.Y.Z`。Beta 版本在 GitHub Release 中标记为预发布（pre-release），不设为 latest。
-- **更新检查机制**：应用内置的更新检查仅追踪最新 stable 稳定版本。Beta 用户仅在对应的同版本或更新的 stable 发布时收到更新提示，不会提示后续 beta 版本。
+- **更新检查机制**：MOM 会自动查询最新 stable 发布（启动后不久以及运行期间定期进行），并在左下角版本号旁显示新版本提示；该提示仅在浏览器中打开 release 页面，不会下载或安装任何内容。离线、限流或暂无发布等失败均静默处理。Beta 用户仅在对应的同版本或更新的 stable 发布时收到更新提示，不会提示后续 beta 版本。
 - **预演模式（Dry Run）**：手动触发时可设置 `dry_run: true`（默认为 `false`），仅预览计算后的版本号与发布说明，不会生成 commit、tag、推送、构建或发布。
 - **发布说明与安全提示**：GitHub Release 说明精准引用 `CHANGELOG.md` 中对应 tag 的章节内容（若缺失则回退到 commit 历史记录），并附带平台安全提示说明。直接推送版本匹配的 `vX.Y.Z` 或 `vX.Y.Z-beta.N` tag 会校验清单一致性并直接发布，不执行 changelog 回写。
 - **权限与重试保护**：工作流使用具备 `contents: write` 权限的内置 `GITHUB_TOKEN`；分支与 tag 规则必须允许 release bot 推送自动生成的 commit 与 tag，Token 写权限本身不会绕过分支保护。发布准备阶段向 `CHANGELOG.md` 顶部追加条目，同步 6 个清单文件（`package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/Info.plist`），保持 `macos-helper` 独立不被修改，并原子推送分支与 tag。所有平台构建成功后才发布；若构建或发布失败，重新运行原有失败工作流即可继续，无需再次递增版本。

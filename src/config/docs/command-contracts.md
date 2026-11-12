@@ -56,3 +56,7 @@ This directory connects typed command calls to shared application state and Svel
 ## Prompt regression coverage
 
 `__tests__/prompt-generation.test.mjs` covers one-shot generation IPC, private-state isolation and service-target guards.
+
+### Token usage snapshots
+
+`loadTokenUsageSnapshot(refresh, knownRevision)` uses the service-target read guard. The backend owns the five-minute cache and background single-flight refresh. `updatedAt: null` means no successful data; an empty record array with a matching `resultRevision` means unchanged data. Poll only while refreshing, stop on unmount, and discard responses after target changes.

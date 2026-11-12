@@ -1,6 +1,6 @@
 <script lang="ts">
 import { Activity, Bot, Boxes, Cloud, Layers3, RefreshCw, Server } from '@lucide/svelte';
-import { onMount } from 'svelte';
+import { onMount, untrack } from 'svelte';
 import { Button } from '$src/components/button/index.js';
 import { readError } from '$src/components/configuration/read-error.js';
 import ActivityHeatmap from '$src/components/dashboard/ActivityHeatmap.svelte';
@@ -28,11 +28,19 @@ let runtime = $state<GroupType | null>(null);
 let switchTrigger = $state<HTMLButtonElement | null>(null);
 let dailyUsage = $state<DailyTokenUsage[] | null>(null);
 let loading = $state(true);
+let refreshing = $state(false);
+let updatedAt = $state<number | null>(null);
+let stale = $state(false);
+let revision: number | undefined;
+let usageTimer: ReturnType<typeof setTimeout> | undefined;
+let usageGeneration = 0;
 let error = $state<string | null>(null);
 let proxyState = $state<McpProxyStateDto | null>(null);
 let proxyLoading = $state(true);
 let request = false;
 let mounted = false;
+usageGeneration += 1;
+clearTimeout(usageTimer);
 let timezone = $state('UTC');
 let today = $state(calendarDate(new Date(), 'UTC'));
 let usagePeriod = $state<ActivityPeriod>('day');
@@ -118,32 +126,49 @@ function changeHeatmapYear(value: string) {
   }
 }
 
-async function refreshActivity() {
+async function refreshActivity(force = true) {
   if (request || !mounted) return;
-
   request = true;
-  loading = true;
-  error = null;
+  const generation = usageGeneration;
+  clearTimeout(usageTimer);
+  loading = dailyUsage === null;
   today = calendarDate(new Date(), timezone);
-
   try {
-    const records = await config.loadTokenUsageRecords();
-
-    if (!mounted) return;
-
-    dailyUsage = dailyTokenUsage(records, timezone);
+    const snapshot = await config.loadTokenUsageSnapshot(force, revision);
+    if (!mounted || generation !== usageGeneration) return;
+    if (snapshot.updatedAt !== null && snapshot.resultRevision !== revision) {
+      dailyUsage = dailyTokenUsage(snapshot.records, timezone);
+    }
+    revision = snapshot.resultRevision;
+    updatedAt = snapshot.updatedAt;
+    refreshing = snapshot.refreshing;
+    stale = snapshot.stale;
+    error = snapshot.error ? readError(snapshot.error) : null;
+    loading = dailyUsage === null && refreshing;
+    if (refreshing) usageTimer = setTimeout(() => void refreshActivity(false), 1000);
   } catch (cause) {
-    if (!mounted) return;
-
-    error =
-      typeof cause === 'string' || (cause && typeof cause === 'object' && 'message' in cause)
-        ? readError(cause)
-        : i18n.t('dashboard.activityFailed');
+    if (!mounted || generation !== usageGeneration) return;
+    error = readError(cause);
+    refreshing = false;
+    loading = false;
   } finally {
-    if (mounted) loading = false;
-    request = false;
+    if (generation === usageGeneration) request = false;
   }
 }
+
+$effect(() => {
+  config.serviceTargetVersion;
+  untrack(() => {
+    usageGeneration += 1;
+    request = false;
+    revision = undefined;
+    dailyUsage = null;
+    updatedAt = null;
+    error = null;
+    clearTimeout(usageTimer);
+    if (mounted) void refreshActivity(true);
+  });
+});
 
 async function loadProxyStatus() {
   if (typeof config.getMcpProxyState !== 'function') {
@@ -171,11 +196,13 @@ async function loadProxyStatus() {
 onMount(() => {
   mounted = true;
   timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  void refreshActivity();
+  void refreshActivity(true);
   void loadProxyStatus();
 
   return () => {
     mounted = false;
+    usageGeneration += 1;
+    clearTimeout(usageTimer);
   };
 });
 
@@ -334,10 +361,32 @@ function openSwitch(type: GroupType, trigger: HTMLButtonElement) {
     aria-label={i18n.t('dashboard.eyebrow')}
   >
     <div class="flex min-w-0 flex-col @min-[960px]:col-span-8">
+      <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]" aria-live="polite">
+        {#if refreshing}
+          <span>{i18n.t('dashboard.usageRefreshing')}</span>
+        {/if}
+        {#if updatedAt !== null}
+          <span>{i18n.t('dashboard.usageUpdated')} {new Date(updatedAt).toLocaleString()}</span>
+        {/if}
+        {#if stale && dailyUsage !== null}
+          <span>{i18n.t('dashboard.usageStale')}</span>
+        {/if}
+        {#if error && dailyUsage !== null}
+          <span role="alert">{i18n.t('dashboard.usageRefreshFailed')}</span>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            onclick={() => void refreshActivity(true)}
+            disabled={refreshing}
+            aria-label={i18n.t('dashboard.retryTokenUsage')}
+            ><RefreshCw size={12} /></Button
+          >
+        {/if}
+      </div>
       <ActivityHeatmap
         available={dailyUsage !== null}
         {loading}
-        {error}
+        error={dailyUsage === null ? error : null}
         {years}
         calendar={heatmapCalendar}
         period={heatmapPeriod}
@@ -345,7 +394,7 @@ function openSwitch(type: GroupType, trigger: HTMLButtonElement) {
         year={heatmapYear}
         onperiod={changeHeatmapPeriod}
         onyear={changeHeatmapYear}
-        onrefresh={refreshActivity}
+        onrefresh={() => refreshActivity(true)}
       />
     </div>
 
@@ -377,7 +426,7 @@ function openSwitch(type: GroupType, trigger: HTMLButtonElement) {
                 { value: 'year', label: i18n.t('dashboard.year') },
               ]}
               onchange={changeUsagePeriod}
-              disabled={loading || dailyUsage === null || !!error}
+              disabled={dailyUsage === null}
               ariaLabel={i18n.t('dashboard.usagePeriod')}
             />
             {#if usagePeriod === 'year'}
@@ -388,7 +437,7 @@ function openSwitch(type: GroupType, trigger: HTMLButtonElement) {
                 value={String(usageYear)}
                 options={years.map((value) => ({ value: String(value) }))}
                 onchange={changeUsageYear}
-                disabled={loading || dailyUsage === null || !!error}
+                disabled={dailyUsage === null}
                 ariaLabel={i18n.t('dashboard.usageYear')}
               />
             {/if}
@@ -402,7 +451,7 @@ function openSwitch(type: GroupType, trigger: HTMLButtonElement) {
               <Activity size={14} aria-hidden="true" />
             </div>
             <p class="m-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">
-              {loading ? `${usageCaption} · ${i18n.t('common.loading')}` : error ? `${usageCaption} · ${i18n.t('dashboard.tokenUsageUnavailable')}` : usageCaption}
+              {loading ? `${usageCaption} · ${i18n.t('common.loading')}` : error && dailyUsage === null ? `${usageCaption} · ${i18n.t('dashboard.tokenUsageUnavailable')}` : usageCaption}
             </p>
           </div>
 
@@ -425,19 +474,19 @@ function openSwitch(type: GroupType, trigger: HTMLButtonElement) {
                   class:text-[var(--status-success)]={kind === 'output'}
                   title={!loading && !error && dailyUsage ? number(kind === 'input' ? usageCalendar.input : usageCalendar.output) : undefined}
                 >
-                  {loading || error || !dailyUsage ? '—' : formatTokensM(kind === 'input' ? usageCalendar.input : usageCalendar.output)}
+                  {!dailyUsage ? '—' : formatTokensM(kind === 'input' ? usageCalendar.input : usageCalendar.output)}
                 </dd>
               </div>
             {/each}
           </dl>
 
-          {#if error && !loading}
+          {#if error && !loading && dailyUsage === null}
             <div class="mt-2.5 flex flex-wrap items-center gap-2" role="alert">
               <span class="text-xs text-[var(--status-error)]">{i18n.t('dashboard.tokenUsageUnavailable')}</span>
               <Button
                 variant="outline"
                 size="icon-sm"
-                onclick={refreshActivity}
+                onclick={() => void refreshActivity(true)}
                 disabled={loading}
                 aria-label={i18n.t('dashboard.retryTokenUsage')}
                 title={i18n.t('dashboard.retryTokenUsage')}
@@ -446,7 +495,7 @@ function openSwitch(type: GroupType, trigger: HTMLButtonElement) {
             </div>
           {/if}
 
-          <TokenUsageChart calendar={!loading && !error && dailyUsage ? usageCalendar : null} period={usagePeriod} />
+          <TokenUsageChart calendar={dailyUsage ? usageCalendar : null} period={usagePeriod} />
         </div>
       </div>
     </div>

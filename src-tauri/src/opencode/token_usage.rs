@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::mem::size_of;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,7 @@ use super::transport::{self, ManagedConnection};
 
 pub(super) const SCAN_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const PAGE_MAX_BYTES: u64 = 32 * 1024 * 1024;
+#[cfg(test)]
 const MAX_RECORDS: usize = 100_000;
 const MAX_METADATA_ITEMS: usize = 300_000;
 const MAX_METADATA_BYTES: usize = 64 * 1024 * 1024;
@@ -22,7 +24,12 @@ const JS_MAX_INTEGER: u64 = 9_007_199_254_740_991;
 const JS_MAX_DATE: u64 = 8_640_000_000_000_000;
 const WORKERS: usize = 4;
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+mod cache;
+mod stream;
+
+pub use cache::{initialize_usage_cache, token_usage_snapshot, TokenUsageSnapshot};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsageRecord {
     pub time: u64,
     pub input: u64,
@@ -179,18 +186,31 @@ struct Budget {
 
 impl Budget {
     fn reserve(&self, items: usize, bytes: usize) -> Result<(), AppError> {
-        for (counter, amount, max) in [
-            (&self.items, items, MAX_METADATA_ITEMS),
-            (&self.bytes, bytes, MAX_METADATA_BYTES),
-        ] {
-            counter
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-                    value.checked_add(amount).filter(|value| *value <= max)
-                })
-                .map_err(|_| failure("metadata limit exceeded"))?;
+        self.items
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value
+                    .checked_add(items)
+                    .filter(|value| *value <= MAX_METADATA_ITEMS)
+            })
+            .map_err(|_| failure("metadata limit exceeded"))?;
+        if self
+            .bytes
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value
+                    .checked_add(bytes)
+                    .filter(|value| *value <= MAX_METADATA_BYTES)
+            })
+            .is_err()
+        {
+            self.items.fetch_sub(items, Ordering::Relaxed);
+            return Err(failure("metadata limit exceeded"));
         }
 
         Ok(())
+    }
+
+    fn release_bytes(&self, bytes: usize) {
+        self.bytes.fetch_sub(bytes, Ordering::Relaxed);
     }
 }
 
@@ -356,12 +376,11 @@ fn read_pages<T>(
     Ok(items)
 }
 
-fn read_timelines(
-    connection: &ManagedConnection,
+fn read_sessions<T: Send>(
     sessions: &[Session],
-    budget: &Budget,
     deadline: Instant,
-) -> Result<Vec<Vec<Message>>, AppError> {
+    read: impl Fn(usize, &Session, &AtomicBool) -> Result<T, AppError> + Sync,
+) -> Result<Vec<T>, AppError> {
     let index = AtomicUsize::new(0);
     let failed = AtomicBool::new(false);
     thread::scope(|scope| {
@@ -380,18 +399,7 @@ fn read_timelines(
                         let Some(session) = sessions.get(index) else {
                             break;
                         };
-                        let messages = read_pages(
-                            |cursor| {
-                                if failed.load(Ordering::Relaxed) {
-                                    return Err(failure("scan cancelled after a page failure"));
-                                }
-                                connection.fetch_page(Some(&session.id), cursor, deadline)
-                            },
-                            inspect_message,
-                            budget,
-                            deadline,
-                        )?;
-                        timelines.push((index, messages));
+                        timelines.push((index, read(index, session, &failed)?));
                     }
 
                     Ok(timelines)
@@ -439,18 +447,44 @@ fn read_timelines(
     })
 }
 
-fn fork_offsets(
+#[cfg(test)]
+fn read_timelines(
+    connection: &ManagedConnection,
     sessions: &[Session],
-    timelines: &[Vec<Message>],
+    budget: &Budget,
     deadline: Instant,
-) -> Result<Vec<usize>, AppError> {
+) -> Result<Vec<Vec<Message>>, AppError> {
+    read_sessions(sessions, deadline, |_, session, failed| {
+        read_pages(
+            |cursor| {
+                if failed.load(Ordering::Relaxed) {
+                    return Err(failure("scan cancelled after a page failure"));
+                }
+                connection.fetch_page(Some(&session.id), cursor, deadline)
+            },
+            inspect_message,
+            budget,
+            deadline,
+        )
+    })
+}
+
+fn fork_origins(sessions: &[Session], deadline: Instant) -> Result<Vec<Option<usize>>, AppError> {
     let lookup: HashMap<_, _> = sessions
         .iter()
         .enumerate()
         .map(|(index, session)| (session.id.as_str(), index))
         .collect();
+    let origins: Vec<_> = sessions
+        .iter()
+        .map(|session| {
+            session
+                .fork
+                .as_ref()
+                .and_then(|fork| lookup.get(fork.session_id.as_str()).copied())
+        })
+        .collect();
     let mut states = vec![0; sessions.len()];
-    let mut offsets = vec![0; sessions.len()];
     for start in 0..sessions.len() {
         remaining(deadline)?;
         let mut path = Vec::new();
@@ -465,10 +499,7 @@ fn fork_offsets(
             }
             states[current] = 1;
             path.push(current);
-            let Some(fork) = &sessions[current].fork else {
-                break;
-            };
-            let Some(&origin_idx) = lookup.get(fork.session_id.as_str()) else {
+            let Some(origin_idx) = origins[current] else {
                 break;
             };
             current = origin_idx;
@@ -476,76 +507,36 @@ fn fork_offsets(
 
         for index in path.into_iter().rev() {
             remaining(deadline)?;
-            if let Some(fork) = &sessions[index].fork {
-                if let Some(&origin_idx) = lookup.get(fork.session_id.as_str()) {
-                    let origin = &timelines[origin_idx];
-                    let boundary = origin
-                        .iter()
-                        .position(|message| message.id == fork.boundary.message_id)
-                        .ok_or_else(|| failure("fork provenance unavailable: missing boundary"))?;
-                    let prefix = boundary
-                        + match fork.boundary.kind {
-                            BoundaryKind::Before => 0,
-                            BoundaryKind::Through => 1,
-                        };
-                    let child = &timelines[index];
-                    // Native forks copy eligible projected prefixes with new IDs, not a timestamp cutoff.
-                    let mut copied = 0;
-                    for original in origin[..prefix]
-                        .iter()
-                        .filter(|message| message.copied_by_fork())
-                    {
-                        if !child
-                            .get(copied)
-                            .is_some_and(|message| original.same_projection(message))
-                        {
-                            return Err(failure(
-                                "fork provenance unavailable: copied prefix mismatch",
-                            ));
-                        }
-                        copied += 1;
-                    }
-                    offsets[index] = copied;
-                }
-            }
             states[index] = 2;
         }
     }
 
-    Ok(offsets)
+    Ok(origins)
 }
 
+#[cfg(test)]
 fn records(
     sessions: &[Session],
     timelines: &[Vec<Message>],
     deadline: Instant,
 ) -> Result<Vec<TokenUsageRecord>, AppError> {
-    let offsets = fork_offsets(sessions, timelines, deadline)?;
-    let mut records = Vec::new();
-    let mut input = 0;
-    let mut output = 0;
-    for (timeline, offset) in timelines.iter().zip(offsets) {
-        for message in &timeline[offset..] {
+    let origins = fork_origins(sessions, deadline)?;
+    let mut usage = stream::Usage::default();
+    let budget = Budget::default();
+    for (index, timeline) in timelines.iter().enumerate() {
+        let mut messages = timeline.iter();
+        if let (Some(fork), Some(origin)) = (&sessions[index].fork, origins[index]) {
+            let mut origin = timelines[origin].iter();
+            stream::fork_prefix(fork, || Ok(origin.next()), || Ok(messages.next()), deadline)?;
+        }
+        for message in messages {
             remaining(deadline)?;
-            let Some(tokens) = message.usage() else {
-                continue;
-            };
-            if records.len() == MAX_RECORDS {
-                return Err(failure("100,000 record limit exceeded"));
-            }
-            input = safe_sum(input, tokens.input)?;
-            output = safe_sum(output, tokens.output)?;
-            safe_sum(input, output)?;
-            records.push(TokenUsageRecord {
-                time: message.time.created,
-                input: tokens.input,
-                output: tokens.output,
-            });
+            usage.add(message, &budget)?;
         }
     }
     remaining(deadline)?;
 
-    Ok(records)
+    Ok(usage.records())
 }
 
 pub fn token_usage_records_via_service() -> Result<Vec<TokenUsageRecord>, AppError> {
@@ -565,8 +556,24 @@ pub(super) fn scan(
         &budget,
         deadline,
     )?;
-    let timelines = read_timelines(connection, &sessions, &budget, deadline)?;
-    let records = records(&sessions, &timelines, deadline)?;
+    let origins = fork_origins(&sessions, deadline)?;
+    let usage = Mutex::new(stream::Usage::default());
+    read_sessions(&sessions, deadline, |index, session, failed| {
+        stream::read_timeline(
+            connection,
+            session,
+            origins[index].map(|origin| &sessions[origin]),
+            &budget,
+            &usage,
+            deadline,
+            failed,
+        )
+    })?;
+    let records = usage
+        .into_inner()
+        .map_err(|_| failure("timeline worker failed"))?
+        .records();
+    remaining(deadline)?;
     connection.ensure_current()?;
 
     Ok(records)

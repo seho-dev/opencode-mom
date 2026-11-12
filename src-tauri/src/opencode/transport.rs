@@ -186,6 +186,17 @@ impl ManagedConnection {
         Ok(format!("{:x}", Sha256::digest(identity)))
     }
 
+    pub(in crate::opencode) fn usage_cache_key(&self) -> Option<String> {
+        use sha2::{Digest, Sha256};
+        if self.snapshot.selection.url.is_some() {
+            return None;
+        }
+        let identity =
+            serde_json::to_vec(&(&self.registration.id, self.url.as_str(), self.directory()))
+                .ok()?;
+        Some(format!("{:x}", Sha256::digest(identity)))
+    }
+
     pub(in crate::opencode) fn reserve_plugin_removal(
         &self,
         deadline: Instant,

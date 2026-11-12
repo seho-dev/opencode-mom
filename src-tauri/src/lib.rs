@@ -59,6 +59,10 @@ pub fn run() {
             logging.install();
             app.manage(logging);
             opencode::target::initialize(&paths)?;
+            if let Ok(directory) = app.path().app_cache_dir() {
+                let _ = std::fs::create_dir_all(&directory);
+                opencode::initialize_usage_cache(directory);
+            }
             let proxy = std::sync::Arc::new(mcp_proxy::ProxyService::new(&paths).unwrap_or_else(
                 |error| {
                     eprintln!("warning: MCP proxy initialization failed; disabling proxy: {error}");
@@ -133,6 +137,7 @@ pub fn run() {
             commands::opencode_upgrade,
             commands::opencode_reload,
             commands::opencode_token_usage_records,
+            commands::opencode_token_usage_snapshot,
             commands::opencode_active_sessions,
             commands::get_lid_protection,
             commands::set_lid_protection,

@@ -46,7 +46,7 @@ import type { LidState } from '$src/types/power.js';
 import type { PromptGenerationRequest } from '$src/types/prompt-generation.js';
 import type { ProviderDef } from '$src/types/providers.js';
 import type { SkillDraft, SkillEntry, SkillList, SkillUpdate } from '$src/types/skills.js';
-import type { TokenUsageRecord } from '$src/types/stats.js';
+import type { TokenUsageRecord, TokenUsageSnapshot } from '$src/types/stats.js';
 import { GROUP_TYPE_NATIVE, type GroupType } from '$src/utils/constants.js';
 import type { CommandAdapter } from './adapter.js';
 
@@ -822,6 +822,10 @@ export function createConfigStore(adapter: CommandAdapter, catalogOnRefresh = tr
 
     async loadTokenUsageRecords(): Promise<TokenUsageRecord[]> {
       return runForServiceTarget(() => adapter.opencodeTokenUsageRecords());
+    },
+
+    loadTokenUsageSnapshot(refresh = false, knownRevision?: number): Promise<TokenUsageSnapshot> {
+      return runForServiceTarget(() => adapter.opencodeTokenUsageSnapshot(refresh, knownRevision));
     },
 
     async refreshCatalog(provider?: string) {

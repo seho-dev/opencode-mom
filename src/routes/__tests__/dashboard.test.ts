@@ -75,6 +75,19 @@ function mount(overrides: Record<string, unknown> = {}) {
     loadTokenUsageRecords: vi.fn().mockResolvedValue(records),
     ...overrides,
   } as unknown as ConfigStore;
+  let resultRevision = 0;
+  if (!config.loadTokenUsageSnapshot) {
+    config.loadTokenUsageSnapshot = vi.fn(async () => ({
+      records: await config.loadTokenUsageRecords(),
+      updatedAt: Date.now(),
+      refreshing: false,
+      stale: false,
+      error: null,
+      resultRevision: ++resultRevision,
+      targetRevision: 1,
+      cacheScope: 'process',
+    }));
+  }
   const view = render(Dashboard, {}, { wrapper: Harness, wrapperProps: { config } });
 
   return { config, ...view };
@@ -584,129 +597,38 @@ test.each([
   },
 );
 
-test('mount and manual refresh use one in-flight shared read and preserve both selections through refresh, failure, and retry', async () => {
-  const pending: { resolve: (records: TokenUsageRecord[]) => void; reject: (error: Error) => void }[] = [];
-  const loadTokenUsageRecords = vi.fn(
-    () => new Promise<TokenUsageRecord[]>((resolve, reject) => pending.push({ resolve, reject })),
-  );
+test('cached usage stays visible during refresh and after a failed background refresh', async () => {
+  const loadTokenUsageSnapshot = vi
+    .fn()
+    .mockResolvedValueOnce({
+      records,
+      updatedAt: Date.now(),
+      refreshing: true,
+      stale: false,
+      error: null,
+      resultRevision: 1,
+      targetRevision: 1,
+      cacheScope: 'process',
+    })
+    .mockResolvedValue({
+      records,
+      updatedAt: Date.now(),
+      refreshing: false,
+      stale: true,
+      error: { message: 'Refresh failed' },
+      resultRevision: 1,
+      targetRevision: 1,
+      cacheScope: 'process',
+    });
 
-  mount({
-    groups: [makeGroup('Native current', 'native', true)],
-    selectedGroupId: 'Native current',
-    loadTokenUsageRecords,
-  });
-  await screen.findByText('Loading OpenCode token usage…');
+  mount({ loadTokenUsageSnapshot });
+  await screen.findByText(/Updating usage/);
+  const before = tokenCard().textContent;
 
-  const refresh = labeledButton('Refresh activity');
-
-  refresh.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  refresh.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  expect(loadTokenUsageRecords).toHaveBeenCalledExactlyOnceWith();
-  expectTokens(null, null);
-  expect(labeledButton('Switch Native group').disabled).toBe(false);
-  pending[0].resolve(records);
-  await screen.findByText('2024 total');
-  await select('Usage period', 'Year');
-  await select('Usage year', '2023');
-  await select('Heatmap period', 'Week');
-  expect(loadTokenUsageRecords).toHaveBeenCalledOnce();
-
-  refresh.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  refresh.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await screen.findByText('Loading OpenCode token usage…');
-  expect(loadTokenUsageRecords.mock.calls).toEqual([[], []]);
-  expectTokens(null, null);
-  expect(labeledButton('Usage period').textContent).toContain('Year');
-  expect(labeledButton('Usage year').textContent).toContain('2023');
-  expect(labeledButton('Heatmap period').textContent).toContain('Week');
-  pending[1].resolve([
-    ...records,
-    { time: dayBounds('2022-12-31').from, input: 3, output: 4 },
-    { time: dayBounds('2023-12-31').from, input: 1, output: 2 },
-    { time: dayBounds('2024-03-01').from, input: 1_000_000, output: 2_000_000 },
-  ]);
-  await screen.findByText('Total · This week');
-  expectTokens(1_234_567_891, 6_000_014);
-  expect(screen.getByText('Total · This week').textContent).toContain('3.40M');
-  expect(labeledButton('Usage year').textContent).toContain('2023');
-  expect(labeledButton('Heatmap period').textContent).toContain('Week');
-  await select('Heatmap period', 'Year');
-  expect(labeledButton('Year').textContent).toContain('2024');
-  expect(screen.getByText('2024 total').textContent).toContain('6.40M');
-  expect(loadTokenUsageRecords.mock.calls).toEqual([[], []]);
-  expect(screen.queryByRole('alert')).toBeNull();
-
-  await select('Year', '2022');
-  await fireEvent.focus(labeledButton('Dec 31, 2022: <0.01M tokens'));
-  await fireEvent.click(refresh);
-  await screen.findByText('Loading OpenCode token usage…');
-
-  const switchTrigger = labeledButton('Switch Native group');
-
-  for (const [name, value] of [
-    ['Usage period', 'Year'],
-    ['Usage year', '2023'],
-    ['Heatmap period', 'Year'],
-    ['Year', '2022'],
-  ]) {
-    const trigger = labeledButton(name);
-
-    expect(trigger.textContent).toContain(value);
-    expect(trigger.disabled).toBe(true);
-  }
-
-  expectTokens(null, null);
-  expect(screen.queryByLabelText(/ tokens$/, { selector: 'button' })).toBeNull();
-  expect(screen.queryByText('Cell inspector:')).toBeNull();
-  expect(screen.queryByText('2022 total')).toBeNull();
-  expect(screen.queryByTitle(/future date$/)).toBeNull();
-  expect(switchTrigger.disabled).toBe(false);
-  pending[2].reject(new Error('Refresh unavailable'));
-  await screen.findByText('Refresh unavailable');
-  expect(screen.getAllByRole('alert')).toHaveLength(2);
-  expectTokens(null, null);
-  expect(screen.queryByLabelText(/ tokens$/, { selector: 'button' })).toBeNull();
-  expect(screen.queryByText('Cell inspector:')).toBeNull();
-  expect(screen.queryByText('2022 total')).toBeNull();
-  expect(screen.queryByTitle(/future date$/)).toBeNull();
-  expect(switchTrigger.disabled).toBe(false);
-
-  for (const [name, value] of [
-    ['Usage period', 'Year'],
-    ['Usage year', '2023'],
-    ['Heatmap period', 'Year'],
-    ['Year', '2022'],
-  ]) {
-    const trigger = labeledButton(name);
-
-    expect(trigger.textContent).toContain(value);
-    expect(trigger.disabled).toBe(true);
-  }
-
-  await fireEvent.click(labeledButton('Retry token usage'));
-  await screen.findByText('Loading OpenCode token usage…');
-  expectTokens(null, null);
-  expect(labeledButton('Usage year').textContent).toContain('2023');
-  expect(labeledButton('Year').textContent).toContain('2022');
-  pending[3].resolve(records.filter((record) => record.time >= dayBounds('2024-01-01').from));
-  await screen.findByText('No tokens recorded for 2022.');
-  expectTokens(0, 0);
-  expect(screen.getByText('2022 total').textContent).toContain('0.00M');
-
-  for (const [name, value] of [
-    ['Usage period', 'Year'],
-    ['Usage year', '2023'],
-    ['Heatmap period', 'Year'],
-    ['Year', '2022'],
-  ]) {
-    const trigger = labeledButton(name);
-
-    expect(trigger.textContent).toContain(value);
-    expect(trigger.disabled).toBe(false);
-  }
-
-  expect(loadTokenUsageRecords.mock.calls).toEqual([[], [], [], []]);
-  expect(screen.queryByRole('alert')).toBeNull();
+  await waitFor(() => expect(loadTokenUsageSnapshot.mock.calls.length).toBeGreaterThan(1), { timeout: 4000 });
+  await screen.findByText('Usage update failed.', undefined, { timeout: 4000 });
+  expect(tokenCard().textContent).toBe(before);
+  expect(labeledButton('Retry token usage')).toBeTruthy();
 });
 
 test('empty records are valid zero tokens with future blanks and one keyboard focus target', async () => {

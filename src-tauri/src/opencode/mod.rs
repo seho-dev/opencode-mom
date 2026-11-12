@@ -17,4 +17,7 @@ pub use installation::{OpenCodeInstallation, OpenCodeUpdateCheck};
 pub use models::{list_models_via_service, ModelCatalogEntry};
 pub use reload::reload_via_service;
 pub use target::{OpenCodeServiceStatus, OpenCodeServiceTarget};
-pub use token_usage::{token_usage_records_via_service, TokenUsageRecord};
+pub use token_usage::{
+    initialize_usage_cache, token_usage_records_via_service, token_usage_snapshot,
+    TokenUsageRecord, TokenUsageSnapshot,
+};

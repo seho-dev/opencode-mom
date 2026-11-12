@@ -9,3 +9,14 @@ export interface DailyTokenUsage {
   input: number;
   output: number;
 }
+
+export interface TokenUsageSnapshot {
+  records: TokenUsageRecord[];
+  updatedAt: number | null;
+  refreshing: boolean;
+  stale: boolean;
+  error: { message: string } | null;
+  targetRevision: number;
+  resultRevision: number;
+  cacheScope: string;
+}

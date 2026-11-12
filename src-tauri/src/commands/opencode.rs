@@ -5,7 +5,7 @@ use crate::error::AppError;
 use crate::logging::{operation, record, LogStatus, LogType};
 use crate::opencode::{
     self, installation, ModelCatalogEntry, OpenCodeInstallation, OpenCodeServiceStatus,
-    OpenCodeUpdateCheck, TokenUsageRecord,
+    OpenCodeUpdateCheck, TokenUsageRecord, TokenUsageSnapshot,
 };
 use crate::paths::ConfigPaths;
 
@@ -121,5 +121,16 @@ pub async fn opencode_token_usage_records() -> CommandResult<Vec<TokenUsageRecor
         "OpenCode token usage",
         opencode::token_usage_records_via_service,
     )
+    .await
+}
+
+#[tauri::command]
+pub async fn opencode_token_usage_snapshot(
+    refresh: Option<bool>,
+    known_revision: Option<u64>,
+) -> CommandResult<TokenUsageSnapshot> {
+    spawn_blocking_task("OpenCode token usage snapshot", move || {
+        opencode::token_usage_snapshot(refresh.unwrap_or(false), known_revision)
+    })
     .await
 }

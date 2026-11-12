@@ -645,24 +645,204 @@ fn cursor_loops_duplicate_ids_failed_pages_and_metadata_limits_never_return_part
 }
 
 #[test]
-fn record_limit_accepts_exact_bound_and_rejects_one_more() {
+fn record_count_has_no_fixed_rejection_wall() {
+    // Regression for issue #18: the old code rejected the whole scan once the raw message
+    // count hit 100,000. Presence of that many completed turns must aggregate, not fail.
     let sessions = vec![serde_json::from_value(session("root")).unwrap()];
     let mut timeline: Vec<Message> = (0..MAX_RECORDS)
         .map(|index| {
             serde_json::from_value(usage(&index.to_string(), "assistant", 1, 1, 1)).unwrap()
         })
         .collect();
-    assert_eq!(
-        records(&sessions, std::slice::from_ref(&timeline), deadline())
-            .unwrap()
-            .len(),
-        MAX_RECORDS
-    );
     timeline.push(serde_json::from_value(usage("extra", "assistant", 1, 1, 1)).unwrap());
-    assert!(records(&sessions, &[timeline], deadline())
-        .unwrap_err()
-        .message
-        .contains("record limit"));
+
+    let result = records(&sessions, &[timeline], deadline())
+        .expect("a history past 100,000 turns must not be rejected");
+    // Same-day turns collapse into one bucket whose sum is the exact total, not rejected.
+    assert_eq!(
+        result,
+        [TokenUsageRecord {
+            time: 1,
+            input: MAX_RECORDS as u64 + 1,
+            output: MAX_RECORDS as u64 + 1,
+        }]
+    );
+}
+
+// Regression for issue #18: a real history past 100,000 recorded turns must not fail the
+// whole dashboard metric. These drive the real `scan` entry point through FakeApi so the
+// public contract (success + exact totals/buckets) is verified where users hit it.
+fn served_scan(
+    handler: impl Fn(&str, &mut TcpStream) + Send + Sync + 'static,
+) -> Result<Vec<TokenUsageRecord>, AppError> {
+    let api = FakeApi::new(handler);
+    let connection = connection(&api);
+    scan(&connection, deadline())
+}
+
+/// One real calendar day apart in milliseconds; records sharing a value collapse into one bucket.
+const DAY: u64 = 86_400_000;
+
+/// Completed assistant turns `[start, end)` with per-turn `(time, input, output)` tuples.
+fn usage_range(start: usize, end: usize, counts: impl Fn(usize) -> (u64, u64, u64)) -> Vec<Value> {
+    (start..end)
+        .map(|index| {
+            let (time, input, output) = counts(index);
+            usage(&format!("m{index}"), "assistant", time, input, output)
+        })
+        .collect()
+}
+
+/// Next cursor for a message page over `count` turns, or `None` once exhausted.
+fn next_cursor(end: usize, count: usize) -> Option<String> {
+    (end < count).then(|| format!("c{end}"))
+}
+
+#[test]
+fn http_scan_succeeds_and_sums_exactly_past_the_reported_history() {
+    // 120,000 completed turns alternating between two days a real DAY apart (epoch + 1×DAY),
+    // past the old 100,000 wall. Each turn contributes a distinct amount so a misplaced or
+    // dropped turn would skew a bucket's exact total, not just the grand sum.
+    const TOTAL: usize = 120_000;
+    let time_of = |index: usize| {
+        if index.is_multiple_of(2) {
+            DAY
+        } else {
+            2 * DAY
+        }
+    };
+    let result = served_scan(move |target, stream| {
+        if target == "/api/info" {
+            healthy_response(stream);
+            return;
+        }
+        // Fixed one-hour offset so messages sit inside each day rather than on its boundary.
+        let next = |start: usize| (start + 100).min(TOTAL);
+        let body = match target {
+            "/api/session?limit=1000&order=asc" => page(vec![session("root")], None),
+            t if t.contains("/api/session/root/message") => {
+                let start = t
+                    .split_once("cursor=c")
+                    .and_then(|(_, rest)| rest.parse::<usize>().ok())
+                    .unwrap_or(0);
+                let end = next(start);
+                page(
+                    usage_range(start, end, |i| (time_of(i) + 3_600_000, 2, 3)),
+                    next_cursor(end, TOTAL).as_deref(),
+                )
+            }
+            _ => panic!("unexpected synthetic API target"),
+        };
+        respond(stream, 200, "", &serde_json::to_vec(&body).unwrap());
+    })
+    .expect("history past 100,000 turns must load");
+
+    // Even indexes land on DAY, odd on 2*DAY: 60,000 turns each, 2 in / 3 out per turn.
+    let per_day = (TOTAL / 2) as u64;
+    assert_eq!(
+        result,
+        [
+            TokenUsageRecord {
+                time: DAY + 3_600_000,
+                input: per_day * 2,
+                output: per_day * 3,
+            },
+            TokenUsageRecord {
+                time: 2 * DAY + 3_600_000,
+                input: per_day * 2,
+                output: per_day * 3,
+            },
+        ]
+    );
+}
+
+#[test]
+fn http_scan_sums_every_session_beyond_one_compact_page_set() {
+    // Three sessions, each paged at the real 100-message limit: session a spans two pages
+    // (100 + 50), b has one page (100), c has one (50). Session a sits on DAY, b/c on 2*DAY.
+    // Distinct per-session amounts prove each session's turns land in the right day bucket.
+    let result = served_scan(|target, stream| {
+        if target == "/api/info" {
+            healthy_response(stream);
+            return;
+        }
+        let body = match target {
+            "/api/session?limit=1000&order=asc" => {
+                page(vec![session("a"), session("b"), session("c")], None)
+            }
+            "/api/session/a/message?limit=100&order=asc" => {
+                page(usage_range(0, 100, |_| (DAY + 1, 1, 2)), Some("c100"))
+            }
+            "/api/session/a/message?limit=100&cursor=c100" => {
+                page(usage_range(100, 150, |_| (DAY + 1, 1, 2)), None)
+            }
+            "/api/session/b/message?limit=100&order=asc" => {
+                page(usage_range(0, 100, |_| (2 * DAY + 1, 3, 4)), None)
+            }
+            "/api/session/c/message?limit=100&order=asc" => {
+                page(usage_range(0, 50, |_| (2 * DAY + 1, 5, 6)), None)
+            }
+            _ => panic!("unexpected synthetic API target"),
+        };
+        respond(stream, 200, "", &serde_json::to_vec(&body).unwrap());
+    })
+    .unwrap();
+
+    assert_eq!(
+        result,
+        [
+            TokenUsageRecord {
+                time: DAY + 1,
+                input: 150,
+                output: 300,
+            },
+            TokenUsageRecord {
+                time: 2 * DAY + 1,
+                input: 100 * 3 + 50 * 5,
+                output: 100 * 4 + 50 * 6,
+            },
+        ]
+    );
+}
+
+#[test]
+fn http_scan_day_bucket_stays_exact_at_the_reported_size() {
+    // Exactly 100,000 turns sharing one real timestamp inside a single day: one bucket whose
+    // exact totals match, proving no turn is dropped at the reported size.
+    const TOTAL: usize = 100_000;
+    let time = DAY + 3_600_000;
+    let result = served_scan(move |target, stream| {
+        if target == "/api/info" {
+            healthy_response(stream);
+            return;
+        }
+        let body = match target {
+            "/api/session?limit=1000&order=asc" => page(vec![session("root")], None),
+            t if t.contains("/api/session/root/message") => {
+                let start = t
+                    .split_once("cursor=c")
+                    .and_then(|(_, rest)| rest.parse::<usize>().ok())
+                    .unwrap_or(0);
+                let end = (start + 100).min(TOTAL);
+                page(
+                    usage_range(start, end, |_| (time, 2, 3)),
+                    next_cursor(end, TOTAL).as_deref(),
+                )
+            }
+            _ => panic!("unexpected synthetic API target"),
+        };
+        respond(stream, 200, "", &serde_json::to_vec(&body).unwrap());
+    })
+    .unwrap();
+
+    assert_eq!(
+        result,
+        [TokenUsageRecord {
+            time,
+            input: TOTAL as u64 * 2,
+            output: TOTAL as u64 * 3,
+        }]
+    );
 }
 
 #[test]

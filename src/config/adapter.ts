@@ -44,7 +44,7 @@ import type { LidState } from '$src/types/power.js';
 import type { PromptGenerationRequest } from '$src/types/prompt-generation.js';
 import type { ProviderDef } from '$src/types/providers.js';
 import type { SkillDraft, SkillEntry, SkillList, SkillUpdate } from '$src/types/skills.js';
-import type { TokenUsageRecord } from '$src/types/stats.js';
+import type { TokenUsageRecord, TokenUsageSnapshot } from '$src/types/stats.js';
 import { GROUP_TYPE_NATIVE, GROUP_TYPE_OMO, GROUP_TYPE_SLIM } from '$src/utils/constants.js';
 
 type Result<T> = Promise<T>;
@@ -96,6 +96,7 @@ export interface CommandAdapter {
   generatePrompt(request: PromptGenerationRequest): Result<string>;
   opencodeReload(): Result<void>;
   opencodeTokenUsageRecords(): Result<TokenUsageRecord[]>;
+  opencodeTokenUsageSnapshot(refresh: boolean, knownRevision?: number): Result<TokenUsageSnapshot>;
   createProvider(value: ProviderDef): Result<ProviderDef>;
   updateProvider(value: ProviderDef): Result<ProviderDef>;
   deleteProvider(id: string): Result<void>;
@@ -257,6 +258,8 @@ export function createTauriAdapter(invoke: TauriInvoke): CommandAdapter {
     generatePrompt: (request) => invoke('opencode_generate_prompt', { request }),
     opencodeReload: () => invoke('opencode_reload'),
     opencodeTokenUsageRecords: () => invoke('opencode_token_usage_records'),
+    opencodeTokenUsageSnapshot: (refresh, knownRevision) =>
+      invoke('opencode_token_usage_snapshot', { refresh, knownRevision }),
     createProvider: (value) => invoke('create_provider', { provider: value }),
     updateProvider: (value) => invoke('update_provider', { provider: value }),
     deleteProvider: (id) => invoke('delete_provider', { id }),

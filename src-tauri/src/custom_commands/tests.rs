@@ -82,6 +82,50 @@ fn global_and_project_crud_preserve_templates_and_json_config() {
 }
 
 #[test]
+fn unquoted_colon_description_requires_explicit_source_repair() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = ConfigPaths::for_home(home.path());
+    let content =
+        "---\ndescription: Harvest ponytail: tracked debt ledger\n---\n$ARGUMENTS $1 @src/file";
+    let error = create(&paths, draft("review", content)).unwrap_err();
+    assert_eq!(error.code, crate::error::ErrorCode::ValidationFailed);
+    assert!(error.message.contains("mapping values are not allowed"));
+    assert!(error.message.contains("line 1 column 30"));
+    assert!(!paths.commands_write_dir().exists());
+
+    let source = paths.commands_write_dir().join("review.md");
+    write(&source, content);
+    let listed = list(&paths).unwrap();
+    assert_eq!(listed.data.len(), 1);
+    assert_eq!(listed.diagnostics.len(), 1);
+    let entry = &listed.data[0];
+    assert!(entry
+        .parse_error
+        .as_deref()
+        .unwrap()
+        .contains("line 1 column 30"));
+    assert_eq!(entry.content, content);
+    assert_eq!(entry.description, None);
+    assert_eq!(get(&paths, &entry.id).unwrap(), *entry);
+    assert!(update(&paths, edit(entry, content)).is_err());
+    assert_eq!(fs::read_to_string(&source).unwrap(), content);
+    assert_eq!(fs::read_dir(paths.commands_write_dir()).unwrap().count(), 1);
+
+    let corrected = content.replace(
+        "description: Harvest ponytail: tracked debt ledger",
+        "description: \"Harvest ponytail: tracked debt ledger\"",
+    );
+    let updated = update(&paths, edit(entry, &corrected)).unwrap();
+    assert_eq!(
+        updated.description.as_deref(),
+        Some("Harvest ponytail: tracked debt ledger")
+    );
+    assert_eq!(updated.parse_error, None);
+    assert_eq!(updated.content, corrected);
+    assert_eq!(fs::read_to_string(source).unwrap(), corrected);
+}
+
+#[test]
 fn scans_singular_plural_override_and_diagnostics_without_cascading_get_failure() {
     let home = tempfile::tempdir().unwrap();
     let override_dir = home.path().join("override");

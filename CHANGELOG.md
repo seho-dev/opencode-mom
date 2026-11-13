@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.3 - 2026-11-12
+
+- release: 2.0.3
+- feat: preserve pagination across resource navigation
+- test: cover malformed command frontmatter repair
+- docs: condense feature summaries in both READMEs
+- Update CHANGELOG.md
+
 ## 2.0.2 - 2026-11-12
 
 - Preserve malformed commands for repair. (#16)
